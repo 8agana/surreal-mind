@@ -147,7 +147,9 @@ impl ServerHandler for SurrealMindServer {
                         }
                     })?;
 
-                info!("convo_think called with: {}", params.content);
+                // Redact content at info level to avoid logging full user text
+                info!("convo_think called (content_len={})", params.content.len());
+                debug!("convo_think content: {}", params.content);
                 let result = self.create_thought_with_injection(params).await?;
                 Ok(CallToolResult::structured(json!(result)))
             }
@@ -437,20 +439,43 @@ impl SurrealMindServer {
         let thoughts = self.thoughts.read().await;
         let mut matches = Vec::new();
 
+        // Helper to compute orbital distance with clearer semantics
+        let compute_distance = |created_at: DateTime<Utc>, access_count: u32, significance: f32| {
+            // Recency closeness: recent → 1.0, old → 0.0 (normalize by 30 days)
+            let age_days = (now - created_at).num_seconds() as f32 / 86_400.0;
+            let recency_closeness = (1.0 - (age_days / 30.0)).clamp(0.0, 1.0);
+            // Access closeness: more accesses → closer (cap at 1.0)
+            let access_closeness = ((access_count as f32 + 1.0).ln() / 5.0).clamp(0.0, 1.0);
+            let significance_closeness = significance.clamp(0.0, 1.0);
+            let closeness =
+                recency_closeness * 0.4 + access_closeness * 0.3 + significance_closeness * 0.3;
+            (1.0 - closeness).clamp(0.0, 1.0)
+        };
+
         // If we have thoughts in memory, use them
         if !thoughts.is_empty() {
             for thought in thoughts.iter() {
                 // Calculate cosine similarity (simplified)
                 let similarity = self.cosine_similarity(query_embedding, &thought.embedding);
 
-                // Calculate orbital distance
-                let age_factor = (now - thought.created_at).num_seconds() as f32 / 86400.0;
-                let access_factor = (thought.access_count as f32 + 1.0).ln() / 10.0;
-                let orbital_distance = 1.0
-                    - (age_factor * 0.4 + access_factor * 0.3 + thought.significance * 0.3)
-                        .clamp(0.0, 1.0);
+                // Calculate orbital distance (smaller = closer)
+                let orbital_distance = compute_distance(
+                    thought.created_at,
+                    thought.access_count,
+                    thought.significance,
+                );
 
                 if similarity > 0.5 && orbital_distance <= max_orbital_distance {
+                    // Update access metadata in DB (reflect usage)
+                    let dbw = self.db.write().await;
+                    let _res: Result<Option<Thought>, surrealdb::Error> = dbw
+                        .update(("thoughts", thought.id.clone()))
+                        .merge(json!({
+                            "access_count": thought.access_count + 1,
+                            "last_accessed": Utc::now(),
+                        }))
+                        .await;
+
                     matches.push(ThoughtMatch {
                         thought: thought.clone(),
                         similarity_score: similarity,
@@ -459,21 +484,32 @@ impl SurrealMindServer {
                 }
             }
         } else {
-            // Fall back to querying SurrealDB
+            // Fall back to querying SurrealDB (bounded)
             let db = self.db.read().await;
-            let results: Vec<Thought> = db.select("thoughts").await.map_err(|e| McpError {
-                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                message: format!("Failed to query thoughts: {}", e).into(),
-                data: None,
-            })?;
+            let mut resp = db
+                .query("SELECT * FROM thoughts ORDER BY created_at DESC LIMIT 500")
+                .await
+                .map_err(|e| McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: format!("Failed to query thoughts: {}", e).into(),
+                    data: None,
+                })?;
+            let results: Vec<Thought> = resp
+                .take(0)
+                .map_err(|e| McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: format!("Failed to parse thoughts: {}", e).into(),
+                    data: None,
+                })
+                .unwrap_or_default();
 
             for mut thought in results {
                 let similarity = self.cosine_similarity(query_embedding, &thought.embedding);
-                let age_factor = (now - thought.created_at).num_seconds() as f32 / 86400.0;
-                let access_factor = (thought.access_count as f32 + 1.0).ln() / 10.0;
-                let orbital_distance = 1.0
-                    - (age_factor * 0.4 + access_factor * 0.3 + thought.significance * 0.3)
-                        .clamp(0.0, 1.0);
+                let orbital_distance = compute_distance(
+                    thought.created_at,
+                    thought.access_count,
+                    thought.significance,
+                );
 
                 if similarity > 0.5 && orbital_distance <= max_orbital_distance {
                     // Update access metadata in DB
