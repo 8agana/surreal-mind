@@ -43,34 +43,40 @@ impl NomicEmbedder {
 impl Embedder for NomicEmbedder {
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
         debug!("Generating Nomic embedding for text: {} chars", text.len());
-        
+
         let request = NomicRequest {
             texts: vec![text.to_string()],
             model: self.model.clone(),
             task_type: "search_document".to_string(),
         };
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post("https://api-atlas.nomic.ai/v1/embedding/text")
             .header("Authorization", format!("Bearer {}", self.api_key))
             .json(&request)
             .send()
             .await
             .context("Failed to send request to Nomic API")?;
-            
+
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
             anyhow::bail!("Nomic API error {}: {}", status, error_text);
         }
-        
-        let result: NomicResponse = response.json().await
+
+        let result: NomicResponse = response
+            .json()
+            .await
             .context("Failed to parse Nomic response")?;
-            
-        result.embeddings.into_iter().next()
+
+        result
+            .embeddings
+            .into_iter()
+            .next()
             .context("No embedding returned from Nomic")
     }
-    
+
     fn dimensions(&self) -> usize {
         768 // Nomic uses 768 dimensions
     }
@@ -94,7 +100,7 @@ impl Embedder for FakeEmbedder {
         let seed = text.len() as f32 / 100.0;
         Ok(vec![seed; self.dimensions])
     }
-    
+
     fn dimensions(&self) -> usize {
         self.dimensions
     }

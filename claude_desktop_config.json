@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "surreal-mind": {
+      "command": "/Users/samuelatagana/Projects/LegacyMind/surreal-mind/target/release/surreal-mind",
+      "args": [],
+      "env": {
+        "RUST_LOG": "surreal_mind=info,rmcp=info"
+      }
+    }
+  }
+}
