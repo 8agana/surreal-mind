@@ -346,32 +346,14 @@ impl SurrealMindServer {
             data: None,
         })?;
 
-        // Create bidirectional relationships with injected memories (two RELATEs)
+        // Create bidirectional relationships with injected memories (single round trip per memory)
         for memory in &relevant_memories {
-            // forward
             db.query(
                 r#"
                 RELATE $from->recalls->$to
-                SET strength = $strength,
-                    created_at = $created_at
-            "#,
-            )
-            .bind(("from", format!("thoughts:{}", stored_thought.id)))
-            .bind(("to", format!("thoughts:{}", memory.thought.id)))
-            .bind(("strength", memory.similarity_score))
-            .bind(("created_at", Utc::now()))
-            .await
-            .map_err(|e| McpError {
-                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                message: format!("Failed to create relationship: {}", e).into(),
-                data: None,
-            })?;
-            // reverse
-            db.query(
-                r#"
+                SET strength = $strength, created_at = $created_at;
                 RELATE $to->recalls->$from
-                SET strength = $strength,
-                    created_at = $created_at
+                SET strength = $strength, created_at = $created_at;
             "#,
             )
             .bind(("from", format!("thoughts:{}", stored_thought.id)))
@@ -381,7 +363,7 @@ impl SurrealMindServer {
             .await
             .map_err(|e| McpError {
                 code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                message: format!("Failed to create reverse relationship: {}", e).into(),
+                message: format!("Failed to create relationships: {}", e).into(),
                 data: None,
             })?;
         }
@@ -486,8 +468,17 @@ impl SurrealMindServer {
         } else {
             // Fall back to querying SurrealDB (bounded)
             let db = self.db.read().await;
+            // Configurable limit for fallback query
+            let limit: usize = std::env::var("SURR_DB_LIMIT")
+                .ok()
+                .and_then(|s| s.parse::<usize>().ok())
+                .map(|v| v.clamp(50, 5000))
+                .unwrap_or(500);
             let mut resp = db
-                .query("SELECT * FROM thoughts ORDER BY created_at DESC LIMIT 500")
+                .query(format!(
+                    "SELECT * FROM thoughts ORDER BY created_at DESC LIMIT {}",
+                    limit
+                ))
                 .await
                 .map_err(|e| McpError {
                     code: rmcp::model::ErrorCode::INTERNAL_ERROR,

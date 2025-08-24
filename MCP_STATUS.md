@@ -60,6 +60,24 @@ cargo build
 cargo build --release
 ```
 
+### Database (Service Mode)
+Start SurrealDB locally (default credentials):
+```bash
+surreal start --user root --pass root --bind 127.0.0.1:8000
+```
+
+Environment configuration used by the server:
+```bash
+# Defaults
+SURR_DB_URL=127.0.0.1:8000
+SURR_DB_USER=root
+SURR_DB_PASS=root
+SURR_DB_NS=surreal_mind
+SURR_DB_DB=consciousness
+# Optional: limit fallback SELECT
+SURR_DB_LIMIT=500
+```
+
 ### Run Server
 ```bash
 # With default logging

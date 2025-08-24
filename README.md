@@ -33,6 +33,26 @@ A Model Context Protocol (MCP) server implementing bidirectional consciousness p
 cargo build --release
 ```
 
+### Database (Service Mode - Default)
+Run SurrealDB as a local service (default settings):
+```bash
+surreal start --user root --pass root --bind 127.0.0.1:8000
+```
+
+Configure the server via environment variables:
+```bash
+# Defaults shown
+export SURR_DB_URL=127.0.0.1:8000
+export SURR_DB_USER=root
+export SURR_DB_PASS=root
+export SURR_DB_NS=surreal_mind
+export SURR_DB_DB=consciousness
+# Optional: cap fallback query size
+export SURR_DB_LIMIT=500
+```
+
+Server will read these automatically at startup.
+
 ## Usage
 
 ### As MCP Server
