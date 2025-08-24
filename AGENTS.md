@@ -5,7 +5,8 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 Project overview
 - Rust MCP server implementing consciousness persistence with orbital mechanics for memory retrieval
 - Entry point: src/main.rs; Embedding module: src/embeddings.rs
-- Storage: SurrealDB embedded (RocksDB backend) at ./surreal_data with namespace "surreal_mind" and database "consciousness"
+- Storage: SurrealDB service (WebSocket) at SURR_DB_URL (default 127.0.0.1:8000) with namespace SURR_DB_NS (default "surreal_mind") and database SURR_DB_DB (default "consciousness")
+  - Env: SURR_DB_USER/SURR_DB_PASS for auth; SURR_DB_LIMIT caps fallback SELECT size; SURR_SIM_THRESH controls similarity cutoff; SURR_TOP_K controls top results returned
   - NOW FULLY WIRED: Thoughts persist to DB, bidirectional relationships created via `recalls` table
   - Hybrid approach: In-memory Vec<Thought> for fast retrieval + SurrealDB for persistence
 - Exposes one MCP tool: convo_think (stores thoughts with bidirectional memory injection)
