@@ -2,3 +2,6 @@
 /surreal_data
 .env
 *.log
+claude_desktop_config.json
+reference/
+.idea/

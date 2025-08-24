@@ -14,7 +14,7 @@ use rmcp::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::borrow::Cow;
-use std::future::Future;
+
 use std::sync::Arc;
 use surrealdb::Surreal;
 use surrealdb::engine::local::{Db, RocksDb};
@@ -71,7 +71,7 @@ impl ServerHandler for SurrealMindServer {
             protocol_version: ProtocolVersion::LATEST,
             capabilities: ServerCapabilities {
                 tools: Some(ToolsCapability {
-                    list_changed: Some(false),
+                    list_changed: Some(true),
                 }),
                 ..Default::default()
             },
@@ -83,76 +83,71 @@ impl ServerHandler for SurrealMindServer {
         }
     }
 
-    #[allow(clippy::manual_async_fn)]
-    fn initialize(
+    async fn initialize(
         &self,
         _request: InitializeRequestParam,
         _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<InitializeResult, McpError>> + Send + '_ {
-        async move { Ok(self.get_info()) }
+    ) -> Result<InitializeResult, McpError> {
+        Ok(self.get_info())
     }
 
-    #[allow(clippy::manual_async_fn)]
-    fn list_tools(
+    async fn list_tools(
         &self,
         _request: Option<PaginatedRequestParam>,
         _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<ListToolsResult, McpError>> + Send + '_ {
-        async move {
-            let input_schema = rmcp::object!({
-                "type": "object",
-                "properties": {
-                    "content": {"type": "string", "description": "The thought content to store"},
-                    "injection_scale": {"type": "integer", "description": "Memory injection scale (0-5)", "minimum": 0, "maximum": 5},
-                    "submode": {"type": "string", "description": "Conversation submode", "enum": ["sarcastic", "philosophical", "empathetic", "problem_solving"]},
-                    "tags": {"type": "array", "items": {"type": "string"}, "description": "Additional tags"},
-                    "significance": {"type": "number", "description": "Significance weight (0.0-1.0)", "minimum": 0.0, "maximum": 1.0}
-                },
-                "required": ["content"]
-            });
+    ) -> Result<ListToolsResult, McpError> {
+        let input_schema = rmcp::object!({
+            "type": "object",
+            "properties": {
+                "content": {"type": "string", "description": "The thought content to store"},
+                "injection_scale": {"type": "integer", "description": "Memory injection scale (0-5)", "minimum": 0, "maximum": 5},
+                "submode": {"type": "string", "description": "Conversation submode", "enum": ["sarcastic", "philosophical", "empathetic", "problem_solving"]},
+                "tags": {"type": "array", "items": {"type": "string"}, "description": "Additional tags"},
+                "significance": {"type": "number", "description": "Significance weight (0.0-1.0)", "minimum": 0.0, "maximum": 1.0}
+            },
+            "required": ["content"]
+        });
 
-            Ok(ListToolsResult {
-                tools: vec![Tool::new(
-                    Cow::Borrowed("convo_think"),
-                    Cow::Borrowed("Store thoughts with memory injection"),
-                    Arc::new(input_schema),
-                )],
-                ..Default::default()
-            })
-        }
+        Ok(ListToolsResult {
+            tools: vec![Tool::new(
+                Cow::Borrowed("convo_think"),
+                Cow::Borrowed("Store thoughts with memory injection"),
+                Arc::new(input_schema),
+            )],
+            ..Default::default()
+        })
     }
 
-    #[allow(clippy::manual_async_fn)]
-    fn call_tool(
+    async fn call_tool(
         &self,
         request: CallToolRequestParam,
         _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<CallToolResult, McpError>> + Send + '_ {
-        async move {
-            match request.name.as_ref() {
-                "convo_think" => {
-                    let params: ConvoThinkParams = serde_json::from_value(
-                        serde_json::Value::Object(request.arguments.clone().unwrap_or_default()),
-                    )
-                    .map_err(|e| McpError {
-                        code: rmcp::model::ErrorCode::INVALID_PARAMS,
-                        message: format!("Invalid parameters: {}", e).into(),
-                        data: None,
+    ) -> Result<CallToolResult, McpError> {
+        match request.name.as_ref() {
+            "convo_think" => {
+                let args = request.arguments.clone().ok_or_else(|| McpError {
+                    code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                    message: "Missing parameters".into(),
+                    data: None,
+                })?;
+                let params: ConvoThinkParams =
+                    serde_json::from_value(serde_json::Value::Object(args)).map_err(|e| {
+                        McpError {
+                            code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                            message: format!("Invalid parameters: {}", e).into(),
+                            data: None,
+                        }
                     })?;
 
-                    info!("convo_think called with: {}", params.content);
-
-                    // Create new thought with bidirectional memory injection
-                    let result = self.create_thought_with_injection(params).await?;
-
-                    Ok(CallToolResult::structured(json!(result)))
-                }
-                _ => Err(McpError {
-                    code: rmcp::model::ErrorCode::METHOD_NOT_FOUND,
-                    message: format!("Unknown tool: {}", request.name).into(),
-                    data: None,
-                }),
+                info!("convo_think called with: {}", params.content);
+                let result = self.create_thought_with_injection(params).await?;
+                Ok(CallToolResult::structured(json!(result)))
             }
+            _ => Err(McpError {
+                code: rmcp::model::ErrorCode::METHOD_NOT_FOUND,
+                message: format!("Unknown tool: {}", request.name).into(),
+                data: None,
+            }),
         }
     }
 }
@@ -351,8 +346,8 @@ impl SurrealMindServer {
             } else {
                 format!("Injected {} memories from orbital distances {:.2} to {:.2}",
                     relevant_memories.len(),
-                    relevant_memories.first().unwrap().orbital_distance,
-                    relevant_memories.last().unwrap().orbital_distance
+                    relevant_memories.first().map(|m| m.orbital_distance).unwrap_or(0.0),
+                    relevant_memories.last().map(|m| m.orbital_distance).unwrap_or(0.0)
                 )
             }
         }))
@@ -375,6 +370,7 @@ impl SurrealMindServer {
         };
 
         // Try to get from in-memory first, fall back to DB if needed
+        let now = Utc::now();
         let thoughts = self.thoughts.read().await;
         let mut matches = Vec::new();
 
@@ -385,7 +381,7 @@ impl SurrealMindServer {
                 let similarity = self.cosine_similarity(query_embedding, &thought.embedding);
 
                 // Calculate orbital distance
-                let age_factor = (Utc::now() - thought.created_at).num_seconds() as f32 / 86400.0;
+                let age_factor = (now - thought.created_at).num_seconds() as f32 / 86400.0;
                 let access_factor = (thought.access_count as f32 + 1.0).ln() / 10.0;
                 let orbital_distance = 1.0
                     - (age_factor * 0.4 + access_factor * 0.3 + thought.significance * 0.3)
@@ -410,7 +406,7 @@ impl SurrealMindServer {
 
             for thought in results {
                 let similarity = self.cosine_similarity(query_embedding, &thought.embedding);
-                let age_factor = (Utc::now() - thought.created_at).num_seconds() as f32 / 86400.0;
+                let age_factor = (now - thought.created_at).num_seconds() as f32 / 86400.0;
                 let access_factor = (thought.access_count as f32 + 1.0).ln() / 10.0;
                 let orbital_distance = 1.0
                     - (age_factor * 0.4 + access_factor * 0.3 + thought.significance * 0.3)
@@ -430,7 +426,9 @@ impl SurrealMindServer {
         matches.sort_by(|a, b| {
             let score_a = a.similarity_score * 0.6 + (1.0 - a.orbital_distance) * 0.4;
             let score_b = b.similarity_score * 0.6 + (1.0 - b.orbital_distance) * 0.4;
-            score_b.partial_cmp(&score_a).unwrap()
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         Ok(matches.into_iter().take(5).collect())
@@ -481,7 +479,10 @@ async fn main() -> Result<()> {
     // Initialize tracing with env filter
     let filter =
         std::env::var("RUST_LOG").unwrap_or_else(|_| "surreal_mind=debug,rmcp=info".to_string());
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_env_filter(filter)
+        .init();
 
     info!("Starting Surreal Mind MCP Server with consciousness persistence");
 
