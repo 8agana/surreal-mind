@@ -1,0 +1,5 @@
+[alias]
+# Run clippy with warnings as errors
+lint = "clippy -- -D warnings"
+# CI-like composite: check, fmt check, clippy, test
+ci = "check --all && fmt --all -- --check && clippy -- -D warnings && test --all"

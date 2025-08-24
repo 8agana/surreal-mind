@@ -1,37 +1,78 @@
-# Repository Guidelines
+# WARP.md
 
-## Project Structure & Module Organization
-- Source code: `src/` with the binary entrypoint in `src/main.rs`. The MCP server (`SurrealMindServer`) currently exposes one tool: `convo_think`.
-- Package manifest: `Cargo.toml` (Rust 2024 edition). Key crates: `rmcp` (MCP), `surrealdb` (RocksDB backend enabled), `tokio`, `serde`, `tracing`.
-- Build artifacts: `target/` (debug/release outputs).
-- Tests: inline `#[cfg(test)]` modules or integration tests in `tests/`.
+This file provides guidance to WARP (warp.dev) when working with code in this repository.
 
-## Build, Test, and Development Commands
-- Build: `cargo build` (use `--release` for optimized binary).
-- Run (stdio MCP server): `cargo run`.
-- Test: `cargo test` (add tests under `tests/` or alongside modules).
-- Format: `cargo fmt` (ensure rustfmt is installed via `rustup component add rustfmt`).
-- Lint: `cargo clippy -- -D warnings` (install with `rustup component add clippy`).
+```json
+{
+  "execution_context": {
+    "directory_state": {
+      "pwd": "/Users/samuelatagana/Projects/LegacyMind/surreal-mind",
+      "home": "/Users/samuelatagana"
+    },
+    "operating_system": {
+      "platform": "MacOS"
+    },
+    "current_time": "2025-08-23T23:40:34Z",
+    "shell": {
+      "name": "zsh",
+      "version": "5.9"
+    }
+  }
+}
+```
 
-## Coding Style & Naming Conventions
-- Indentation: 4 spaces; keep lines readable (<100 cols preferred).
-- Naming: `snake_case` for functions/modules/files, `CamelCase` for types/traits, `SCREAMING_SNAKE_CASE` for constants.
-- Formatting: keep code `cargo fmt`-clean; fix clippy warnings.
-- Patterns: return `anyhow::Result` from async entrypoints; use `tracing` (`info!`, `warn!`, `error!`) instead of `println!`.
+Project overview
+- Single-crate Rust MCP server built with rmcp and tokio. Entry point: src/main.rs
+- Storage: SurrealDB embedded (RocksDB backend) initialized at ./surreal_data with ns "surreal_mind" and db "consciousness"; current thought persistence is in-memory (Vec<Thought>) with a TODO to wire DB writes/reads
+- Exposes one MCP tool: convo_think (stores a thought and injects relevant memories into enriched content)
 
-## Testing Guidelines
-- Framework: built-in Rust tests. Use `#[tokio::test]` for async tests.
-- Placement: integration tests in `tests/` (e.g., `tests/convo_think_test.rs`); unit tests via `mod tests { ... }` next to code.
-- Running examples:
-  - All tests: `cargo test`
-  - By name: `cargo test convo_think`
-  - With logs: `RUST_LOG=debug cargo test -- --nocapture`
+Common commands
+- Build
+  - Debug: cargo build
+  - Release: cargo build --release  → binary at target/release/surreal-mind
+- Run (stdio MCP server)
+  - Default logs: cargo run
+  - Verbose logs: RUST_LOG=surreal_mind=debug,rmcp=info cargo run
+- Format and lint
+  - Format: make fmt  (cargo fmt --all)
+  - Lint: make lint  (cargo clippy -- -D warnings)
+  - All checks locally: make ci  (cargo check, fmt --check, clippy -D warnings, tests)
+- Tests
+  - All: cargo test --all
+  - Single test by name: cargo test test_list_tools_returns_convo_think
+  - With logs: RUST_LOG=debug cargo test -- --nocapture
+- One-time setup (if needed): rustup component add rustfmt clippy
+- Note: Docker is not used in this repo
 
-## Commit & Pull Request Guidelines
-- Commits: prefer Conventional Commits (e.g., `feat: add convo_think tool`, `fix: handle missing content`). Make logical, minimal commits.
-- PRs: include a clear description, linked issues, test plan/output, and any relevant logs or screenshots. Keep scope focused and update docs when behavior changes.
-- CI expectations: code formatted, `clippy` clean, and `cargo test` passing.
+High-level architecture
+- Server runtime and transport
+  - src/main.rs implements rmcp::handler::server::ServerHandler for SurrealMindServer
+  - Transport is stdio(); serve_server(server, stdio()) drives request handling
+  - Tracing via tracing + tracing-subscriber with env filter surreal_mind=debug,rmcp=info
+- State and concurrency
+  - SurrealMindServer holds:
+    - db: Arc<RwLock<Surreal<Db>>> → SurrealDB (RocksDB) created at ./surreal_data
+    - thoughts: Arc<RwLock<Vec<Thought>>> → current in-memory store of thoughts
+  - Tokio async + RwLock provides concurrent, async-safe access
+- Tool surface
+  - list_tools declares one Tool named "convo_think" with a JSON Schema input describing parameters:
+    - content: string (required)
+    - injection_scale: integer [0..5] (optional)
+    - submode: enum ["sarcastic","philosophical","empathetic","problem_solving"] (optional)
+    - tags: string[] (optional)
+    - significance: number [0.0..1.0] (optional)
+  - call_tool routes by name; unknown names return METHOD_NOT_FOUND
+- Thought pipeline (convo_think)
+  - Build a placeholder 768-dim embedding for the input content
+  - Retrieve candidate memories (retrieve_memories_for_injection):
+    - Filters by a similarity threshold and an orbital distance cap derived from injection_scale
+    - orbital_distance combines age, access_count, and significance; take top 5 by a combined score
+  - Enrich content with a compact memory preview (up to three memories) and return structured JSON including:
+    - thought_id, memories_injected, enriched_content, injection_scale, orbital_distances[], memory_summary
+- Testing approach
+  - Inline #[tokio::test] tests in src/main.rs exercise tool listing and structured tool output using rmcp oneshot transport
+  - CI runs fmt check, clippy with -D warnings, and cargo test --all --locked (.github/workflows/ci.yml)
 
-## Security & Configuration Tips
-- Transport is stdio; avoid logging sensitive data. Default log filters favor `surreal_mind=debug,rmcp=info`—lower verbosity for production.
-- `surrealdb` with `kv-rocksdb` is enabled but not wired yet; when persisting, keep DB paths out of VCS and prefer env-driven configuration.
+Conventions specific to this repo
+- Treat clippy warnings as errors (make lint). Keep code formatted (make fmt). Use make ci before pushing for local parity with CI
+- Build production binaries with cargo build --release when distributing the MCP server
