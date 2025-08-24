@@ -31,8 +31,12 @@ struct NomicResponse {
 
 impl NomicEmbedder {
     pub fn new(api_key: String) -> Self {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(15))
+            .build()
+            .expect("Failed to build reqwest client with timeout");
         Self {
-            client: reqwest::Client::new(),
+            client,
             api_key,
             model: "nomic-embed-text-v1.5".to_string(),
         }

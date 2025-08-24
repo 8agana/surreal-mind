@@ -17,7 +17,8 @@ use std::borrow::Cow;
 
 use std::sync::Arc;
 use surrealdb::Surreal;
-use surrealdb::engine::local::{Db, RocksDb};
+use surrealdb::engine::remote::ws::{Client, Ws};
+use surrealdb::opt::auth::Root;
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 use uuid::Uuid;
@@ -60,7 +61,7 @@ struct ConvoThinkParams {
 
 #[derive(Clone)]
 struct SurrealMindServer {
-    db: Arc<RwLock<Surreal<Db>>>,
+    db: Arc<RwLock<Surreal<Client>>>,
     thoughts: Arc<RwLock<Vec<Thought>>>, // In-memory cache for fast retrieval
     embedder: Arc<dyn Embedder>,
 }
@@ -161,15 +162,30 @@ impl ServerHandler for SurrealMindServer {
 
 impl SurrealMindServer {
     async fn new() -> Result<Self> {
-        info!("Initializing SurrealDB with embedded RocksDB");
+        info!("Connecting to SurrealDB service via WebSocket");
 
-        let db_path = format!("{}/surreal_data", env!("CARGO_MANIFEST_DIR"));
-        let db = Surreal::new::<RocksDb>(db_path)
+        let url = std::env::var("SURR_DB_URL").unwrap_or_else(|_| "127.0.0.1:8000".to_string());
+        let user = std::env::var("SURR_DB_USER").unwrap_or_else(|_| "root".to_string());
+        let pass = std::env::var("SURR_DB_PASS").unwrap_or_else(|_| "root".to_string());
+        let ns = std::env::var("SURR_DB_NS").unwrap_or_else(|_| "surreal_mind".to_string());
+        let dbname = std::env::var("SURR_DB_DB").unwrap_or_else(|_| "consciousness".to_string());
+
+        // Connect to the running SurrealDB service
+        let db = Surreal::new::<Ws>(url)
             .await
-            .context("Failed to create SurrealDB instance")?;
+            .context("Failed to connect to SurrealDB service")?;
 
-        db.use_ns("surreal_mind")
-            .use_db("consciousness")
+        // Authenticate
+        db.signin(Root {
+            username: &user,
+            password: &pass,
+        })
+        .await
+        .context("Failed to authenticate with SurrealDB")?;
+
+        // Select namespace and database
+        db.use_ns(ns)
+            .use_db(dbname)
             .await
             .context("Failed to select namespace and database")?;
 
@@ -251,7 +267,21 @@ impl SurrealMindServer {
         params: ConvoThinkParams,
     ) -> Result<serde_json::Value, McpError> {
         let injection_scale = params.injection_scale.unwrap_or(3); // Default Mars level
+        if injection_scale > 5 {
+            return Err(McpError {
+                code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                message: "injection_scale must be between 0 and 5".into(),
+                data: None,
+            });
+        }
         let significance = params.significance.unwrap_or(0.5);
+        if !(0.0..=1.0).contains(&significance) {
+            return Err(McpError {
+                code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                message: "significance must be between 0.0 and 1.0".into(),
+                data: None,
+            });
+        }
 
         // Generate real embedding using Nomic
         let embedding = self
@@ -314,8 +344,9 @@ impl SurrealMindServer {
             data: None,
         })?;
 
-        // Create bidirectional relationships with injected memories
+        // Create bidirectional relationships with injected memories (two RELATEs)
         for memory in &relevant_memories {
+            // forward
             db.query(
                 r#"
                 RELATE $from->recalls->$to
@@ -333,11 +364,36 @@ impl SurrealMindServer {
                 message: format!("Failed to create relationship: {}", e).into(),
                 data: None,
             })?;
+            // reverse
+            db.query(
+                r#"
+                RELATE $to->recalls->$from
+                SET strength = $strength,
+                    created_at = $created_at
+            "#,
+            )
+            .bind(("from", format!("thoughts:{}", stored_thought.id)))
+            .bind(("to", format!("thoughts:{}", memory.thought.id)))
+            .bind(("strength", memory.similarity_score))
+            .bind(("created_at", Utc::now()))
+            .await
+            .map_err(|e| McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!("Failed to create reverse relationship: {}", e).into(),
+                data: None,
+            })?;
         }
 
         // Also keep in memory for fast retrieval
         let mut thoughts = self.thoughts.write().await;
         thoughts.push(stored_thought.clone());
+
+        // Compute explicit min/max for summary
+        let (min_dist, max_dist) = relevant_memories
+            .iter()
+            .fold((1.0_f32, 0.0_f32), |(minv, maxv), m| {
+                (minv.min(m.orbital_distance), maxv.max(m.orbital_distance))
+            });
 
         // Create response
         Ok(json!({
@@ -353,8 +409,8 @@ impl SurrealMindServer {
             } else {
                 format!("Injected {} memories from orbital distances {:.2} to {:.2}",
                     relevant_memories.len(),
-                    relevant_memories.first().map(|m| m.orbital_distance).unwrap_or(0.0),
-                    relevant_memories.last().map(|m| m.orbital_distance).unwrap_or(0.0)
+                    min_dist,
+                    max_dist
                 )
             }
         }))
@@ -411,7 +467,7 @@ impl SurrealMindServer {
                 data: None,
             })?;
 
-            for thought in results {
+            for mut thought in results {
                 let similarity = self.cosine_similarity(query_embedding, &thought.embedding);
                 let age_factor = (now - thought.created_at).num_seconds() as f32 / 86400.0;
                 let access_factor = (thought.access_count as f32 + 1.0).ln() / 10.0;
@@ -420,6 +476,19 @@ impl SurrealMindServer {
                         .clamp(0.0, 1.0);
 
                 if similarity > 0.5 && orbital_distance <= max_orbital_distance {
+                    // Update access metadata in DB
+                    let dbw = self.db.write().await;
+                    let _res: Result<Option<Thought>, surrealdb::Error> = dbw
+                        .update(("thoughts", thought.id.clone()))
+                        .merge(json!({
+                            "access_count": thought.access_count + 1,
+                            "last_accessed": Utc::now(),
+                        }))
+                        .await;
+                    // Reflect in local copy
+                    thought.access_count += 1;
+                    thought.last_accessed = Some(Utc::now());
+
                     matches.push(ThoughtMatch {
                         thought,
                         similarity_score: similarity,
@@ -465,10 +534,16 @@ impl SurrealMindServer {
     }
 
     fn cosine_similarity(&self, a: &[f32], b: &[f32]) -> f32 {
-        // Simplified cosine similarity
-        let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-        let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-        let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+        // Ensure we compute over the same span for dot and norms
+        let len = a.len().min(b.len());
+        if len == 0 {
+            return 0.0;
+        }
+        let a2 = &a[..len];
+        let b2 = &b[..len];
+        let dot: f32 = a2.iter().zip(b2.iter()).map(|(x, y)| x * y).sum();
+        let norm_a: f32 = a2.iter().map(|x| x * x).sum::<f32>().sqrt();
+        let norm_b: f32 = b2.iter().map(|x| x * x).sum::<f32>().sqrt();
 
         if norm_a == 0.0 || norm_b == 0.0 {
             0.0
@@ -527,7 +602,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_server_initialization() {
-        // Test that server can be created successfully
+        // Only run when explicitly enabled
+        if std::env::var("RUN_DB_TESTS").is_err() {
+            return;
+        }
         let server = SurrealMindServer::new().await;
         assert!(server.is_ok(), "Server should initialize successfully");
     }
