@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use rmcp::{
     ErrorData as McpError,
     handler::server::ServerHandler,
@@ -31,14 +31,14 @@ use embeddings::{Embedder, create_embedder};
 struct Thought {
     id: String,
     content: String,
-    created_at: DateTime<Utc>,
+    created_at: surrealdb::sql::Datetime,
     embedding: Vec<f32>,
     injected_memories: Vec<String>,
     enriched_content: Option<String>,
     injection_scale: u8,
     significance: f32,
     access_count: u32,
-    last_accessed: Option<DateTime<Utc>>,
+    last_accessed: Option<surrealdb::sql::Datetime>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -315,7 +315,7 @@ impl SurrealMindServer {
         let thought = Thought {
             id: Uuid::new_v4().to_string(),
             content: params.content.clone(),
-            created_at: Utc::now(),
+            created_at: surrealdb::sql::Datetime::from(Utc::now()),
             embedding,
             injected_memories: relevant_memories
                 .iter()
@@ -371,7 +371,10 @@ impl SurrealMindServer {
                         format!("thoughts:{}", memory.thought.id),
                     ))
                     .bind((format!("strength{}", i), memory.similarity_score))
-                    .bind((format!("created{}", i), Utc::now()));
+                    .bind((
+                        format!("created{}", i),
+                        surrealdb::sql::Datetime::from(Utc::now()),
+                    ));
             }
             req.await.map_err(|e| McpError {
                 code: rmcp::model::ErrorCode::INTERNAL_ERROR,
@@ -441,14 +444,14 @@ impl SurrealMindServer {
         };
 
         // Try to get from in-memory first, fall back to DB if needed
-        let now = Utc::now();
+        let _now = Utc::now();
         let thoughts = self.thoughts.read().await;
         let mut matches = Vec::new();
 
         // Helper to compute orbital distance with clearer semantics
-        let compute_distance = |created_at: DateTime<Utc>, access_count: u32, significance: f32| {
+        let compute_distance = |created_ts: i64, access_count: u32, significance: f32| {
             // Recency closeness: recent → 1.0, old → 0.0 (normalize by 30 days)
-            let age_days = (now - created_at).num_seconds() as f32 / 86_400.0;
+            let age_days = (Utc::now().timestamp() - created_ts) as f32 / 86_400.0;
             let recency_closeness = (1.0 - (age_days / 30.0)).clamp(0.0, 1.0);
             // Access closeness: more accesses → closer (cap at 1.0)
             let access_closeness = ((access_count as f32 + 1.0).ln() / 5.0).clamp(0.0, 1.0);
@@ -466,7 +469,7 @@ impl SurrealMindServer {
 
                 // Calculate orbital distance (smaller = closer)
                 let orbital_distance = compute_distance(
-                    thought.created_at,
+                    thought.created_at.timestamp(),
                     thought.access_count,
                     thought.significance,
                 );
@@ -478,7 +481,7 @@ impl SurrealMindServer {
                         .update(("thoughts", thought.id.clone()))
                         .merge(json!({
                             "access_count": thought.access_count + 1,
-                            "last_accessed": Utc::now(),
+                            "last_accessed": surrealdb::sql::Datetime::from(Utc::now()),
                         }))
                         .await;
 
@@ -521,7 +524,7 @@ impl SurrealMindServer {
             for mut thought in results {
                 let similarity = self.cosine_similarity(query_embedding, &thought.embedding);
                 let orbital_distance = compute_distance(
-                    thought.created_at,
+                    thought.created_at.timestamp(),
                     thought.access_count,
                     thought.significance,
                 );
@@ -533,12 +536,12 @@ impl SurrealMindServer {
                         .update(("thoughts", thought.id.clone()))
                         .merge(json!({
                             "access_count": thought.access_count + 1,
-                            "last_accessed": Utc::now(),
+                            "last_accessed": surrealdb::sql::Datetime::from(Utc::now()),
                         }))
                         .await;
                     // Reflect in local copy
                     thought.access_count += 1;
-                    thought.last_accessed = Some(Utc::now());
+                    thought.last_accessed = Some(surrealdb::sql::Datetime::from(Utc::now()));
 
                     matches.push(ThoughtMatch {
                         thought,
@@ -666,7 +669,7 @@ mod tests {
         let thought = Thought {
             id: "test".to_string(),
             content: "test content".to_string(),
-            created_at: chrono::Utc::now(),
+            created_at: surrealdb::sql::Datetime::from(chrono::Utc::now()),
             embedding: vec![0.1, 0.2, 0.3],
             injected_memories: vec![],
             enriched_content: Some("enriched".to_string()),
