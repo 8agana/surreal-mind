@@ -5,3 +5,6 @@
 claude_desktop_config.json
 reference/
 .idea/
+claude_desktop_config.json
+mcp-server-*.log
+mcp.log

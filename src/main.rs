@@ -8,7 +8,7 @@ use rmcp::{
         InitializeResult, ListToolsResult, PaginatedRequestParam, ProtocolVersion,
         ServerCapabilities, ServerInfo, Tool, ToolsCapability,
     },
-    service::{RequestContext, RoleServer, serve_server},
+    service::{RequestContext, RoleServer, ServiceExt},
     transport::stdio,
 };
 use serde::{Deserialize, Serialize};
@@ -71,7 +71,10 @@ impl ServerHandler for SurrealMindServer {
             protocol_version: ProtocolVersion::LATEST,
             capabilities: ServerCapabilities {
                 tools: Some(ToolsCapability {
-                    list_changed: Some(true),
+                    // Set to false because this server does not emit tools/list_changed notifications.
+                    // Some MCP clients (e.g., certain Claude Desktop versions) may wait for the
+                    // notification if this is true and never call tools/list proactively.
+                    list_changed: Some(false),
                 }),
                 ..Default::default()
             },
@@ -85,10 +88,13 @@ impl ServerHandler for SurrealMindServer {
 
     async fn initialize(
         &self,
-        _request: InitializeRequestParam,
+        request: InitializeRequestParam,
         _context: RequestContext<RoleServer>,
     ) -> Result<InitializeResult, McpError> {
-        Ok(self.get_info())
+        // Prefer the client's protocol version to avoid mismatches with some MCP clients (e.g., Claude Desktop)
+        let mut info = self.get_info();
+        info.protocol_version = request.protocol_version.clone();
+        Ok(info)
     }
 
     async fn list_tools(
@@ -96,6 +102,7 @@ impl ServerHandler for SurrealMindServer {
         _request: Option<PaginatedRequestParam>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, McpError> {
+        info!("tools/list requested");
         let input_schema = rmcp::object!({
             "type": "object",
             "properties": {
@@ -479,17 +486,22 @@ async fn main() -> Result<()> {
     // Initialize tracing with env filter
     let filter =
         std::env::var("RUST_LOG").unwrap_or_else(|_| "surreal_mind=debug,rmcp=info".to_string());
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_env_filter(filter)
-        .init();
+    let mcp_no_log = std::env::var("MCP_NO_LOG").unwrap_or_default();
+    if !(mcp_no_log == "1" || mcp_no_log.eq_ignore_ascii_case("true")) {
+        tracing_subscriber::fmt()
+            .with_writer(std::io::stderr)
+            .with_env_filter(filter)
+            .with_ansi(false)
+            .init();
+    }
 
     info!("Starting Surreal Mind MCP Server with consciousness persistence");
 
     let server = SurrealMindServer::new().await?;
-    let transport = stdio();
-
-    serve_server(server, transport).await?;
+    
+    // Use the new pattern from ui2 that actually works
+    let service = server.serve(stdio()).await?;
+    service.waiting().await?;
 
     Ok(())
 }

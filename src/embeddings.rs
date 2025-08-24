@@ -108,11 +108,24 @@ impl Embedder for FakeEmbedder {
 
 // Factory function to create embedder based on environment
 pub async fn create_embedder() -> Result<Arc<dyn Embedder>> {
-    if let Ok(api_key) = std::env::var("NOMIC_API_KEY") {
-        info!("Using Nomic API for embeddings");
-        Ok(Arc::new(NomicEmbedder::new(api_key)))
-    } else {
-        info!("No NOMIC_API_KEY found, using fake embeddings for testing");
-        Ok(Arc::new(FakeEmbedder::new(768)))
+    // Treat empty or placeholder-like values as "not set"
+    let api_key = std::env::var("NOMIC_API_KEY").ok();
+    let is_placeholder = |s: &str| {
+        let t = s.trim();
+        t.is_empty()
+            || t.contains("${")
+            || t.eq_ignore_ascii_case("your-nomic-api-key-here")
+            || t.eq_ignore_ascii_case("your-api-key-here")
+            || t.eq_ignore_ascii_case("changeme")
+    };
+
+    if let Some(key) = api_key.as_deref() {
+        if !is_placeholder(key) {
+            info!("Using Nomic API for embeddings");
+            return Ok(Arc::new(NomicEmbedder::new(key.to_string())));
+        }
     }
+
+    info!("No valid NOMIC_API_KEY found, using fake embeddings for testing");
+    Ok(Arc::new(FakeEmbedder::new(768)))
 }
