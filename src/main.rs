@@ -346,22 +346,34 @@ impl SurrealMindServer {
             data: None,
         })?;
 
-        // Create bidirectional relationships with injected memories (single round trip per memory)
-        for memory in &relevant_memories {
-            db.query(
-                r#"
-                RELATE $from->recalls->$to
-                SET strength = $strength, created_at = $created_at;
-                RELATE $to->recalls->$from
-                SET strength = $strength, created_at = $created_at;
-            "#,
-            )
-            .bind(("from", format!("thoughts:{}", stored_thought.id)))
-            .bind(("to", format!("thoughts:{}", memory.thought.id)))
-            .bind(("strength", memory.similarity_score))
-            .bind(("created_at", Utc::now()))
-            .await
-            .map_err(|e| McpError {
+        // Create bidirectional relationships with injected memories (single round trip for all)
+        if !relevant_memories.is_empty() {
+            let mut q = String::new();
+            for i in 0..relevant_memories.len() {
+                q.push_str(&format!(
+                    "RELATE $from{0}->recalls->$to{0} SET strength = $strength{0}, created_at = $created{0};\n",
+                    i
+                ));
+                q.push_str(&format!(
+                    "RELATE $to{0}->recalls->$from{0} SET strength = $strength{0}, created_at = $created{0};\n",
+                    i
+                ));
+            }
+            let mut req = db.query(q);
+            for (i, memory) in relevant_memories.iter().enumerate() {
+                req = req
+                    .bind((
+                        format!("from{}", i),
+                        format!("thoughts:{}", stored_thought.id),
+                    ))
+                    .bind((
+                        format!("to{}", i),
+                        format!("thoughts:{}", memory.thought.id),
+                    ))
+                    .bind((format!("strength{}", i), memory.similarity_score))
+                    .bind((format!("created{}", i), Utc::now()));
+            }
+            req.await.map_err(|e| McpError {
                 code: rmcp::model::ErrorCode::INTERNAL_ERROR,
                 message: format!("Failed to create relationships: {}", e).into(),
                 data: None,
@@ -405,6 +417,18 @@ impl SurrealMindServer {
         query_embedding: &[f32],
         injection_scale: u8,
     ) -> Result<Vec<ThoughtMatch>, McpError> {
+        // Load runtime retrieval config
+        let sim_thresh: f32 = std::env::var("SURR_SIM_THRESH")
+            .ok()
+            .and_then(|s| s.parse::<f32>().ok())
+            .map(|v| v.clamp(0.0, 1.0))
+            .unwrap_or(0.5);
+        let top_k: usize = std::env::var("SURR_TOP_K")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .map(|v| v.clamp(1, 50))
+            .unwrap_or(5);
+
         // Calculate orbital distance threshold based on injection scale
         let max_orbital_distance = match injection_scale {
             0 => return Ok(Vec::new()), // No injection
@@ -447,7 +471,7 @@ impl SurrealMindServer {
                     thought.significance,
                 );
 
-                if similarity > 0.5 && orbital_distance <= max_orbital_distance {
+                if similarity > sim_thresh && orbital_distance <= max_orbital_distance {
                     // Update access metadata in DB (reflect usage)
                     let dbw = self.db.write().await;
                     let _res: Result<Option<Thought>, surrealdb::Error> = dbw
@@ -502,7 +526,7 @@ impl SurrealMindServer {
                     thought.significance,
                 );
 
-                if similarity > 0.5 && orbital_distance <= max_orbital_distance {
+                if similarity > sim_thresh && orbital_distance <= max_orbital_distance {
                     // Update access metadata in DB
                     let dbw = self.db.write().await;
                     let _res: Result<Option<Thought>, surrealdb::Error> = dbw
@@ -534,7 +558,7 @@ impl SurrealMindServer {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        Ok(matches.into_iter().take(5).collect())
+        Ok(matches.into_iter().take(top_k).collect())
     }
 
     fn enrich_content_with_memories(&self, content: &str, memories: &[ThoughtMatch]) -> String {
