@@ -498,7 +498,7 @@ async fn main() -> Result<()> {
     info!("Starting Surreal Mind MCP Server with consciousness persistence");
 
     let server = SurrealMindServer::new().await?;
-    
+
     // Use the new pattern from ui2 that actually works
     let service = server.serve(stdio()).await?;
     service.waiting().await?;

@@ -119,11 +119,11 @@ pub async fn create_embedder() -> Result<Arc<dyn Embedder>> {
             || t.eq_ignore_ascii_case("changeme")
     };
 
-    if let Some(key) = api_key.as_deref() {
-        if !is_placeholder(key) {
-            info!("Using Nomic API for embeddings");
-            return Ok(Arc::new(NomicEmbedder::new(key.to_string())));
-        }
+    if let Some(key) = api_key.as_deref()
+        && !is_placeholder(key)
+    {
+        info!("Using Nomic API for embeddings");
+        return Ok(Arc::new(NomicEmbedder::new(key.to_string())));
     }
 
     info!("No valid NOMIC_API_KEY found, using fake embeddings for testing");
