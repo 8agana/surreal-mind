@@ -12,8 +12,8 @@ db_integration = []
 # RMCP is the foundation - not optional
 rmcp = { version = "0.6.0", features = ["macros", "transport-io"] }
 
-# SurrealDB embedded with RocksDB backend
-surrealdb = { version = "2.0", features = ["kv-rocksdb"] }
+# SurrealDB with WebSocket client
+surrealdb = { version = "2.0", features = ["protocol-ws"] }
 
 # Core dependencies
 tokio = { version = "1.0", features = ["full"] }
