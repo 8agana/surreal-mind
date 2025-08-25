@@ -355,7 +355,7 @@ impl ServerHandler for SurrealMindServer {
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, McpError> {
         info!("tools/list requested");
-        let input_schema = rmcp::object!({
+        let convo_schema = rmcp::object!({
             "type": "object",
             "properties": {
                 "content": {"type": "string", "description": "The thought content to store"},
@@ -368,12 +368,45 @@ impl ServerHandler for SurrealMindServer {
             "required": ["content"]
         });
 
+        let tech_schema = rmcp::object!({
+            "type": "object",
+            "properties": {
+                "content": {"type": "string", "description": "Technical input (requirements, code, error, etc.)"},
+                "injection_scale": {"type": ["integer", "string"], "description": "Memory injection scale. Presets: NONE (0), LIGHT (1), MEDIUM (2), DEFAULT (3), HIGH (4), MAXIMUM (5). Or numeric 0-5"},
+                "submode": {"type": "string", "description": "Technical mode", "enum": ["plan", "build", "debug"]},
+                "tags": {"type": "array", "items": {"type": "string"}, "description": "Additional tags"},
+                "significance": {"type": ["number", "string"], "description": "Significance weight. Strings: 'low' (0.2), 'medium' (0.5), 'high' (0.9). Numbers: 0.0-1.0 or integers 2-10 (mapped to 0.2-1.0)"},
+                "verbose_analysis": {"type": "boolean", "description": "Enable verbose framework analysis (default: true)", "default": true}
+            },
+            "required": ["content"]
+        });
+
+        let help_schema = rmcp::object!({
+            "type": "object",
+            "properties": {
+                "tool": {"type": "string", "enum": ["convo_think", "tech_think"], "description": "Which tool to describe (omit for overview)"},
+                "format": {"type": "string", "enum": ["compact", "full"], "description": "Level of detail", "default": "full"}
+            }
+        });
+
         Ok(ListToolsResult {
-            tools: vec![Tool::new(
-                Cow::Borrowed("convo_think"),
-                Cow::Borrowed("Store thoughts with memory injection"),
-                Arc::new(input_schema),
-            )],
+            tools: vec![
+                Tool::new(
+                    Cow::Borrowed("convo_think"),
+                    Cow::Borrowed("Store thoughts with memory injection"),
+                    Arc::new(convo_schema),
+                ),
+                Tool::new(
+                    Cow::Borrowed("tech_think"),
+                    Cow::Borrowed("Technical reasoning with memory injection"),
+                    Arc::new(tech_schema),
+                ),
+                Tool::new(
+                    Cow::Borrowed("detailed_help"),
+                    Cow::Borrowed("Show detailed help for tools and parameters"),
+                    Arc::new(help_schema),
+                ),
+            ],
             ..Default::default()
         })
     }
@@ -405,6 +438,44 @@ impl ServerHandler for SurrealMindServer {
                 debug!("convo_think content (first 200 chars): {}", dbg_preview);
                 let result = self.create_thought_with_injection(params).await?;
                 Ok(CallToolResult::structured(json!(result)))
+            }
+            "tech_think" => {
+                let args = request.arguments.clone().ok_or_else(|| McpError {
+                    code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                    message: "Missing parameters".into(),
+                    data: None,
+                })?;
+                let mut params: ConvoThinkParams =
+                    serde_json::from_value(serde_json::Value::Object(args)).map_err(|e| {
+                        McpError {
+                            code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                            message: format!("Invalid parameters: {}", e).into(),
+                            data: None,
+                        }
+                    })?;
+                // Default submode for tech_think is "plan"
+                let sm = params
+                    .submode
+                    .clone()
+                    .unwrap_or_else(|| "plan".to_string())
+                    .to_lowercase();
+                if params.injection_scale.is_none() {
+                    params.injection_scale = Some(match sm.as_str() {
+                        "plan" => 3,  // DEFAULT
+                        "build" => 2, // MEDIUM
+                        "debug" => 4, // HIGH
+                        _ => 3,
+                    });
+                }
+                let result = self.create_tech_thought(params).await?;
+                Ok(CallToolResult::structured(json!(result)))
+            }
+            "detailed_help" => {
+                let args = request.arguments.clone().unwrap_or_default();
+                let tool = args.get("tool").and_then(|v| v.as_str());
+                let format = args.get("format").and_then(|v| v.as_str());
+                let help = Self::get_detailed_help(tool, format.unwrap_or("full"));
+                Ok(CallToolResult::structured(help))
             }
             _ => Err(McpError {
                 code: rmcp::model::ErrorCode::METHOD_NOT_FOUND,
@@ -1105,6 +1176,297 @@ impl SurrealMindServer {
         };
 
         (analysis, enriched)
+    }
+
+    fn cognitive_enrich_with_weights(
+        &self,
+        weights: &std::collections::HashMap<&'static str, u8>,
+        content: &str,
+        memories: &[ThoughtMatch],
+    ) -> (cognitive::types::FrameworkOutput, String) {
+        use cognitive::CognitiveEngine;
+        let engine = CognitiveEngine::new();
+        let analysis = engine.blend(content, weights);
+        let mut enriched = String::new();
+        enriched.push_str(content);
+        if !analysis.insights.is_empty()
+            || !analysis.questions.is_empty()
+            || !analysis.next_steps.is_empty()
+        {
+            enriched.push_str("\n\n[Framework Analysis:");
+            if !analysis.insights.is_empty() {
+                enriched.push_str("\nInsights:");
+                for it in analysis.insights.iter().take(8) {
+                    enriched.push_str("\n- ");
+                    enriched.push_str(it);
+                }
+            }
+            if !analysis.questions.is_empty() {
+                enriched.push_str("\nQuestions:");
+                for q in analysis.questions.iter().take(4) {
+                    enriched.push_str("\n- ");
+                    enriched.push_str(q);
+                }
+            }
+            if !analysis.next_steps.is_empty() {
+                enriched.push_str("\nNext steps:");
+                for n in analysis.next_steps.iter().take(4) {
+                    enriched.push_str("\n- ");
+                    enriched.push_str(n);
+                }
+            }
+            enriched.push('\n');
+            enriched.push(']');
+        }
+        let enriched = if memories.is_empty() {
+            enriched
+        } else {
+            self.enrich_content_with_memories(&enriched, memories)
+        };
+        (analysis, enriched)
+    }
+
+    async fn create_tech_thought(
+        &self,
+        params: ConvoThinkParams,
+    ) -> Result<serde_json::Value, McpError> {
+        // Map submode and defaults
+        let submode = params.submode.clone().unwrap_or_else(|| "plan".to_string());
+        let injection_scale = params.injection_scale.unwrap_or(match submode.as_str() {
+            "plan" => 3,
+            "build" => 2,
+            "debug" => 4,
+            _ => 3,
+        });
+        if injection_scale > 5 {
+            return Err(McpError {
+                code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                message: "injection_scale must be between 0 and 5".into(),
+                data: None,
+            });
+        }
+        let significance = params.significance.unwrap_or(0.5);
+        if !(0.0..=1.0).contains(&significance) {
+            return Err(McpError {
+                code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                message: format!(
+                    "significance must be between 0.0 and 1.0 (got: {})",
+                    significance
+                )
+                .into(),
+                data: None,
+            });
+        }
+
+        // Embedding
+        let embedding = self
+            .embedder
+            .embed(&params.content)
+            .await
+            .map_err(|e| McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!("Failed to generate embedding: {}", e).into(),
+                data: None,
+            })?;
+        // Retrieval
+        let relevant_memories = self
+            .retrieve_memories_for_injection(&embedding, injection_scale, Some(&submode))
+            .await?;
+
+        // Build weights per tech submode
+        use std::collections::HashMap;
+        let weights: HashMap<&'static str, u8> = match submode.as_str() {
+            "plan" => HashMap::from([
+                ("FirstPrinciples", 35),
+                ("SystemsThinking", 25),
+                ("OODA", 20),
+                ("Socratic", 20),
+            ]),
+            "build" => HashMap::from([
+                ("OODA", 35),
+                ("RootCause", 20),
+                ("FirstPrinciples", 20),
+                ("Lateral", 15),
+                ("Dialectical", 10),
+            ]),
+            "debug" => HashMap::from([
+                ("RootCause", 45),
+                ("OODA", 25),
+                ("Socratic", 20),
+                ("Dialectical", 10),
+            ]),
+            _ => HashMap::from([("OODA", 40), ("RootCause", 30), ("FirstPrinciples", 30)]),
+        };
+        let (analysis, enriched_content) =
+            self.cognitive_enrich_with_weights(&weights, &params.content, &relevant_memories);
+
+        // Persist
+        let thought = Thought {
+            id: Uuid::new_v4().to_string(),
+            content: params.content.clone(),
+            created_at: surrealdb::sql::Datetime::from(Utc::now()),
+            embedding,
+            injected_memories: relevant_memories
+                .iter()
+                .map(|m| m.thought.id.clone())
+                .collect(),
+            enriched_content: Some(enriched_content.clone()),
+            injection_scale,
+            significance,
+            access_count: 0,
+            last_accessed: None,
+            submode: Some(submode.clone()),
+            framework_enhanced: Some(true),
+            framework_analysis: Some(
+                json!({"insights": analysis.insights, "questions": analysis.questions, "next_steps": analysis.next_steps}),
+            ),
+        };
+        let db = self.db.write().await;
+        let req = db
+            .query(
+                r#"CREATE type::thing('thoughts', $id) CONTENT {
+                    id: $id,
+                    content: $content,
+                    created_at: time::now(),
+                    embedding: $embedding,
+                    injected_memories: $injected_memories,
+                    enriched_content: $enriched_content,
+                    injection_scale: $injection_scale,
+                    significance: $significance,
+                    access_count: $access_count,
+                    submode: $submode,
+                    framework_enhanced: $framework_enhanced,
+                    framework_analysis: $framework_analysis
+                }"#,
+            )
+            .bind(("id", thought.id.clone()))
+            .bind(("content", thought.content.clone()))
+            .bind(("embedding", thought.embedding.clone()))
+            .bind(("injected_memories", thought.injected_memories.clone()))
+            .bind(("enriched_content", thought.enriched_content.clone()))
+            .bind(("injection_scale", thought.injection_scale))
+            .bind(("significance", thought.significance))
+            .bind(("access_count", thought.access_count))
+            .bind(("submode", thought.submode.clone()))
+            .bind(("framework_enhanced", thought.framework_enhanced))
+            .bind(("framework_analysis", thought.framework_analysis.clone()));
+        req.await.map_err(|e| McpError {
+            code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+            message: format!("Failed to store thought: {}", e).into(),
+            data: None,
+        })?;
+
+        // Create relationships
+        if !relevant_memories.is_empty() {
+            let mut q = String::new();
+            for i in 0..relevant_memories.len() {
+                q.push_str(&format!("RELATE $from{0}->recalls->$to{0} SET strength = $strength{0}, created_at = time::now();\n", i));
+                q.push_str(&format!("RELATE $to{0}->recalls->$from{0} SET strength = $strength{0}, created_at = time::now();\n", i));
+            }
+            let mut req = db.query(q);
+            for (i, memory) in relevant_memories.iter().enumerate() {
+                req = req
+                    .bind((format!("from{}", i), format!("thoughts:{}", thought.id)))
+                    .bind((
+                        format!("to{}", i),
+                        format!("thoughts:{}", memory.thought.id),
+                    ))
+                    .bind((format!("strength{}", i), memory.similarity_score));
+            }
+            let _ = req.await;
+        }
+
+        // user_friendly via existing helpers
+        let verbose_analysis = params.verbose_analysis.unwrap_or(true);
+        let limited = Self::apply_verbosity_limits(&analysis, verbose_analysis);
+        let thinking_style = match submode.as_str() {
+            "plan" => "Plan Playbook",
+            "build" => "Build Playbook",
+            "debug" => "Debug Playbook",
+            _ => "Plan Playbook",
+        }
+        .to_string();
+        let orbital_name = Self::injection_scale_to_orbital_name(injection_scale);
+        let user_friendly_memories: Vec<serde_json::Value> = relevant_memories.iter().map(|m|{
+            let preview: String = m.thought.content.chars().take(100).collect();
+            let label = Self::similarity_to_relevance_label(m.similarity_score);
+            let age = Self::format_age(&m.thought.created_at);
+            let category = Self::categorize_memory(m, Utc::now().timestamp());
+            json!({"content_preview": preview, "relevance_label": label, "relevance_percent": (m.similarity_score*100.0) as u8, "age": age, "category": category})
+        }).collect();
+
+        Ok(json!({
+            "thought_id": thought.id,
+            "memories_injected": relevant_memories.len(),
+            "enriched_content": enriched_content,
+            "injection_scale": injection_scale,
+            "submode_used": submode,
+            "framework_analysis": {"insights": limited.insights, "questions": limited.questions, "next_steps": limited.next_steps},
+            "user_friendly": {"thought_summary": {"id": thought.id, "content": params.content, "created_at": thought.created_at.to_string()},
+                "memory_context": {"injection_level": format!("{} ({})", injection_scale, orbital_name), "memories": user_friendly_memories},
+                "analysis": {"key_points": limited.insights, "questions_to_consider": limited.questions, "suggested_next_steps": limited.next_steps, "thinking_style": thinking_style } }
+        }))
+    }
+
+    fn get_detailed_help(tool: Option<&str>, format: &str) -> serde_json::Value {
+        let full = format.eq_ignore_ascii_case("full");
+        let convo = json!({
+            "name": "convo_think",
+            "description": "Store thoughts with memory injection and cognitive analysis",
+            "best_for": ["Conversations", "Ideation", "Reflective thinking"],
+            "parameters": {
+                "content": "string (required)",
+                "injection_scale": "0-5 or presets: NONE/LIGHT/MEDIUM/DEFAULT/HIGH/MAXIMUM",
+                "submode": "sarcastic|philosophical|empathetic|problem_solving",
+                "significance": "0.0-1.0, or 2-10 (maps 0.2-1.0, 1 rejected), or 'low'|'medium'|'high'",
+                "verbose_analysis": "boolean (default true)",
+                "tags": "array<string> (optional)"
+            },
+            "examples": [
+                json!({"content":"ponder this","submode":"sarcastic","injection_scale":"DEFAULT","significance":"medium"}),
+                json!({"content":"reflect","injection_scale":3,"verbose_analysis":false})
+            ]
+        });
+        let tech = json!({
+            "name": "tech_think",
+            "description": "Technical reasoning with memory injection",
+            "best_for": ["Planning", "Building", "Debugging"],
+            "parameters": {
+                "content": "string (required)",
+                "injection_scale": "0-5 or presets: NONE/LIGHT/MEDIUM/DEFAULT/HIGH/MAXIMUM",
+                "submode": "plan|build|debug",
+                "significance": "0.0-1.0, or 2-10 (maps 0.2-1.0, 1 rejected), or 'low'|'medium'|'high'",
+                "verbose_analysis": "boolean (default true)",
+                "tags": "array<string> (optional)"
+            },
+            "examples": [
+                json!({"content":"design module A","submode":"plan","injection_scale":"DEFAULT"}),
+                json!({"content":"fix panic in parser","submode":"debug","injection_scale":"HIGH","significance":10})
+            ]
+        });
+        match tool {
+            Some("convo_think") => {
+                if full {
+                    convo
+                } else {
+                    json!({"name": convo["name"], "parameters": convo["parameters"], "examples":[convo["examples"][0]]})
+                }
+            }
+            Some("tech_think") => {
+                if full {
+                    tech
+                } else {
+                    json!({"name": tech["name"], "parameters": tech["parameters"], "examples":[tech["examples"][0]]})
+                }
+            }
+            _ => {
+                if full {
+                    json!({"tools": [convo, tech]})
+                } else {
+                    json!({"tools": [{"name":"convo_think"}, {"name":"tech_think"}]})
+                }
+            }
+        }
     }
 
     fn cosine_similarity(&self, a: &[f32], b: &[f32]) -> f32 {
