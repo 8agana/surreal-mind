@@ -105,20 +105,46 @@ where
             if !rounded.is_finite() {
                 return Err(D::Error::custom("non-finite numeric for u8"));
             }
-            let clamped = rounded.clamp(0.0, u8::MAX as f64) as u8;
-            Ok(Some(clamped))
+            // Validate injection_scale range (0-5)
+            if !(0.0..=5.0).contains(&rounded) {
+                return Err(D::Error::custom(format!(
+                    "injection_scale {} out of range. Must be 0-5",
+                    rounded
+                )));
+            }
+            Ok(Some(rounded as u8))
         }
         serde_json::Value::String(s) => {
             let s = s.trim();
             if s.is_empty() {
                 return Ok(None);
             }
-            let val: f64 = s
-                .parse()
-                .map_err(|_| D::Error::custom("invalid string for u8"))?;
-            let rounded = val.round();
-            let clamped = rounded.clamp(0.0, u8::MAX as f64) as u8;
-            Ok(Some(clamped))
+            // Handle named presets (case-insensitive)
+            match s.to_lowercase().as_str() {
+                "none" => Ok(Some(0)),
+                "light" => Ok(Some(1)),
+                "medium" => Ok(Some(2)),
+                "default" => Ok(Some(3)),
+                "high" => Ok(Some(4)),
+                "maximum" => Ok(Some(5)),
+                _ => {
+                    // Try to parse as number
+                    let val: f64 = s.parse().map_err(|_| {
+                        D::Error::custom(format!(
+                            "Invalid injection_scale '{}'. Valid presets: NONE, LIGHT, MEDIUM, DEFAULT, HIGH, MAXIMUM. Or use numeric 0-5.",
+                            s
+                        ))
+                    })?;
+                    let rounded = val.round();
+                    if !(0.0..=5.0).contains(&rounded) {
+                        return Err(D::Error::custom(format!(
+                            "injection_scale {} out of range. Must be 0-5 or use presets: NONE, LIGHT, MEDIUM, DEFAULT, HIGH, MAXIMUM",
+                            rounded
+                        )));
+                    }
+                    Ok(Some(rounded as u8))
+                }
+            }
         }
         other => Err(D::Error::custom(format!("invalid type for u8: {}", other))),
     }
@@ -134,12 +160,31 @@ where
     let val = match v {
         serde_json::Value::Null => return Ok(None),
         serde_json::Value::Number(n) => {
-            if let Some(f) = n.as_f64() {
-                f as f32
+            // Prefer integer handling first to support 2-10 mapping and detect ambiguous 1
+            if let Some(i) = n.as_i64() {
+                if i == 1 {
+                    return Err(D::Error::custom(
+                        "significance=1 is ambiguous; use 0.1, 'low', or an integer 2-10 (maps to 0.2-1.0)",
+                    ));
+                }
+                if (2..=10).contains(&i) {
+                    (i as f32) / 10.0
+                } else {
+                    i as f32
+                }
             } else if let Some(u) = n.as_u64() {
-                u as f32
-            } else if let Some(i) = n.as_i64() {
-                i as f32
+                if u == 1 {
+                    return Err(D::Error::custom(
+                        "significance=1 is ambiguous; use 0.1, 'low', or an integer 2-10 (maps to 0.2-1.0)",
+                    ));
+                }
+                if (2..=10).contains(&(u as i64)) {
+                    (u as f32) / 10.0
+                } else {
+                    u as f32
+                }
+            } else if let Some(f) = n.as_f64() {
+                f as f32
             } else {
                 return Err(D::Error::custom("invalid numeric for f32"));
             }
@@ -149,11 +194,45 @@ where
             if s.is_empty() {
                 return Ok(None);
             }
-            s.parse::<f32>()
-                .map_err(|_| D::Error::custom("invalid string for f32"))?
+            // Handle string presets for significance
+            match s.to_lowercase().as_str() {
+                "low" => 0.2,
+                "medium" => 0.5,
+                "high" => 0.9,
+                _ => {
+                    // Try to parse as number
+                    s.parse::<f32>().map_err(|_| {
+                        D::Error::custom(format!(
+                            "Invalid significance '{}'. Use: 'low', 'medium', 'high', or numeric 0.0-1.0 (or 2-10 for integer scale)",
+                            s
+                        ))
+                    })?
+                }
+            }
         }
         other => return Err(D::Error::custom(format!("invalid type for f32: {}", other))),
     };
+    // If we parsed a numeric string like "3" above, apply 2-10 integer mapping.
+    if (2.0..=10.0).contains(&val) && val.fract() == 0.0 {
+        let val = val / 10.0;
+        // Validate range after mapping
+        if !(0.0..=1.0).contains(&val) {
+            return Err(D::Error::custom(format!(
+                "significance {} out of range. Use 0.0-1.0, 2-10 integer scale, or 'low'/'medium'/'high'",
+                val
+            )));
+        }
+        return Ok(Some(val));
+    }
+
+    // Validate range
+    if !(0.0..=1.0).contains(&val) {
+        return Err(D::Error::custom(format!(
+            "significance {} out of range. Use 0.0-1.0, 2-10 integer scale, or 'low'/'medium'/'high'",
+            val
+        )));
+    }
+
     Ok(Some(val))
 }
 
@@ -227,6 +306,8 @@ struct ConvoThinkParams {
     tags: Option<Vec<String>>,
     #[serde(default, deserialize_with = "de_option_f32_forgiving")]
     significance: Option<f32>,
+    #[serde(default)]
+    verbose_analysis: Option<bool>,
 }
 
 #[derive(Clone)]
@@ -278,10 +359,11 @@ impl ServerHandler for SurrealMindServer {
             "type": "object",
             "properties": {
                 "content": {"type": "string", "description": "The thought content to store"},
-                "injection_scale": {"type": "integer", "description": "Memory injection scale (0-5)", "minimum": 0, "maximum": 5},
+                "injection_scale": {"type": ["integer", "string"], "description": "Memory injection scale. Presets: NONE (0), LIGHT (1), MEDIUM (2), DEFAULT (3), HIGH (4), MAXIMUM (5). Or numeric 0-5"},
                 "submode": {"type": "string", "description": "Conversation submode", "enum": ["sarcastic", "philosophical", "empathetic", "problem_solving"]},
                 "tags": {"type": "array", "items": {"type": "string"}, "description": "Additional tags"},
-                "significance": {"type": "number", "description": "Significance weight (0.0-1.0)", "minimum": 0.0, "maximum": 1.0}
+                "significance": {"type": ["number", "string"], "description": "Significance weight. Strings: 'low' (0.2), 'medium' (0.5), 'high' (0.9). Numbers: 0.0-1.0 or integers 2-10 (mapped to 0.2-1.0)"},
+                "verbose_analysis": {"type": "boolean", "description": "Enable verbose framework analysis (default: true)", "default": true}
             },
             "required": ["content"]
         });
@@ -462,7 +544,10 @@ impl SurrealMindServer {
         if injection_scale > 5 {
             return Err(McpError {
                 code: rmcp::model::ErrorCode::INVALID_PARAMS,
-                message: "injection_scale must be between 0 and 5".into(),
+                message: format!(
+                    "injection_scale must be between 0 and 5 (got: {}). Valid presets: 0=NONE, 1=MERCURY (hot memories), 2=VENUS (recent), 3=MARS (default), 4=JUPITER (distant), 5=PLUTO (everything). Example: {{\"injection_scale\": 3}}"
+                    , injection_scale
+                ).into(),
                 data: None,
             });
         }
@@ -470,7 +555,10 @@ impl SurrealMindServer {
         if !(0.0..=1.0).contains(&significance) {
             return Err(McpError {
                 code: rmcp::model::ErrorCode::INVALID_PARAMS,
-                message: "significance must be between 0.0 and 1.0".into(),
+                message: format!(
+                    "significance must be between 0.0 and 1.0 (got: {}). Use 0.1 for low importance, 0.5 for normal, 0.8 for high, 1.0 for critical. Example: {{\"significance\": 0.7}}"
+                    , significance
+                ).into(),
                 data: None,
             });
         }
@@ -650,17 +738,63 @@ impl SurrealMindServer {
                 (minv.min(m.orbital_distance), maxv.max(m.orbital_distance))
             });
 
-        // Create response
+        // Apply verbosity limits
+        let verbose_analysis = params.verbose_analysis.unwrap_or(true);
+        let limited_analysis = Self::apply_verbosity_limits(&analysis, verbose_analysis);
+
+        // Create user-friendly response block
+        let now_timestamp = Utc::now().timestamp();
+        let orbital_name = Self::injection_scale_to_orbital_name(injection_scale);
+        let thinking_style = Self::submode_to_thinking_style(&submode);
+
+        let user_friendly_memories: Vec<serde_json::Value> = relevant_memories
+            .iter()
+            .map(|memory| {
+                let preview: String = memory.thought.content.chars().take(100).collect();
+                let relevance_label = Self::similarity_to_relevance_label(memory.similarity_score);
+                let relevance_percent = (memory.similarity_score * 100.0) as u8;
+                let age = Self::format_age(&memory.thought.created_at);
+                let category = Self::categorize_memory(memory, now_timestamp);
+
+                json!({
+                    "content_preview": preview,
+                    "relevance_label": relevance_label,
+                    "relevance_percent": relevance_percent,
+                    "age": age,
+                    "category": category
+                })
+            })
+            .collect();
+
+        // Make framework outputs more conversational
+        let user_friendly_key_points: Vec<String> = limited_analysis
+            .insights
+            .iter()
+            .map(|s| Self::make_conversational(s))
+            .collect();
+        let user_friendly_questions: Vec<String> = limited_analysis
+            .questions
+            .iter()
+            .map(|s| Self::make_conversational(s))
+            .collect();
+        let user_friendly_next_steps: Vec<String> = limited_analysis
+            .next_steps
+            .iter()
+            .map(|s| Self::make_conversational(s))
+            .collect();
+
+        // Create response with user_friendly block (additive, keeps all existing fields)
         Ok(json!({
+            // Existing fields - keep unchanged for backward compatibility
             "thought_id": thought.id,
             "memories_injected": relevant_memories.len(),
             "enriched_content": enriched_content,
             "injection_scale": injection_scale,
             "submode_used": submode,
             "framework_analysis": {
-                "insights": analysis.insights,
-                "questions": analysis.questions,
-                "next_steps": analysis.next_steps
+                "insights": limited_analysis.insights,
+                "questions": limited_analysis.questions,
+                "next_steps": limited_analysis.next_steps
             },
             "orbital_distances": relevant_memories.iter()
                 .map(|m| m.orbital_distance)
@@ -673,6 +807,24 @@ impl SurrealMindServer {
                     min_dist,
                     max_dist
                 )
+            },
+            // New user_friendly block - additive only
+            "user_friendly": {
+                "thought_summary": {
+                    "id": thought.id,
+                    "content": params.content,
+                    "created_at": thought.created_at.to_string()
+                },
+                "memory_context": {
+                    "injection_level": format!("{} ({})", injection_scale, orbital_name),
+                    "memories": user_friendly_memories
+                },
+                "analysis": {
+                    "key_points": user_friendly_key_points,
+                    "questions_to_consider": user_friendly_questions,
+                    "suggested_next_steps": user_friendly_next_steps,
+                    "thinking_style": thinking_style
+                }
             }
         }))
     }
@@ -973,6 +1125,110 @@ impl SurrealMindServer {
             dot / (norm_a * norm_b)
         }
     }
+
+    /// Convert injection scale to user-friendly orbital name
+    fn injection_scale_to_orbital_name(scale: u8) -> String {
+        match scale {
+            0 => "NONE".to_string(),
+            1 => "MERCURY".to_string(),
+            2 => "VENUS".to_string(),
+            3 => "MARS".to_string(),
+            4 => "JUPITER".to_string(),
+            5 => "PLUTO".to_string(),
+            _ => "MARS".to_string(),
+        }
+    }
+
+    /// Get relevance label from similarity score
+    fn similarity_to_relevance_label(similarity: f32) -> &'static str {
+        if similarity >= 0.9 {
+            "Strong"
+        } else if similarity >= 0.7 {
+            "Moderate"
+        } else {
+            "Light"
+        }
+    }
+
+    /// Format age as human-readable string
+    fn format_age(created_at: &surrealdb::sql::Datetime) -> String {
+        let now = Utc::now();
+        let created =
+            chrono::DateTime::<Utc>::from_timestamp(created_at.timestamp(), 0).unwrap_or(now);
+        let duration = now.signed_duration_since(created);
+
+        if duration.num_minutes() < 60 {
+            format!("{}m ago", duration.num_minutes().max(1))
+        } else if duration.num_hours() < 24 {
+            format!("{}h ago", duration.num_hours())
+        } else {
+            format!("{}d ago", duration.num_days())
+        }
+    }
+
+    /// Categorize memory based on its characteristics
+    fn categorize_memory(memory: &ThoughtMatch, now_timestamp: i64) -> &'static str {
+        let age_minutes = (now_timestamp - memory.thought.created_at.timestamp()) / 60;
+
+        if age_minutes < 60 {
+            "Recent"
+        } else if memory.thought.significance > 0.7 {
+            "High-Significance"
+        } else {
+            "Related Concept"
+        }
+    }
+
+    /// Get thinking style name from submode
+    fn submode_to_thinking_style(submode: &str) -> String {
+        let base = match submode {
+            "sarcastic" => "Sarcastic",
+            "philosophical" => "Philosophical",
+            "empathetic" => "Empathetic",
+            "problem_solving" => "Problem-Solving",
+            _ => "Sarcastic",
+        };
+        format!("{} Analysis", base)
+    }
+
+    /// Apply verbosity limits to framework analysis
+    fn apply_verbosity_limits(
+        analysis: &cognitive::types::FrameworkOutput,
+        verbose: bool,
+    ) -> cognitive::types::FrameworkOutput {
+        use cognitive::types::FrameworkOutput;
+        use std::collections::HashMap;
+
+        if verbose {
+            analysis.clone()
+        } else {
+            FrameworkOutput {
+                insights: analysis.insights.iter().take(2).cloned().collect(),
+                questions: analysis.questions.iter().take(1).cloned().collect(),
+                next_steps: analysis.next_steps.iter().take(1).cloned().collect(),
+                meta: HashMap::new(),
+            }
+        }
+    }
+
+    /// Make framework outputs more conversational
+    fn make_conversational(text: &str) -> String {
+        text.replace("Reduce '", "Breaking down ")
+            .replace("' to primitives", " into basic components")
+            .replace("Orient: framing '", "Looking at ")
+            .replace(
+                "Decide: what is the immediate objective?",
+                "What's the main goal here?",
+            )
+            .replace(
+                "Act: what is the smallest next action?",
+                "What's one small step forward?",
+            )
+            .replace("Why does '", "Why might ")
+            .replace("' happen?", " be happening?")
+            .replace("What makes '", "What would make ")
+            .replace("' true?", " accurate?")
+    }
 }
 
 #[tokio::main]
@@ -1186,5 +1442,392 @@ mod tests {
         // When flag is OFF, these new fields should be persisted but not affect retrieval logic
         assert_eq!(thought.injection_scale, 3);
         assert!(expected_distance < 1.0); // Should be valid orbital distance
+    }
+
+    #[test]
+    fn test_helper_functions() {
+        // Test injection scale to orbital name conversion
+        assert_eq!(
+            SurrealMindServer::injection_scale_to_orbital_name(0),
+            "NONE"
+        );
+        assert_eq!(
+            SurrealMindServer::injection_scale_to_orbital_name(1),
+            "MERCURY"
+        );
+        assert_eq!(
+            SurrealMindServer::injection_scale_to_orbital_name(3),
+            "MARS"
+        );
+        assert_eq!(
+            SurrealMindServer::injection_scale_to_orbital_name(5),
+            "PLUTO"
+        );
+        assert_eq!(
+            SurrealMindServer::injection_scale_to_orbital_name(99),
+            "MARS"
+        ); // fallback
+
+        // Test similarity to relevance label
+        assert_eq!(
+            SurrealMindServer::similarity_to_relevance_label(0.95),
+            "Strong"
+        );
+        assert_eq!(
+            SurrealMindServer::similarity_to_relevance_label(0.85),
+            "Moderate"
+        );
+        assert_eq!(
+            SurrealMindServer::similarity_to_relevance_label(0.6),
+            "Light"
+        );
+
+        // Test submode to thinking style
+        assert_eq!(
+            SurrealMindServer::submode_to_thinking_style("sarcastic"),
+            "Sarcastic Analysis"
+        );
+        assert_eq!(
+            SurrealMindServer::submode_to_thinking_style("philosophical"),
+            "Philosophical Analysis"
+        );
+        assert_eq!(
+            SurrealMindServer::submode_to_thinking_style("empathetic"),
+            "Empathetic Analysis"
+        );
+        assert_eq!(
+            SurrealMindServer::submode_to_thinking_style("problem_solving"),
+            "Problem-Solving Analysis"
+        );
+        assert_eq!(
+            SurrealMindServer::submode_to_thinking_style("unknown"),
+            "Sarcastic Analysis"
+        ); // fallback
+    }
+
+    #[test]
+    fn test_verbosity_limits() {
+        use cognitive::types::FrameworkOutput;
+        use std::collections::HashMap;
+
+        let analysis = FrameworkOutput {
+            insights: vec![
+                "insight1".to_string(),
+                "insight2".to_string(),
+                "insight3".to_string(),
+                "insight4".to_string(),
+            ],
+            questions: vec![
+                "question1".to_string(),
+                "question2".to_string(),
+                "question3".to_string(),
+            ],
+            next_steps: vec![
+                "step1".to_string(),
+                "step2".to_string(),
+                "step3".to_string(),
+            ],
+            meta: HashMap::new(),
+        };
+
+        // Test verbose=true (should keep everything)
+        let verbose_result = SurrealMindServer::apply_verbosity_limits(&analysis, true);
+        assert_eq!(verbose_result.insights.len(), 4);
+        assert_eq!(verbose_result.questions.len(), 3);
+        assert_eq!(verbose_result.next_steps.len(), 3);
+
+        // Test verbose=false (should limit)
+        let limited_result = SurrealMindServer::apply_verbosity_limits(&analysis, false);
+        assert_eq!(limited_result.insights.len(), 2); // Limited to 2
+        assert_eq!(limited_result.questions.len(), 1); // Limited to 1
+        assert_eq!(limited_result.next_steps.len(), 1); // Limited to 1
+        assert_eq!(limited_result.insights[0], "insight1");
+        assert_eq!(limited_result.insights[1], "insight2");
+        assert_eq!(limited_result.questions[0], "question1");
+        assert_eq!(limited_result.next_steps[0], "step1");
+    }
+
+    #[test]
+    fn test_conversational_replacements() {
+        let technical_text = "Reduce 'problem' to primitives and Orient: framing 'solution'";
+        let conversational = SurrealMindServer::make_conversational(technical_text);
+        assert!(conversational.contains("Breaking down problem into basic components"));
+        assert!(conversational.contains("Looking at solution"));
+
+        let question_text =
+            "Decide: what is the immediate objective? Act: what is the smallest next action?";
+        let friendly_questions = SurrealMindServer::make_conversational(question_text);
+        assert!(friendly_questions.contains("What's the main goal here?"));
+        assert!(friendly_questions.contains("What's one small step forward?"));
+    }
+
+    #[test]
+    fn test_format_age() {
+        use chrono::{Duration, Utc};
+
+        // Test recent (minutes ago)
+        let recent = surrealdb::sql::Datetime::from(Utc::now() - Duration::minutes(30));
+        let age_str = SurrealMindServer::format_age(&recent);
+        assert!(age_str.ends_with("m ago"));
+
+        // Test hours ago
+        let hours_ago = surrealdb::sql::Datetime::from(Utc::now() - Duration::hours(5));
+        let age_str = SurrealMindServer::format_age(&hours_ago);
+        assert!(age_str.ends_with("h ago"));
+
+        // Test days ago
+        let days_ago = surrealdb::sql::Datetime::from(Utc::now() - Duration::days(3));
+        let age_str = SurrealMindServer::format_age(&days_ago);
+        assert!(age_str.ends_with("d ago"));
+    }
+
+    #[test]
+    fn test_memory_categorization() {
+        let now = Utc::now().timestamp();
+
+        // Test recent memory
+        let recent_thought = Thought {
+            id: "recent".to_string(),
+            content: "recent thought".to_string(),
+            created_at: surrealdb::sql::Datetime::from(Utc::now()),
+            embedding: vec![],
+            injected_memories: vec![],
+            enriched_content: None,
+            injection_scale: 3,
+            significance: 0.5,
+            access_count: 0,
+            last_accessed: None,
+            submode: None,
+            framework_enhanced: None,
+            framework_analysis: None,
+        };
+        let recent_match = ThoughtMatch {
+            thought: recent_thought,
+            similarity_score: 0.8,
+            orbital_distance: 0.3,
+        };
+        assert_eq!(
+            SurrealMindServer::categorize_memory(&recent_match, now),
+            "Recent"
+        );
+
+        // Test high significance memory (older)
+        let significant_thought = Thought {
+            id: "significant".to_string(),
+            content: "significant thought".to_string(),
+            created_at: surrealdb::sql::Datetime::from(Utc::now() - chrono::Duration::hours(5)),
+            embedding: vec![],
+            injected_memories: vec![],
+            enriched_content: None,
+            injection_scale: 3,
+            significance: 0.8, // High significance
+            access_count: 0,
+            last_accessed: None,
+            submode: None,
+            framework_enhanced: None,
+            framework_analysis: None,
+        };
+        let significant_match = ThoughtMatch {
+            thought: significant_thought,
+            similarity_score: 0.8,
+            orbital_distance: 0.3,
+        };
+        assert_eq!(
+            SurrealMindServer::categorize_memory(&significant_match, now),
+            "High-Significance"
+        );
+
+        // Test related concept (older, lower significance)
+        let related_thought = Thought {
+            id: "related".to_string(),
+            content: "related thought".to_string(),
+            created_at: surrealdb::sql::Datetime::from(Utc::now() - chrono::Duration::hours(5)),
+            embedding: vec![],
+            injected_memories: vec![],
+            enriched_content: None,
+            injection_scale: 3,
+            significance: 0.3, // Lower significance
+            access_count: 0,
+            last_accessed: None,
+            submode: None,
+            framework_enhanced: None,
+            framework_analysis: None,
+        };
+        let related_match = ThoughtMatch {
+            thought: related_thought,
+            similarity_score: 0.8,
+            orbital_distance: 0.3,
+        };
+        assert_eq!(
+            SurrealMindServer::categorize_memory(&related_match, now),
+            "Related Concept"
+        );
+    }
+
+    #[test]
+    fn test_injection_scale_preset_parsing() {
+        use serde::Deserialize;
+        use serde_json::json;
+
+        #[derive(Debug, Deserialize)]
+        struct TestStruct {
+            #[serde(deserialize_with = "de_option_u8_forgiving")]
+            injection_scale: Option<u8>,
+        }
+
+        // Test named presets (case-insensitive)
+        let test_cases = vec![
+            (json!({"injection_scale": "NONE"}), Some(0)),
+            (json!({"injection_scale": "none"}), Some(0)),
+            (json!({"injection_scale": "Light"}), Some(1)),
+            (json!({"injection_scale": "MEDIUM"}), Some(2)),
+            (json!({"injection_scale": "default"}), Some(3)),
+            (json!({"injection_scale": "HIGH"}), Some(4)),
+            (json!({"injection_scale": "maximum"}), Some(5)),
+            (json!({"injection_scale": "MAXIMUM"}), Some(5)),
+        ];
+
+        for (input, expected) in test_cases {
+            let result: TestStruct = serde_json::from_value(input.clone()).unwrap_or_else(|e| {
+                panic!("Failed to parse {:?}: {}", input, e);
+            });
+            assert_eq!(
+                result.injection_scale, expected,
+                "Failed for input: {:?}",
+                input
+            );
+        }
+
+        // Test numeric values
+        let numeric_cases = vec![
+            (json!({"injection_scale": 0}), Some(0)),
+            (json!({"injection_scale": 3}), Some(3)),
+            (json!({"injection_scale": 5}), Some(5)),
+            (json!({"injection_scale": "2"}), Some(2)),
+        ];
+
+        for (input, expected) in numeric_cases {
+            let result: TestStruct = serde_json::from_value(input.clone()).unwrap();
+            assert_eq!(result.injection_scale, expected);
+        }
+
+        // Test invalid values should error
+        let invalid_cases = vec![
+            (json!({"injection_scale": 6}), "out of range"),
+            (json!({"injection_scale": -1}), "out of range"),
+            (
+                json!({"injection_scale": "invalid"}),
+                "Invalid injection_scale",
+            ),
+            (
+                json!({"injection_scale": "ultra"}),
+                "Invalid injection_scale",
+            ),
+        ];
+
+        for (input, expected_err) in invalid_cases {
+            let result = serde_json::from_value::<TestStruct>(input.clone());
+            assert!(result.is_err(), "Should have failed for input: {:?}", input);
+            let err_msg = result.unwrap_err().to_string();
+            assert!(
+                err_msg.contains(expected_err),
+                "Error message '{}' should contain '{}'",
+                err_msg,
+                expected_err
+            );
+        }
+    }
+
+    #[test]
+    fn test_significance_parsing() {
+        use serde::Deserialize;
+        use serde_json::json;
+
+        #[derive(Debug, Deserialize)]
+        struct TestStruct {
+            #[serde(deserialize_with = "de_option_f32_forgiving")]
+            significance: Option<f32>,
+        }
+
+        // Test string presets
+        let preset_cases = vec![
+            (json!({"significance": "low"}), Some(0.2)),
+            (json!({"significance": "LOW"}), Some(0.2)),
+            (json!({"significance": "medium"}), Some(0.5)),
+            (json!({"significance": "MEDIUM"}), Some(0.5)),
+            (json!({"significance": "high"}), Some(0.9)),
+            (json!({"significance": "HIGH"}), Some(0.9)),
+        ];
+
+        for (input, expected) in preset_cases {
+            let result: TestStruct = serde_json::from_value(input.clone()).unwrap_or_else(|e| {
+                panic!("Failed to parse {:?}: {}", input, e);
+            });
+            assert!(
+                (result.significance.unwrap() - expected.unwrap()).abs() < 0.001,
+                "Failed for input: {:?}, got {:?}, expected {:?}",
+                input,
+                result.significance,
+                expected
+            );
+        }
+
+        // Test 2-10 integer scale (1 not supported due to ambiguity with 1.0)
+        let integer_scale_cases = vec![
+            (json!({"significance": 2}), Some(0.2)),
+            (json!({"significance": "3"}), Some(0.3)),
+            (json!({"significance": 5}), Some(0.5)),
+            (json!({"significance": "7"}), Some(0.7)),
+            (json!({"significance": 10}), Some(1.0)),
+        ];
+
+        for (input, expected) in integer_scale_cases {
+            let result: TestStruct = serde_json::from_value(input.clone()).unwrap();
+            assert!(
+                (result.significance.unwrap() - expected.unwrap()).abs() < 0.001,
+                "Failed for 2-10 scale input: {:?}",
+                input
+            );
+        }
+
+        // Test standard 0.0-1.0 floats
+        let float_cases = vec![
+            (json!({"significance": 0.0}), Some(0.0)),
+            (json!({"significance": 0.25}), Some(0.25)),
+            (json!({"significance": 0.75}), Some(0.75)),
+            (json!({"significance": 1.0}), Some(1.0)),
+            (json!({"significance": "0.33"}), Some(0.33)),
+        ];
+
+        for (input, expected) in float_cases {
+            let result: TestStruct = serde_json::from_value(input.clone()).unwrap();
+            assert!(
+                (result.significance.unwrap() - expected.unwrap()).abs() < 0.001,
+                "Failed for float input: {:?}",
+                input
+            );
+        }
+
+        // Test invalid values should error
+        let invalid_cases = vec![
+            (json!({"significance": -0.5}), "out of range"),
+            (json!({"significance": 1.5}), "out of range"),
+            (json!({"significance": 11}), "out of range"), // > 10, not in 1-10 scale
+            (json!({"significance": "invalid"}), "Invalid significance"),
+        ];
+
+        for (input, expected_err) in invalid_cases {
+            let result = serde_json::from_value::<TestStruct>(input.clone());
+            assert!(result.is_err(), "Should have failed for input: {:?}", input);
+            if result.is_err() {
+                let err_msg = result.unwrap_err().to_string();
+                assert!(
+                    err_msg.contains(expected_err),
+                    "Error message '{}' should contain '{}'",
+                    err_msg,
+                    expected_err
+                );
+            }
+        }
     }
 }
