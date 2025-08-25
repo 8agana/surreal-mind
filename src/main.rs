@@ -26,6 +26,14 @@ use uuid::Uuid;
 mod embeddings;
 use embeddings::{Embedder, create_embedder};
 
+// Custom serializer for String (ensures it's always serialized as a plain string)
+fn serialize_as_string<S>(id: &String, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(id)
+}
+
 // Custom deserializer for Thing or String
 fn deserialize_thing_or_string<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
@@ -65,7 +73,10 @@ where
 // Data models
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Thought {
-    #[serde(deserialize_with = "deserialize_thing_or_string")]
+    #[serde(
+        serialize_with = "serialize_as_string",
+        deserialize_with = "deserialize_thing_or_string"
+    )]
     id: String,
     content: String,
     created_at: surrealdb::sql::Datetime,
