@@ -439,7 +439,7 @@ impl SurrealMindServer {
         // Backfill existing data with defaults (idempotent)
         db.query(
             r#"
-            UPDATE thoughts SET submode = "problem_solving" WHERE submode = NONE;
+            UPDATE thoughts SET submode = "sarcastic" WHERE submode = NONE;
             UPDATE thoughts SET framework_enhanced = false WHERE framework_enhanced = NONE;
         "#,
         )
@@ -498,7 +498,7 @@ impl SurrealMindServer {
         );
 
         // Create framework analysis and enriched content
-        let submode = params.submode.as_deref().unwrap_or("problem_solving");
+        let submode = params.submode.as_deref().unwrap_or("sarcastic");
         let (analysis, enriched_content) =
             self.cognitive_enrich(submode, &params.content, &relevant_memories);
 
@@ -506,7 +506,7 @@ impl SurrealMindServer {
         let submode = params
             .submode
             .clone()
-            .unwrap_or_else(|| "problem_solving".to_string());
+            .unwrap_or_else(|| "sarcastic".to_string());
         let valid_submodes = [
             "sarcastic",
             "philosophical",
@@ -516,11 +516,8 @@ impl SurrealMindServer {
         let submode = if valid_submodes.contains(&submode.as_str()) {
             submode
         } else {
-            tracing::warn!(
-                "Invalid submode '{}', defaulting to 'problem_solving'",
-                submode
-            );
-            "problem_solving".to_string()
+            tracing::warn!("Invalid submode '{}', defaulting to 'sarcastic'", submode);
+            "sarcastic".to_string()
         };
 
         // Determine flavor for this thought
@@ -703,7 +700,7 @@ impl SurrealMindServer {
             .ok()
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
-        let sm = cognitive::profile::Submode::from_str(submode.unwrap_or("problem_solving"));
+        let sm = cognitive::profile::Submode::from_str(submode.unwrap_or("sarcastic"));
         let prof = cognitive::profile::profile_for(sm);
         let eff_sim_thresh = if use_submode {
             (sim_thresh + prof.injection.threshold_delta).clamp(0.0, 1.0)
@@ -712,7 +709,7 @@ impl SurrealMindServer {
         };
         debug!(
             "retrieval_tuning: submode={} flag={} sim_thresh={:.2} -> {:.2}",
-            submode.unwrap_or("problem_solving"),
+            submode.unwrap_or("sarcastic"),
             use_submode,
             sim_thresh,
             eff_sim_thresh
@@ -1063,9 +1060,11 @@ mod tests {
             significance: 0.8,
             access_count: 0,
             last_accessed: None,
-            submode: Some("problem_solving".to_string()),
-            framework_enhanced: Some(false),
-            framework_analysis: None,
+            submode: Some("sarcastic".to_string()),
+            framework_enhanced: Some(true),
+            framework_analysis: Some(
+                serde_json::json!({"insights":[],"questions":[],"next_steps":[]}),
+            ),
         };
 
         assert_eq!(thought.content, "test content");
