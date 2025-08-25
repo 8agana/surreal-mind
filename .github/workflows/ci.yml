@@ -29,3 +29,9 @@ jobs:
 
       - name: Tests
         run: cargo test --all --locked
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Security audit (cargo-audit)
+        run: cargo audit

@@ -1,6 +1,6 @@
 # Simple dev workflow
 
-.PHONY: build run test fmt fmt-check lint check ci
+.PHONY: build run test fmt fmt-check lint check ci audit audit-fix
 
 build:
 	cargo build
@@ -25,3 +25,9 @@ check:
 	cargo check --all
 
 ci: check fmt-check lint test
+
+audit:
+	cargo audit
+
+audit-fix:
+	cargo audit fix || true
