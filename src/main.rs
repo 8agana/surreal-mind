@@ -675,7 +675,7 @@ impl SurrealMindServer {
 #[tokio::main]
 async fn main() -> Result<()> {
     // Load .env file if it exists
-    dotenv::dotenv().ok();
+    dotenvy::dotenv().ok();
 
     // Initialize tracing with env filter
     let filter =
