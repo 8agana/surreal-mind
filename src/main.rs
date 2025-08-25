@@ -20,14 +20,14 @@ use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::{Client, Ws};
 use surrealdb::opt::auth::Root;
 use tokio::sync::RwLock;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 mod embeddings;
 use embeddings::{Embedder, create_embedder};
 
 // Custom serializer for String (ensures it's always serialized as a plain string)
-fn serialize_as_string<S>(id: &String, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_as_string<S>(id: &str, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
@@ -41,7 +41,7 @@ where
 {
     use serde::de::Error;
     let value = serde_json::Value::deserialize(deserializer)?;
-    
+
     match value {
         serde_json::Value::String(s) => Ok(s),
         serde_json::Value::Object(map) => {
@@ -54,10 +54,18 @@ where
                             if let Some(serde_json::Value::String(id_str)) = id_obj.get("String") {
                                 Ok(format!("{}:{}", tb, id_str))
                             } else {
-                                Ok(format!("{}:{}", tb, serde_json::to_string(id_val).unwrap_or_default()))
+                                Ok(format!(
+                                    "{}:{}",
+                                    tb,
+                                    serde_json::to_string(id_val).unwrap_or_default()
+                                ))
                             }
                         }
-                        _ => Ok(format!("{}:{}", tb, serde_json::to_string(id_val).unwrap_or_default()))
+                        _ => Ok(format!(
+                            "{}:{}",
+                            tb,
+                            serde_json::to_string(id_val).unwrap_or_default()
+                        )),
                     }
                 } else {
                     Err(D::Error::custom("Thing object missing 'id' field"))
@@ -66,7 +74,7 @@ where
                 Err(D::Error::custom("Expected Thing object or string"))
             }
         }
-        _ => Err(D::Error::custom("Expected Thing object or string"))
+        _ => Err(D::Error::custom("Expected Thing object or string")),
     }
 }
 
@@ -376,44 +384,35 @@ impl SurrealMindServer {
             last_accessed: None,
         };
 
-        // Store thought in SurrealDB using INSERT query to avoid serialization issues
+        // Store thought in SurrealDB with all fields in a single operation to avoid SCHEMAFULL NONE issues
         let db = self.db.write().await;
-        let query = format!(
-            "INSERT INTO thoughts (id, content, created_at, embedding, injected_memories, enriched_content, injection_scale, significance, access_count, last_accessed) VALUES ('{}', $content, $created_at, $embedding, $injected_memories, $enriched_content, $injection_scale, $significance, $access_count, $last_accessed)",
-            thought.id
-        );
-        
-        let mut result = db
-            .query(query)
-            .bind(("content", thought.content.clone()))
-            .bind(("created_at", thought.created_at.clone()))
-            .bind(("embedding", thought.embedding.clone()))
-            .bind(("injected_memories", thought.injected_memories.clone()))
-            .bind(("enriched_content", thought.enriched_content.clone()))
-            .bind(("injection_scale", thought.injection_scale as i64))
-            .bind(("significance", thought.significance as f64))
-            .bind(("access_count", thought.access_count as i64))
-            .bind(("last_accessed", thought.last_accessed.clone()))
+
+        let _: Option<serde_json::Value> = db
+            .create(("thoughts", thought.id.clone()))
+            .content(json!({
+                // id is determined by the record key; we still include it for redundancy
+                "id": thought.id,
+                "content": thought.content,
+                "created_at": thought.created_at,
+                "embedding": thought.embedding,
+                "injected_memories": thought.injected_memories,
+                "enriched_content": thought.enriched_content,
+                "injection_scale": thought.injection_scale,
+                "significance": thought.significance,
+                "access_count": thought.access_count,
+                "last_accessed": thought.last_accessed
+            }))
             .await
-            .map_err(|e| McpError {
-                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                message: format!("Failed to store thought: {}", e).into(),
-                data: None,
-            })?;
-        
-        let stored: Option<Thought> = result
-            .take(0)
-            .map_err(|e| McpError {
-                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                message: format!("Failed to retrieve stored thought: {}", e).into(),
-                data: None,
+            .map_err(|e| {
+                error!("Failed to create thought record with content: {}", e);
+                McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: format!("Failed to store thought: {}", e).into(),
+                    data: None,
+                }
             })?;
 
-        let stored_thought = stored.ok_or_else(|| McpError {
-            code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-            message: "No thought returned from database".into(),
-            data: None,
-        })?;
+        debug!("Successfully stored thought: {}", thought.id);
 
         // Create bidirectional relationships with injected memories (single round trip for all)
         if !relevant_memories.is_empty() {
@@ -431,10 +430,7 @@ impl SurrealMindServer {
             let mut req = db.query(q);
             for (i, memory) in relevant_memories.iter().enumerate() {
                 req = req
-                    .bind((
-                        format!("from{}", i),
-                        format!("thoughts:{}", stored_thought.id),
-                    ))
+                    .bind((format!("from{}", i), format!("thoughts:{}", thought.id)))
                     .bind((
                         format!("to{}", i),
                         format!("thoughts:{}", memory.thought.id),
@@ -454,7 +450,7 @@ impl SurrealMindServer {
 
         // Also keep in memory for fast retrieval
         let mut thoughts = self.thoughts.write().await;
-        thoughts.push(stored_thought.clone());
+        thoughts.push(thought.clone());
 
         // Compute explicit min/max for summary
         let (min_dist, max_dist) = relevant_memories
