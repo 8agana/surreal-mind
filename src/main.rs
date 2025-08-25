@@ -26,9 +26,46 @@ use uuid::Uuid;
 mod embeddings;
 use embeddings::{Embedder, create_embedder};
 
+// Custom deserializer for Thing or String
+fn deserialize_thing_or_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+    let value = serde_json::Value::deserialize(deserializer)?;
+    
+    match value {
+        serde_json::Value::String(s) => Ok(s),
+        serde_json::Value::Object(map) => {
+            // Handle Thing object from SurrealDB
+            if let Some(serde_json::Value::String(tb)) = map.get("tb") {
+                if let Some(id_val) = map.get("id") {
+                    match id_val {
+                        serde_json::Value::String(id) => Ok(format!("{}:{}", tb, id)),
+                        serde_json::Value::Object(id_obj) => {
+                            if let Some(serde_json::Value::String(id_str)) = id_obj.get("String") {
+                                Ok(format!("{}:{}", tb, id_str))
+                            } else {
+                                Ok(format!("{}:{}", tb, serde_json::to_string(id_val).unwrap_or_default()))
+                            }
+                        }
+                        _ => Ok(format!("{}:{}", tb, serde_json::to_string(id_val).unwrap_or_default()))
+                    }
+                } else {
+                    Err(D::Error::custom("Thing object missing 'id' field"))
+                }
+            } else {
+                Err(D::Error::custom("Expected Thing object or string"))
+            }
+        }
+        _ => Err(D::Error::custom("Expected Thing object or string"))
+    }
+}
+
 // Data models
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Thought {
+    #[serde(deserialize_with = "deserialize_thing_or_string")]
     id: String,
     content: String,
     created_at: surrealdb::sql::Datetime,
@@ -331,7 +368,7 @@ impl SurrealMindServer {
         // Store thought in SurrealDB
         let db = self.db.write().await;
         let stored: Option<Thought> = db
-            .create(("thoughts", thought.id.clone()))
+            .create("thoughts")
             .content(thought.clone())
             .await
             .map_err(|e| McpError {
