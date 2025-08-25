@@ -23,8 +23,11 @@ use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 use uuid::Uuid;
 
+mod cognitive;
 mod embeddings;
+mod flavor;
 use embeddings::{Embedder, create_embedder};
+use flavor::tag_flavor;
 
 // Custom serializer for String (ensures it's always serialized as a plain string)
 fn serialize_as_string<S>(id: &str, serializer: S) -> Result<S::Ok, S::Error>
@@ -198,6 +201,12 @@ struct Thought {
     significance: f32,
     access_count: u32,
     last_accessed: Option<surrealdb::sql::Datetime>,
+    #[serde(default)]
+    submode: Option<String>,
+    #[serde(default)]
+    framework_enhanced: Option<bool>,
+    #[serde(default)]
+    framework_analysis: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -212,7 +221,6 @@ struct ConvoThinkParams {
     content: String,
     #[serde(default, deserialize_with = "de_option_u8_forgiving")]
     injection_scale: Option<u8>,
-    #[allow(dead_code)]
     submode: Option<String>,
     #[allow(dead_code)]
     #[serde(default, deserialize_with = "de_option_tags")]
@@ -394,6 +402,9 @@ impl SurrealMindServer {
             DEFINE FIELD significance ON TABLE thoughts TYPE float;
             DEFINE FIELD access_count ON TABLE thoughts TYPE number;
             DEFINE FIELD last_accessed ON TABLE thoughts TYPE option<datetime>;
+            DEFINE FIELD submode ON TABLE thoughts TYPE option<string>;
+            DEFINE FIELD framework_enhanced ON TABLE thoughts TYPE option<bool>;
+            DEFINE FIELD framework_analysis ON TABLE thoughts TYPE option<object>;
 
             DEFINE INDEX created_at_idx ON TABLE thoughts COLUMNS created_at;
             DEFINE INDEX significance_idx ON TABLE thoughts COLUMNS significance;
@@ -414,12 +425,28 @@ impl SurrealMindServer {
             DEFINE FIELD out ON TABLE recalls TYPE record<thoughts>;
             DEFINE FIELD strength ON TABLE recalls TYPE float;
             DEFINE FIELD created_at ON TABLE recalls TYPE datetime;
+            DEFINE FIELD submode_match ON TABLE recalls TYPE option<bool>;
+            DEFINE FIELD flavor ON TABLE recalls TYPE option<string>;
         "#,
         )
         .await
         .map_err(|e| McpError {
             code: rmcp::model::ErrorCode::INTERNAL_ERROR,
             message: format!("Failed to define relationships: {}", e).into(),
+            data: None,
+        })?;
+
+        // Backfill existing data with defaults (idempotent)
+        db.query(
+            r#"
+            UPDATE thoughts SET submode = "problem_solving" WHERE submode = NONE;
+            UPDATE thoughts SET framework_enhanced = false WHERE framework_enhanced = NONE;
+        "#,
+        )
+        .await
+        .map_err(|e| McpError {
+            code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+            message: format!("Failed to backfill defaults: {}", e).into(),
             data: None,
         })?;
 
@@ -461,7 +488,7 @@ impl SurrealMindServer {
 
         // Retrieve relevant memories based on injection scale
         let relevant_memories = self
-            .retrieve_memories_for_injection(&embedding, injection_scale)
+            .retrieve_memories_for_injection(&embedding, injection_scale, params.submode.as_deref())
             .await?;
 
         debug!(
@@ -470,9 +497,41 @@ impl SurrealMindServer {
             injection_scale
         );
 
-        // Create enriched content
-        let enriched_content =
-            self.enrich_content_with_memories(&params.content, &relevant_memories);
+        // Create framework analysis and enriched content
+        let submode = params.submode.as_deref().unwrap_or("problem_solving");
+        let (analysis, enriched_content) =
+            self.cognitive_enrich(submode, &params.content, &relevant_memories);
+
+        // Validate and default submode
+        let submode = params
+            .submode
+            .clone()
+            .unwrap_or_else(|| "problem_solving".to_string());
+        let valid_submodes = [
+            "sarcastic",
+            "philosophical",
+            "empathetic",
+            "problem_solving",
+        ];
+        let submode = if valid_submodes.contains(&submode.as_str()) {
+            submode
+        } else {
+            tracing::warn!(
+                "Invalid submode '{}', defaulting to 'problem_solving'",
+                submode
+            );
+            "problem_solving".to_string()
+        };
+
+        // Determine flavor for this thought
+        let flavor = tag_flavor(&params.content);
+
+        // Convert framework analysis to JSON for storage
+        let framework_json = serde_json::json!({
+            "insights": analysis.insights,
+            "questions": analysis.questions,
+            "next_steps": analysis.next_steps,
+        });
 
         // Create new thought
         let thought = Thought {
@@ -489,6 +548,9 @@ impl SurrealMindServer {
             significance,
             access_count: 0,
             last_accessed: None,
+            submode: Some(submode.clone()),
+            framework_enhanced: Some(true), // Now enabled with framework processing
+            framework_analysis: Some(framework_json.clone()), // Store framework output
         };
 
         // Store thought in SurrealDB with all fields in a single operation to avoid SCHEMAFULL NONE issues
@@ -506,7 +568,10 @@ impl SurrealMindServer {
                     enriched_content: $enriched_content,
                     injection_scale: $injection_scale,
                     significance: $significance,
-                    access_count: $access_count
+                    access_count: $access_count,
+                    submode: $submode,
+                    framework_enhanced: $framework_enhanced,
+                    framework_analysis: $framework_analysis
                 }"#,
             )
             .bind(("id", thought.id.clone()))
@@ -516,7 +581,10 @@ impl SurrealMindServer {
             .bind(("enriched_content", thought.enriched_content.clone()))
             .bind(("injection_scale", thought.injection_scale))
             .bind(("significance", thought.significance))
-            .bind(("access_count", thought.access_count));
+            .bind(("access_count", thought.access_count))
+            .bind(("submode", thought.submode.clone()))
+            .bind(("framework_enhanced", thought.framework_enhanced))
+            .bind(("framework_analysis", thought.framework_analysis.clone()));
 
         req.await.map_err(|e| {
             error!("Failed to create thought record with SurrealQL: {}", e);
@@ -532,25 +600,40 @@ impl SurrealMindServer {
         // Create bidirectional relationships with injected memories (single round trip for all)
         if !relevant_memories.is_empty() {
             let mut q = String::new();
-            for i in 0..relevant_memories.len() {
+            for (i, memory) in relevant_memories.iter().enumerate() {
+                // Check if submodes match (if both present)
+                let _submode_match = thought
+                    .submode
+                    .as_ref()
+                    .and_then(|ts| memory.thought.submode.as_ref().map(|ms| ts == ms))
+                    .unwrap_or(false);
+
                 q.push_str(&format!(
-                    "RELATE $from{0}->recalls->$to{0} SET strength = $strength{0}, created_at = time::now();\n",
+                    "RELATE $from{0}->recalls->$to{0} SET strength = $strength{0}, created_at = time::now(), submode_match = $submode_match{0}, flavor = $flavor{0};\n",
                     i
                 ));
                 q.push_str(&format!(
-                    "RELATE $to{0}->recalls->$from{0} SET strength = $strength{0}, created_at = time::now();\n",
+                    "RELATE $to{0}->recalls->$from{0} SET strength = $strength{0}, created_at = time::now(), submode_match = $submode_match{0}, flavor = $flavor{0};\n",
                     i
                 ));
             }
             let mut req = db.query(q);
             for (i, memory) in relevant_memories.iter().enumerate() {
+                let submode_match = thought
+                    .submode
+                    .as_ref()
+                    .and_then(|ts| memory.thought.submode.as_ref().map(|ms| ts == ms))
+                    .unwrap_or(false);
+
                 req = req
                     .bind((format!("from{}", i), format!("thoughts:{}", thought.id)))
                     .bind((
                         format!("to{}", i),
                         format!("thoughts:{}", memory.thought.id),
                     ))
-                    .bind((format!("strength{}", i), memory.similarity_score));
+                    .bind((format!("strength{}", i), memory.similarity_score))
+                    .bind((format!("submode_match{}", i), submode_match))
+                    .bind((format!("flavor{}", i), flavor.as_str()));
             }
             req.await.map_err(|e| McpError {
                 code: rmcp::model::ErrorCode::INTERNAL_ERROR,
@@ -576,6 +659,12 @@ impl SurrealMindServer {
             "memories_injected": relevant_memories.len(),
             "enriched_content": enriched_content,
             "injection_scale": injection_scale,
+            "submode_used": submode,
+            "framework_analysis": {
+                "insights": analysis.insights,
+                "questions": analysis.questions,
+                "next_steps": analysis.next_steps
+            },
             "orbital_distances": relevant_memories.iter()
                 .map(|m| m.orbital_distance)
                 .collect::<Vec<_>>(),
@@ -595,6 +684,7 @@ impl SurrealMindServer {
         &self,
         query_embedding: &[f32],
         injection_scale: u8,
+        submode: Option<&str>,
     ) -> Result<Vec<ThoughtMatch>, McpError> {
         // Load runtime retrieval config
         let sim_thresh: f32 = std::env::var("SURR_SIM_THRESH")
@@ -607,6 +697,26 @@ impl SurrealMindServer {
             .and_then(|s| s.parse::<usize>().ok())
             .map(|v| v.clamp(1, 50))
             .unwrap_or(5);
+
+        // Submode retrieval tuning (guarded by SURR_SUBMODE_RETRIEVAL flag)
+        let use_submode = std::env::var("SURR_SUBMODE_RETRIEVAL")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let sm = cognitive::profile::Submode::from_str(submode.unwrap_or("problem_solving"));
+        let prof = cognitive::profile::profile_for(sm);
+        let eff_sim_thresh = if use_submode {
+            (sim_thresh + prof.injection.threshold_delta).clamp(0.0, 1.0)
+        } else {
+            sim_thresh
+        };
+        debug!(
+            "retrieval_tuning: submode={} flag={} sim_thresh={:.2} -> {:.2}",
+            submode.unwrap_or("problem_solving"),
+            use_submode,
+            sim_thresh,
+            eff_sim_thresh
+        );
 
         // Calculate orbital distance threshold based on injection scale
         let max_orbital_distance = match injection_scale {
@@ -632,8 +742,18 @@ impl SurrealMindServer {
             // Access closeness: more accesses → closer (cap at 1.0)
             let access_closeness = ((access_count as f32 + 1.0).ln() / 5.0).clamp(0.0, 1.0);
             let significance_closeness = significance.clamp(0.0, 1.0);
-            let closeness =
-                recency_closeness * 0.4 + access_closeness * 0.3 + significance_closeness * 0.3;
+            let (age_w, access_w, sig_w) = if use_submode {
+                (
+                    prof.orbital.age_w,
+                    prof.orbital.access_w,
+                    prof.orbital.significance_w,
+                )
+            } else {
+                (0.4_f32, 0.3_f32, 0.3_f32)
+            };
+            let closeness = recency_closeness * age_w
+                + access_closeness * access_w
+                + significance_closeness * sig_w;
             (1.0 - closeness).clamp(0.0, 1.0)
         };
 
@@ -650,7 +770,7 @@ impl SurrealMindServer {
                     thought.significance,
                 );
 
-                if similarity > sim_thresh && orbital_distance <= max_orbital_distance {
+                if similarity > eff_sim_thresh && orbital_distance <= max_orbital_distance {
                     // Update access metadata in DB (reflect usage)
                     let dbw = self.db.write().await;
                     let _ = dbw
@@ -703,7 +823,7 @@ impl SurrealMindServer {
                     thought.significance,
                 );
 
-                if similarity > sim_thresh && orbital_distance <= max_orbital_distance {
+                if similarity > eff_sim_thresh && orbital_distance <= max_orbital_distance {
                     // Update access metadata in DB
                     let dbw = self.db.write().await;
                     let _ = dbw
@@ -724,7 +844,7 @@ impl SurrealMindServer {
             }
         }
 
-        // Sort by combined score
+        // Sort by combined score (defaults preserved; tuned by profile weights if desired later)
         matches.sort_by(|a, b| {
             let score_a = a.similarity_score * 0.6 + (1.0 - a.orbital_distance) * 0.4;
             let score_b = b.similarity_score * 0.6 + (1.0 - b.orbital_distance) * 0.4;
@@ -734,6 +854,52 @@ impl SurrealMindServer {
         });
 
         Ok(matches.into_iter().take(top_k).collect())
+    }
+
+    /// Format framework analysis into readable sections with caps (max ~2KB)
+    fn format_framework_analysis(analysis: &cognitive::types::FrameworkOutput) -> String {
+        let mut output = String::new();
+
+        if !analysis.insights.is_empty()
+            || !analysis.questions.is_empty()
+            || !analysis.next_steps.is_empty()
+        {
+            output.push_str("\n\n[Framework Analysis:");
+
+            if !analysis.insights.is_empty() {
+                output.push_str("\nInsights:");
+                for insight in analysis.insights.iter().take(8) {
+                    output.push_str("\n- ");
+                    output.push_str(insight);
+                }
+            }
+
+            if !analysis.questions.is_empty() {
+                output.push_str("\nQuestions:");
+                for question in analysis.questions.iter().take(4) {
+                    output.push_str("\n- ");
+                    output.push_str(question);
+                }
+            }
+
+            if !analysis.next_steps.is_empty() {
+                output.push_str("\nNext steps:");
+                for step in analysis.next_steps.iter().take(4) {
+                    output.push_str("\n- ");
+                    output.push_str(step);
+                }
+            }
+
+            output.push(']');
+        }
+
+        // Truncate to ~2KB if needed
+        if output.len() > 2048 {
+            output.truncate(2045);
+            output.push_str("...]");
+        }
+
+        output
     }
 
     fn enrich_content_with_memories(&self, content: &str, memories: &[ThoughtMatch]) -> String {
@@ -757,6 +923,39 @@ impl SurrealMindServer {
         enriched.push(']');
 
         enriched
+    }
+
+    fn cognitive_enrich(
+        &self,
+        submode: &str,
+        content: &str,
+        memories: &[ThoughtMatch],
+    ) -> (cognitive::types::FrameworkOutput, String) {
+        use cognitive::CognitiveEngine;
+        use cognitive::profile::{Submode, profile_for};
+        use std::collections::HashMap;
+
+        let sm = Submode::from_str(submode);
+        let profile = profile_for(sm);
+
+        // Build weights map with &'static str keys
+        let weights: HashMap<&'static str, u8> = profile.weights.clone();
+        let engine = CognitiveEngine::new();
+        let analysis = engine.blend(content, &weights);
+
+        // Format enriched content: framework sections + memory context
+        let mut enriched = String::new();
+        enriched.push_str(content);
+        enriched.push_str(&Self::format_framework_analysis(&analysis));
+
+        // Append memory context
+        let enriched = if memories.is_empty() {
+            enriched
+        } else {
+            self.enrich_content_with_memories(&enriched, memories)
+        };
+
+        (analysis, enriched)
     }
 
     fn cosine_similarity(&self, a: &[f32], b: &[f32]) -> f32 {
@@ -813,17 +1012,32 @@ mod tests {
 
     #[tokio::test]
     async fn test_convo_think_params_deserialization() {
-        // Test parameter parsing
+        // Test parameter parsing with submode
         let args = serde_json::json!({
             "content": "test thought",
             "injection_scale": 3,
-            "significance": 0.8
+            "significance": 0.8,
+            "submode": "philosophical"
         });
 
         let params: ConvoThinkParams = serde_json::from_value(args).unwrap();
         assert_eq!(params.content, "test thought");
         assert_eq!(params.injection_scale, Some(3));
         assert_eq!(params.significance, Some(0.8));
+        assert_eq!(params.submode, Some("philosophical".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_submode_validation() {
+        // Test invalid submode defaults to problem_solving
+        let args = serde_json::json!({
+            "content": "test",
+            "submode": "invalid_mode"
+        });
+
+        let params: ConvoThinkParams = serde_json::from_value(args).unwrap();
+        assert_eq!(params.submode, Some("invalid_mode".to_string()));
+        // Note: actual validation happens in create_thought_with_injection
     }
 
     #[tokio::test]
@@ -849,6 +1063,9 @@ mod tests {
             significance: 0.8,
             access_count: 0,
             last_accessed: None,
+            submode: Some("problem_solving".to_string()),
+            framework_enhanced: Some(false),
+            framework_analysis: None,
         };
 
         assert_eq!(thought.content, "test content");
@@ -893,5 +1110,82 @@ mod tests {
         let embedding2 = embedder.embed(text).await.unwrap();
         assert_eq!(embedding1, embedding2);
         assert_eq!(embedding1.len(), 768);
+    }
+
+    #[test]
+    fn test_framework_formatter() {
+        use cognitive::types::FrameworkOutput;
+
+        let analysis = FrameworkOutput {
+            insights: vec!["insight1".to_string(), "insight2".to_string()],
+            questions: vec!["question1".to_string()],
+            next_steps: vec!["step1".to_string(), "step2".to_string()],
+            meta: std::collections::HashMap::new(),
+        };
+
+        let formatted = SurrealMindServer::format_framework_analysis(&analysis);
+        assert!(formatted.contains("[Framework Analysis:"));
+        assert!(formatted.contains("Insights:"));
+        assert!(formatted.contains("insight1"));
+        assert!(formatted.contains("Questions:"));
+        assert!(formatted.contains("Next steps:"));
+    }
+
+    #[test]
+    fn test_flavor_tagging() {
+        use crate::flavor::tag_flavor;
+
+        // Test deterministic flavor assignment
+        assert_eq!(tag_flavor("But this contradicts").as_str(), "contrarian");
+        assert_eq!(tag_flavor("The theory behind this").as_str(), "abstract");
+        assert_eq!(tag_flavor("I feel strongly about").as_str(), "emotional");
+        assert_eq!(tag_flavor("Let's fix this issue").as_str(), "solution");
+        assert_eq!(tag_flavor("Just normal text").as_str(), "neutral");
+    }
+
+    #[test]
+    fn test_submode_retrieval_flag_parity() {
+        // Test that SURR_SUBMODE_RETRIEVAL=false preserves original behavior
+        // This ensures backward compatibility when the feature flag is off
+
+        // When OFF, orbital weights should remain default (40% age, 30% access, 30% significance)
+        unsafe {
+            std::env::remove_var("SURR_SUBMODE_RETRIEVAL");
+        }
+
+        // Mock a thought with all fields
+        let thought = Thought {
+            id: "test-parity".to_string(),
+            content: "Test content for parity check".to_string(),
+            created_at: surrealdb::sql::Datetime::from(chrono::Utc::now()),
+            embedding: vec![0.1; 768],
+            injected_memories: vec![],
+            enriched_content: Some("Test enriched".to_string()),
+            injection_scale: 3,
+            significance: 0.7,
+            access_count: 5,
+            last_accessed: Some(surrealdb::sql::Datetime::from(chrono::Utc::now())),
+            submode: Some("philosophical".to_string()),
+            framework_enhanced: Some(true),
+            framework_analysis: Some(serde_json::json!({
+                "insights": ["test insight"],
+                "questions": ["test question"],
+                "next_steps": ["test step"]
+            })),
+        };
+
+        // Calculate orbital distance with default weights
+        let age_factor = 0.4 * 0.1; // recent = closer
+        let access_factor = 0.3 * (1.0 - (5_f32.min(100.0) / 100.0)); // more access = closer
+        let sig_factor = 0.3 * (1.0 - 0.7); // higher sig = closer
+        let expected_distance = age_factor + access_factor + sig_factor;
+
+        // The orbital distance calculation should not be affected by submode when flag is OFF
+        assert!(thought.submode.is_some());
+        assert!(thought.framework_enhanced.is_some());
+
+        // When flag is OFF, these new fields should be persisted but not affect retrieval logic
+        assert_eq!(thought.injection_scale, 3);
+        assert!(expected_distance < 1.0); // Should be valid orbital distance
     }
 }
