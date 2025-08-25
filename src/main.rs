@@ -376,15 +376,36 @@ impl SurrealMindServer {
             last_accessed: None,
         };
 
-        // Store thought in SurrealDB
+        // Store thought in SurrealDB using INSERT query to avoid serialization issues
         let db = self.db.write().await;
-        let stored: Option<Thought> = db
-            .create("thoughts")
-            .content(thought.clone())
+        let query = format!(
+            "INSERT INTO thoughts (id, content, created_at, embedding, injected_memories, enriched_content, injection_scale, significance, access_count, last_accessed) VALUES ('{}', $content, $created_at, $embedding, $injected_memories, $enriched_content, $injection_scale, $significance, $access_count, $last_accessed)",
+            thought.id
+        );
+        
+        let mut result = db
+            .query(query)
+            .bind(("content", thought.content.clone()))
+            .bind(("created_at", thought.created_at.clone()))
+            .bind(("embedding", thought.embedding.clone()))
+            .bind(("injected_memories", thought.injected_memories.clone()))
+            .bind(("enriched_content", thought.enriched_content.clone()))
+            .bind(("injection_scale", thought.injection_scale as i64))
+            .bind(("significance", thought.significance as f64))
+            .bind(("access_count", thought.access_count as i64))
+            .bind(("last_accessed", thought.last_accessed.clone()))
             .await
             .map_err(|e| McpError {
                 code: rmcp::model::ErrorCode::INTERNAL_ERROR,
                 message: format!("Failed to store thought: {}", e).into(),
+                data: None,
+            })?;
+        
+        let stored: Option<Thought> = result
+            .take(0)
+            .map_err(|e| McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!("Failed to retrieve stored thought: {}", e).into(),
                 data: None,
             })?;
 
