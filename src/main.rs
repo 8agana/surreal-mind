@@ -513,14 +513,14 @@ impl SurrealMindServer {
         };
 
         // Try to get from in-memory first, fall back to DB if needed
-        let _now = Utc::now();
+        let now_ts = Utc::now().timestamp();
         let thoughts = self.thoughts.read().await;
         let mut matches = Vec::new();
 
         // Helper to compute orbital distance with clearer semantics
         let compute_distance = |created_ts: i64, access_count: u32, significance: f32| {
             // Recency closeness: recent → 1.0, old → 0.0 (normalize by 30 days)
-            let age_days = (Utc::now().timestamp() - created_ts) as f32 / 86_400.0;
+            let age_days = (now_ts - created_ts) as f32 / 86_400.0;
             let recency_closeness = (1.0 - (age_days / 30.0)).clamp(0.0, 1.0);
             // Access closeness: more accesses → closer (cap at 1.0)
             let access_closeness = ((access_count as f32 + 1.0).ln() / 5.0).clamp(0.0, 1.0);
@@ -679,7 +679,7 @@ async fn main() -> Result<()> {
 
     // Initialize tracing with env filter
     let filter =
-        std::env::var("RUST_LOG").unwrap_or_else(|_| "surreal_mind=debug,rmcp=info".to_string());
+        std::env::var("RUST_LOG").unwrap_or_else(|_| "surreal_mind=info,rmcp=info".to_string());
     let mcp_no_log = std::env::var("MCP_NO_LOG").unwrap_or_default();
     if !(mcp_no_log == "1" || mcp_no_log.eq_ignore_ascii_case("true")) {
         tracing_subscriber::fmt()
