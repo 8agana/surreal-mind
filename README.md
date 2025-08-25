@@ -8,7 +8,7 @@ A Model Context Protocol (MCP) server implementing bidirectional consciousness p
 - **Semantic Understanding**: Nomic embeddings for true semantic similarity
 - **Graph Persistence**: SurrealDB with embedded RocksDB for consciousness graph
 - **Injection Scales**: 0-5 (Sun to Pluto) controlling memory retrieval distance
-- **Conversation Submodes** (upcoming): Support for different cognitive styles (sarcastic, philosophical, empathetic, problem_solving) to influence memory retrieval and thought enrichment
+- **Submodes**: Conversational (sarcastic, philosophical, empathetic, problem_solving) and Technical (plan, build, debug) influence retrieval and enrichment
 
 ## Setup
 
@@ -91,8 +91,9 @@ Parameters:
     - `"high"` = 0.9
   - Integer scale: 2-10 (mapped to 0.2-1.0, note: 1 not supported to avoid ambiguity)
   - Float: 0.0-1.0 (direct value)
-- `submode`: Conversation style (sarcastic, philosophical, empathetic, problem_solving)
+- `submode`: Conversation style (sarcastic [default], philosophical, empathetic, problem_solving)
 - `tags`: Additional categorization
+ - `verbose_analysis`: boolean (default true) — when false, caps to top 2 insights, 1 question, 1 next step
 
 Example calls:
 ```json
@@ -138,6 +139,60 @@ Response includes:
 - `framework_analysis`: Cognitive framework insights, questions, next steps
 - `orbital_distances`: Memory relevance distances
 - `memory_summary`: Description of injection results
+ - `user_friendly`: Additive, human-oriented block with summary, readable memory context (percentages + labels), and conversational analysis
+
+### MCP Tool: tech_think
+Technical reasoning pipeline mirroring `convo_think`, specialized for software workflows.
+
+Parameters:
+- `content` (required)
+- `injection_scale`: same presets and numeric formats as `convo_think`
+- `submode`: Technical mode — `plan` (default) | `build` | `debug`
+- `significance`: same formats as `convo_think`
+- `verbose_analysis`: boolean (default true)
+- `tags`: optional
+
+Defaults by submode (if `injection_scale` omitted):
+- plan → 3 (DEFAULT/MARS)
+- build → 2 (MEDIUM/VENUS)
+- debug → 4 (HIGH/JUPITER)
+
+Examples:
+```json
+{
+  "tool": "tech_think",
+  "arguments": {
+    "content": "Design module A with clear interfaces",
+    "submode": "plan",
+    "injection_scale": "DEFAULT",
+    "significance": "medium"
+  }
+}
+
+{
+  "tool": "tech_think",
+  "arguments": {
+    "content": "Fix panic in parser when input is empty",
+    "submode": "debug",
+    "injection_scale": "HIGH",
+    "significance": 10,
+    "verbose_analysis": false
+  }
+}
+```
+
+### MCP Tool: detailed_help
+Returns deterministic, example-rich documentation for tools and parameters.
+
+Parameters:
+- `tool`: "convo_think" | "tech_think" (optional; overview when omitted)
+- `format`: "full" (default) | "compact"
+
+Examples:
+```json
+{"tool":"detailed_help","arguments":{"tool":"tech_think","format":"full"}}
+{"tool":"detailed_help","arguments":{"format":"compact"}}
+```
 
 ## Architecture
 
