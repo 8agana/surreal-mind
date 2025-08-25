@@ -387,24 +387,34 @@ impl SurrealMindServer {
         // Store thought in SurrealDB with all fields in a single operation to avoid SCHEMAFULL NONE issues
         let db = self.db.write().await;
 
-        let _: Option<serde_json::Value> = db
-            .create(("thoughts", thought.id.clone()))
-            .content(json!({
-                // id is determined by the record key; we still include it for redundancy
-                "id": thought.id,
-                "content": thought.content,
-                "created_at": thought.created_at,
-                "embedding": thought.embedding,
-                "injected_memories": thought.injected_memories,
-                "enriched_content": thought.enriched_content,
-                "injection_scale": thought.injection_scale,
-                "significance": thought.significance,
-                "access_count": thought.access_count,
-                "last_accessed": thought.last_accessed
-            }))
+        // Create record using SurrealQL with server-side datetime to avoid JSON enum serialization issues
+        let mut req = db
+            .query(
+                r#"CREATE type::thing('thoughts', $id) CONTENT {
+                    id: $id,
+                    content: $content,
+                    created_at: time::now(),
+                    embedding: $embedding,
+                    injected_memories: $injected_memories,
+                    enriched_content: $enriched_content,
+                    injection_scale: $injection_scale,
+                    significance: $significance,
+                    access_count: $access_count
+                }"#,
+            )
+            .bind(("id", thought.id.clone()))
+            .bind(("content", thought.content.clone()))
+            .bind(("embedding", thought.embedding.clone()))
+            .bind(("injected_memories", thought.injected_memories.clone()))
+            .bind(("enriched_content", thought.enriched_content.clone()))
+            .bind(("injection_scale", thought.injection_scale))
+            .bind(("significance", thought.significance))
+            .bind(("access_count", thought.access_count));
+
+        req
             .await
             .map_err(|e| {
-                error!("Failed to create thought record with content: {}", e);
+                error!("Failed to create thought record with SurrealQL: {}", e);
                 McpError {
                     code: rmcp::model::ErrorCode::INTERNAL_ERROR,
                     message: format!("Failed to store thought: {}", e).into(),
@@ -419,11 +429,11 @@ impl SurrealMindServer {
             let mut q = String::new();
             for i in 0..relevant_memories.len() {
                 q.push_str(&format!(
-                    "RELATE $from{0}->recalls->$to{0} SET strength = $strength{0}, created_at = $created{0};\n",
+                    "RELATE $from{0}->recalls->$to{0} SET strength = $strength{0}, created_at = time::now();\n",
                     i
                 ));
                 q.push_str(&format!(
-                    "RELATE $to{0}->recalls->$from{0} SET strength = $strength{0}, created_at = $created{0};\n",
+                    "RELATE $to{0}->recalls->$from{0} SET strength = $strength{0}, created_at = time::now();\n",
                     i
                 ));
             }
@@ -435,11 +445,7 @@ impl SurrealMindServer {
                         format!("to{}", i),
                         format!("thoughts:{}", memory.thought.id),
                     ))
-                    .bind((format!("strength{}", i), memory.similarity_score))
-                    .bind((
-                        format!("created{}", i),
-                        surrealdb::sql::Datetime::from(Utc::now()),
-                    ));
+                    .bind((format!("strength{}", i), memory.similarity_score));
             }
             req.await.map_err(|e| McpError {
                 code: rmcp::model::ErrorCode::INTERNAL_ERROR,
@@ -513,6 +519,7 @@ impl SurrealMindServer {
         let thoughts = self.thoughts.read().await;
         let mut matches = Vec::new();
 
+
         // Helper to compute orbital distance with clearer semantics
         let compute_distance = |created_ts: i64, access_count: u32, significance: f32| {
             // Recency closeness: recent → 1.0, old → 0.0 (normalize by 30 days)
@@ -542,12 +549,10 @@ impl SurrealMindServer {
                 if similarity > sim_thresh && orbital_distance <= max_orbital_distance {
                     // Update access metadata in DB (reflect usage)
                     let dbw = self.db.write().await;
-                    let _res: Result<Option<Thought>, surrealdb::Error> = dbw
-                        .update(("thoughts", thought.id.clone()))
-                        .merge(json!({
-                            "access_count": thought.access_count + 1,
-                            "last_accessed": surrealdb::sql::Datetime::from(Utc::now()),
-                        }))
+                    let _ = dbw
+                        .query("UPDATE type::thing('thoughts', $id) SET access_count = $ac, last_accessed = time::now()")
+                        .bind(("id", thought.id.clone()))
+                        .bind(("ac", thought.access_count + 1))
                         .await;
 
                     matches.push(ThoughtMatch {
@@ -597,12 +602,10 @@ impl SurrealMindServer {
                 if similarity > sim_thresh && orbital_distance <= max_orbital_distance {
                     // Update access metadata in DB
                     let dbw = self.db.write().await;
-                    let _res: Result<Option<Thought>, surrealdb::Error> = dbw
-                        .update(("thoughts", thought.id.clone()))
-                        .merge(json!({
-                            "access_count": thought.access_count + 1,
-                            "last_accessed": surrealdb::sql::Datetime::from(Utc::now()),
-                        }))
+                    let _ = dbw
+                        .query("UPDATE type::thing('thoughts', $id) SET access_count = $ac, last_accessed = time::now()")
+                        .bind(("id", thought.id.clone()))
+                        .bind(("ac", thought.access_count + 1))
                         .await;
                     // Reflect in local copy
                     thought.access_count += 1;
