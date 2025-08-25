@@ -56,7 +56,7 @@ export SURR_TOP_K=5         # Max memories to inject
 
 # Feature Flags
 export SURR_SUBMODE_RETRIEVAL=false  # Enable submode-aware retrieval (default: OFF)
-export SURR_SUBMODE_DEFAULT=problem_solving  # Default submode when not specified
+export SURR_SUBMODE_DEFAULT=sarcastic  # Default submode when not specified
 ```
 
 Server will read these automatically at startup.
