@@ -388,7 +388,7 @@ impl SurrealMindServer {
         let db = self.db.write().await;
 
         // Create record using SurrealQL with server-side datetime to avoid JSON enum serialization issues
-        let mut req = db
+        let req = db
             .query(
                 r#"CREATE type::thing('thoughts', $id) CONTENT {
                     id: $id,
@@ -411,16 +411,14 @@ impl SurrealMindServer {
             .bind(("significance", thought.significance))
             .bind(("access_count", thought.access_count));
 
-        req
-            .await
-            .map_err(|e| {
-                error!("Failed to create thought record with SurrealQL: {}", e);
-                McpError {
-                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                    message: format!("Failed to store thought: {}", e).into(),
-                    data: None,
-                }
-            })?;
+        req.await.map_err(|e| {
+            error!("Failed to create thought record with SurrealQL: {}", e);
+            McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!("Failed to store thought: {}", e).into(),
+                data: None,
+            }
+        })?;
 
         debug!("Successfully stored thought: {}", thought.id);
 
@@ -518,7 +516,6 @@ impl SurrealMindServer {
         let _now = Utc::now();
         let thoughts = self.thoughts.read().await;
         let mut matches = Vec::new();
-
 
         // Helper to compute orbital distance with clearer semantics
         let compute_distance = |created_ts: i64, access_count: u32, significance: f32| {
