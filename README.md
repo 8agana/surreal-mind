@@ -75,24 +75,57 @@ Stores thoughts with bidirectional memory injection and cognitive framework anal
 
 Parameters:
 - `content` (required): The thought to store
-- `injection_scale` (0-5): Memory injection distance
-  - 0: No injection
-  - 1: Mercury (hot/current memories only)
-  - 3: Mars (foundational memories) [default]
-  - 5: Pluto (all relevant memories)
-- `significance` (0.0-1.0): Importance weight
+- `injection_scale`: Memory injection distance (multiple formats supported)
+  - Named presets (case-insensitive):
+    - `"NONE"` = 0 (no injection)
+    - `"LIGHT"` = 1 (Mercury - hot/current memories only) 
+    - `"MEDIUM"` = 2 (Venus - recent context)
+    - `"DEFAULT"` = 3 (Mars - foundational memories) [default]
+    - `"HIGH"` = 4 (Jupiter - broad context)
+    - `"MAXIMUM"` = 5 (Pluto - all relevant memories)
+  - Numeric: 0-5
+- `significance`: Importance weight (multiple formats supported)
+  - String presets (case-insensitive):
+    - `"low"` = 0.2
+    - `"medium"` = 0.5
+    - `"high"` = 0.9
+  - Integer scale: 2-10 (mapped to 0.2-1.0, note: 1 not supported to avoid ambiguity)
+  - Float: 0.0-1.0 (direct value)
 - `submode`: Conversation style (sarcastic, philosophical, empathetic, problem_solving)
 - `tags`: Additional categorization
 
-Example call:
+Example calls:
 ```json
+// Using named presets
 {
   "tool": "convo_think",
   "arguments": {
     "content": "Building persistence frameworks requires careful architecture",
+    "injection_scale": "HIGH",
+    "significance": "high",
+    "submode": "philosophical"
+  }
+}
+
+// Using integer scale for significance
+{
+  "tool": "convo_think",
+  "arguments": {
+    "content": "Critical bug found in memory injection",
+    "injection_scale": "MAXIMUM",
+    "significance": 9,
+    "submode": "problem_solving"
+  }
+}
+
+// Using numeric values (backward compatible)
+{
+  "tool": "convo_think",
+  "arguments": {
+    "content": "Testing new framework enhancements",
     "injection_scale": 3,
     "significance": 0.8,
-    "submode": "philosophical"
+    "submode": "sarcastic"
   }
 }
 ```
