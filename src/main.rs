@@ -78,6 +78,109 @@ where
     }
 }
 
+// Forgiving deserializers for tool params
+fn de_option_u8_forgiving<'de, D>(deserializer: D) -> Result<Option<u8>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+    let opt = Option::<serde_json::Value>::deserialize(deserializer)?;
+    let Some(v) = opt else { return Ok(None) };
+    match v {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::Number(n) => {
+            let val = if let Some(u) = n.as_u64() {
+                u as f64
+            } else if let Some(i) = n.as_i64() {
+                i as f64
+            } else if let Some(f) = n.as_f64() {
+                f
+            } else {
+                return Err(D::Error::custom("invalid numeric for u8"));
+            };
+            let rounded = val.round();
+            if !rounded.is_finite() {
+                return Err(D::Error::custom("non-finite numeric for u8"));
+            }
+            let clamped = rounded.clamp(0.0, u8::MAX as f64) as u8;
+            Ok(Some(clamped))
+        }
+        serde_json::Value::String(s) => {
+            let s = s.trim();
+            if s.is_empty() {
+                return Ok(None);
+            }
+            let val: f64 = s
+                .parse()
+                .map_err(|_| D::Error::custom("invalid string for u8"))?;
+            let rounded = val.round();
+            let clamped = rounded.clamp(0.0, u8::MAX as f64) as u8;
+            Ok(Some(clamped))
+        }
+        other => Err(D::Error::custom(format!("invalid type for u8: {}", other))),
+    }
+}
+
+fn de_option_f32_forgiving<'de, D>(deserializer: D) -> Result<Option<f32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+    let opt = Option::<serde_json::Value>::deserialize(deserializer)?;
+    let Some(v) = opt else { return Ok(None) };
+    let val = match v {
+        serde_json::Value::Null => return Ok(None),
+        serde_json::Value::Number(n) => {
+            if let Some(f) = n.as_f64() {
+                f as f32
+            } else if let Some(u) = n.as_u64() {
+                u as f32
+            } else if let Some(i) = n.as_i64() {
+                i as f32
+            } else {
+                return Err(D::Error::custom("invalid numeric for f32"));
+            }
+        }
+        serde_json::Value::String(s) => {
+            let s = s.trim();
+            if s.is_empty() {
+                return Ok(None);
+            }
+            s.parse::<f32>()
+                .map_err(|_| D::Error::custom("invalid string for f32"))?
+        }
+        other => return Err(D::Error::custom(format!("invalid type for f32: {}", other))),
+    };
+    Ok(Some(val))
+}
+
+fn de_option_tags<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+    let opt = Option::<serde_json::Value>::deserialize(deserializer)?;
+    let Some(v) = opt else { return Ok(None) };
+    match v {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::String(s) => Ok(Some(vec![s])),
+        serde_json::Value::Array(arr) => {
+            let mut out = Vec::with_capacity(arr.len());
+            for el in arr {
+                match el {
+                    serde_json::Value::String(s) => out.push(s),
+                    other => out.push(other.to_string()),
+                }
+            }
+            Ok(Some(out))
+        }
+        other => Err(D::Error::custom(format!(
+            "invalid type for tags: {}",
+            other
+        ))),
+    }
+}
+
 // Data models
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Thought {
@@ -107,11 +210,14 @@ struct ThoughtMatch {
 #[derive(Debug, Deserialize)]
 struct ConvoThinkParams {
     content: String,
+    #[serde(default, deserialize_with = "de_option_u8_forgiving")]
     injection_scale: Option<u8>,
     #[allow(dead_code)]
     submode: Option<String>,
     #[allow(dead_code)]
+    #[serde(default, deserialize_with = "de_option_tags")]
     tags: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "de_option_f32_forgiving")]
     significance: Option<f32>,
 }
 
