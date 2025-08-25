@@ -30,16 +30,16 @@ struct NomicResponse {
 }
 
 impl NomicEmbedder {
-    pub fn new(api_key: String) -> Self {
+    pub fn new(api_key: String) -> Result<Self> {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(15))
             .build()
-            .expect("Failed to build reqwest client with timeout");
-        Self {
+            .context("Failed to build reqwest client with timeout")?;
+        Ok(Self {
             client,
             api_key,
             model: "nomic-embed-text-v1.5".to_string(),
-        }
+        })
     }
 }
 
@@ -127,7 +127,7 @@ pub async fn create_embedder() -> Result<Arc<dyn Embedder>> {
         && !is_placeholder(key)
     {
         info!("Using Nomic API for embeddings");
-        return Ok(Arc::new(NomicEmbedder::new(key.to_string())));
+        return Ok(Arc::new(NomicEmbedder::new(key.to_string())?));
     }
 
     info!("No valid NOMIC_API_KEY found, using fake embeddings for testing");

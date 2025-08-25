@@ -205,7 +205,8 @@ impl ServerHandler for SurrealMindServer {
 
                 // Redact content at info level to avoid logging full user text
                 info!("convo_think called (content_len={})", params.content.len());
-                debug!("convo_think content: {}", params.content);
+                let dbg_preview: String = params.content.chars().take(200).collect();
+                debug!("convo_think content (first 200 chars): {}", dbg_preview);
                 let result = self.create_thought_with_injection(params).await?;
                 Ok(CallToolResult::structured(json!(result)))
             }
