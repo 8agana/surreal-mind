@@ -774,7 +774,46 @@ impl SurrealMindServer {
             }
         }))
     }
+}
 
+#[cfg(test)]
+mod tool_unit_tests {
+    use super::SurrealMindServer;
+    use serde_json::Value;
+
+    #[test]
+    fn test_detailed_help_full_overview_includes_tools() {
+        let v: Value = SurrealMindServer::get_detailed_help(None, "full");
+        // Expect an object with a "tools" array containing the three tools
+        assert!(v["tools"].is_array(), "Expected 'tools' array in full help");
+        let tools = v["tools"].as_array().unwrap();
+        // Should list at least 2 tools (convo_think and tech_think) and the overview
+        assert!(tools.iter().any(|t| t["name"] == "convo_think"));
+        assert!(tools.iter().any(|t| t["name"] == "tech_think"));
+    }
+
+    #[test]
+    fn test_detailed_help_compact_specific_tool() {
+        // Ask for compact help for tech_think and ensure structure is present
+        let v: Value = SurrealMindServer::get_detailed_help(Some("tech_think"), "compact");
+        // The compact output should still be an object with key fields
+        assert!(v.is_object());
+        assert_eq!(v["name"], "tech_think");
+        assert!(v["parameters"].is_object());
+        assert!(v["examples"].is_array());
+    }
+
+    #[test]
+    fn test_detailed_help_compact_convo_think() {
+        let v: Value = SurrealMindServer::get_detailed_help(Some("convo_think"), "compact");
+        assert_eq!(v["name"], "convo_think");
+        // Ensure significance description hints at presets/scale
+        let params = &v["parameters"];
+        assert!(params["significance"].is_string());
+    }
+}
+
+impl SurrealMindServer {
     async fn retrieve_memories_for_injection(
         &self,
         query_embedding: &[f32],
