@@ -677,102 +677,33 @@ impl SurrealMindServer {
         thoughts.put(thought.id.clone(), thought.clone());
         debug!("cache_size_after_insert={}", thoughts.len());
 
-        // Compute explicit min/max for summary
-        let (min_prox, max_prox) = relevant_memories
-            .iter()
-            .fold((1.0_f32, 0.0_f32), |(minv, maxv), m| {
-                (minv.min(m.orbital_proximity), maxv.max(m.orbital_proximity))
-            });
-
         // Apply verbosity limits
         let verbose_analysis = params.verbose_analysis.unwrap_or(true);
         let limited_analysis = Self::apply_verbosity_limits(&analysis, verbose_analysis);
 
-        // Create user-friendly response block
-        let now_timestamp = Utc::now().timestamp();
-        let orbital_name = Self::injection_scale_to_orbital_name(injection_scale);
-        let thinking_style = Self::submode_to_thinking_style(&submode);
-
-        let user_friendly_memories: Vec<serde_json::Value> = relevant_memories
-            .iter()
-            .map(|memory| {
-                let preview: String = memory.thought.content.chars().take(100).collect();
-                let relevance_label = Self::similarity_to_relevance_label(memory.similarity_score);
-                let relevance_percent = (memory.similarity_score * 100.0) as u8;
-                let age = Self::format_age(&memory.thought.created_at);
-                let category = Self::categorize_memory(memory, now_timestamp);
-
-                json!({
-                    "content_preview": preview,
-                    "relevance_label": relevance_label,
-                    "relevance_percent": relevance_percent,
-                    "age": age,
-                    "category": category
-                })
-            })
-            .collect();
-
-        // Make framework outputs more conversational
-        let user_friendly_key_points: Vec<String> = limited_analysis
-            .insights
-            .iter()
-            .map(|s| Self::make_conversational(s))
-            .collect();
-        let user_friendly_questions: Vec<String> = limited_analysis
-            .questions
-            .iter()
-            .map(|s| Self::make_conversational(s))
-            .collect();
-        let user_friendly_next_steps: Vec<String> = limited_analysis
-            .next_steps
-            .iter()
-            .map(|s| Self::make_conversational(s))
-            .collect();
-
-        // Create response with user_friendly block (additive, keeps all existing fields)
         Ok(json!({
-                    // Existing fields - keep unchanged for backward compatibility
-                    "thought_id": thought.id,
-                    "memories_injected": relevant_memories.len(),
-                    "enriched_content": enriched_content,
-                    "injection_scale": injection_scale,
-                    "submode_used": submode,
-                    "framework_analysis": {
-                        "insights": limited_analysis.insights,
-                        "questions": limited_analysis.questions,
-                        "next_steps": limited_analysis.next_steps
-                    },
-        "orbital_proximities": relevant_memories.iter()
-                        .map(|m| m.orbital_proximity)
-                        .collect::<Vec<_>>(),
-                    "memory_summary": if relevant_memories.is_empty() {
-                        "No relevant memories found".to_string()
-                    } else {
-        format!("Injected {} memories with orbital proximity range {:.2} to {:.2}",
-                            relevant_memories.len(),
-                            min_prox,
-                            max_prox
-                        )
-                    },
-                    // New user_friendly block - additive only
-                    "user_friendly": {
-                        "thought_summary": {
-                            "id": thought.id,
-                            "content": params.content,
-                            "created_at": thought.created_at.to_string()
-                        },
-                        "memory_context": {
-                            "injection_level": format!("{} ({})", injection_scale, orbital_name),
-                            "memories": user_friendly_memories
-                        },
-                        "analysis": {
-                            "key_points": user_friendly_key_points,
-                            "questions_to_consider": user_friendly_questions,
-                            "suggested_next_steps": user_friendly_next_steps,
-                            "thinking_style": thinking_style
-                        }
-                    }
-                }))
+            "thought_id": thought.id,
+            "submode_used": submode,
+            "memories_injected": relevant_memories.len(),
+            "analysis": {
+                "key_point": if !limited_analysis.insights.is_empty() { 
+                    // Take first insight and make it human-readable
+                    Self::make_conversational(&limited_analysis.insights[0])
+                } else { 
+                    "Thought stored successfully".to_string() 
+                },
+                "question": if !limited_analysis.questions.is_empty() {
+                    Self::make_conversational(&limited_analysis.questions[0])
+                } else {
+                    "What's next?".to_string()
+                },
+                "next_step": if !limited_analysis.next_steps.is_empty() {
+                    limited_analysis.next_steps[0].clone()
+                } else {
+                    "Continue processing".to_string()
+                }
+            }
+        }))
     }
 
     async fn retrieve_memories_for_injection(
@@ -1296,32 +1227,29 @@ impl SurrealMindServer {
         // user_friendly via existing helpers
         let verbose_analysis = params.verbose_analysis.unwrap_or(true);
         let limited = Self::apply_verbosity_limits(&analysis, verbose_analysis);
-        let thinking_style = match submode.as_str() {
-            "plan" => "Plan Playbook",
-            "build" => "Build Playbook",
-            "debug" => "Debug Playbook",
-            _ => "Plan Playbook",
-        }
-        .to_string();
-        let orbital_name = Self::injection_scale_to_orbital_name(injection_scale);
-        let user_friendly_memories: Vec<serde_json::Value> = relevant_memories.iter().map(|m|{
-            let preview: String = m.thought.content.chars().take(100).collect();
-            let label = Self::similarity_to_relevance_label(m.similarity_score);
-            let age = Self::format_age(&m.thought.created_at);
-            let category = Self::categorize_memory(m, Utc::now().timestamp());
-            json!({"content_preview": preview, "relevance_label": label, "relevance_percent": (m.similarity_score*100.0) as u8, "age": age, "category": category})
-        }).collect();
 
         Ok(json!({
             "thought_id": thought.id,
-            "memories_injected": relevant_memories.len(),
-            "enriched_content": enriched_content,
-            "injection_scale": injection_scale,
             "submode_used": submode,
-            "framework_analysis": {"insights": limited.insights, "questions": limited.questions, "next_steps": limited.next_steps},
-            "user_friendly": {"thought_summary": {"id": thought.id, "content": params.content, "created_at": thought.created_at.to_string()},
-                "memory_context": {"injection_level": format!("{} ({})", injection_scale, orbital_name), "memories": user_friendly_memories},
-                "analysis": {"key_points": limited.insights, "questions_to_consider": limited.questions, "suggested_next_steps": limited.next_steps, "thinking_style": thinking_style } }
+            "memories_injected": relevant_memories.len(),
+            "analysis": {
+                "key_point": if !limited.insights.is_empty() { 
+                    // Take first insight and make it human-readable
+                    Self::make_conversational(&limited.insights[0])
+                } else { 
+                    "Thought stored successfully".to_string() 
+                },
+                "question": if !limited.questions.is_empty() {
+                    Self::make_conversational(&limited.questions[0])
+                } else {
+                    "What's next?".to_string()
+                },
+                "next_step": if !limited.next_steps.is_empty() {
+                    limited.next_steps[0].clone()
+                } else {
+                    "Continue processing".to_string()
+                }
+            }
         }))
     }
 
