@@ -136,9 +136,32 @@ impl FakeEmbedder {
 #[async_trait]
 impl Embedder for FakeEmbedder {
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-        // Generate deterministic fake embedding based on text length
-        let seed = text.len() as f32 / 100.0;
-        Ok(vec![seed; self.dimensions])
+        // Deterministic, non-degenerate fake embedding.
+        // Uses a simple hash → PRNG to fill dimensions, then L2-normalizes so cosine works.
+        use std::hash::{Hash, Hasher};
+        use std::num::Wrapping;
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        text.hash(&mut hasher);
+        let mut state = Wrapping(hasher.finish());
+
+        let mut v = Vec::with_capacity(self.dimensions);
+        for _ in 0..self.dimensions {
+            // xorshift-like step for deterministic pseudo-randomness
+            state ^= Wrapping(state.0.rotate_left(13));
+            state ^= Wrapping(state.0 >> 7);
+            state ^= Wrapping(state.0.rotate_left(17));
+            // map to [-1.0, 1.0]
+            let val = ((state.0 % 10_000) as f32) / 5000.0 - 1.0;
+            v.push(val);
+        }
+        // L2 normalize (avoid degenerate constant vectors and ensure cosine behaves)
+        let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if norm > 0.0 {
+            for x in &mut v {
+                *x /= norm;
+            }
+        }
+        Ok(v)
     }
 
     fn dimensions(&self) -> usize {
