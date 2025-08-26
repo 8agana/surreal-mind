@@ -686,11 +686,11 @@ impl SurrealMindServer {
             "submode_used": submode,
             "memories_injected": relevant_memories.len(),
             "analysis": {
-                "key_point": if !limited_analysis.insights.is_empty() { 
+                "key_point": if !limited_analysis.insights.is_empty() {
                     // Take first insight and make it human-readable
                     Self::make_conversational(&limited_analysis.insights[0])
-                } else { 
-                    "Thought stored successfully".to_string() 
+                } else {
+                    "Thought stored successfully".to_string()
                 },
                 "question": if !limited_analysis.questions.is_empty() {
                     Self::make_conversational(&limited_analysis.questions[0])
@@ -814,9 +814,10 @@ impl SurrealMindServer {
                 .and_then(|s| s.parse::<usize>().ok())
                 .unwrap_or(default_limit)
                 .clamp(50, 5000);
+            // Select only needed columns to reduce payload size
             let mut resp = db
                 .query(format!(
-                    "SELECT * FROM thoughts ORDER BY created_at DESC LIMIT {}",
+                    "SELECT id, content, created_at, embedding, injected_memories, enriched_content, injection_scale, significance, access_count, last_accessed, submode, framework_enhanced, framework_analysis FROM thoughts ORDER BY created_at DESC LIMIT {}",
                     limit
                 ))
                 .await
@@ -861,11 +862,6 @@ impl SurrealMindServer {
         });
 
         // Sort and take top_k
-        matches.sort_by(|a, b| {
-            let score_a = a.similarity_score * 0.6 + a.orbital_proximity * 0.4;
-            let score_b = b.similarity_score * 0.6 + b.orbital_proximity * 0.4;
-            score_b.total_cmp(&score_a)
-        });
         let mut top: Vec<ThoughtMatch> = matches.into_iter().take(top_k).collect();
 
         // Batch update access_count and last_accessed for selected matches
@@ -1233,11 +1229,11 @@ impl SurrealMindServer {
             "submode_used": submode,
             "memories_injected": relevant_memories.len(),
             "analysis": {
-                "key_point": if !limited.insights.is_empty() { 
+                "key_point": if !limited.insights.is_empty() {
                     // Take first insight and make it human-readable
                     Self::make_conversational(&limited.insights[0])
-                } else { 
-                    "Thought stored successfully".to_string() 
+                } else {
+                    "Thought stored successfully".to_string()
                 },
                 "question": if !limited.questions.is_empty() {
                     Self::make_conversational(&limited.questions[0])
@@ -1339,6 +1335,7 @@ impl SurrealMindServer {
     }
 
     /// Convert injection scale to user-friendly orbital name
+    #[allow(dead_code)]
     fn injection_scale_to_orbital_name(scale: u8) -> String {
         match scale {
             0 => "NONE".to_string(),
@@ -1352,6 +1349,7 @@ impl SurrealMindServer {
     }
 
     /// Get relevance label from similarity score
+    #[allow(dead_code)]
     fn similarity_to_relevance_label(similarity: f32) -> &'static str {
         if similarity >= 0.9 {
             "Strong"
@@ -1363,6 +1361,7 @@ impl SurrealMindServer {
     }
 
     /// Format age as human-readable string
+    #[allow(dead_code)]
     fn format_age(created_at: &surrealdb::sql::Datetime) -> String {
         let now = Utc::now();
         let created =
@@ -1379,6 +1378,7 @@ impl SurrealMindServer {
     }
 
     /// Categorize memory based on its characteristics
+    #[allow(dead_code)]
     fn categorize_memory(memory: &ThoughtMatch, now_timestamp: i64) -> &'static str {
         let age_minutes = (now_timestamp - memory.thought.created_at.timestamp()) / 60;
 
@@ -1392,6 +1392,7 @@ impl SurrealMindServer {
     }
 
     /// Get thinking style name from submode
+    #[allow(dead_code)]
     fn submode_to_thinking_style(submode: &str) -> String {
         let base = match submode {
             "sarcastic" => "Sarcastic",

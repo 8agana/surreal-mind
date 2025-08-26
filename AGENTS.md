@@ -9,7 +9,10 @@ Project overview
   - Env: SURR_DB_USER/SURR_DB_PASS for auth; SURR_DB_LIMIT caps fallback SELECT size; SURR_SIM_THRESH controls similarity cutoff; SURR_TOP_K controls top results returned
   - NOW FULLY WIRED: Thoughts persist to DB, bidirectional relationships created via `recalls` table
   - Hybrid approach: In-memory Vec<Thought> for fast retrieval + SurrealDB for persistence
-- Exposes one MCP tool: convo_think (stores thoughts with bidirectional memory injection)
+- Exposes MCP tools:
+  - convo_think: Store thoughts with bidirectional memory injection + framework analysis
+  - tech_think: Technical reasoning with submodes (plan|build|debug)
+  - detailed_help: Deterministic, example-rich docs for tools/params
 
 Common commands
 - Build
@@ -36,19 +39,19 @@ Common commands
 High-level architecture  
 - Server structure
   - SurrealMindServer implements rmcp::handler::server::ServerHandler
-  - State: db (Arc<RwLock<Surreal<Db>>>), thoughts (Arc<RwLock<Vec<Thought>>>), embedder (Arc<dyn Embedder>)
+  - State: db (Arc<RwLock<Surreal<Client>>>), thoughts cache (Arc<RwLock<LruCache<String, Thought>>>), embedder (Arc<dyn Embedder>)
   - Transport: stdio with serve_server(server, stdio())
   - Logging: tracing + tracing-subscriber, respects RUST_LOG env var
 - Database layer
   - initialize_schema() defines SCHEMAFULL tables:
-    - thoughts: Stores id, content, created_at, embedding (array<float>), injected_memories, enriched_content, injection_scale, significance, access_count, last_accessed
-    - recalls: Graph edges with in/out (record<thoughts>), strength, created_at
+    - thoughts: Stores id, content, created_at, embedding (array<float>), injected_memories, enriched_content, injection_scale, significance, access_count, last_accessed, submode, framework_enhanced, framework_analysis
+    - recalls: Graph edges with in/out (record<thoughts>), strength, created_at, submode_match, flavor
   - Indexes on created_at and significance for efficient queries
   - Hybrid storage: DB writes + in-memory cache for performance
 - Embedding system (src/embeddings.rs)
   - Trait-based: Embedder trait with embed() and dimensions()
   - NomicEmbedder: Real 768-dim embeddings via Nomic API (requires NOMIC_API_KEY)
-  - FakeEmbedder: Deterministic fallback when no API key
+  - FakeEmbedder: Deterministic, normalized fallback when no API key (cosine meaningful)
   - Factory: create_embedder() auto-selects based on environment
 - Tool pipeline (convo_think)
   - Generate real/fake embedding based on NOMIC_API_KEY presence
@@ -60,10 +63,10 @@ High-level architecture
   - Calculate orbital_proximity: 40% age + 30% access + 30% significance
   - Store thought in SurrealDB with CREATE syntax
   - Create bidirectional recalls relationships via RELATE queries
-  - Return structured JSON: thought_id, memories_injected, enriched_content, orbital_proximities
+  - Return structured JSON: thought_id, submode_used, memories_injected, analysis (concise, conversational)
 - Retrieval strategy
   - Primary: Check in-memory thoughts vector first
-  - Fallback: Query SurrealDB via SELECT if memory empty
+  - Fallback: Query SurrealDB (selected columns only) if cache empty, then cache top results
   - Cosine similarity threshold: 0.5
   - Combined scoring: 60% similarity + 40% orbital_proximity
   - Returns top 5 matches sorted by combined score
