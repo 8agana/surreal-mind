@@ -8,3 +8,7 @@ reference/
 claude_desktop_config.json
 mcp-server-*.log
 mcp.log
+AGENTS.md
+/docs
+/symlinks
+WARP.md
