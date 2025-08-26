@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::borrow::Cow;
 
+use lru::LruCache;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::{Client, Ws};
@@ -24,6 +26,7 @@ use tracing::{debug, error, info};
 use uuid::Uuid;
 
 mod cognitive;
+mod deserializers;
 mod embeddings;
 mod flavor;
 use embeddings::{Embedder, create_embedder};
@@ -79,161 +82,6 @@ where
         }
         _ => Err(D::Error::custom("Expected Thing object or string")),
     }
-}
-
-// Forgiving deserializers for tool params
-fn de_option_u8_forgiving<'de, D>(deserializer: D) -> Result<Option<u8>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::de::Error;
-    let opt = Option::<serde_json::Value>::deserialize(deserializer)?;
-    let Some(v) = opt else { return Ok(None) };
-    match v {
-        serde_json::Value::Null => Ok(None),
-        serde_json::Value::Number(n) => {
-            let val = if let Some(u) = n.as_u64() {
-                u as f64
-            } else if let Some(i) = n.as_i64() {
-                i as f64
-            } else if let Some(f) = n.as_f64() {
-                f
-            } else {
-                return Err(D::Error::custom("invalid numeric for u8"));
-            };
-            let rounded = val.round();
-            if !rounded.is_finite() {
-                return Err(D::Error::custom("non-finite numeric for u8"));
-            }
-            // Validate injection_scale range (0-5)
-            if !(0.0..=5.0).contains(&rounded) {
-                return Err(D::Error::custom(format!(
-                    "injection_scale {} out of range. Must be 0-5",
-                    rounded
-                )));
-            }
-            Ok(Some(rounded as u8))
-        }
-        serde_json::Value::String(s) => {
-            let s = s.trim();
-            if s.is_empty() {
-                return Ok(None);
-            }
-            // Handle named presets (case-insensitive)
-            match s.to_lowercase().as_str() {
-                "none" => Ok(Some(0)),
-                "light" => Ok(Some(1)),
-                "medium" => Ok(Some(2)),
-                "default" => Ok(Some(3)),
-                "high" => Ok(Some(4)),
-                "maximum" => Ok(Some(5)),
-                _ => {
-                    // Try to parse as number
-                    let val: f64 = s.parse().map_err(|_| {
-                        D::Error::custom(format!(
-                            "Invalid injection_scale '{}'. Valid presets: NONE, LIGHT, MEDIUM, DEFAULT, HIGH, MAXIMUM. Or use numeric 0-5.",
-                            s
-                        ))
-                    })?;
-                    let rounded = val.round();
-                    if !(0.0..=5.0).contains(&rounded) {
-                        return Err(D::Error::custom(format!(
-                            "injection_scale {} out of range. Must be 0-5 or use presets: NONE, LIGHT, MEDIUM, DEFAULT, HIGH, MAXIMUM",
-                            rounded
-                        )));
-                    }
-                    Ok(Some(rounded as u8))
-                }
-            }
-        }
-        other => Err(D::Error::custom(format!("invalid type for u8: {}", other))),
-    }
-}
-
-fn de_option_f32_forgiving<'de, D>(deserializer: D) -> Result<Option<f32>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::de::Error;
-    let opt = Option::<serde_json::Value>::deserialize(deserializer)?;
-    let Some(v) = opt else { return Ok(None) };
-    let val = match v {
-        serde_json::Value::Null => return Ok(None),
-        serde_json::Value::Number(n) => {
-            // Prefer integer handling first to support 2-10 mapping and detect ambiguous 1
-            if let Some(i) = n.as_i64() {
-                if i == 1 {
-                    return Err(D::Error::custom(
-                        "significance=1 is ambiguous; use 0.1, 'low', or an integer 2-10 (maps to 0.2-1.0)",
-                    ));
-                }
-                if (2..=10).contains(&i) {
-                    (i as f32) / 10.0
-                } else {
-                    i as f32
-                }
-            } else if let Some(u) = n.as_u64() {
-                if u == 1 {
-                    return Err(D::Error::custom(
-                        "significance=1 is ambiguous; use 0.1, 'low', or an integer 2-10 (maps to 0.2-1.0)",
-                    ));
-                }
-                if (2..=10).contains(&(u as i64)) {
-                    (u as f32) / 10.0
-                } else {
-                    u as f32
-                }
-            } else if let Some(f) = n.as_f64() {
-                f as f32
-            } else {
-                return Err(D::Error::custom("invalid numeric for f32"));
-            }
-        }
-        serde_json::Value::String(s) => {
-            let s = s.trim();
-            if s.is_empty() {
-                return Ok(None);
-            }
-            // Handle string presets for significance
-            match s.to_lowercase().as_str() {
-                "low" => 0.2,
-                "medium" => 0.5,
-                "high" => 0.9,
-                _ => {
-                    // Try to parse as number
-                    s.parse::<f32>().map_err(|_| {
-                        D::Error::custom(format!(
-                            "Invalid significance '{}'. Use: 'low', 'medium', 'high', or numeric 0.0-1.0 (or 2-10 for integer scale)",
-                            s
-                        ))
-                    })?
-                }
-            }
-        }
-        other => return Err(D::Error::custom(format!("invalid type for f32: {}", other))),
-    };
-    // If we parsed a numeric string like "3" above, apply 2-10 integer mapping.
-    if (2.0..=10.0).contains(&val) && val.fract() == 0.0 {
-        let val = val / 10.0;
-        // Validate range after mapping
-        if !(0.0..=1.0).contains(&val) {
-            return Err(D::Error::custom(format!(
-                "significance {} out of range. Use 0.0-1.0, 2-10 integer scale, or 'low'/'medium'/'high'",
-                val
-            )));
-        }
-        return Ok(Some(val));
-    }
-
-    // Validate range
-    if !(0.0..=1.0).contains(&val) {
-        return Err(D::Error::custom(format!(
-            "significance {} out of range. Use 0.0-1.0, 2-10 integer scale, or 'low'/'medium'/'high'",
-            val
-        )));
-    }
-
-    Ok(Some(val))
 }
 
 fn de_option_tags<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
@@ -298,13 +146,19 @@ struct ThoughtMatch {
 #[derive(Debug, Deserialize)]
 struct ConvoThinkParams {
     content: String,
-    #[serde(default, deserialize_with = "de_option_u8_forgiving")]
+    #[serde(
+        default,
+        deserialize_with = "crate::deserializers::de_option_u8_forgiving"
+    )]
     injection_scale: Option<u8>,
     submode: Option<String>,
     #[allow(dead_code)]
     #[serde(default, deserialize_with = "de_option_tags")]
     tags: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "de_option_f32_forgiving")]
+    #[serde(
+        default,
+        deserialize_with = "crate::deserializers::de_option_f32_forgiving"
+    )]
     significance: Option<f32>,
     #[serde(default)]
     verbose_analysis: Option<bool>,
@@ -313,7 +167,7 @@ struct ConvoThinkParams {
 #[derive(Clone)]
 struct SurrealMindServer {
     db: Arc<RwLock<Surreal<Client>>>,
-    thoughts: Arc<RwLock<Vec<Thought>>>, // In-memory cache for fast retrieval
+    thoughts: Arc<RwLock<LruCache<String, Thought>>>, // Bounded in-memory cache (LRU)
     embedder: Arc<dyn Embedder>,
 }
 
@@ -524,10 +378,17 @@ impl SurrealMindServer {
             embedder.dimensions()
         );
 
+        // Initialize bounded in-memory cache (LRU)
+        let cache_max: usize = std::env::var("SURR_CACHE_MAX")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .filter(|&v| v > 0)
+            .unwrap_or(5000);
+        let thoughts_cache = LruCache::new(NonZeroUsize::new(cache_max).unwrap());
         // Initialize schema
         let server = Self {
             db: Arc::new(RwLock::new(db)),
-            thoughts: Arc::new(RwLock::new(Vec::new())),
+            thoughts: Arc::new(RwLock::new(thoughts_cache)),
             embedder,
         };
 
@@ -644,6 +505,19 @@ impl SurrealMindServer {
                 message: format!("Failed to generate embedding: {}", e).into(),
                 data: None,
             })?;
+        // Validate embedding dimensionality to prevent bad data entering DB
+        let expected_dim = self.embedder.dimensions();
+        if embedding.len() != expected_dim {
+            return Err(McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!(
+                    "Embedding dimension mismatch: expected {}, got {}. Check NOMIC_API_KEY and embedder configuration.",
+                    expected_dim,
+                    embedding.len()
+                ).into(),
+                data: None,
+            });
+        }
 
         // Retrieve relevant memories based on injection scale
         let relevant_memories = self
@@ -798,9 +672,10 @@ impl SurrealMindServer {
             })?;
         }
 
-        // Also keep in memory for fast retrieval
+        // Also keep in memory for fast retrieval (bounded LRU)
         let mut thoughts = self.thoughts.write().await;
-        thoughts.push(thought.clone());
+        thoughts.put(thought.id.clone(), thought.clone());
+        debug!("cache_size_after_insert={}", thoughts.len());
 
         // Compute explicit min/max for summary
         let (min_dist, max_dist) = relevant_memories
@@ -979,28 +854,25 @@ impl SurrealMindServer {
 
         // If we have thoughts in memory, use them
         if !thoughts.is_empty() {
-            for thought in thoughts.iter() {
+            for (_id, t) in thoughts.iter() {
                 // Calculate cosine similarity (simplified)
-                let similarity = self.cosine_similarity(query_embedding, &thought.embedding);
+                let similarity = self.cosine_similarity(query_embedding, &t.embedding);
 
                 // Calculate orbital distance (smaller = closer)
-                let orbital_distance = compute_distance(
-                    thought.created_at.timestamp(),
-                    thought.access_count,
-                    thought.significance,
-                );
+                let orbital_distance =
+                    compute_distance(t.created_at.timestamp(), t.access_count, t.significance);
 
                 if similarity > eff_sim_thresh && orbital_distance <= max_orbital_distance {
                     // Update access metadata in DB (reflect usage)
                     let dbw = self.db.write().await;
                     let _ = dbw
                         .query("UPDATE type::thing('thoughts', $id) SET access_count = $ac, last_accessed = time::now()")
-                        .bind(("id", thought.id.clone()))
-                        .bind(("ac", thought.access_count + 1))
+                        .bind(("id", t.id.clone()))
+                        .bind(("ac", t.access_count + 1))
                         .await;
 
                     matches.push(ThoughtMatch {
-                        thought: thought.clone(),
+                        thought: t.clone(),
                         similarity_score: similarity,
                         orbital_distance,
                     });
@@ -1008,13 +880,19 @@ impl SurrealMindServer {
             }
         } else {
             // Fall back to querying SurrealDB (bounded)
+            // Drop read lock before any potential writes to the cache
+            drop(thoughts);
             let db = self.db.read().await;
-            // Configurable limit for fallback query
-            let limit: usize = std::env::var("SURR_DB_LIMIT")
+            // Configurable limit for fallback query (override with SURR_RETRIEVE_CANDIDATES)
+            let default_limit: usize = std::env::var("SURR_DB_LIMIT")
                 .ok()
                 .and_then(|s| s.parse::<usize>().ok())
-                .map(|v| v.clamp(50, 5000))
                 .unwrap_or(500);
+            let limit: usize = std::env::var("SURR_RETRIEVE_CANDIDATES")
+                .ok()
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(default_limit)
+                .clamp(50, 5000);
             let mut resp = db
                 .query(format!(
                     "SELECT * FROM thoughts ORDER BY created_at DESC LIMIT {}",
@@ -1035,6 +913,8 @@ impl SurrealMindServer {
                 })
                 .unwrap_or_default();
 
+            // Warm the in-memory LRU cache with matched results
+            let mut cache = self.thoughts.write().await;
             for mut thought in results {
                 let similarity = self.cosine_similarity(query_embedding, &thought.embedding);
                 let orbital_distance = compute_distance(
@@ -1055,6 +935,9 @@ impl SurrealMindServer {
                     thought.access_count += 1;
                     thought.last_accessed = Some(surrealdb::sql::Datetime::from(Utc::now()));
 
+                    // Insert into cache (LRU)
+                    cache.put(thought.id.clone(), thought.clone());
+
                     matches.push(ThoughtMatch {
                         thought,
                         similarity_score: similarity,
@@ -1068,9 +951,7 @@ impl SurrealMindServer {
         matches.sort_by(|a, b| {
             let score_a = a.similarity_score * 0.6 + (1.0 - a.orbital_distance) * 0.4;
             let score_b = b.similarity_score * 0.6 + (1.0 - b.orbital_distance) * 0.4;
-            score_b
-                .partial_cmp(&score_a)
-                .unwrap_or(std::cmp::Ordering::Equal)
+            score_b.total_cmp(&score_a)
         });
 
         Ok(matches.into_iter().take(top_k).collect())
@@ -1268,6 +1149,19 @@ impl SurrealMindServer {
                 message: format!("Failed to generate embedding: {}", e).into(),
                 data: None,
             })?;
+        // Validate embedding dimensionality
+        let expected_dim = self.embedder.dimensions();
+        if embedding.len() != expected_dim {
+            return Err(McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!(
+                    "Embedding dimension mismatch: expected {}, got {}. Check NOMIC_API_KEY and embedder configuration.",
+                    expected_dim,
+                    embedding.len()
+                ).into(),
+                data: None,
+            });
+        }
         // Retrieval
         let relevant_memories = self
             .retrieve_memories_for_injection(&embedding, injection_scale, Some(&submode))
@@ -2033,7 +1927,7 @@ mod tests {
 
         #[derive(Debug, Deserialize)]
         struct TestStruct {
-            #[serde(deserialize_with = "de_option_u8_forgiving")]
+            #[serde(deserialize_with = "crate::deserializers::de_option_u8_forgiving")]
             injection_scale: Option<u8>,
         }
 
@@ -2107,7 +2001,7 @@ mod tests {
 
         #[derive(Debug, Deserialize)]
         struct TestStruct {
-            #[serde(deserialize_with = "de_option_f32_forgiving")]
+            #[serde(deserialize_with = "crate::deserializers::de_option_f32_forgiving")]
             significance: Option<f32>,
         }
 
@@ -2173,6 +2067,8 @@ mod tests {
         // Test invalid values should error
         let invalid_cases = vec![
             (json!({"significance": -0.5}), "out of range"),
+            (json!({"significance": 1}), "ambiguous"),
+            (json!({"significance": "1"}), "ambiguous"),
             (json!({"significance": 1.5}), "out of range"),
             (json!({"significance": 11}), "out of range"), // > 10, not in 1-10 scale
             (json!({"significance": "invalid"}), "Invalid significance"),
