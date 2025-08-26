@@ -166,7 +166,7 @@ struct ConvoThinkParams {
 
 #[derive(Clone)]
 struct SurrealMindServer {
-    db: Arc<RwLock<Surreal<Client>>>,
+    db: Arc<Surreal<Client>>,
     thoughts: Arc<RwLock<LruCache<String, Thought>>>, // Bounded in-memory cache (LRU)
     embedder: Arc<dyn Embedder>,
 }
@@ -387,7 +387,7 @@ impl SurrealMindServer {
         let thoughts_cache = LruCache::new(NonZeroUsize::new(cache_max).unwrap());
         // Initialize schema
         let server = Self {
-            db: Arc::new(RwLock::new(db)),
+            db: Arc::new(db),
             thoughts: Arc::new(RwLock::new(thoughts_cache)),
             embedder,
         };
@@ -400,11 +400,10 @@ impl SurrealMindServer {
     async fn initialize_schema(&self) -> Result<(), McpError> {
         info!("Initializing consciousness graph schema");
 
-        let db = self.db.read().await;
-
         // Define thoughts table
-        db.query(
-            r#"
+        self.db
+            .query(
+                r#"
             DEFINE TABLE thoughts SCHEMAFULL;
             DEFINE FIELD id ON TABLE thoughts TYPE string;
             DEFINE FIELD content ON TABLE thoughts TYPE string;
@@ -423,17 +422,18 @@ impl SurrealMindServer {
             DEFINE INDEX created_at_idx ON TABLE thoughts COLUMNS created_at;
             DEFINE INDEX significance_idx ON TABLE thoughts COLUMNS significance;
         "#,
-        )
-        .await
-        .map_err(|e| McpError {
-            code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-            message: format!("Failed to initialize schema: {}", e).into(),
-            data: None,
-        })?;
+            )
+            .await
+            .map_err(|e| McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!("Failed to initialize schema: {}", e).into(),
+                data: None,
+            })?;
 
         // Define relationships table
-        db.query(
-            r#"
+        self.db
+            .query(
+                r#"
             DEFINE TABLE recalls SCHEMAFULL;
             DEFINE FIELD in ON TABLE recalls TYPE record<thoughts>;
             DEFINE FIELD out ON TABLE recalls TYPE record<thoughts>;
@@ -442,27 +442,28 @@ impl SurrealMindServer {
             DEFINE FIELD submode_match ON TABLE recalls TYPE option<bool>;
             DEFINE FIELD flavor ON TABLE recalls TYPE option<string>;
         "#,
-        )
-        .await
-        .map_err(|e| McpError {
-            code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-            message: format!("Failed to define relationships: {}", e).into(),
-            data: None,
-        })?;
+            )
+            .await
+            .map_err(|e| McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!("Failed to define relationships: {}", e).into(),
+                data: None,
+            })?;
 
         // Backfill existing data with defaults (idempotent)
-        db.query(
-            r#"
+        self.db
+            .query(
+                r#"
             UPDATE thoughts SET submode = "sarcastic" WHERE submode = NONE;
             UPDATE thoughts SET framework_enhanced = false WHERE framework_enhanced = NONE;
         "#,
-        )
-        .await
-        .map_err(|e| McpError {
-            code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-            message: format!("Failed to backfill defaults: {}", e).into(),
-            data: None,
-        })?;
+            )
+            .await
+            .map_err(|e| McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!("Failed to backfill defaults: {}", e).into(),
+                data: None,
+            })?;
 
         info!("Schema initialized successfully");
         Ok(())
@@ -584,10 +585,9 @@ impl SurrealMindServer {
         };
 
         // Store thought in SurrealDB with all fields in a single operation to avoid SCHEMAFULL NONE issues
-        let db = self.db.write().await;
-
         // Create record using SurrealQL with server-side datetime to avoid JSON enum serialization issues
-        let req = db
+        let req = self
+            .db
             .query(
                 r#"CREATE type::thing('thoughts', $id) CONTENT {
                     id: $id,
@@ -630,6 +630,7 @@ impl SurrealMindServer {
         // Create bidirectional relationships with injected memories (single round trip for all)
         if !relevant_memories.is_empty() {
             let mut q = String::new();
+            q.reserve(relevant_memories.len() * 128);
             for (i, memory) in relevant_memories.iter().enumerate() {
                 // Check if submodes match (if both present)
                 let _submode_match = thought
@@ -647,7 +648,7 @@ impl SurrealMindServer {
                     i
                 ));
             }
-            let mut req = db.query(q);
+            let mut req = self.db.query(q);
             for (i, memory) in relevant_memories.iter().enumerate() {
                 let submode_match = thought
                     .submode
@@ -803,7 +804,6 @@ impl SurrealMindServer {
             // Fall back to querying SurrealDB (bounded)
             // Drop read lock before any potential writes to the cache
             drop(thoughts);
-            let db = self.db.read().await;
             // Configurable limit for fallback query (override with SURR_RETRIEVE_CANDIDATES)
             let default_limit: usize = std::env::var("SURR_DB_LIMIT")
                 .ok()
@@ -815,7 +815,7 @@ impl SurrealMindServer {
                 .unwrap_or(default_limit)
                 .clamp(50, 5000);
             // Select only needed columns to reduce payload size
-            let mut resp = db
+            let mut resp = self.db
                 .query(format!(
                     "SELECT id, content, created_at, embedding, injected_memories, enriched_content, injection_scale, significance, access_count, last_accessed, submode, framework_enhanced, framework_analysis FROM thoughts ORDER BY created_at DESC LIMIT {}",
                     limit
@@ -836,7 +836,7 @@ impl SurrealMindServer {
                 .unwrap_or_default();
 
             // Consider DB results; do not update DB or cache yet
-            for thought in results {
+            for thought in results.iter() {
                 let similarity = self.cosine_similarity(query_embedding, &thought.embedding);
                 let orbital_proximity = compute_proximity(
                     thought.created_at.timestamp(),
@@ -846,10 +846,27 @@ impl SurrealMindServer {
 
                 if similarity > eff_sim_thresh && orbital_proximity >= min_orbital_proximity {
                     matches.push(ThoughtMatch {
-                        thought,
+                        thought: thought.clone(),
                         similarity_score: similarity,
                         orbital_proximity,
                     });
+                }
+            }
+
+            // Cache warm-up: populate cache with recent thoughts from DB fallback
+            let warm_n: usize = std::env::var("SURR_CACHE_WARM")
+                .ok()
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(64)
+                .clamp(0, 1000);
+            if warm_n > 0 && !results.is_empty() {
+                let mut cache = self.thoughts.write().await;
+                let to_warm = std::cmp::min(results.len(), warm_n);
+                for thought in results.into_iter().take(to_warm) {
+                    // Avoid double-caching items already present
+                    if !cache.contains(&thought.id) {
+                        cache.put(thought.id.clone(), thought);
+                    }
                 }
             }
         }
@@ -867,6 +884,7 @@ impl SurrealMindServer {
         // Batch update access_count and last_accessed for selected matches
         if !top.is_empty() {
             let mut q = String::new();
+            q.reserve(top.len() * 128);
             for i in 0..top.len() {
                 q.push_str(&format!(
                     "UPDATE type::thing('thoughts', $id{0}) SET access_count = $ac{0}, last_accessed = time::now();\n",
@@ -875,8 +893,7 @@ impl SurrealMindServer {
             }
 
             let db_res = {
-                let dbw = self.db.write().await;
-                let mut req = dbw.query(q);
+                let mut req = self.db.query(q);
                 for (i, m) in top.iter().enumerate() {
                     let new_ac = m.thought.access_count.saturating_add(1);
                     req = req
@@ -1165,8 +1182,8 @@ impl SurrealMindServer {
                 json!({"insights": analysis.insights, "questions": analysis.questions, "next_steps": analysis.next_steps}),
             ),
         };
-        let db = self.db.write().await;
-        let req = db
+        let req = self
+            .db
             .query(
                 r#"CREATE type::thing('thoughts', $id) CONTENT {
                     id: $id,
@@ -1202,20 +1219,33 @@ impl SurrealMindServer {
 
         // Create relationships
         if !relevant_memories.is_empty() {
+            // Determine flavor for this thought
+            let flavor = tag_flavor(&params.content);
+
             let mut q = String::new();
+            q.reserve(relevant_memories.len() * 128);
             for i in 0..relevant_memories.len() {
-                q.push_str(&format!("RELATE $from{0}->recalls->$to{0} SET strength = $strength{0}, created_at = time::now();\n", i));
-                q.push_str(&format!("RELATE $to{0}->recalls->$from{0} SET strength = $strength{0}, created_at = time::now();\n", i));
+                q.push_str(&format!("RELATE $from{0}->recalls->$to{0} SET strength = $strength{0}, created_at = time::now(), submode_match = $submode_match{0}, flavor = $flavor{0};\n", i));
+                q.push_str(&format!("RELATE $to{0}->recalls->$from{0} SET strength = $strength{0}, created_at = time::now(), submode_match = $submode_match{0}, flavor = $flavor{0};\n", i));
             }
-            let mut req = db.query(q);
+            let mut req = self.db.query(q);
             for (i, memory) in relevant_memories.iter().enumerate() {
+                // Check if submodes match (if both present)
+                let submode_match = thought
+                    .submode
+                    .as_ref()
+                    .and_then(|ts| memory.thought.submode.as_ref().map(|ms| ts == ms))
+                    .unwrap_or(false);
+
                 req = req
                     .bind((format!("from{}", i), format!("thoughts:{}", thought.id)))
                     .bind((
                         format!("to{}", i),
                         format!("thoughts:{}", memory.thought.id),
                     ))
-                    .bind((format!("strength{}", i), memory.similarity_score));
+                    .bind((format!("strength{}", i), memory.similarity_score))
+                    .bind((format!("submode_match{}", i), submode_match))
+                    .bind((format!("flavor{}", i), flavor.as_str()));
             }
             let _ = req.await;
         }
