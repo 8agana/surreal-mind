@@ -57,15 +57,15 @@ High-level architecture
     - 1: Mercury (0.2 distance) - hot memories only
     - 3: Mars (0.6 distance) - foundational [default]
     - 5: Pluto (1.0 distance) - everything relevant
-  - Calculate orbital_distance: 40% age + 30% access + 30% significance
+  - Calculate orbital_proximity: 40% age + 30% access + 30% significance
   - Store thought in SurrealDB with CREATE syntax
   - Create bidirectional recalls relationships via RELATE queries
-  - Return structured JSON: thought_id, memories_injected, enriched_content, orbital_distances
+  - Return structured JSON: thought_id, memories_injected, enriched_content, orbital_proximities
 - Retrieval strategy
   - Primary: Check in-memory thoughts vector first
   - Fallback: Query SurrealDB via SELECT if memory empty
   - Cosine similarity threshold: 0.5
-  - Combined scoring: 60% similarity + 40% (1 - orbital_distance)
+  - Combined scoring: 60% similarity + 40% orbital_proximity
   - Returns top 5 matches sorted by combined score
 
 Conventions specific to this repo

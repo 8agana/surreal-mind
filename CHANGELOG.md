@@ -20,7 +20,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Retrieval pipeline now increments access_count and updates last_accessed when DB-backed memories are selected.
 - Relationship creation is now bidirectional: creates both from->recalls->to and to->recalls->from.
-- Memory summary now reports explicit min/max orbital distances rather than relying on sorted order.
+- Memory summary now reports explicit min/max orbital proximity values rather than relying on sorted order.
 - Cosine similarity calculation now computes dot and norms over the same span to avoid skew with unequal vector lengths.
 - .env.example updated with SurrealDB service config and test control variable.
 
