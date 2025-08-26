@@ -140,7 +140,7 @@ struct Thought {
 struct ThoughtMatch {
     thought: Thought,
     similarity_score: f32,
-    orbital_distance: f32,
+    orbital_proximity: f32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -678,10 +678,10 @@ impl SurrealMindServer {
         debug!("cache_size_after_insert={}", thoughts.len());
 
         // Compute explicit min/max for summary
-        let (min_dist, max_dist) = relevant_memories
+        let (min_prox, max_prox) = relevant_memories
             .iter()
             .fold((1.0_f32, 0.0_f32), |(minv, maxv), m| {
-                (minv.min(m.orbital_distance), maxv.max(m.orbital_distance))
+                (minv.min(m.orbital_proximity), maxv.max(m.orbital_proximity))
             });
 
         // Apply verbosity limits
@@ -731,48 +731,48 @@ impl SurrealMindServer {
 
         // Create response with user_friendly block (additive, keeps all existing fields)
         Ok(json!({
-            // Existing fields - keep unchanged for backward compatibility
-            "thought_id": thought.id,
-            "memories_injected": relevant_memories.len(),
-            "enriched_content": enriched_content,
-            "injection_scale": injection_scale,
-            "submode_used": submode,
-            "framework_analysis": {
-                "insights": limited_analysis.insights,
-                "questions": limited_analysis.questions,
-                "next_steps": limited_analysis.next_steps
-            },
-            "orbital_distances": relevant_memories.iter()
-                .map(|m| m.orbital_distance)
-                .collect::<Vec<_>>(),
-            "memory_summary": if relevant_memories.is_empty() {
-                "No relevant memories found".to_string()
-            } else {
-                format!("Injected {} memories from orbital distances {:.2} to {:.2}",
-                    relevant_memories.len(),
-                    min_dist,
-                    max_dist
-                )
-            },
-            // New user_friendly block - additive only
-            "user_friendly": {
-                "thought_summary": {
-                    "id": thought.id,
-                    "content": params.content,
-                    "created_at": thought.created_at.to_string()
-                },
-                "memory_context": {
-                    "injection_level": format!("{} ({})", injection_scale, orbital_name),
-                    "memories": user_friendly_memories
-                },
-                "analysis": {
-                    "key_points": user_friendly_key_points,
-                    "questions_to_consider": user_friendly_questions,
-                    "suggested_next_steps": user_friendly_next_steps,
-                    "thinking_style": thinking_style
-                }
-            }
-        }))
+                    // Existing fields - keep unchanged for backward compatibility
+                    "thought_id": thought.id,
+                    "memories_injected": relevant_memories.len(),
+                    "enriched_content": enriched_content,
+                    "injection_scale": injection_scale,
+                    "submode_used": submode,
+                    "framework_analysis": {
+                        "insights": limited_analysis.insights,
+                        "questions": limited_analysis.questions,
+                        "next_steps": limited_analysis.next_steps
+                    },
+        "orbital_proximities": relevant_memories.iter()
+                        .map(|m| m.orbital_proximity)
+                        .collect::<Vec<_>>(),
+                    "memory_summary": if relevant_memories.is_empty() {
+                        "No relevant memories found".to_string()
+                    } else {
+        format!("Injected {} memories with orbital proximity range {:.2} to {:.2}",
+                            relevant_memories.len(),
+                            min_prox,
+                            max_prox
+                        )
+                    },
+                    // New user_friendly block - additive only
+                    "user_friendly": {
+                        "thought_summary": {
+                            "id": thought.id,
+                            "content": params.content,
+                            "created_at": thought.created_at.to_string()
+                        },
+                        "memory_context": {
+                            "injection_level": format!("{} ({})", injection_scale, orbital_name),
+                            "memories": user_friendly_memories
+                        },
+                        "analysis": {
+                            "key_points": user_friendly_key_points,
+                            "questions_to_consider": user_friendly_questions,
+                            "suggested_next_steps": user_friendly_next_steps,
+                            "thinking_style": thinking_style
+                        }
+                    }
+                }))
     }
 
     async fn retrieve_memories_for_injection(
@@ -813,15 +813,16 @@ impl SurrealMindServer {
             eff_sim_thresh
         );
 
-        // Calculate orbital distance threshold based on injection scale
-        let max_orbital_distance = match injection_scale {
+        // Calculate orbital proximity threshold (minimum closeness) based on injection scale
+        // Higher proximity means closer/more relevant
+        let min_orbital_proximity = match injection_scale {
             0 => return Ok(Vec::new()), // No injection
-            1 => 0.2,                   // Mercury - only hottest memories
-            2 => 0.4,                   // Venus/Earth - recent context
-            3 => 0.6,                   // Mars - foundational significance
-            4 => 0.8,                   // Jupiter/Saturn - distant connections
-            5 => 1.0,                   // Neptune/Pluto - everything relevant
-            _ => 0.6,                   // Default to Mars
+            1 => 0.8,                   // Mercury - only hottest memories (was distance <= 0.2)
+            2 => 0.6,                   // Venus/Earth - recent context (was <= 0.4)
+            3 => 0.4,                   // Mars - foundational significance (was <= 0.6)
+            4 => 0.2,                   // Jupiter/Saturn - distant connections (was <= 0.8)
+            5 => 0.0,                   // Neptune/Pluto - everything relevant (was <= 1.0)
+            _ => 0.4,                   // Default to Mars
         };
 
         // Try to get from in-memory first, fall back to DB if needed
@@ -829,8 +830,8 @@ impl SurrealMindServer {
         let thoughts = self.thoughts.read().await;
         let mut matches = Vec::new();
 
-        // Helper to compute orbital distance with clearer semantics
-        let compute_distance = |created_ts: i64, access_count: u32, significance: f32| {
+        // Helper to compute orbital proximity (closeness in [0,1], higher is closer)
+        let compute_proximity = |created_ts: i64, access_count: u32, significance: f32| {
             // Recency closeness: recent → 1.0, old → 0.0 (normalize by 30 days)
             let age_days = (now_ts - created_ts) as f32 / 86_400.0;
             let recency_closeness = (1.0 - (age_days / 30.0)).clamp(0.0, 1.0);
@@ -849,32 +850,21 @@ impl SurrealMindServer {
             let closeness = recency_closeness * age_w
                 + access_closeness * access_w
                 + significance_closeness * sig_w;
-            (1.0 - closeness).clamp(0.0, 1.0)
+            closeness.clamp(0.0, 1.0)
         };
 
         // If we have thoughts in memory, use them
         if !thoughts.is_empty() {
             for (_id, t) in thoughts.iter() {
-                // Calculate cosine similarity (simplified)
                 let similarity = self.cosine_similarity(query_embedding, &t.embedding);
+                let orbital_proximity =
+                    compute_proximity(t.created_at.timestamp(), t.access_count, t.significance);
 
-                // Calculate orbital distance (smaller = closer)
-                let orbital_distance =
-                    compute_distance(t.created_at.timestamp(), t.access_count, t.significance);
-
-                if similarity > eff_sim_thresh && orbital_distance <= max_orbital_distance {
-                    // Update access metadata in DB (reflect usage)
-                    let dbw = self.db.write().await;
-                    let _ = dbw
-                        .query("UPDATE type::thing('thoughts', $id) SET access_count = $ac, last_accessed = time::now()")
-                        .bind(("id", t.id.clone()))
-                        .bind(("ac", t.access_count + 1))
-                        .await;
-
+                if similarity > eff_sim_thresh && orbital_proximity >= min_orbital_proximity {
                     matches.push(ThoughtMatch {
                         thought: t.clone(),
                         similarity_score: similarity,
-                        orbital_distance,
+                        orbital_proximity,
                     });
                 }
             }
@@ -913,35 +903,20 @@ impl SurrealMindServer {
                 })
                 .unwrap_or_default();
 
-            // Warm the in-memory LRU cache with matched results
-            let mut cache = self.thoughts.write().await;
-            for mut thought in results {
+            // Consider DB results; do not update DB or cache yet
+            for thought in results {
                 let similarity = self.cosine_similarity(query_embedding, &thought.embedding);
-                let orbital_distance = compute_distance(
+                let orbital_proximity = compute_proximity(
                     thought.created_at.timestamp(),
                     thought.access_count,
                     thought.significance,
                 );
 
-                if similarity > eff_sim_thresh && orbital_distance <= max_orbital_distance {
-                    // Update access metadata in DB
-                    let dbw = self.db.write().await;
-                    let _ = dbw
-                        .query("UPDATE type::thing('thoughts', $id) SET access_count = $ac, last_accessed = time::now()")
-                        .bind(("id", thought.id.clone()))
-                        .bind(("ac", thought.access_count + 1))
-                        .await;
-                    // Reflect in local copy
-                    thought.access_count += 1;
-                    thought.last_accessed = Some(surrealdb::sql::Datetime::from(Utc::now()));
-
-                    // Insert into cache (LRU)
-                    cache.put(thought.id.clone(), thought.clone());
-
+                if similarity > eff_sim_thresh && orbital_proximity >= min_orbital_proximity {
                     matches.push(ThoughtMatch {
                         thought,
                         similarity_score: similarity,
-                        orbital_distance,
+                        orbital_proximity,
                     });
                 }
             }
@@ -949,12 +924,60 @@ impl SurrealMindServer {
 
         // Sort by combined score (defaults preserved; tuned by profile weights if desired later)
         matches.sort_by(|a, b| {
-            let score_a = a.similarity_score * 0.6 + (1.0 - a.orbital_distance) * 0.4;
-            let score_b = b.similarity_score * 0.6 + (1.0 - b.orbital_distance) * 0.4;
+            let score_a = a.similarity_score * 0.6 + a.orbital_proximity * 0.4;
+            let score_b = b.similarity_score * 0.6 + b.orbital_proximity * 0.4;
             score_b.total_cmp(&score_a)
         });
 
-        Ok(matches.into_iter().take(top_k).collect())
+        // Sort and take top_k
+        matches.sort_by(|a, b| {
+            let score_a = a.similarity_score * 0.6 + a.orbital_proximity * 0.4;
+            let score_b = b.similarity_score * 0.6 + b.orbital_proximity * 0.4;
+            score_b.total_cmp(&score_a)
+        });
+        let mut top: Vec<ThoughtMatch> = matches.into_iter().take(top_k).collect();
+
+        // Batch update access_count and last_accessed for selected matches
+        if !top.is_empty() {
+            let mut q = String::new();
+            for i in 0..top.len() {
+                q.push_str(&format!(
+                    "UPDATE type::thing('thoughts', $id{0}) SET access_count = $ac{0}, last_accessed = time::now();\n",
+                    i
+                ));
+            }
+
+            let db_res = {
+                let dbw = self.db.write().await;
+                let mut req = dbw.query(q);
+                for (i, m) in top.iter().enumerate() {
+                    let new_ac = m.thought.access_count.saturating_add(1);
+                    req = req
+                        .bind((format!("id{}", i), m.thought.id.clone()))
+                        .bind((format!("ac{}", i), new_ac));
+                }
+                req.await
+            };
+
+            db_res.map_err(|e| McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!("Failed to batch update access metadata: {}", e).into(),
+                data: None,
+            })?;
+
+            // Update cache entries after confirmed DB write
+            let mut cache = self.thoughts.write().await;
+            for m in top.iter_mut() {
+                let new_ac = m.thought.access_count.saturating_add(1);
+                let mut t = m.thought.clone();
+                t.access_count = new_ac;
+                t.last_accessed = Some(surrealdb::sql::Datetime::from(Utc::now()));
+                cache.put(t.id.clone(), t.clone());
+                m.thought = t;
+            }
+        }
+
+        Ok(top)
     }
 
     /// Format framework analysis into readable sections with caps (max ~2KB)
@@ -1014,11 +1037,11 @@ impl SurrealMindServer {
         for (i, memory) in memories.iter().take(3).enumerate() {
             let preview: String = memory.thought.content.chars().take(100).collect();
             enriched.push_str(&format!(
-                "\n- Memory {}: {} (similarity: {:.2}, orbital: {:.2})",
+                "\n- Memory {}: {} (similarity: {:.2}, proximity: {:.2})",
                 i + 1,
                 preview,
                 memory.similarity_score,
-                memory.orbital_distance
+                memory.orbital_proximity
             ));
         }
         enriched.push(']');
@@ -1364,16 +1387,21 @@ impl SurrealMindServer {
     }
 
     fn cosine_similarity(&self, a: &[f32], b: &[f32]) -> f32 {
-        // Ensure we compute over the same span for dot and norms
-        let len = a.len().min(b.len());
-        if len == 0 {
+        // Enforce equal dimensions to avoid silent truncation skew
+        if a.len() != b.len() {
+            tracing::warn!(
+                "cosine_similarity dimension mismatch: a={}, b={}",
+                a.len(),
+                b.len()
+            );
             return 0.0;
         }
-        let a2 = &a[..len];
-        let b2 = &b[..len];
-        let dot: f32 = a2.iter().zip(b2.iter()).map(|(x, y)| x * y).sum();
-        let norm_a: f32 = a2.iter().map(|x| x * x).sum::<f32>().sqrt();
-        let norm_b: f32 = b2.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if a.is_empty() {
+            return 0.0;
+        }
+        let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+        let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+        let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
 
         if norm_a == 0.0 || norm_b == 0.0 {
             0.0
@@ -1860,7 +1888,7 @@ mod tests {
         let recent_match = ThoughtMatch {
             thought: recent_thought,
             similarity_score: 0.8,
-            orbital_distance: 0.3,
+            orbital_proximity: 0.7,
         };
         assert_eq!(
             SurrealMindServer::categorize_memory(&recent_match, now),
@@ -1886,7 +1914,7 @@ mod tests {
         let significant_match = ThoughtMatch {
             thought: significant_thought,
             similarity_score: 0.8,
-            orbital_distance: 0.3,
+            orbital_proximity: 0.7,
         };
         assert_eq!(
             SurrealMindServer::categorize_memory(&significant_match, now),
@@ -1912,7 +1940,7 @@ mod tests {
         let related_match = ThoughtMatch {
             thought: related_thought,
             similarity_score: 0.8,
-            orbital_distance: 0.3,
+            orbital_proximity: 0.7,
         };
         assert_eq!(
             SurrealMindServer::categorize_memory(&related_match, now),

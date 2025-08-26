@@ -137,7 +137,7 @@ Response includes:
 - `enriched_content`: Content enhanced with memory context
 - `submode_used`: Applied submode (validated/defaulted)
 - `framework_analysis`: Cognitive framework insights, questions, next steps
-- `orbital_distances`: Memory relevance distances
+- `orbital_proximities`: Memory relevance proximities
 - `memory_summary`: Description of injection results
  - `user_friendly`: Additive, human-oriented block with summary, readable memory context (percentages + labels), and conversational analysis
 

@@ -54,31 +54,67 @@ impl Embedder for NomicEmbedder {
             task_type: "search_document".to_string(),
         };
 
-        let response = self
-            .client
-            .post("https://api-atlas.nomic.ai/v1/embedding/text")
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .json(&request)
-            .send()
-            .await
-            .context("Failed to send request to Nomic API")?;
+        // Simple retry with exponential backoff
+        let mut last_err: Option<anyhow::Error> = None;
+        let attempts = std::env::var("SURR_EMBED_RETRIES")
+            .ok()
+            .and_then(|s| s.parse::<u32>().ok())
+            .filter(|&n| n > 0 && n <= 5)
+            .unwrap_or(3);
+        for i in 0..attempts {
+            let send_res = self
+                .client
+                .post("https://api-atlas.nomic.ai/v1/embedding/text")
+                .header("Authorization", format!("Bearer {}", self.api_key))
+                .json(&request)
+                .send()
+                .await
+                .context("Failed to send request to Nomic API");
+            let response = match send_res {
+                Ok(resp) => resp,
+                Err(e) => {
+                    last_err = Some(e);
+                    // backoff then retry
+                    let delay_ms = 200u64 * (1u64 << i);
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                    continue;
+                }
+            };
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("Nomic API error {}: {}", status, error_text);
+            if !response.status().is_success() {
+                let status = response.status();
+                let error_text = response.text().await.unwrap_or_default();
+                last_err = Some(anyhow::anyhow!(
+                    "Nomic API error {}: {}",
+                    status,
+                    error_text
+                ));
+                let delay_ms = 200u64 * (1u64 << i);
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                continue;
+            }
+
+            let parse_res: Result<NomicResponse> = response
+                .json()
+                .await
+                .context("Failed to parse Nomic response");
+            match parse_res {
+                Ok(result) => {
+                    return result
+                        .embeddings
+                        .into_iter()
+                        .next()
+                        .context("No embedding returned from Nomic");
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                    let delay_ms = 200u64 * (1u64 << i);
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                }
+            }
         }
 
-        let result: NomicResponse = response
-            .json()
-            .await
-            .context("Failed to parse Nomic response")?;
-
-        result
-            .embeddings
-            .into_iter()
-            .next()
-            .context("No embedding returned from Nomic")
+        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("Unknown Nomic embedding error")))
     }
 
     fn dimensions(&self) -> usize {
@@ -114,6 +150,10 @@ impl Embedder for FakeEmbedder {
 pub async fn create_embedder() -> Result<Arc<dyn Embedder>> {
     // Treat empty or placeholder-like values as "not set"
     let api_key = std::env::var("NOMIC_API_KEY").ok();
+    let strict = std::env::var("SURR_EMBED_STRICT")
+        .ok()
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
     let is_placeholder = |s: &str| {
         let t = s.trim();
         t.is_empty()
@@ -128,6 +168,12 @@ pub async fn create_embedder() -> Result<Arc<dyn Embedder>> {
     {
         info!("Using Nomic API for embeddings");
         return Ok(Arc::new(NomicEmbedder::new(key.to_string())?));
+    }
+
+    if strict {
+        anyhow::bail!(
+            "SURR_EMBED_STRICT is set but NOMIC_API_KEY is missing/invalid; refusing to use fake embeddings"
+        );
     }
 
     info!("No valid NOMIC_API_KEY found, using fake embeddings for testing");

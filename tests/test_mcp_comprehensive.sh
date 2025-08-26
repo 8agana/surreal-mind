@@ -82,7 +82,7 @@ run_test "convo_think with high significance" \
 # Test 6: convo_think with tags and submode
 run_test "convo_think with tags and submode" \
 '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"convo_think","arguments":{"content":"Philosophical thought about consciousness.","injection_scale":5,"submode":"philosophical","tags":["philosophy","consciousness","ai"]}}}' \
-'"orbital_distances"'
+'"orbital_proximities"'
 
 # Test 7: Multiple rapid thoughts (testing memory injection)
 run_test "Rapid thought sequence 1" \

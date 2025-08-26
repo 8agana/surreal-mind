@@ -3643,6 +3643,7 @@ dependencies = [
  "chrono",
  "dotenvy",
  "lru",
+ "once_cell",
  "reqwest",
  "rmcp",
  "serde",

@@ -13,26 +13,32 @@ pub mod systems;
 pub mod types;
 
 use framework::Framework;
+use once_cell::sync::Lazy;
+use std::sync::Arc;
 use types::FrameworkOutput;
 
 /// Simple cognitive engine that runs available frameworks and blends their outputs
 /// according to integer weights per framework name.
 pub struct CognitiveEngine {
-    frameworks: Vec<Box<dyn Framework + Send + Sync>>, // boxed trait objects
+    frameworks: Vec<Arc<dyn Framework + Send + Sync>>, // shared trait objects
 }
+
+static FRAMEWORKS: Lazy<Vec<Arc<dyn Framework + Send + Sync>>> = Lazy::new(|| {
+    vec![
+        Arc::new(ooda::Ooda),
+        Arc::new(socratic::Socratic),
+        Arc::new(first_principles::FirstPrinciples),
+        Arc::new(root_cause::RootCause),
+        Arc::new(lateral::Lateral),
+        Arc::new(systems::SystemsThinking),
+        Arc::new(dialectical::DialecticalThinking),
+    ]
+});
 
 impl CognitiveEngine {
     pub fn new() -> Self {
         Self {
-            frameworks: vec![
-                Box::new(ooda::Ooda),
-                Box::new(socratic::Socratic),
-                Box::new(first_principles::FirstPrinciples),
-                Box::new(root_cause::RootCause),
-                Box::new(lateral::Lateral),
-                Box::new(systems::SystemsThinking),
-                Box::new(dialectical::DialecticalThinking),
-            ],
+            frameworks: FRAMEWORKS.clone(),
         }
     }
 
