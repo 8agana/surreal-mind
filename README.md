@@ -59,6 +59,48 @@ export SURR_SUBMODE_RETRIEVAL=false  # Enable submode-aware retrieval (default: 
 export SURR_SUBMODE_DEFAULT=sarcastic  # Default submode when not specified
 ```
 
+## Advanced Configuration
+
+Additional environment variables for fine-tuning performance and behavior:
+
+```bash
+# Cache Configuration
+export SURR_CACHE_MAX=5000          # LRU cache size (default: 5000)
+export SURR_CACHE_WARM=64           # Cache warm-up batch size on DB fallback (default: 64, max: 1000)
+
+# Embedding Configuration  
+export SURR_EMBED_RETRIES=3         # Max retries for Nomic API calls (default: 3)
+export SURR_EMBED_STRICT=false      # Require real embeddings vs fake fallback (default: false)
+
+# Retrieval Tuning
+export SURR_RETRIEVE_CANDIDATES=500 # DB candidate limit override (default: SURR_DB_LIMIT, range: 50-5000)
+
+# Logging
+export MCP_NO_LOG=false             # Disable MCP logs to stderr (default: false)
+```
+
+### Example: High-Performance Configuration
+```bash
+# For systems with more memory and higher throughput needs
+export SURR_CACHE_MAX=10000
+export SURR_CACHE_WARM=128
+export SURR_RETRIEVE_CANDIDATES=1000
+export SURR_EMBED_STRICT=true
+```
+
+### Example: Submode-Aware Retrieval
+When `SURR_SUBMODE_RETRIEVAL=true`, memory retrieval is tuned based on the active submode:
+
+```bash
+export SURR_SUBMODE_RETRIEVAL=true
+```
+
+This adjusts similarity thresholds and orbital mechanics weights per submode profile:
+- **Sarcastic**: Favors contradictory and recent memories
+- **Philosophical**: Emphasizes abstract concepts and significance  
+- **Empathetic**: Balances emotional relevance with recency
+- **Problem-Solving**: Prioritizes solution-oriented and high-access memories
+
 Server will read these automatically at startup.
 
 ## Usage
