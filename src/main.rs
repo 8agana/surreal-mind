@@ -21,7 +21,7 @@ use std::sync::Arc;
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::{Client, Ws};
 use surrealdb::opt::auth::Root;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, error, info};
 use uuid::Uuid;
 
@@ -143,6 +143,41 @@ struct ThoughtMatch {
     orbital_proximity: f32,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct DateRangeParam {
+    #[serde(default)]
+    from: Option<String>,
+    #[serde(default)]
+    to: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SearchThoughtsParams {
+    content: String,
+    #[serde(default)]
+    top_k: Option<usize>,
+    #[serde(default)]
+    offset: Option<usize>,
+    #[serde(default)]
+    sim_thresh: Option<f32>,
+    #[serde(default)]
+    submode: Option<String>,
+    #[serde(default)]
+    min_significance: Option<f32>,
+    #[serde(default)]
+    date_range: Option<DateRangeParam>,
+    #[serde(default)]
+    expand_graph: Option<bool>,
+    #[serde(default)]
+    graph_depth: Option<u8>,
+    #[serde(default)]
+    graph_boost: Option<f32>,
+    #[serde(default)]
+    min_edge_strength: Option<f32>,
+    #[serde(default)]
+    sort_by: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 struct ConvoThinkParams {
     content: String,
@@ -167,6 +202,7 @@ struct ConvoThinkParams {
 #[derive(Clone)]
 struct SurrealMindServer {
     db: Arc<Surreal<Client>>,
+    db_gate: Arc<Mutex<()>>, // Serialization gate for DB queries
     thoughts: Arc<RwLock<LruCache<String, Thought>>>, // Bounded in-memory cache (LRU)
     embedder: Arc<dyn Embedder>,
 }
@@ -209,6 +245,28 @@ impl ServerHandler for SurrealMindServer {
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, McpError> {
         info!("tools/list requested");
+        // search_thoughts schema
+        let search_schema = rmcp::object!({
+            "type": "object",
+            "properties": {
+                "content": {"type": "string", "description": "Query text to match against stored thoughts"},
+                "top_k": {"type": "integer", "minimum": 1, "maximum": 50, "description": "Max results to return (default from env)"},
+                "offset": {"type": "integer", "minimum": 0, "description": "Offset for pagination (default 0)"},
+                "sim_thresh": {"type": "number", "minimum": 0.0, "maximum": 1.0, "description": "Similarity threshold (default from env)"},
+                "submode": {"type": "string", "enum": ["sarcastic", "philosophical", "empathetic", "problem_solving"], "description": "Optional submode to tune retrieval if enabled"},
+                "min_significance": {"type": "number", "minimum": 0.0, "maximum": 1.0, "description": "Minimum significance filter (default 0.0)"},
+                "date_range": {"type": "object", "properties": {
+                    "from": {"type": "string", "format": "date-time"},
+                    "to": {"type": "string", "format": "date-time"}
+                }},
+                "expand_graph": {"type": "boolean", "description": "Expand via recalls graph (default false)"},
+                "graph_depth": {"type": "integer", "minimum": 0, "maximum": 2, "description": "Graph expansion depth (default 1 when expand_graph)"},
+                "graph_boost": {"type": "number", "minimum": 0.0, "maximum": 1.0, "description": "Score boost for neighbors (default 0.15)"},
+                "min_edge_strength": {"type": "number", "minimum": 0.0, "maximum": 1.0, "description": "Minimum recalls edge strength when expanding (default 0.0)"},
+                "sort_by": {"type": "string", "enum": ["score", "similarity", "recency", "significance"], "description": "Sort mode (default 'score')"}
+            },
+            "required": ["content"]
+        });
         let convo_schema = rmcp::object!({
             "type": "object",
             "properties": {
@@ -256,6 +314,13 @@ impl ServerHandler for SurrealMindServer {
                     Arc::new(tech_schema),
                 ),
                 Tool::new(
+                    Cow::Borrowed("search_thoughts"),
+                    Cow::Borrowed(
+                        "Search thoughts by semantic similarity with optional graph expansion",
+                    ),
+                    Arc::new(search_schema),
+                ),
+                Tool::new(
                     Cow::Borrowed("detailed_help"),
                     Cow::Borrowed("Show detailed help for tools and parameters"),
                     Arc::new(help_schema),
@@ -292,6 +357,23 @@ impl ServerHandler for SurrealMindServer {
                 debug!("convo_think content (first 200 chars): {}", dbg_preview);
                 let result = self.create_thought_with_injection(params).await?;
                 Ok(CallToolResult::structured(json!(result)))
+            }
+            "search_thoughts" => {
+                let args = request.arguments.clone().ok_or_else(|| McpError {
+                    code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                    message: "Missing parameters".into(),
+                    data: None,
+                })?;
+                let params: SearchThoughtsParams =
+                    serde_json::from_value(serde_json::Value::Object(args)).map_err(|e| {
+                        McpError {
+                            code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                            message: format!("Invalid parameters: {}", e).into(),
+                            data: None,
+                        }
+                    })?;
+                let result = self.search_thoughts(params).await?;
+                Ok(CallToolResult::structured(result))
             }
             "tech_think" => {
                 let args = request.arguments.clone().ok_or_else(|| McpError {
@@ -341,6 +423,13 @@ impl ServerHandler for SurrealMindServer {
 }
 
 impl SurrealMindServer {
+    fn db_serial_enabled() -> bool {
+        std::env::var("SURR_DB_SERIAL")
+            .ok()
+            .map(|v| v == "1" || v.to_lowercase() == "true")
+            .unwrap_or(false)
+    }
+
     async fn new() -> Result<Self> {
         info!("Connecting to SurrealDB service via WebSocket");
 
@@ -388,6 +477,7 @@ impl SurrealMindServer {
         // Initialize schema
         let server = Self {
             db: Arc::new(db),
+            db_gate: Arc::new(Mutex::new(())),
             thoughts: Arc::new(RwLock::new(thoughts_cache)),
             embedder,
         };
@@ -401,9 +491,11 @@ impl SurrealMindServer {
         info!("Initializing consciousness graph schema");
 
         // Define thoughts table
-        self.db
-            .query(
-                r#"
+        let result = if Self::db_serial_enabled() {
+            let _guard = self.db_gate.lock().await;
+            self.db
+                .query(
+                    r#"
             DEFINE TABLE thoughts SCHEMAFULL;
             DEFINE FIELD id ON TABLE thoughts TYPE string;
             DEFINE FIELD content ON TABLE thoughts TYPE string;
@@ -422,13 +514,39 @@ impl SurrealMindServer {
             DEFINE INDEX created_at_idx ON TABLE thoughts COLUMNS created_at;
             DEFINE INDEX significance_idx ON TABLE thoughts COLUMNS significance;
         "#,
-            )
-            .await
-            .map_err(|e| McpError {
-                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                message: format!("Failed to initialize schema: {}", e).into(),
-                data: None,
-            })?;
+                )
+                .await
+        } else {
+            self.db
+                .query(
+                    r#"
+            DEFINE TABLE thoughts SCHEMAFULL;
+            DEFINE FIELD id ON TABLE thoughts TYPE string;
+            DEFINE FIELD content ON TABLE thoughts TYPE string;
+            DEFINE FIELD created_at ON TABLE thoughts TYPE datetime;
+            DEFINE FIELD embedding ON TABLE thoughts TYPE array<float>;
+            DEFINE FIELD injected_memories ON TABLE thoughts TYPE array<string>;
+            DEFINE FIELD enriched_content ON TABLE thoughts TYPE option<string>;
+            DEFINE FIELD injection_scale ON TABLE thoughts TYPE number;
+            DEFINE FIELD significance ON TABLE thoughts TYPE float;
+            DEFINE FIELD access_count ON TABLE thoughts TYPE number;
+            DEFINE FIELD last_accessed ON TABLE thoughts TYPE option<datetime>;
+            DEFINE FIELD submode ON TABLE thoughts TYPE option<string>;
+            DEFINE FIELD framework_enhanced ON TABLE thoughts TYPE option<bool>;
+            DEFINE FIELD framework_analysis ON TABLE thoughts TYPE option<object>;
+
+            DEFINE INDEX created_at_idx ON TABLE thoughts COLUMNS created_at;
+            DEFINE INDEX significance_idx ON TABLE thoughts COLUMNS significance;
+        "#,
+                )
+                .await
+        };
+
+        result.map_err(|e| McpError {
+            code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+            message: format!("Failed to initialize schema: {}", e).into(),
+            data: None,
+        })?;
 
         // Define relationships table
         self.db
@@ -586,37 +704,70 @@ impl SurrealMindServer {
 
         // Store thought in SurrealDB with all fields in a single operation to avoid SCHEMAFULL NONE issues
         // Create record using SurrealQL with server-side datetime to avoid JSON enum serialization issues
-        let req = self
-            .db
-            .query(
-                r#"CREATE type::thing('thoughts', $id) CONTENT {
-                    id: $id,
-                    content: $content,
-                    created_at: time::now(),
-                    embedding: $embedding,
-                    injected_memories: $injected_memories,
-                    enriched_content: $enriched_content,
-                    injection_scale: $injection_scale,
-                    significance: $significance,
-                    access_count: $access_count,
-                    submode: $submode,
-                    framework_enhanced: $framework_enhanced,
-                    framework_analysis: $framework_analysis
-                }"#,
-            )
-            .bind(("id", thought.id.clone()))
-            .bind(("content", thought.content.clone()))
-            .bind(("embedding", thought.embedding.clone()))
-            .bind(("injected_memories", thought.injected_memories.clone()))
-            .bind(("enriched_content", thought.enriched_content.clone()))
-            .bind(("injection_scale", thought.injection_scale))
-            .bind(("significance", thought.significance))
-            .bind(("access_count", thought.access_count))
-            .bind(("submode", thought.submode.clone()))
-            .bind(("framework_enhanced", thought.framework_enhanced))
-            .bind(("framework_analysis", thought.framework_analysis.clone()));
+        let create_result = if Self::db_serial_enabled() {
+            let _guard = self.db_gate.lock().await;
+            self.db
+                .query(
+                    r#"CREATE type::thing('thoughts', $id) CONTENT {
+                        id: $id,
+                        content: $content,
+                        created_at: time::now(),
+                        embedding: $embedding,
+                        injected_memories: $injected_memories,
+                        enriched_content: $enriched_content,
+                        injection_scale: $injection_scale,
+                        significance: $significance,
+                        access_count: $access_count,
+                        submode: $submode,
+                        framework_enhanced: $framework_enhanced,
+                        framework_analysis: $framework_analysis
+                    } RETURN NONE"#,
+                )
+                .bind(("id", thought.id.clone()))
+                .bind(("content", thought.content.clone()))
+                .bind(("embedding", thought.embedding.clone()))
+                .bind(("injected_memories", thought.injected_memories.clone()))
+                .bind(("enriched_content", thought.enriched_content.clone()))
+                .bind(("injection_scale", thought.injection_scale))
+                .bind(("significance", thought.significance))
+                .bind(("access_count", thought.access_count))
+                .bind(("submode", thought.submode.clone()))
+                .bind(("framework_enhanced", thought.framework_enhanced))
+                .bind(("framework_analysis", thought.framework_analysis.clone()))
+                .await
+        } else {
+            self.db
+                .query(
+                    r#"CREATE type::thing('thoughts', $id) CONTENT {
+                        id: $id,
+                        content: $content,
+                        created_at: time::now(),
+                        embedding: $embedding,
+                        injected_memories: $injected_memories,
+                        enriched_content: $enriched_content,
+                        injection_scale: $injection_scale,
+                        significance: $significance,
+                        access_count: $access_count,
+                        submode: $submode,
+                        framework_enhanced: $framework_enhanced,
+                        framework_analysis: $framework_analysis
+                    } RETURN NONE"#,
+                )
+                .bind(("id", thought.id.clone()))
+                .bind(("content", thought.content.clone()))
+                .bind(("embedding", thought.embedding.clone()))
+                .bind(("injected_memories", thought.injected_memories.clone()))
+                .bind(("enriched_content", thought.enriched_content.clone()))
+                .bind(("injection_scale", thought.injection_scale))
+                .bind(("significance", thought.significance))
+                .bind(("access_count", thought.access_count))
+                .bind(("submode", thought.submode.clone()))
+                .bind(("framework_enhanced", thought.framework_enhanced))
+                .bind(("framework_analysis", thought.framework_analysis.clone()))
+                .await
+        };
 
-        req.await.map_err(|e| {
+        create_result.map_err(|e| {
             error!("Failed to create thought record with SurrealQL: {}", e);
             McpError {
                 code: rmcp::model::ErrorCode::INTERNAL_ERROR,
@@ -640,11 +791,11 @@ impl SurrealMindServer {
                     .unwrap_or(false);
 
                 q.push_str(&format!(
-                    "RELATE $from{0}->recalls->$to{0} SET strength = $strength{0}, created_at = time::now(), submode_match = $submode_match{0}, flavor = $flavor{0};\n",
+                    "RELATE $from{0}->recalls->$to{0} SET strength = $strength{0}, created_at = time::now(), submode_match = $submode_match{0}, flavor = $flavor{0} RETURN NONE;\n",
                     i
                 ));
                 q.push_str(&format!(
-                    "RELATE $to{0}->recalls->$from{0} SET strength = $strength{0}, created_at = time::now(), submode_match = $submode_match{0}, flavor = $flavor{0};\n",
+                    "RELATE $to{0}->recalls->$from{0} SET strength = $strength{0}, created_at = time::now(), submode_match = $submode_match{0}, flavor = $flavor{0} RETURN NONE;\n",
                     i
                 ));
             }
@@ -666,11 +817,21 @@ impl SurrealMindServer {
                     .bind((format!("submode_match{}", i), submode_match))
                     .bind((format!("flavor{}", i), flavor.as_str()));
             }
-            req.await.map_err(|e| McpError {
-                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                message: format!("Failed to create relationships: {}", e).into(),
-                data: None,
-            })?;
+
+            if Self::db_serial_enabled() {
+                let _guard = self.db_gate.lock().await;
+                req.await.map_err(|e| McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: format!("Failed to create relationships: {}", e).into(),
+                    data: None,
+                })?;
+            } else {
+                req.await.map_err(|e| McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: format!("Failed to create relationships: {}", e).into(),
+                    data: None,
+                })?;
+            }
         }
 
         // Also keep in memory for fast retrieval (bounded LRU)
@@ -815,17 +976,28 @@ impl SurrealMindServer {
                 .unwrap_or(default_limit)
                 .clamp(50, 5000);
             // Select only needed columns to reduce payload size
-            let mut resp = self.db
-                .query(format!(
-                    "SELECT id, content, created_at, embedding, injected_memories, enriched_content, injection_scale, significance, access_count, last_accessed, submode, framework_enhanced, framework_analysis FROM thoughts ORDER BY created_at DESC LIMIT {}",
-                    limit
-                ))
-                .await
-                .map_err(|e| McpError {
-                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                    message: format!("Failed to query thoughts: {}", e).into(),
-                    data: None,
-                })?;
+            let resp = if Self::db_serial_enabled() {
+                let _guard = self.db_gate.lock().await;
+                self.db
+                    .query(format!(
+                        "SELECT id, content, created_at, embedding, injected_memories, enriched_content, injection_scale, significance, access_count, last_accessed, submode, framework_enhanced, framework_analysis FROM thoughts ORDER BY created_at DESC LIMIT {}",
+                        limit
+                    ))
+                    .await
+            } else {
+                self.db
+                    .query(format!(
+                        "SELECT id, content, created_at, embedding, injected_memories, enriched_content, injection_scale, significance, access_count, last_accessed, submode, framework_enhanced, framework_analysis FROM thoughts ORDER BY created_at DESC LIMIT {}",
+                        limit
+                    ))
+                    .await
+            };
+
+            let mut resp = resp.map_err(|e| McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!("Failed to query thoughts: {}", e).into(),
+                data: None,
+            })?;
             let results: Vec<Thought> = resp
                 .take(0)
                 .map_err(|e| McpError {
@@ -887,7 +1059,7 @@ impl SurrealMindServer {
             q.reserve(top.len() * 128);
             for i in 0..top.len() {
                 q.push_str(&format!(
-                    "UPDATE type::thing('thoughts', $id{0}) SET access_count = $ac{0}, last_accessed = time::now();\n",
+                    "UPDATE type::thing('thoughts', $id{0}) SET access_count = $ac{0}, last_accessed = time::now() RETURN NONE;\n",
                     i
                 ));
             }
@@ -900,7 +1072,13 @@ impl SurrealMindServer {
                         .bind((format!("id{}", i), m.thought.id.clone()))
                         .bind((format!("ac{}", i), new_ac));
                 }
-                req.await
+
+                if Self::db_serial_enabled() {
+                    let _guard = self.db_gate.lock().await;
+                    req.await
+                } else {
+                    req.await
+                }
             };
 
             db_res.map_err(|e| McpError {
@@ -922,6 +1100,481 @@ impl SurrealMindServer {
         }
 
         Ok(top)
+    }
+
+    async fn search_thoughts(
+        &self,
+        params: SearchThoughtsParams,
+    ) -> Result<serde_json::Value, McpError> {
+        // Resolve defaults from env
+        let env_top_k = std::env::var("SURR_SEARCH_TOP_K")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok());
+        let fall_top_k = std::env::var("SURR_TOP_K")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok());
+        let top_k = params
+            .top_k
+            .or(env_top_k)
+            .or(fall_top_k)
+            .unwrap_or(10)
+            .clamp(1, 50);
+        let offset = params.offset.unwrap_or(0);
+
+        let env_sim = std::env::var("SURR_SEARCH_SIM_THRESH")
+            .ok()
+            .and_then(|s| s.parse::<f32>().ok());
+        let fall_sim = std::env::var("SURR_SIM_THRESH")
+            .ok()
+            .and_then(|s| s.parse::<f32>().ok());
+        let sim_thresh = params
+            .sim_thresh
+            .or(env_sim)
+            .or(fall_sim)
+            .unwrap_or(0.5)
+            .clamp(0.0, 1.0);
+
+        let min_sig = params.min_significance.unwrap_or(0.0).clamp(0.0, 1.0);
+        let (from_ts, to_ts) = if let Some(dr) = &params.date_range {
+            let from = dr
+                .from
+                .as_deref()
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|d| d.timestamp());
+            let to = dr
+                .to
+                .as_deref()
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|d| d.timestamp());
+            (from, to)
+        } else {
+            (None, None)
+        };
+
+        let expand_graph = params.expand_graph.unwrap_or(false);
+        let graph_depth = params
+            .graph_depth
+            .unwrap_or(if expand_graph { 1 } else { 0 })
+            .min(2);
+        let graph_boost = params.graph_boost.unwrap_or(0.15).clamp(0.0, 1.0);
+        let min_edge_strength = params.min_edge_strength.unwrap_or(0.0).clamp(0.0, 1.0);
+        let sort_by = params.sort_by.as_deref().unwrap_or("score").to_lowercase();
+
+        // Embed query
+        let embedding = self
+            .embedder
+            .embed(&params.content)
+            .await
+            .map_err(|e| McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!("Failed to generate embedding: {}", e).into(),
+                data: None,
+            })?;
+        let expected_dim = self.embedder.dimensions();
+        if embedding.len() != expected_dim {
+            return Err(McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!(
+                    "Embedding dimension mismatch: expected {}, got {}",
+                    expected_dim,
+                    embedding.len()
+                )
+                .into(),
+                data: None,
+            });
+        }
+
+        // Submode-aware knobs
+        let use_submode = std::env::var("SURR_SUBMODE_RETRIEVAL")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let sm =
+            cognitive::profile::Submode::from_str(params.submode.as_deref().unwrap_or("sarcastic"));
+        let prof = cognitive::profile::profile_for(sm);
+
+        let now_ts = Utc::now().timestamp();
+        let compute_proximity = |created_ts: i64, access_count: u32, significance: f32| {
+            let age_days = (now_ts - created_ts) as f32 / 86_400.0;
+            let recency_closeness = (1.0 - (age_days / 30.0)).clamp(0.0, 1.0);
+            let access_closeness = ((access_count as f32 + 1.0).ln() / 5.0).clamp(0.0, 1.0);
+            let sig_close = significance.clamp(0.0, 1.0);
+            let (aw, cw, sw) = if use_submode {
+                (
+                    prof.orbital.age_w,
+                    prof.orbital.access_w,
+                    prof.orbital.significance_w,
+                )
+            } else {
+                (0.4_f32, 0.3_f32, 0.3_f32)
+            };
+            (recency_closeness * aw + access_closeness * cw + sig_close * sw).clamp(0.0, 1.0)
+        };
+
+        // Gather candidates from cache
+        let thoughts = self.thoughts.read().await;
+        let mut matches: Vec<ThoughtMatch> = Vec::new();
+        for (_id, t) in thoughts.iter() {
+            if t.significance < min_sig {
+                continue;
+            }
+            let ts = t.created_at.timestamp();
+            if let Some(f) = from_ts
+                && ts < f
+            {
+                continue;
+            }
+            if let Some(to) = to_ts
+                && ts > to
+            {
+                continue;
+            }
+            let sim = self.cosine_similarity(&embedding, &t.embedding);
+            if sim < sim_thresh {
+                continue;
+            }
+            let prox = compute_proximity(ts, t.access_count, t.significance);
+            matches.push(ThoughtMatch {
+                thought: t.clone(),
+                similarity_score: sim,
+                orbital_proximity: prox,
+            });
+        }
+        drop(thoughts);
+
+        // If insufficient, fallback to DB
+        if matches.is_empty() {
+            let default_limit: usize = std::env::var("SURR_DB_LIMIT")
+                .ok()
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(500);
+            let limit: usize = std::env::var("SURR_RETRIEVE_CANDIDATES")
+                .ok()
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(default_limit)
+                .clamp(50, 5000);
+
+            let mut q = String::from(
+                "SELECT id, content, created_at, embedding, significance, access_count, last_accessed, submode FROM thoughts",
+            );
+            // WHERE
+            let mut where_clauses: Vec<String> = Vec::new();
+            if let Some(f) = from_ts {
+                where_clauses.push(format!("created_at >= time::unix({})", f));
+            }
+            if let Some(t) = to_ts {
+                where_clauses.push(format!("created_at <= time::unix({})", t));
+            }
+            if min_sig > 0.0 {
+                where_clauses.push(format!("significance >= {}", min_sig));
+            }
+            if !where_clauses.is_empty() {
+                q.push_str(" WHERE ");
+                q.push_str(&where_clauses.join(" AND "));
+            }
+            q.push_str(" ORDER BY created_at DESC LIMIT ");
+            q.push_str(&limit.to_string());
+
+            let mut resp = self.db.query(q).await.map_err(|e| McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!("Failed to query thoughts: {}", e).into(),
+                data: None,
+            })?;
+            let rows: Vec<Thought> = resp
+                .take(0)
+                .map_err(|e| McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: format!("Failed to parse thoughts: {}", e).into(),
+                    data: None,
+                })
+                .unwrap_or_default();
+
+            for t in rows.iter() {
+                let sim = self.cosine_similarity(&embedding, &t.embedding);
+                if sim < sim_thresh {
+                    continue;
+                }
+                let prox =
+                    compute_proximity(t.created_at.timestamp(), t.access_count, t.significance);
+                matches.push(ThoughtMatch {
+                    thought: t.clone(),
+                    similarity_score: sim,
+                    orbital_proximity: prox,
+                });
+            }
+
+            // Warm cache
+            let warm_n: usize = std::env::var("SURR_CACHE_WARM")
+                .ok()
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(64)
+                .clamp(0, 1000);
+            if warm_n > 0 && !rows.is_empty() {
+                let mut cache = self.thoughts.write().await;
+                for t in rows.into_iter().take(warm_n) {
+                    if !cache.contains(&t.id) {
+                        cache.put(t.id.clone(), t);
+                    }
+                }
+            }
+        }
+
+        // Seed sorting and paging helper
+        let sort_matches = |v: &mut Vec<ThoughtMatch>| {
+            v.sort_by(|a, b| match sort_by.as_str() {
+                "similarity" => b
+                    .similarity_score
+                    .total_cmp(&a.similarity_score)
+                    .then_with(|| b.orbital_proximity.total_cmp(&a.orbital_proximity))
+                    .then_with(|| {
+                        b.thought
+                            .created_at
+                            .timestamp()
+                            .cmp(&a.thought.created_at.timestamp())
+                    })
+                    .then_with(|| a.thought.id.cmp(&b.thought.id)),
+                "recency" => b
+                    .thought
+                    .created_at
+                    .timestamp()
+                    .cmp(&a.thought.created_at.timestamp())
+                    .then_with(|| b.similarity_score.total_cmp(&a.similarity_score))
+                    .then_with(|| b.orbital_proximity.total_cmp(&a.orbital_proximity))
+                    .then_with(|| a.thought.id.cmp(&b.thought.id)),
+                "significance" => b
+                    .thought
+                    .significance
+                    .total_cmp(&a.thought.significance)
+                    .then_with(|| b.similarity_score.total_cmp(&a.similarity_score))
+                    .then_with(|| b.orbital_proximity.total_cmp(&a.orbital_proximity))
+                    .then_with(|| {
+                        a.thought
+                            .created_at
+                            .timestamp()
+                            .cmp(&b.thought.created_at.timestamp())
+                    })
+                    .then_with(|| a.thought.id.cmp(&b.thought.id)),
+                _ => b
+                    .similarity_score
+                    .total_cmp(&a.similarity_score)
+                    .then_with(|| b.orbital_proximity.total_cmp(&a.orbital_proximity))
+                    .then_with(|| {
+                        b.thought
+                            .created_at
+                            .timestamp()
+                            .cmp(&a.thought.created_at.timestamp())
+                    })
+                    .then_with(|| a.thought.id.cmp(&b.thought.id)),
+            });
+            if sort_by == "score" {
+                v.sort_by(|a, b| {
+                    let sa = a.similarity_score * 0.6 + a.orbital_proximity * 0.4;
+                    let sb = b.similarity_score * 0.6 + b.orbital_proximity * 0.4;
+                    sb.total_cmp(&sa)
+                        .then_with(|| b.similarity_score.total_cmp(&a.similarity_score))
+                        .then_with(|| {
+                            b.thought
+                                .created_at
+                                .timestamp()
+                                .cmp(&a.thought.created_at.timestamp())
+                        })
+                        .then_with(|| a.thought.id.cmp(&b.thought.id))
+                });
+            }
+        };
+
+        // initial sort and page
+        sort_matches(&mut matches);
+        let mut sliced: Vec<ThoughtMatch> = matches.into_iter().skip(offset).take(top_k).collect();
+
+        let mut via_map: std::collections::HashMap<String, (String, f32)> =
+            std::collections::HashMap::new();
+        // Graph expansion
+        if expand_graph && graph_depth > 0 && !sliced.is_empty() {
+            let max_n = std::env::var("SURR_SEARCH_GRAPH_MAX_NEIGHBORS")
+                .ok()
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(20);
+            let mut neighbor_strength: std::collections::HashMap<String, f32> =
+                std::collections::HashMap::new();
+            let mut seeds: Vec<String> = sliced.iter().map(|m| m.thought.id.clone()).collect();
+            seeds.truncate(top_k);
+            for seed in seeds.iter() {
+                let mut q = String::new();
+                q.push_str("SELECT id(in) AS nid, strength FROM recalls WHERE out = type::thing('thoughts', $sid) LIMIT $lim;\n");
+                q.push_str("SELECT id(out) AS nid, strength FROM recalls WHERE in = type::thing('thoughts', $sid) LIMIT $lim;\n");
+                let mut req = self.db.query(q);
+                req = req.bind(("sid", seed.clone())).bind(("lim", max_n));
+                let mut resp = req.await.map_err(|e| McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: format!("Failed to query recalls: {}", e).into(),
+                    data: None,
+                })?;
+                let out1: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
+                let out2: Vec<serde_json::Value> = resp.take(1).unwrap_or_default();
+                for row in out1.into_iter().chain(out2.into_iter()) {
+                    if let (Some(nid), Some(stren)) = (row.get("nid"), row.get("strength")) {
+                        let nid_s = nid.as_str().unwrap_or("").to_string();
+                        let st = stren.as_f64().unwrap_or(0.0) as f32;
+                        if nid_s.is_empty() || st < min_edge_strength {
+                            continue;
+                        }
+                        let e = neighbor_strength.entry(nid_s.clone()).or_insert(0.0);
+                        if st > *e {
+                            *e = st;
+                            via_map.insert(nid_s.clone(), (seed.clone(), st));
+                        }
+                    }
+                }
+            }
+            // Optional second-hop expansion
+            if graph_depth > 1 && !neighbor_strength.is_empty() {
+                let mut second_strength: std::collections::HashMap<String, f32> =
+                    std::collections::HashMap::new();
+                for (mid, mid_st) in neighbor_strength.iter() {
+                    // Original seed that led to this first-hop neighbor
+                    let orig_seed = via_map.get(mid).map(|(s, _)| s.clone());
+                    let mut q2 = String::new();
+                    q2.push_str(
+                        "SELECT id(in) AS nid, strength FROM recalls WHERE out = type::thing('thoughts', $mid) LIMIT $lim;\n",
+                    );
+                    q2.push_str(
+                        "SELECT id(out) AS nid, strength FROM recalls WHERE in = type::thing('thoughts', $mid) LIMIT $lim;\n",
+                    );
+                    let mut resp2 = self
+                        .db
+                        .query(q2)
+                        .bind(("mid", mid.clone()))
+                        .bind(("lim", max_n))
+                        .await
+                        .map_err(|e| McpError {
+                            code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                            message: format!("Failed to query second-hop recalls: {}", e).into(),
+                            data: None,
+                        })?;
+                    let s1: Vec<serde_json::Value> = resp2.take(0).unwrap_or_default();
+                    let s2: Vec<serde_json::Value> = resp2.take(1).unwrap_or_default();
+                    for row in s1.into_iter().chain(s2.into_iter()) {
+                        if let (Some(nid), Some(stren)) = (row.get("nid"), row.get("strength")) {
+                            let nid_s = nid.as_str().unwrap_or("").to_string();
+                            let st2 = stren.as_f64().unwrap_or(0.0) as f32;
+                            if nid_s.is_empty() || st2 < min_edge_strength {
+                                continue;
+                            }
+                            // Skip original seeds to avoid cycles
+                            if seeds.contains(&nid_s) {
+                                continue;
+                            }
+                            // Combined two-hop strength (multiply)
+                            let combined = (*mid_st * st2).clamp(0.0, 1.0);
+                            let e = second_strength.entry(nid_s.clone()).or_insert(0.0);
+                            if combined > *e {
+                                *e = combined;
+                                if let Some(seed) = orig_seed.as_ref() {
+                                    via_map.insert(nid_s.clone(), (seed.clone(), combined));
+                                }
+                            }
+                        }
+                    }
+                }
+                for (k, v) in second_strength.into_iter() {
+                    let e = neighbor_strength.entry(k).or_insert(0.0);
+                    if v > *e {
+                        *e = v;
+                    }
+                }
+            }
+            if !neighbor_strength.is_empty() {
+                // Fetch neighbors thoughts in one go
+                let ids: Vec<String> = neighbor_strength.keys().cloned().collect();
+                let mut resp = self
+                    .db
+                    .query("SELECT id, content, created_at, embedding, significance, access_count, last_accessed, submode FROM thoughts WHERE id INSIDE $ids")
+                    .bind(("ids", ids.clone()))
+                    .await
+                    .map_err(|e| McpError { code: rmcp::model::ErrorCode::INTERNAL_ERROR, message: format!("Failed to fetch neighbor thoughts: {}", e).into(), data: None })?;
+                let neighbors: Vec<Thought> = resp.take(0).unwrap_or_default();
+                let mut pool: Vec<ThoughtMatch> = Vec::new();
+                // Keep original seeds
+                pool.extend(sliced.iter().cloned());
+                for t in neighbors.into_iter() {
+                    // skip if same as a seed
+                    if seeds.contains(&t.id) {
+                        continue;
+                    }
+                    let sim = self.cosine_similarity(&embedding, &t.embedding);
+                    let prox =
+                        compute_proximity(t.created_at.timestamp(), t.access_count, t.significance);
+                    if sim < sim_thresh {
+                        continue;
+                    }
+                    // Apply graph boost at later sort; retain for via_reason only
+                    pool.push(ThoughtMatch {
+                        thought: t,
+                        similarity_score: sim,
+                        orbital_proximity: prox,
+                    });
+                }
+                // Sort with graph boost applied to neighbors
+                pool.sort_by(|a, b| {
+                    let mut sa = a.similarity_score * 0.6 + a.orbital_proximity * 0.4;
+                    let mut sb = b.similarity_score * 0.6 + b.orbital_proximity * 0.4;
+                    if let Some(sta) = neighbor_strength.get(&a.thought.id) {
+                        sa += graph_boost * *sta;
+                    }
+                    if let Some(stb) = neighbor_strength.get(&b.thought.id) {
+                        sb += graph_boost * *stb;
+                    }
+                    sb.total_cmp(&sa)
+                        .then_with(|| b.similarity_score.total_cmp(&a.similarity_score))
+                        .then_with(|| {
+                            b.thought
+                                .created_at
+                                .timestamp()
+                                .cmp(&a.thought.created_at.timestamp())
+                        })
+                        .then_with(|| a.thought.id.cmp(&b.thought.id))
+                });
+                // Dedupe by id, keep best
+                let mut seen = std::collections::HashSet::new();
+                let mut dedup: Vec<ThoughtMatch> = Vec::new();
+                for m in pool.into_iter() {
+                    if seen.insert(m.thought.id.clone()) {
+                        dedup.push(m);
+                    }
+                }
+                sliced = dedup.into_iter().take(top_k).collect();
+            }
+        }
+
+        // Shape output
+        let results: Vec<serde_json::Value> = sliced
+            .into_iter()
+            .map(|m| {
+                let preview: String = m.thought.content.chars().take(160).collect();
+                let score = m.similarity_score * 0.6 + m.orbital_proximity * 0.4;
+                let via = via_map.get(&m.thought.id).cloned();
+                json!({
+                    "id": m.thought.id,
+                    "content_preview": preview,
+                    "similarity": (m.similarity_score),
+                    "orbital_proximity": (m.orbital_proximity),
+                    "combined_score": score,
+                    "created_at": m.thought.created_at,
+                    "significance": m.thought.significance,
+                    "submode": m.thought.submode,
+                    "via_graph": via.is_some(),
+                    "via_reason": via.map(|(seed, st)| format!("expanded via {} @ strength={:.2}", seed, st)),
+                })
+            })
+            .collect();
+
+        Ok(json!({
+            "total": results.len(),
+            "offset": offset,
+            "top_k": top_k,
+            "results": results
+        }))
     }
 
     /// Format framework analysis into readable sections with caps (max ~2KB)
@@ -1182,36 +1835,70 @@ impl SurrealMindServer {
                 json!({"insights": analysis.insights, "questions": analysis.questions, "next_steps": analysis.next_steps}),
             ),
         };
-        let req = self
-            .db
-            .query(
-                r#"CREATE type::thing('thoughts', $id) CONTENT {
-                    id: $id,
-                    content: $content,
-                    created_at: time::now(),
-                    embedding: $embedding,
-                    injected_memories: $injected_memories,
-                    enriched_content: $enriched_content,
-                    injection_scale: $injection_scale,
-                    significance: $significance,
-                    access_count: $access_count,
-                    submode: $submode,
-                    framework_enhanced: $framework_enhanced,
-                    framework_analysis: $framework_analysis
-                }"#,
-            )
-            .bind(("id", thought.id.clone()))
-            .bind(("content", thought.content.clone()))
-            .bind(("embedding", thought.embedding.clone()))
-            .bind(("injected_memories", thought.injected_memories.clone()))
-            .bind(("enriched_content", thought.enriched_content.clone()))
-            .bind(("injection_scale", thought.injection_scale))
-            .bind(("significance", thought.significance))
-            .bind(("access_count", thought.access_count))
-            .bind(("submode", thought.submode.clone()))
-            .bind(("framework_enhanced", thought.framework_enhanced))
-            .bind(("framework_analysis", thought.framework_analysis.clone()));
-        req.await.map_err(|e| McpError {
+        let create_result = if Self::db_serial_enabled() {
+            let _guard = self.db_gate.lock().await;
+            self.db
+                .query(
+                    r#"CREATE type::thing('thoughts', $id) CONTENT {
+                        id: $id,
+                        content: $content,
+                        created_at: time::now(),
+                        embedding: $embedding,
+                        injected_memories: $injected_memories,
+                        enriched_content: $enriched_content,
+                        injection_scale: $injection_scale,
+                        significance: $significance,
+                        access_count: $access_count,
+                        submode: $submode,
+                        framework_enhanced: $framework_enhanced,
+                        framework_analysis: $framework_analysis
+                    } RETURN NONE"#,
+                )
+                .bind(("id", thought.id.clone()))
+                .bind(("content", thought.content.clone()))
+                .bind(("embedding", thought.embedding.clone()))
+                .bind(("injected_memories", thought.injected_memories.clone()))
+                .bind(("enriched_content", thought.enriched_content.clone()))
+                .bind(("injection_scale", thought.injection_scale))
+                .bind(("significance", thought.significance))
+                .bind(("access_count", thought.access_count))
+                .bind(("submode", thought.submode.clone()))
+                .bind(("framework_enhanced", thought.framework_enhanced))
+                .bind(("framework_analysis", thought.framework_analysis.clone()))
+                .await
+        } else {
+            self.db
+                .query(
+                    r#"CREATE type::thing('thoughts', $id) CONTENT {
+                        id: $id,
+                        content: $content,
+                        created_at: time::now(),
+                        embedding: $embedding,
+                        injected_memories: $injected_memories,
+                        enriched_content: $enriched_content,
+                        injection_scale: $injection_scale,
+                        significance: $significance,
+                        access_count: $access_count,
+                        submode: $submode,
+                        framework_enhanced: $framework_enhanced,
+                        framework_analysis: $framework_analysis
+                    } RETURN NONE"#,
+                )
+                .bind(("id", thought.id.clone()))
+                .bind(("content", thought.content.clone()))
+                .bind(("embedding", thought.embedding.clone()))
+                .bind(("injected_memories", thought.injected_memories.clone()))
+                .bind(("enriched_content", thought.enriched_content.clone()))
+                .bind(("injection_scale", thought.injection_scale))
+                .bind(("significance", thought.significance))
+                .bind(("access_count", thought.access_count))
+                .bind(("submode", thought.submode.clone()))
+                .bind(("framework_enhanced", thought.framework_enhanced))
+                .bind(("framework_analysis", thought.framework_analysis.clone()))
+                .await
+        };
+
+        create_result.map_err(|e| McpError {
             code: rmcp::model::ErrorCode::INTERNAL_ERROR,
             message: format!("Failed to store thought: {}", e).into(),
             data: None,
@@ -1225,8 +1912,8 @@ impl SurrealMindServer {
             let mut q = String::new();
             q.reserve(relevant_memories.len() * 128);
             for i in 0..relevant_memories.len() {
-                q.push_str(&format!("RELATE $from{0}->recalls->$to{0} SET strength = $strength{0}, created_at = time::now(), submode_match = $submode_match{0}, flavor = $flavor{0};\n", i));
-                q.push_str(&format!("RELATE $to{0}->recalls->$from{0} SET strength = $strength{0}, created_at = time::now(), submode_match = $submode_match{0}, flavor = $flavor{0};\n", i));
+                q.push_str(&format!("RELATE $from{0}->recalls->$to{0} SET strength = $strength{0}, created_at = time::now(), submode_match = $submode_match{0}, flavor = $flavor{0} RETURN NONE;\n", i));
+                q.push_str(&format!("RELATE $to{0}->recalls->$from{0} SET strength = $strength{0}, created_at = time::now(), submode_match = $submode_match{0}, flavor = $flavor{0} RETURN NONE;\n", i));
             }
             let mut req = self.db.query(q);
             for (i, memory) in relevant_memories.iter().enumerate() {
@@ -1247,7 +1934,13 @@ impl SurrealMindServer {
                     .bind((format!("submode_match{}", i), submode_match))
                     .bind((format!("flavor{}", i), flavor.as_str()));
             }
-            let _ = req.await;
+
+            if Self::db_serial_enabled() {
+                let _guard = self.db_gate.lock().await;
+                let _ = req.await;
+            } else {
+                let _ = req.await;
+            }
         }
 
         // user_friendly via existing helpers
