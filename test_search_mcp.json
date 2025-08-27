@@ -1,0 +1,30 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2024-11-05",
+    "capabilities": {},
+    "clientInfo": {
+      "name": "test",
+      "version": "1.0"
+    }
+  }
+}
+{
+  "jsonrpc": "2.0",
+  "method": "notifications/initialized"
+}
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "search_thoughts",
+    "arguments": {
+      "content": "artificial intelligence",
+      "top_k": 5,
+      "sim_thresh": 0.01
+    }
+  }
+}
