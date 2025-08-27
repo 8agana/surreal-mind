@@ -23,8 +23,122 @@ use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::{Client, Ws};
 use surrealdb::opt::auth::Root;
 use tokio::sync::{Mutex, RwLock};
-use tracing::{debug, error, info};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
+
+// Retry utility for database operations with exponential backoff
+async fn with_retry<T, F, Fut>(
+    operation_name: &str,
+    max_retries: u32,
+    initial_delay_ms: u64,
+    operation: F,
+) -> Result<T, McpError>
+where
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = Result<T, surrealdb::Error>>,
+{
+    let mut delay_ms = initial_delay_ms;
+    let backoff_factor = 2.0;
+    
+    // Get operation timeout from environment (default: 10 seconds)
+    let operation_timeout_ms: u64 = std::env::var("SURR_OPERATION_TIMEOUT_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10000); // 10 seconds default
+    
+    for attempt in 1..=max_retries {
+        // Wrap the operation in a timeout
+        let timeout_duration = std::time::Duration::from_millis(operation_timeout_ms);
+        let result = tokio::time::timeout(timeout_duration, operation()).await;
+        
+        match result {
+            Ok(Ok(result)) => {
+                if attempt > 1 {
+                    info!("Operation '{}' succeeded on attempt {}/{}", operation_name, attempt, max_retries);
+                }
+                return Ok(result);
+            }
+            Ok(Err(e)) => {
+                // Check if this is a retriable error by examining error message
+                let error_str = e.to_string().to_lowercase();
+                let is_retriable = 
+                    error_str.contains("connection") || 
+                    error_str.contains("timeout") ||
+                    error_str.contains("broken pipe") ||
+                    error_str.contains("network") ||
+                    error_str.contains("websocket") ||
+                    error_str.contains("io error") ||
+                    error_str.contains("transport") ||
+                    // Avoid retrying obvious logic errors
+                    (!error_str.contains("parse") && 
+                     !error_str.contains("syntax") && 
+                     !error_str.contains("invalid") &&
+                     !error_str.contains("permission"));
+                
+                if attempt == max_retries || !is_retriable {
+                    return Err(McpError {
+                        code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                        message: format!(
+                            "{} failed after {} retries: {}{}",
+                            operation_name, 
+                            attempt,
+                            e,
+                            if !is_retriable { " (non-retriable error)" } else { "" }
+                        ).into(),
+                        data: None,
+                    });
+                }
+                
+                warn!(
+                    "Attempt {}/{} for '{}' failed (will retry): {}", 
+                    attempt, max_retries, operation_name, e
+                );
+                
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                delay_ms = (delay_ms as f64 * backoff_factor) as u64;
+            }
+            Err(_elapsed) => {
+                // Operation timed out
+                let timeout_msg = format!("Operation timed out after {}ms", operation_timeout_ms);
+                
+                if attempt == max_retries {
+                    return Err(McpError {
+                        code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                        message: format!(
+                            "{} failed after {} retries: {}",
+                            operation_name, attempt, timeout_msg
+                        ).into(),
+                        data: None,
+                    });
+                }
+                
+                warn!(
+                    "Attempt {}/{} for '{}' timed out (will retry)", 
+                    attempt, max_retries, operation_name
+                );
+                
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                delay_ms = (delay_ms as f64 * backoff_factor) as u64;
+            }
+        }
+    }
+    unreachable!()
+}
+
+// Get retry configuration from environment variables
+fn get_retry_config() -> (u32, u64) {
+    let max_retries = std::env::var("SURR_MAX_RETRIES")
+        .ok()
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(3);
+    
+    let initial_delay_ms = std::env::var("SURR_RETRY_DELAY_MS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(500);
+    
+    (max_retries, initial_delay_ms)
+}
 
 mod cognitive;
 mod deserializers;
@@ -135,6 +249,10 @@ struct Thought {
     framework_enhanced: Option<bool>,
     #[serde(default)]
     framework_analysis: Option<serde_json::Value>,
+    #[serde(default)]
+    is_inner_voice: Option<bool>,
+    #[serde(default)]
+    inner_visibility: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -198,6 +316,28 @@ struct ConvoThinkParams {
     significance: Option<f32>,
     #[serde(default)]
     verbose_analysis: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct InnerVoiceParams {
+    content: String,
+    #[serde(
+        default,
+        deserialize_with = "crate::deserializers::de_option_u8_forgiving"
+    )]
+    injection_scale: Option<u8>,
+    #[allow(dead_code)]
+    #[serde(default, deserialize_with = "de_option_tags")]
+    tags: Option<Vec<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::deserializers::de_option_f32_forgiving"
+    )]
+    significance: Option<f32>,
+    #[serde(default)]
+    verbose_analysis: Option<bool>,
+    #[serde(default)]
+    inner_visibility: Option<String>, // "private", "context_only", etc.
 }
 
 #[derive(Clone)]
@@ -294,10 +434,23 @@ impl ServerHandler for SurrealMindServer {
             "required": ["content"]
         });
 
+        let inner_voice_schema = rmcp::object!({
+            "type": "object",
+            "properties": {
+                "content": {"type": "string", "description": "Private inner thought content"},
+                "injection_scale": {"type": ["integer", "string"], "description": "Memory injection scale. Presets: NONE (0), LIGHT (1), MEDIUM (2), DEFAULT (3), HIGH (4), MAXIMUM (5). Or numeric 0-5"},
+                "tags": {"type": "array", "items": {"type": "string"}, "description": "Additional tags"},
+                "significance": {"type": ["number", "string"], "description": "Significance weight. Strings: 'low' (0.2), 'medium' (0.5), 'high' (0.9). Numbers: 0.0-1.0 or integers 2-10 (mapped to 0.2-1.0)"},
+                "verbose_analysis": {"type": "boolean", "description": "Enable verbose framework analysis (default: true)", "default": true},
+                "inner_visibility": {"type": "string", "description": "Visibility level for inner voice", "enum": ["private", "context_only"], "default": "context_only"}
+            },
+            "required": ["content"]
+        });
+
         let help_schema = rmcp::object!({
             "type": "object",
             "properties": {
-                "tool": {"type": "string", "enum": ["convo_think", "tech_think"], "description": "Which tool to describe (omit for overview)"},
+                "tool": {"type": "string", "enum": ["convo_think", "tech_think", "inner_voice"], "description": "Which tool to describe (omit for overview)"},
                 "format": {"type": "string", "enum": ["compact", "full"], "description": "Level of detail", "default": "full"}
             }
         });
@@ -313,6 +466,11 @@ impl ServerHandler for SurrealMindServer {
                     Cow::Borrowed("tech_think"),
                     Cow::Borrowed("Technical reasoning with memory injection"),
                     Arc::new(tech_schema),
+                ),
+                Tool::new(
+                    Cow::Borrowed("inner_voice"),
+                    Cow::Borrowed("Store private inner thoughts with memory injection"),
+                    Arc::new(inner_voice_schema),
                 ),
                 Tool::new(
                     Cow::Borrowed("search_thoughts"),
@@ -405,6 +563,28 @@ impl ServerHandler for SurrealMindServer {
                     });
                 }
                 let result = self.create_tech_thought(params).await?;
+                Ok(CallToolResult::structured(json!(result)))
+            }
+            "inner_voice" => {
+                let args = request.arguments.clone().ok_or_else(|| McpError {
+                    code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                    message: "Missing parameters".into(),
+                    data: None,
+                })?;
+                let params: InnerVoiceParams =
+                    serde_json::from_value(serde_json::Value::Object(args)).map_err(|e| {
+                        McpError {
+                            code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                            message: format!("Invalid parameters: {}", e).into(),
+                            data: None,
+                        }
+                    })?;
+
+                // Redact content at info level to avoid logging private thoughts
+                info!("inner_voice called (content_len={})", params.content.len());
+                let dbg_preview: String = params.content.chars().take(50).collect(); // Shorter preview for privacy
+                debug!("inner_voice content (first 50 chars): {}", dbg_preview);
+                let result = self.create_inner_voice_thought(params).await?;
                 Ok(CallToolResult::structured(json!(result)))
             }
             "detailed_help" => {
@@ -569,99 +749,100 @@ impl SurrealMindServer {
 
     async fn initialize_schema(&self) -> Result<(), McpError> {
         info!("Initializing consciousness graph schema");
+        let (max_retries, initial_delay_ms) = get_retry_config();
 
-        // Define thoughts table
-        let result = if Self::db_serial_enabled() {
+        // Define thoughts table with retry logic
+        if Self::db_serial_enabled() {
             let _guard = self.db_gate.lock().await;
-            self.db
-                .query(
-                    r#"
-            DEFINE TABLE thoughts SCHEMAFULL;
-            DEFINE FIELD id ON TABLE thoughts TYPE string;
-            DEFINE FIELD content ON TABLE thoughts TYPE string;
-            DEFINE FIELD created_at ON TABLE thoughts TYPE datetime;
-            DEFINE FIELD embedding ON TABLE thoughts TYPE array<float>;
-            DEFINE FIELD injected_memories ON TABLE thoughts TYPE array<string>;
-            DEFINE FIELD enriched_content ON TABLE thoughts TYPE option<string>;
-            DEFINE FIELD injection_scale ON TABLE thoughts TYPE number;
-            DEFINE FIELD significance ON TABLE thoughts TYPE float;
-            DEFINE FIELD access_count ON TABLE thoughts TYPE number;
-            DEFINE FIELD last_accessed ON TABLE thoughts TYPE option<datetime>;
-            DEFINE FIELD submode ON TABLE thoughts TYPE option<string>;
-            DEFINE FIELD framework_enhanced ON TABLE thoughts TYPE option<bool>;
-            DEFINE FIELD framework_analysis ON TABLE thoughts TYPE option<object>;
+            with_retry("initialize_schema_thoughts", max_retries, initial_delay_ms, || async {
+                self.db
+                    .query(
+                        r#"
+                DEFINE TABLE thoughts SCHEMAFULL;
+                DEFINE FIELD id ON TABLE thoughts TYPE string;
+                DEFINE FIELD content ON TABLE thoughts TYPE string;
+                DEFINE FIELD created_at ON TABLE thoughts TYPE datetime;
+                DEFINE FIELD embedding ON TABLE thoughts TYPE array<float>;
+                DEFINE FIELD injected_memories ON TABLE thoughts TYPE array<string>;
+                DEFINE FIELD enriched_content ON TABLE thoughts TYPE option<string>;
+                DEFINE FIELD injection_scale ON TABLE thoughts TYPE number;
+                DEFINE FIELD significance ON TABLE thoughts TYPE float;
+                DEFINE FIELD access_count ON TABLE thoughts TYPE number;
+                DEFINE FIELD last_accessed ON TABLE thoughts TYPE option<datetime>;
+                DEFINE FIELD submode ON TABLE thoughts TYPE option<string>;
+                DEFINE FIELD framework_enhanced ON TABLE thoughts TYPE option<bool>;
+                DEFINE FIELD framework_analysis ON TABLE thoughts TYPE option<object>;
+                DEFINE FIELD is_inner_voice ON TABLE thoughts TYPE option<bool>;
+                DEFINE FIELD inner_visibility ON TABLE thoughts TYPE option<string>;
 
-            DEFINE INDEX created_at_idx ON TABLE thoughts COLUMNS created_at;
-            DEFINE INDEX significance_idx ON TABLE thoughts COLUMNS significance;
-        "#,
-                )
-                .await
+                DEFINE INDEX created_at_idx ON TABLE thoughts COLUMNS created_at;
+                DEFINE INDEX significance_idx ON TABLE thoughts COLUMNS significance;
+            "#,
+                    )
+                    .await
+            })
+            .await?;
         } else {
+            with_retry("initialize_schema_thoughts", max_retries, initial_delay_ms, || async {
+                self.db
+                    .query(
+                        r#"
+                DEFINE TABLE thoughts SCHEMAFULL;
+                DEFINE FIELD id ON TABLE thoughts TYPE string;
+                DEFINE FIELD content ON TABLE thoughts TYPE string;
+                DEFINE FIELD created_at ON TABLE thoughts TYPE datetime;
+                DEFINE FIELD embedding ON TABLE thoughts TYPE array<float>;
+                DEFINE FIELD injected_memories ON TABLE thoughts TYPE array<string>;
+                DEFINE FIELD enriched_content ON TABLE thoughts TYPE option<string>;
+                DEFINE FIELD injection_scale ON TABLE thoughts TYPE number;
+                DEFINE FIELD significance ON TABLE thoughts TYPE float;
+                DEFINE FIELD access_count ON TABLE thoughts TYPE number;
+                DEFINE FIELD last_accessed ON TABLE thoughts TYPE option<datetime>;
+                DEFINE FIELD submode ON TABLE thoughts TYPE option<string>;
+                DEFINE FIELD framework_enhanced ON TABLE thoughts TYPE option<bool>;
+                DEFINE FIELD framework_analysis ON TABLE thoughts TYPE option<object>;
+                DEFINE FIELD is_inner_voice ON TABLE thoughts TYPE option<bool>;
+                DEFINE FIELD inner_visibility ON TABLE thoughts TYPE option<string>;
+
+                DEFINE INDEX created_at_idx ON TABLE thoughts COLUMNS created_at;
+                DEFINE INDEX significance_idx ON TABLE thoughts COLUMNS significance;
+            "#,
+                    )
+                    .await
+            })
+            .await?;
+        }
+
+        // Define relationships table with retry logic
+        with_retry("initialize_schema_relationships", max_retries, initial_delay_ms, || async {
             self.db
                 .query(
                     r#"
-            DEFINE TABLE thoughts SCHEMAFULL;
-            DEFINE FIELD id ON TABLE thoughts TYPE string;
-            DEFINE FIELD content ON TABLE thoughts TYPE string;
-            DEFINE FIELD created_at ON TABLE thoughts TYPE datetime;
-            DEFINE FIELD embedding ON TABLE thoughts TYPE array<float>;
-            DEFINE FIELD injected_memories ON TABLE thoughts TYPE array<string>;
-            DEFINE FIELD enriched_content ON TABLE thoughts TYPE option<string>;
-            DEFINE FIELD injection_scale ON TABLE thoughts TYPE number;
-            DEFINE FIELD significance ON TABLE thoughts TYPE float;
-            DEFINE FIELD access_count ON TABLE thoughts TYPE number;
-            DEFINE FIELD last_accessed ON TABLE thoughts TYPE option<datetime>;
-            DEFINE FIELD submode ON TABLE thoughts TYPE option<string>;
-            DEFINE FIELD framework_enhanced ON TABLE thoughts TYPE option<bool>;
-            DEFINE FIELD framework_analysis ON TABLE thoughts TYPE option<object>;
-
-            DEFINE INDEX created_at_idx ON TABLE thoughts COLUMNS created_at;
-            DEFINE INDEX significance_idx ON TABLE thoughts COLUMNS significance;
-        "#,
+                DEFINE TABLE recalls SCHEMAFULL;
+                DEFINE FIELD in ON TABLE recalls TYPE record<thoughts>;
+                DEFINE FIELD out ON TABLE recalls TYPE record<thoughts>;
+                DEFINE FIELD strength ON TABLE recalls TYPE float;
+                DEFINE FIELD created_at ON TABLE recalls TYPE datetime;
+                DEFINE FIELD submode_match ON TABLE recalls TYPE option<bool>;
+                DEFINE FIELD flavor ON TABLE recalls TYPE option<string>;
+            "#,
                 )
                 .await
-        };
+        })
+        .await?;
 
-        result.map_err(|e| McpError {
-            code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-            message: format!("Failed to initialize schema: {}", e).into(),
-            data: None,
-        })?;
-
-        // Define relationships table
-        self.db
-            .query(
-                r#"
-            DEFINE TABLE recalls SCHEMAFULL;
-            DEFINE FIELD in ON TABLE recalls TYPE record<thoughts>;
-            DEFINE FIELD out ON TABLE recalls TYPE record<thoughts>;
-            DEFINE FIELD strength ON TABLE recalls TYPE float;
-            DEFINE FIELD created_at ON TABLE recalls TYPE datetime;
-            DEFINE FIELD submode_match ON TABLE recalls TYPE option<bool>;
-            DEFINE FIELD flavor ON TABLE recalls TYPE option<string>;
-        "#,
-            )
-            .await
-            .map_err(|e| McpError {
-                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                message: format!("Failed to define relationships: {}", e).into(),
-                data: None,
-            })?;
-
-        // Backfill existing data with defaults (idempotent)
-        self.db
-            .query(
-                r#"
-            UPDATE thoughts SET submode = "sarcastic" WHERE submode = NONE;
-            UPDATE thoughts SET framework_enhanced = false WHERE framework_enhanced = NONE;
-        "#,
-            )
-            .await
-            .map_err(|e| McpError {
-                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                message: format!("Failed to backfill defaults: {}", e).into(),
-                data: None,
-            })?;
+        // Backfill existing data with defaults (idempotent) with retry logic
+        with_retry("initialize_schema_backfill", max_retries, initial_delay_ms, || async {
+            self.db
+                .query(
+                    r#"
+                UPDATE thoughts SET submode = "sarcastic" WHERE submode = NONE;
+                UPDATE thoughts SET framework_enhanced = false WHERE framework_enhanced = NONE;
+            "#,
+                )
+                .await
+        })
+        .await?;
 
         info!("Schema initialized successfully");
         Ok(())
@@ -782,81 +963,81 @@ impl SurrealMindServer {
             submode: Some(submode.clone()),
             framework_enhanced: Some(true), // Now enabled with framework processing
             framework_analysis: Some(framework_json.clone()), // Store framework output
+            is_inner_voice: Some(false), // convo_think thoughts are not inner voice
+            inner_visibility: None,
         };
 
-        // Store thought in SurrealDB with all fields in a single operation to avoid SCHEMAFULL NONE issues
-        // Create record using SurrealQL with server-side datetime to avoid JSON enum serialization issues
-        let create_result = if Self::db_serial_enabled() {
+        // Store thought in SurrealDB with retry logic
+        let (max_retries, initial_delay_ms) = get_retry_config();
+        
+        if Self::db_serial_enabled() {
             let _guard = self.db_gate.lock().await;
-            self.db
-                .query(
-                    r#"CREATE type::thing('thoughts', $id) CONTENT {
-                        id: $id,
-                        content: $content,
-                        created_at: time::now(),
-                        embedding: $embedding,
-                        injected_memories: $injected_memories,
-                        enriched_content: $enriched_content,
-                        injection_scale: $injection_scale,
-                        significance: $significance,
-                        access_count: $access_count,
-                        submode: $submode,
-                        framework_enhanced: $framework_enhanced,
-                        framework_analysis: $framework_analysis
-                    } RETURN NONE"#,
-                )
-                .bind(("id", thought.id.clone()))
-                .bind(("content", thought.content.clone()))
-                .bind(("embedding", thought.embedding.clone()))
-                .bind(("injected_memories", thought.injected_memories.clone()))
-                .bind(("enriched_content", thought.enriched_content.clone()))
-                .bind(("injection_scale", thought.injection_scale))
-                .bind(("significance", thought.significance))
-                .bind(("access_count", thought.access_count))
-                .bind(("submode", thought.submode.clone()))
-                .bind(("framework_enhanced", thought.framework_enhanced))
-                .bind(("framework_analysis", thought.framework_analysis.clone()))
-                .await
+            with_retry("create_convo_thought", max_retries, initial_delay_ms, || async {
+                self.db
+                    .query(
+                        r#"CREATE type::thing('thoughts', $id) CONTENT {
+                            id: $id,
+                            content: $content,
+                            created_at: time::now(),
+                            embedding: $embedding,
+                            injected_memories: $injected_memories,
+                            enriched_content: $enriched_content,
+                            injection_scale: $injection_scale,
+                            significance: $significance,
+                            access_count: $access_count,
+                            submode: $submode,
+                            framework_enhanced: $framework_enhanced,
+                            framework_analysis: $framework_analysis
+                        } RETURN NONE"#,
+                    )
+                    .bind(("id", thought.id.clone()))
+                    .bind(("content", thought.content.clone()))
+                    .bind(("embedding", thought.embedding.clone()))
+                    .bind(("injected_memories", thought.injected_memories.clone()))
+                    .bind(("enriched_content", thought.enriched_content.clone()))
+                    .bind(("injection_scale", thought.injection_scale))
+                    .bind(("significance", thought.significance))
+                    .bind(("access_count", thought.access_count))
+                    .bind(("submode", thought.submode.clone()))
+                    .bind(("framework_enhanced", thought.framework_enhanced))
+                    .bind(("framework_analysis", thought.framework_analysis.clone()))
+                    .await
+            })
+            .await?;
         } else {
-            self.db
-                .query(
-                    r#"CREATE type::thing('thoughts', $id) CONTENT {
-                        id: $id,
-                        content: $content,
-                        created_at: time::now(),
-                        embedding: $embedding,
-                        injected_memories: $injected_memories,
-                        enriched_content: $enriched_content,
-                        injection_scale: $injection_scale,
-                        significance: $significance,
-                        access_count: $access_count,
-                        submode: $submode,
-                        framework_enhanced: $framework_enhanced,
-                        framework_analysis: $framework_analysis
-                    } RETURN NONE"#,
-                )
-                .bind(("id", thought.id.clone()))
-                .bind(("content", thought.content.clone()))
-                .bind(("embedding", thought.embedding.clone()))
-                .bind(("injected_memories", thought.injected_memories.clone()))
-                .bind(("enriched_content", thought.enriched_content.clone()))
-                .bind(("injection_scale", thought.injection_scale))
-                .bind(("significance", thought.significance))
-                .bind(("access_count", thought.access_count))
-                .bind(("submode", thought.submode.clone()))
-                .bind(("framework_enhanced", thought.framework_enhanced))
-                .bind(("framework_analysis", thought.framework_analysis.clone()))
-                .await
-        };
-
-        create_result.map_err(|e| {
-            error!("Failed to create thought record with SurrealQL: {}", e);
-            McpError {
-                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                message: format!("Failed to store thought: {}", e).into(),
-                data: None,
-            }
-        })?;
+            with_retry("create_convo_thought", max_retries, initial_delay_ms, || async {
+                self.db
+                    .query(
+                        r#"CREATE type::thing('thoughts', $id) CONTENT {
+                            id: $id,
+                            content: $content,
+                            created_at: time::now(),
+                            embedding: $embedding,
+                            injected_memories: $injected_memories,
+                            enriched_content: $enriched_content,
+                            injection_scale: $injection_scale,
+                            significance: $significance,
+                            access_count: $access_count,
+                            submode: $submode,
+                            framework_enhanced: $framework_enhanced,
+                            framework_analysis: $framework_analysis
+                        } RETURN NONE"#,
+                    )
+                    .bind(("id", thought.id.clone()))
+                    .bind(("content", thought.content.clone()))
+                    .bind(("embedding", thought.embedding.clone()))
+                    .bind(("injected_memories", thought.injected_memories.clone()))
+                    .bind(("enriched_content", thought.enriched_content.clone()))
+                    .bind(("injection_scale", thought.injection_scale))
+                    .bind(("significance", thought.significance))
+                    .bind(("access_count", thought.access_count))
+                    .bind(("submode", thought.submode.clone()))
+                    .bind(("framework_enhanced", thought.framework_enhanced))
+                    .bind(("framework_analysis", thought.framework_analysis.clone()))
+                    .await
+            })
+            .await?;
+        }
 
         debug!("Successfully stored thought: {}", thought.id);
 
@@ -1687,6 +1868,12 @@ impl SurrealMindServer {
             }
         }
 
+        // Filter out inner voice thoughts from user-facing results
+        // Inner voice thoughts should not be visible in search results to maintain privacy
+        sliced.retain(|m| {
+            !m.thought.is_inner_voice.unwrap_or(false)
+        });
+
         // Shape output
         let results: Vec<serde_json::Value> = sliced
             .into_iter()
@@ -1974,75 +2161,80 @@ impl SurrealMindServer {
             framework_analysis: Some(
                 json!({"insights": analysis.insights, "questions": analysis.questions, "next_steps": analysis.next_steps}),
             ),
+            is_inner_voice: Some(false), // tech_think thoughts are not inner voice
+            inner_visibility: None,
         };
-        let create_result = if Self::db_serial_enabled() {
+        // Store tech thought in SurrealDB with retry logic
+        let (max_retries, initial_delay_ms) = get_retry_config();
+        
+        if Self::db_serial_enabled() {
             let _guard = self.db_gate.lock().await;
-            self.db
-                .query(
-                    r#"CREATE type::thing('thoughts', $id) CONTENT {
-                        id: $id,
-                        content: $content,
-                        created_at: time::now(),
-                        embedding: $embedding,
-                        injected_memories: $injected_memories,
-                        enriched_content: $enriched_content,
-                        injection_scale: $injection_scale,
-                        significance: $significance,
-                        access_count: $access_count,
-                        submode: $submode,
-                        framework_enhanced: $framework_enhanced,
-                        framework_analysis: $framework_analysis
-                    } RETURN NONE"#,
-                )
-                .bind(("id", thought.id.clone()))
-                .bind(("content", thought.content.clone()))
-                .bind(("embedding", thought.embedding.clone()))
-                .bind(("injected_memories", thought.injected_memories.clone()))
-                .bind(("enriched_content", thought.enriched_content.clone()))
-                .bind(("injection_scale", thought.injection_scale))
-                .bind(("significance", thought.significance))
-                .bind(("access_count", thought.access_count))
-                .bind(("submode", thought.submode.clone()))
-                .bind(("framework_enhanced", thought.framework_enhanced))
-                .bind(("framework_analysis", thought.framework_analysis.clone()))
-                .await
+            with_retry("create_tech_thought", max_retries, initial_delay_ms, || async {
+                self.db
+                    .query(
+                        r#"CREATE type::thing('thoughts', $id) CONTENT {
+                            id: $id,
+                            content: $content,
+                            created_at: time::now(),
+                            embedding: $embedding,
+                            injected_memories: $injected_memories,
+                            enriched_content: $enriched_content,
+                            injection_scale: $injection_scale,
+                            significance: $significance,
+                            access_count: $access_count,
+                            submode: $submode,
+                            framework_enhanced: $framework_enhanced,
+                            framework_analysis: $framework_analysis
+                        } RETURN NONE"#,
+                    )
+                    .bind(("id", thought.id.clone()))
+                    .bind(("content", thought.content.clone()))
+                    .bind(("embedding", thought.embedding.clone()))
+                    .bind(("injected_memories", thought.injected_memories.clone()))
+                    .bind(("enriched_content", thought.enriched_content.clone()))
+                    .bind(("injection_scale", thought.injection_scale))
+                    .bind(("significance", thought.significance))
+                    .bind(("access_count", thought.access_count))
+                    .bind(("submode", thought.submode.clone()))
+                    .bind(("framework_enhanced", thought.framework_enhanced))
+                    .bind(("framework_analysis", thought.framework_analysis.clone()))
+                    .await
+            })
+            .await?;
         } else {
-            self.db
-                .query(
-                    r#"CREATE type::thing('thoughts', $id) CONTENT {
-                        id: $id,
-                        content: $content,
-                        created_at: time::now(),
-                        embedding: $embedding,
-                        injected_memories: $injected_memories,
-                        enriched_content: $enriched_content,
-                        injection_scale: $injection_scale,
-                        significance: $significance,
-                        access_count: $access_count,
-                        submode: $submode,
-                        framework_enhanced: $framework_enhanced,
-                        framework_analysis: $framework_analysis
-                    } RETURN NONE"#,
-                )
-                .bind(("id", thought.id.clone()))
-                .bind(("content", thought.content.clone()))
-                .bind(("embedding", thought.embedding.clone()))
-                .bind(("injected_memories", thought.injected_memories.clone()))
-                .bind(("enriched_content", thought.enriched_content.clone()))
-                .bind(("injection_scale", thought.injection_scale))
-                .bind(("significance", thought.significance))
-                .bind(("access_count", thought.access_count))
-                .bind(("submode", thought.submode.clone()))
-                .bind(("framework_enhanced", thought.framework_enhanced))
-                .bind(("framework_analysis", thought.framework_analysis.clone()))
-                .await
-        };
-
-        create_result.map_err(|e| McpError {
-            code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-            message: format!("Failed to store thought: {}", e).into(),
-            data: None,
-        })?;
+            with_retry("create_tech_thought", max_retries, initial_delay_ms, || async {
+                self.db
+                    .query(
+                        r#"CREATE type::thing('thoughts', $id) CONTENT {
+                            id: $id,
+                            content: $content,
+                            created_at: time::now(),
+                            embedding: $embedding,
+                            injected_memories: $injected_memories,
+                            enriched_content: $enriched_content,
+                            injection_scale: $injection_scale,
+                            significance: $significance,
+                            access_count: $access_count,
+                            submode: $submode,
+                            framework_enhanced: $framework_enhanced,
+                            framework_analysis: $framework_analysis
+                        } RETURN NONE"#,
+                    )
+                    .bind(("id", thought.id.clone()))
+                    .bind(("content", thought.content.clone()))
+                    .bind(("embedding", thought.embedding.clone()))
+                    .bind(("injected_memories", thought.injected_memories.clone()))
+                    .bind(("enriched_content", thought.enriched_content.clone()))
+                    .bind(("injection_scale", thought.injection_scale))
+                    .bind(("significance", thought.significance))
+                    .bind(("access_count", thought.access_count))
+                    .bind(("submode", thought.submode.clone()))
+                    .bind(("framework_enhanced", thought.framework_enhanced))
+                    .bind(("framework_analysis", thought.framework_analysis.clone()))
+                    .await
+            })
+            .await?;
+        }
 
         // Create relationships
         if !relevant_memories.is_empty() {
@@ -2107,6 +2299,269 @@ impl SurrealMindServer {
                     limited.next_steps[0].clone()
                 } else {
                     "Continue processing".to_string()
+                }
+            }
+        }))
+    }
+
+    async fn create_inner_voice_thought(
+        &self,
+        params: InnerVoiceParams,
+    ) -> Result<serde_json::Value, McpError> {
+        let injection_scale = params.injection_scale.unwrap_or(2); // Default to MEDIUM for inner voice
+        if injection_scale > 5 {
+            return Err(McpError {
+                code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                message: format!(
+                    "injection_scale must be between 0 and 5 (got: {}). Valid presets: 0=NONE, 1=MERCURY (hot memories), 2=VENUS (recent), 3=MARS (default), 4=JUPITER (distant), 5=PLUTO (everything). Example: {{\"injection_scale\": 2}}"
+                    , injection_scale
+                ).into(),
+                data: None,
+            });
+        }
+
+        let significance = params.significance.unwrap_or(0.3); // Lower default significance for private thoughts
+        if !(0.0..=1.0).contains(&significance) {
+            return Err(McpError {
+                code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                message: format!(
+                    "significance must be between 0.0 and 1.0 (got: {})",
+                    significance
+                ).into(),
+                data: None,
+            });
+        }
+
+        // Generate embedding
+        let embedding = self
+            .embedder
+            .embed(&params.content)
+            .await
+            .map_err(|e| McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!("Failed to generate embedding: {}", e).into(),
+                data: None,
+            })?;
+
+        // Validate embedding dimensionality
+        let expected_dim = self.embedder.dimensions();
+        if embedding.len() != expected_dim {
+            return Err(McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!(
+                    "Embedding dimension mismatch: expected {}, got {}. Check embedding provider configuration.",
+                    expected_dim,
+                    embedding.len()
+                ).into(),
+                data: None,
+            });
+        }
+
+        // Retrieve memories for injection
+        let relevant_memories = self
+            .retrieve_memories_for_injection(&embedding, injection_scale, None) // No submode for inner voice
+            .await
+            .map_err(|e| McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!("Failed to retrieve memories for injection: {}", e).into(),
+                data: None,
+            })?;
+
+        // Set inner_visibility default
+        let inner_visibility = params.inner_visibility.clone().unwrap_or_else(|| "context_only".to_string());
+        
+        // Basic framework analysis for inner voice (simpler than convo/tech)
+        let enriched_content = if relevant_memories.is_empty() {
+            params.content.clone()
+        } else {
+            format!(
+                "{}\n\n[Memory context: {} related thoughts accessed]",
+                params.content,
+                relevant_memories.len()
+            )
+        };
+
+        let analysis = crate::cognitive::types::FrameworkOutput {
+            insights: vec![format!("Inner thought recorded: {}", 
+                if params.content.len() > 50 {
+                    format!("{}...", &params.content[..50])
+                } else {
+                    params.content.clone()
+                }
+            )],
+            questions: vec!["What does this reveal about current thinking patterns?".to_string()],
+            next_steps: vec!["Continue inner reflection".to_string()],
+            meta: std::collections::HashMap::new(), // Empty meta for inner voice
+        };
+
+        let framework_json = serde_json::json!({
+            "insights": analysis.insights,
+            "questions": analysis.questions,
+            "next_steps": analysis.next_steps,
+        });
+
+        // Create new thought with inner_voice flags
+        let thought = Thought {
+            id: Uuid::new_v4().to_string(),
+            content: params.content.clone(),
+            created_at: surrealdb::sql::Datetime::from(Utc::now()),
+            embedding,
+            injected_memories: relevant_memories
+                .iter()
+                .map(|m| m.thought.id.clone())
+                .collect(),
+            enriched_content: Some(enriched_content.clone()),
+            injection_scale,
+            significance,
+            access_count: 0,
+            last_accessed: None,
+            submode: None, // Inner voice doesn't use submodes
+            framework_enhanced: Some(true),
+            framework_analysis: Some(framework_json.clone()),
+            is_inner_voice: Some(true), // Mark as inner voice
+            inner_visibility: Some(inner_visibility.clone()),
+        };
+
+        // Store thought in SurrealDB with retry logic
+        let (max_retries, initial_delay_ms) = get_retry_config();
+        
+        if Self::db_serial_enabled() {
+            let _guard = self.db_gate.lock().await;
+            with_retry("create_inner_voice_thought", max_retries, initial_delay_ms, || async {
+                self.db
+                    .query(
+                        r#"CREATE type::thing('thoughts', $id) CONTENT {
+                            id: $id,
+                            content: $content,
+                            created_at: time::now(),
+                            embedding: $embedding,
+                            injected_memories: $injected_memories,
+                            enriched_content: $enriched_content,
+                            injection_scale: $injection_scale,
+                            significance: $significance,
+                            access_count: $access_count,
+                            submode: $submode,
+                            framework_enhanced: $framework_enhanced,
+                            framework_analysis: $framework_analysis,
+                            is_inner_voice: $is_inner_voice,
+                            inner_visibility: $inner_visibility
+                        } RETURN NONE"#,
+                    )
+                    .bind(("id", thought.id.clone()))
+                    .bind(("content", thought.content.clone()))
+                    .bind(("embedding", thought.embedding.clone()))
+                    .bind(("injected_memories", thought.injected_memories.clone()))
+                    .bind(("enriched_content", thought.enriched_content.clone()))
+                    .bind(("injection_scale", thought.injection_scale))
+                    .bind(("significance", thought.significance))
+                    .bind(("access_count", thought.access_count))
+                    .bind(("submode", thought.submode.clone()))
+                    .bind(("framework_enhanced", thought.framework_enhanced))
+                    .bind(("framework_analysis", thought.framework_analysis.clone()))
+                    .bind(("is_inner_voice", thought.is_inner_voice))
+                    .bind(("inner_visibility", thought.inner_visibility.clone()))
+                    .await
+            })
+            .await?;
+        } else {
+            with_retry("create_inner_voice_thought", max_retries, initial_delay_ms, || async {
+                self.db
+                    .query(
+                        r#"CREATE type::thing('thoughts', $id) CONTENT {
+                            id: $id,
+                            content: $content,
+                            created_at: time::now(),
+                            embedding: $embedding,
+                            injected_memories: $injected_memories,
+                            enriched_content: $enriched_content,
+                            injection_scale: $injection_scale,
+                            significance: $significance,
+                            access_count: $access_count,
+                            submode: $submode,
+                            framework_enhanced: $framework_enhanced,
+                            framework_analysis: $framework_analysis,
+                            is_inner_voice: $is_inner_voice,
+                            inner_visibility: $inner_visibility
+                        } RETURN NONE"#,
+                    )
+                    .bind(("id", thought.id.clone()))
+                    .bind(("content", thought.content.clone()))
+                    .bind(("embedding", thought.embedding.clone()))
+                    .bind(("injected_memories", thought.injected_memories.clone()))
+                    .bind(("enriched_content", thought.enriched_content.clone()))
+                    .bind(("injection_scale", thought.injection_scale))
+                    .bind(("significance", thought.significance))
+                    .bind(("access_count", thought.access_count))
+                    .bind(("submode", thought.submode.clone()))
+                    .bind(("framework_enhanced", thought.framework_enhanced))
+                    .bind(("framework_analysis", thought.framework_analysis.clone()))
+                    .bind(("is_inner_voice", thought.is_inner_voice))
+                    .bind(("inner_visibility", thought.inner_visibility.clone()))
+                    .await
+            })
+            .await?;
+        }
+
+        // Cache the thought
+        {
+            let mut cache = self.thoughts.write().await;
+            cache.put(thought.id.clone(), thought.clone());
+        }
+
+        // Create relationships (same pattern as other thoughts)
+        if !relevant_memories.is_empty() {
+            let flavor = tag_flavor(&params.content);
+
+            let mut q = String::new();
+            q.reserve(relevant_memories.len() * 128);
+            for i in 0..relevant_memories.len() {
+                q.push_str(&format!("RELATE $from{0}->recalls->$to{0} SET strength = $strength{0}, created_at = time::now(), submode_match = $submode_match{0}, flavor = $flavor{0} RETURN NONE;\n", i));
+                q.push_str(&format!("RELATE $to{0}->recalls->$from{0} SET strength = $strength{0}, created_at = time::now(), submode_match = $submode_match{0}, flavor = $flavor{0} RETURN NONE;\n", i));
+            }
+            let mut req = self.db.query(q);
+            for (i, memory) in relevant_memories.iter().enumerate() {
+                req = req
+                    .bind((format!("from{}", i), format!("thoughts:{}", thought.id)))
+                    .bind((
+                        format!("to{}", i),
+                        format!("thoughts:{}", memory.thought.id),
+                    ))
+                    .bind((format!("strength{}", i), memory.similarity_score))
+                    .bind((format!("submode_match{}", i), false)) // Inner voice doesn't match submodes
+                    .bind((format!("flavor{}", i), flavor.as_str()));
+            }
+
+            if Self::db_serial_enabled() {
+                let _guard = self.db_gate.lock().await;
+                let _ = req.await;
+            } else {
+                let _ = req.await;
+            }
+        }
+
+        let verbose_analysis = params.verbose_analysis.unwrap_or(false); // Default to less verbose for inner voice
+        let limited = Self::apply_verbosity_limits(&analysis, verbose_analysis);
+
+        Ok(json!({
+            "thought_id": thought.id,
+            "inner_voice": true,
+            "visibility": inner_visibility,
+            "memories_injected": relevant_memories.len(),
+            "analysis": {
+                "key_point": if !limited.insights.is_empty() {
+                    Self::make_conversational(&limited.insights[0])
+                } else {
+                    "Inner thought recorded privately".to_string()
+                },
+                "question": if !limited.questions.is_empty() {
+                    Self::make_conversational(&limited.questions[0])
+                } else {
+                    "What else is worth noting?".to_string()
+                },
+                "next_step": if !limited.next_steps.is_empty() {
+                    limited.next_steps[0].clone()
+                } else {
+                    "Continue inner reflection".to_string()
                 }
             }
         }))
@@ -2237,6 +2692,8 @@ impl SurrealMindServer {
             submode,
             framework_enhanced: None,
             framework_analysis: None,
+            is_inner_voice: None, // parsed from database
+            inner_visibility: None, // parsed from database
         };
 
         Ok(thought)
@@ -2465,6 +2922,8 @@ mod tests {
             framework_analysis: Some(
                 serde_json::json!({"insights":[],"questions":[],"next_steps":[]}),
             ),
+            is_inner_voice: Some(false),
+            inner_visibility: None,
         };
 
         assert_eq!(thought.content, "test content");
@@ -2558,6 +3017,8 @@ mod tests {
                 "questions": ["test question"],
                 "next_steps": ["test step"]
             })),
+            is_inner_voice: Some(false),
+            inner_visibility: None,
         };
 
         // Calculate orbital distance with default weights

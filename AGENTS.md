@@ -1,80 +1,43 @@
-# WARP.md
+# Repository Guidelines
 
-This file provides guidance to WARP (warp.dev) when working with code in this repository.
+## Project Structure & Module Organization
+- `src/`: Rust sources
+  - `src/main.rs`: MCP server entrypoint (stdio transport, dotenv, logging)
+  - `src/embeddings.rs`: `Embedder` trait and providers (OpenAI/Nomic)
+- `tests/`: Integration tests (if present). Unit tests live alongside modules with `#[cfg(test)]`.
+- `.cargo/config.toml`: Cargo aliases (`cargo lint`, `cargo ci`).
+- `.env.example` → `.env`: Local configuration and secrets (not committed).
 
-Project overview
-- Rust MCP server implementing consciousness persistence with orbital mechanics for memory retrieval
-- Entry point: src/main.rs; Embedding module: src/embeddings.rs
-- Storage: SurrealDB service (WebSocket) at SURR_DB_URL (default 127.0.0.1:8000) with namespace SURR_DB_NS (default "surreal_mind") and database SURR_DB_DB (default "consciousness")
-  - Env: SURR_DB_USER/SURR_DB_PASS for auth; SURR_DB_LIMIT caps fallback SELECT size; SURR_SIM_THRESH controls similarity cutoff; SURR_TOP_K controls top results returned
-  - NOW FULLY WIRED: Thoughts persist to DB, bidirectional relationships created via `recalls` table
-  - Hybrid approach: In-memory Vec<Thought> for fast retrieval + SurrealDB for persistence
-- Exposes MCP tools:
-  - convo_think: Store thoughts with bidirectional memory injection + framework analysis
-  - tech_think: Technical reasoning with submodes (plan|build|debug)
-  - search_thoughts: Semantic search with cache-first retrieval, DB fallback, optional recalls expansion
-  - detailed_help: Deterministic, example-rich docs for tools/params
+## Build, Test, and Development Commands
+- Build (debug/release): `cargo build` | `cargo build --release`
+- Run (loads `.env`): `cargo run`
+- Run with logs: `RUST_LOG=surreal_mind=debug,rmcp=info cargo run`
+- Format: `make fmt` (runs `cargo fmt --all`)
+- Lint: `make lint` (runs `clippy` with `-D warnings`)
+- CI bundle: `make ci` (check, fmt --check, clippy, tests)
+- Tests: `cargo test --all` | single: `cargo test test_list_tools_returns_convo_think`
+- With logs: `RUST_LOG=debug cargo test -- --nocapture`
 
-Common commands
-- Build
-  - Debug: cargo build
-  - Release: cargo build --release  → binary at target/release/surreal-mind
-- Run (stdio MCP server)
-  - Default: cargo run (loads .env automatically via dotenv)
-  - With custom logs: RUST_LOG=surreal_mind=debug,rmcp=info cargo run
-- Format and lint
-  - Format: make fmt  (cargo fmt --all)
-  - Lint: make lint  (cargo clippy -- -D warnings)
-  - All checks: make ci  (runs check, fmt --check, clippy -D warnings, tests)
-- Tests
-  - All: cargo test --all  
-  - Single test: cargo test test_list_tools_returns_convo_think
-  - With logs: RUST_LOG=debug cargo test -- --nocapture
-- Environment setup
-  - Copy .env.example to .env (if exists) and set `OPENAI_API_KEY` for embeddings (default model `text-embedding-3-small`)
-  - Alternative provider: set `SURR_EMBED_PROVIDER=nomic` and `NOMIC_API_KEY`
-- Cargo aliases (defined in .cargo/config.toml)
-  - cargo lint → clippy with -D warnings
-  - cargo ci → composite check, fmt, clippy, test
+## Coding Style & Naming Conventions
+- Rustfmt as source of truth; run `make fmt` before pushing.
+- Clippy clean: no warnings allowed (`-D warnings`).
+- Naming: modules/files `snake_case`; functions/vars `snake_case`; types/traits `PascalCase`; constants `SCREAMING_SNAKE_CASE`.
+- Keep functions small, return `anyhow::Result` on main paths; prefer `thiserror`/`McpError` for protocol errors.
 
-High-level architecture  
-- Server structure
-  - SurrealMindServer implements rmcp::handler::server::ServerHandler
-  - State: db (Arc<RwLock<Surreal<Client>>>), thoughts cache (Arc<RwLock<LruCache<String, Thought>>>), embedder (Arc<dyn Embedder>)
-  - Transport: stdio with serve_server(server, stdio())
-  - Logging: tracing + tracing-subscriber, respects RUST_LOG env var
-- Database layer
-  - initialize_schema() defines SCHEMAFULL tables:
-    - thoughts: Stores id, content, created_at, embedding (array<float>), injected_memories, enriched_content, injection_scale, significance, access_count, last_accessed, submode, framework_enhanced, framework_analysis
-    - recalls: Graph edges with in/out (record<thoughts>), strength, created_at, submode_match, flavor
-  - Indexes on created_at and significance for efficient queries
-  - Hybrid storage: DB writes + in-memory cache for performance
-- Embedding system (src/embeddings.rs)
-  - Trait-based: `Embedder` with `embed()` and `dimensions()`; easy to swap providers
-  - OpenAIEmbedder: 1536-dim by default (`text-embedding-3-small`, requires `OPENAI_API_KEY`)
-  - NomicEmbedder: 768-dim alternative (`NOMIC_API_KEY`)
-  - Factory: `create_embedder()` selects provider via `SURR_EMBED_PROVIDER` or available keys
-- Tool pipeline (convo_think)
-  - Generate embeddings via configured provider (OpenAI by default)
-  - Retrieve memories using orbital mechanics (injection_scale 0-5):
-    - 0: No injection  
-    - 1: Mercury (0.2 distance) - hot memories only
-    - 3: Mars (0.6 distance) - foundational [default]
-    - 5: Pluto (1.0 distance) - everything relevant
-  - Calculate orbital_proximity: 40% age + 30% access + 30% significance
-  - Store thought in SurrealDB with CREATE syntax
-  - Create bidirectional recalls relationships via RELATE queries
-  - Return structured JSON: thought_id, submode_used, memories_injected, analysis (concise, conversational)
-- Retrieval strategy
-  - Primary: Check in-memory thoughts vector first
-  - Fallback: Query SurrealDB (selected columns only) if cache empty, then cache top results
-  - Cosine similarity threshold: 0.5
-  - Combined scoring: 60% similarity + 40% orbital_proximity
-  - search_thoughts defaults: top_k=10, offset pagination; optional recalls expansion with graph boost and min edge strength
+## Testing Guidelines
+- Prefer unit tests close to code; integration tests in `tests/`.
+- No external network in tests; mock embeddings and DB interactions.
+- Name tests `test_*` and keep them deterministic.
 
-Conventions specific to this repo
-- Environment: Always check for .env file; dotenv::dotenv().ok() in main()
-- Error handling: anyhow::Result for main paths, McpError for MCP protocol  
-- Testing: Does not hit network; embedding-specific tests avoid external calls
-- CI compliance: Must pass make ci before commits (fmt, clippy -D warnings, tests)
-- Production: Build with --release, ensure `OPENAI_API_KEY` (or set `SURR_EMBED_PROVIDER=nomic` with `NOMIC_API_KEY`)
+## Commit & Pull Request Guidelines
+- Commits: imperative mood, concise subject (≤72 chars), useful body; reference issues (`Closes #123`).
+- PRs: clear description, motivation, and testing steps; link issues; include logs/screenshots if relevant.
+- Requirements: `make ci` passes; updated docs when behavior or interfaces change.
+
+## Security & Configuration Tips
+- Copy `.env.example` to `.env`. Key vars: `OPENAI_API_KEY` or `SURR_EMBED_PROVIDER=nomic` with `NOMIC_API_KEY`; SurrealDB: `SURR_DB_URL`, `SURR_DB_NS`, `SURR_DB_DB`, `SURR_DB_USER`, `SURR_DB_PASS`; tuning: `SURR_DB_LIMIT`, `SURR_SIM_THRESH`, `SURR_TOP_K`.
+- Do not commit secrets; rotate keys if exposed.
+
+## Architecture Overview
+- Rust MCP server persisting “thoughts” to SurrealDB with an in-memory LRU cache for fast retrieval. Embeddings via OpenAI or Nomic. Exposed tools: `convo_think`, `tech_think`, `search_thoughts`, `detailed_help`.
+

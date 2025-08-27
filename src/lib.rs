@@ -68,6 +68,10 @@ struct Thought {
     framework_enhanced: Option<bool>,
     #[serde(default)]
     framework_analysis: Option<serde_json::Value>,
+    #[serde(default)]
+    is_inner_voice: Option<bool>,
+    #[serde(default)]
+    inner_visibility: Option<String>,
 }
 
 pub async fn run_reembed(

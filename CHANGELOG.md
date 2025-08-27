@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2025-08-27 14:54 CDT
+
+### Added
+- **Retry Logic for Database Operations**: Added robust retry mechanism with exponential backoff for all critical database operations:
+  - `with_retry()` utility function with configurable retry counts and delays
+  - Environment variables for configuration:
+    - `SURR_MAX_RETRIES` (default: 3)
+    - `SURR_RETRY_DELAY_MS` (default: 500ms)
+  - Smart error classification to avoid retrying logic errors (parse, syntax, invalid, permission)
+  - Detailed logging of retry attempts and failures
+- Retry logic applied to:
+  - Schema initialization (`initialize_schema`)
+  - Thought creation (`convo_think`, `tech_think`, `inner_voice`)
+  - All database query operations
+
+### Fixed
+- **Tool Hanging/Timeout Issues**: Database operations now automatically retry on connection failures, timeouts, and WebSocket issues
+- **Inner Voice Tool Reliability**: Wrapped `create_inner_voice_thought` with retry logic to prevent empty returns from hanging operations
+- **Schema Initialization Robustness**: Schema creation operations now retry on transient failures during startup
+
 ## 2025-08-24 22:19 UTC
 
 ### Added
