@@ -12,6 +12,7 @@ Project overview
 - Exposes MCP tools:
   - convo_think: Store thoughts with bidirectional memory injection + framework analysis
   - tech_think: Technical reasoning with submodes (plan|build|debug)
+  - search_thoughts: Semantic search with cache-first retrieval, DB fallback, optional recalls expansion
   - detailed_help: Deterministic, example-rich docs for tools/params
 
 Common commands
@@ -69,7 +70,7 @@ High-level architecture
   - Fallback: Query SurrealDB (selected columns only) if cache empty, then cache top results
   - Cosine similarity threshold: 0.5
   - Combined scoring: 60% similarity + 40% orbital_proximity
-  - Returns top 5 matches sorted by combined score
+  - search_thoughts defaults: top_k=10, offset pagination; optional recalls expansion with graph boost and min edge strength
 
 Conventions specific to this repo
 - Environment: Always check for .env file; dotenv::dotenv().ok() in main()

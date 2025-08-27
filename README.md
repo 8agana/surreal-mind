@@ -75,6 +75,9 @@ export SURR_EMBED_STRICT=false      # Require real embeddings vs fake fallback (
 # Retrieval Tuning
 export SURR_RETRIEVE_CANDIDATES=500 # DB candidate limit override (default: SURR_DB_LIMIT, range: 50-5000)
 
+# Database Concurrency
+export SURR_DB_SERIAL=true          # Serialize DB queries to prevent deadlocks (default: false)
+
 # Logging
 export MCP_NO_LOG=false             # Disable MCP logs to stderr (default: false)
 ```
@@ -87,6 +90,13 @@ export SURR_CACHE_WARM=128
 export SURR_RETRIEVE_CANDIDATES=1000
 export SURR_EMBED_STRICT=true
 ```
+
+### Example: Fixing WebSocket Deadlocks
+If tools hang or fail silently, enable query serialization:
+```bash
+export SURR_DB_SERIAL=true  # Forces sequential DB access to prevent deadlocks
+```
+This adds a small performance cost but ensures stability when the SurrealDB WebSocket connection experiences concurrent query issues.
 
 ### Example: Submode-Aware Retrieval
 When `SURR_SUBMODE_RETRIEVAL=true`, memory retrieval is tuned based on the active submode:
@@ -285,3 +295,48 @@ cargo test
 
 ## License
 Part of the LegacyMind project
+### MCP Tool: search_thoughts
+Semantic search over stored thoughts with cache-first retrieval and optional graph expansion via recalls.
+
+Parameters:
+- `content` (required): Query text.
+- `top_k`: 1–50 (default: `SURR_SEARCH_TOP_K` → `SURR_TOP_K` → 10).
+- `offset`: Pagination offset (default 0).
+- `sim_thresh`: 0.0–1.0 (default: `SURR_SEARCH_SIM_THRESH` → `SURR_SIM_THRESH` → 0.5).
+- `submode`: One of `sarcastic|philosophical|empathetic|problem_solving` (used when `SURR_SUBMODE_RETRIEVAL=true`).
+- `min_significance`: 0.0–1.0 (default 0.0).
+- `date_range`: `{ from?: ISO8601, to?: ISO8601 }` (optional).
+- `expand_graph`: boolean (default false) — expand via recalls both directions.
+- `graph_depth`: 0–2 (default 1 when expand_graph=true).
+- `graph_boost`: 0.0–1.0 (default 0.15) — additive boost to neighbors based on edge strength.
+- `min_edge_strength`: 0.0–1.0 (default 0.0) — filter weak edges.
+- `sort_by`: `score|similarity|recency|significance` (default `score`).
+
+Env knobs:
+- `SURR_SEARCH_TOP_K`: default `top_k` (fallback to `SURR_TOP_K`, final default 10).
+- `SURR_SEARCH_SIM_THRESH`: default `sim_thresh` (fallback to `SURR_SIM_THRESH`, final default 0.5).
+- `SURR_RETRIEVE_CANDIDATES`: DB fallback candidate cap (default `SURR_DB_LIMIT`, clamped 50–5000).
+- `SURR_SEARCH_GRAPH_MAX_NEIGHBORS`: cap neighbors per seed (default 20).
+- `SURR_CACHE_WARM`: cache warm-up batch (default 64; clamp 0–1000).
+- `SURR_SUBMODE_RETRIEVAL`: enable submode-aware proximity weights.
+- `SURR_DB_MAX_CONCURRENCY`: DB concurrency (default 1 = serial; recommended until WS issues are resolved).
+- `SURR_DB_TIMEOUT_MS`: DB query timeout for search/expansion.
+
+Example:
+```json
+{
+  "tool": "search_thoughts",
+  "arguments": {
+    "content": "debug parser issue",
+    "top_k": 10,
+    "offset": 0,
+    "sim_thresh": 0.55,
+    "min_significance": 0.4,
+    "date_range": {"from": "2025-08-01T00:00:00Z"},
+    "sort_by": "recency",
+    "expand_graph": true,
+    "graph_depth": 1,
+    "min_edge_strength": 0.2
+  }
+}
+```
