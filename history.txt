@@ -1,0 +1,10 @@
+#V2
+SELECT id, array::len(embedding) AS emb_len, embedding[0] AS e0, significance, created_at FROM thoughts ORDER BY created_at DESC LIMIT 5;
+SELECT id, array::len(embedding) AS emb_len, math::sum(embedding) AS sum, math::mean(embedding) AS mean, embedding[0] AS e0, created_at FROM thoughts ORDER BY created_at ASC LIMIT 5;
+INFO FOR TABLE thoughts;
+SELECT * FROM thoughts LIMIT 1;
+SELECT count() FROM thoughts GROUP ALL;
+INFO FOR NS;
+SELECT * FROM system.namespaces;
+USE NS surreal_mind DB consciousness; SELECT count() AS c FROM thoughts;
+USE NS surreal_mind DB consciousness; SELECT count() AS total FROM thoughts GROUP ALL;
