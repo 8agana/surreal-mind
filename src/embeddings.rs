@@ -313,7 +313,11 @@ pub async fn create_embedder() -> Result<Arc<dyn Embedder>> {
                     .filter(|m| !m.trim().is_empty())
                     .unwrap_or_else(|| "text-embedding-3-small".to_string());
                 info!("Using OpenAI embeddings (model={})", model);
-                return Ok(Arc::new(OpenAIEmbedder::new(key.to_string(), model, dim_override)?));
+                return Ok(Arc::new(OpenAIEmbedder::new(
+                    key.to_string(),
+                    model,
+                    dim_override,
+                )?));
             }
             let nomic_key = std::env::var("NOMIC_API_KEY").ok();
             if let Some(key) = nomic_key.as_deref().filter(|k| !is_placeholder(k)) {

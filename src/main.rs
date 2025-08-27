@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
+use reqwest::Client as HttpClient;
 use rmcp::{
     ErrorData as McpError,
     handler::server::ServerHandler,
@@ -29,7 +30,7 @@ mod cognitive;
 mod deserializers;
 mod embeddings;
 mod flavor;
-use embeddings::{create_embedder, Embedder};
+use embeddings::{Embedder, create_embedder};
 use flavor::tag_flavor;
 
 // Custom serializer for String (ensures it's always serialized as a plain string)
@@ -177,7 +178,6 @@ struct SearchThoughtsParams {
     #[serde(default)]
     sort_by: Option<String>,
 }
-
 
 #[derive(Debug, Deserialize)]
 struct ConvoThinkParams {
@@ -486,6 +486,85 @@ impl SurrealMindServer {
         server.initialize_schema().await?;
 
         Ok(server)
+    }
+
+    // Helper function for HTTP SQL queries to avoid WebSocket serialization issues
+    async fn http_sql_query(&self, query: &str) -> Result<Vec<serde_json::Value>, McpError> {
+        let host = std::env::var("SURR_DB_URL").unwrap_or_else(|_| "127.0.0.1:8000".to_string());
+        let http_base = if host.starts_with("http") {
+            host
+        } else {
+            format!("http://{}", host)
+        };
+        let sql_url = format!("{}/sql", http_base.trim_end_matches('/'));
+        let user = std::env::var("SURR_DB_USER").unwrap_or_else(|_| "root".to_string());
+        let pass = std::env::var("SURR_DB_PASS").unwrap_or_else(|_| "root".to_string());
+        let ns = std::env::var("SURR_DB_NS").unwrap_or_else(|_| "surreal_mind".to_string());
+        let dbname = std::env::var("SURR_DB_DB").unwrap_or_else(|_| "consciousness".to_string());
+
+        let http = HttpClient::builder()
+            .timeout(std::time::Duration::from_secs(20))
+            .build()
+            .map_err(|e| McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!("Failed to build HTTP client: {}", e).into(),
+                data: None,
+            })?;
+
+        let full_query = format!("USE NS {}; USE DB {}; {}", ns, dbname, query);
+        info!("HTTP SQL Query: {}", full_query);
+
+        let resp = http
+            .post(&sql_url)
+            .basic_auth(&user, Some(&pass))
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/surrealql")
+            .body(full_query)
+            .send()
+            .await
+            .map_err(|e| McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!("HTTP query failed: {}", e).into(),
+                data: None,
+            })?;
+
+        if !resp.status().is_success() {
+            return Err(McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!("HTTP query failed with status: {}", resp.status()).into(),
+                data: None,
+            });
+        }
+
+        let blocks: serde_json::Value = resp.json().await.map_err(|e| McpError {
+            code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+            message: format!("Failed to parse HTTP response: {}", e).into(),
+            data: None,
+        })?;
+
+        // Log the response structure for debugging (verbose, so using debug level)
+        if let Some(arr) = blocks.as_array() {
+            debug!("HTTP SQL response has {} blocks", arr.len());
+            for (i, block) in arr.iter().enumerate() {
+                if let Some(result) = block.get("result") {
+                    if let Some(result_arr) = result.as_array() {
+                        debug!("Block {} has {} results", i, result_arr.len());
+                    } else {
+                        debug!("Block {} result is not an array", i);
+                    }
+                }
+            }
+        }
+
+        // SurrealDB returns 3 blocks: USE NS result, USE DB result, actual query result
+        let result = blocks
+            .get(2)
+            .and_then(|b| b.get("result"))
+            .and_then(|r| r.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        Ok(result)
     }
 
     async fn initialize_schema(&self) -> Result<(), McpError> {
@@ -953,7 +1032,9 @@ impl SurrealMindServer {
         // If we have thoughts in memory, use them
         if !thoughts.is_empty() {
             for (_id, t) in thoughts.iter() {
-                if t.embedding.len() != expected_dim { continue; }
+                if t.embedding.len() != expected_dim {
+                    continue;
+                }
                 let similarity = self.cosine_similarity(query_embedding, &t.embedding);
                 let orbital_proximity =
                     compute_proximity(t.created_at.timestamp(), t.access_count, t.significance);
@@ -1014,7 +1095,9 @@ impl SurrealMindServer {
 
             // Consider DB results; do not update DB or cache yet
             for thought in results.iter() {
-                if thought.embedding.len() != expected_dim { continue; }
+                if thought.embedding.len() != expected_dim {
+                    continue;
+                }
                 let similarity = self.cosine_similarity(query_embedding, &thought.embedding);
                 let orbital_proximity = compute_proximity(
                     thought.created_at.timestamp(),
@@ -1177,7 +1260,11 @@ impl SurrealMindServer {
                 data: None,
             })?;
         let expected_dim = self.embedder.dimensions();
-        info!("Search: embedder dimensions={}, query embedding len={}", expected_dim, embedding.len());
+        info!(
+            "Search: embedder dimensions={}, query embedding len={}",
+            expected_dim,
+            embedding.len()
+        );
         if embedding.len() != expected_dim {
             return Err(McpError {
                 code: rmcp::model::ErrorCode::INTERNAL_ERROR,
@@ -1221,12 +1308,12 @@ impl SurrealMindServer {
         // Gather candidates from cache
         let thoughts = self.thoughts.read().await;
         let mut matches: Vec<ThoughtMatch> = Vec::new();
-        info!("Search: checking {} cached thoughts", thoughts.len());
+        debug!("Search: checking {} cached thoughts", thoughts.len());
         for (_id, t) in thoughts.iter() {
             // Temporarily disable dimension check to debug
-            // if t.embedding.len() != expected_dim { 
+            // if t.embedding.len() != expected_dim {
             //     info!("Search: skipping cached thought with wrong dims: {} != {}", t.embedding.len(), expected_dim);
-            //     continue; 
+            //     continue;
             // }
             if t.significance < min_sig {
                 continue;
@@ -1243,7 +1330,15 @@ impl SurrealMindServer {
                 continue;
             }
             let sim = self.cosine_similarity(&embedding, &t.embedding);
+            debug!(
+                "Search: thought '{}' similarity: {:.6}, threshold: {:.6}",
+                t.id, sim, sim_thresh
+            );
             if sim < sim_thresh {
+                debug!(
+                    "Search: thought '{}' filtered out (sim {:.6} < thresh {:.6})",
+                    t.id, sim, sim_thresh
+                );
                 continue;
             }
             let prox = compute_proximity(ts, t.access_count, t.significance);
@@ -1254,11 +1349,15 @@ impl SurrealMindServer {
             });
         }
         drop(thoughts);
-        info!("Search: found {} matches in cache", matches.len());
+        debug!("Search: found {} matches in cache", matches.len());
 
         // If insufficient, fallback to DB
         if matches.is_empty() {
-            info!("Search: cache empty, searching database");
+            debug!("Search: cache empty, searching database");
+            debug!(
+                "Search: cache matches empty, checking DB with threshold: {}",
+                sim_thresh
+            );
             let default_limit: usize = std::env::var("SURR_DB_LIMIT")
                 .ok()
                 .and_then(|s| s.parse::<usize>().ok())
@@ -1290,33 +1389,49 @@ impl SurrealMindServer {
             q.push_str(" ORDER BY created_at DESC LIMIT ");
             q.push_str(&limit.to_string());
 
-            let mut resp = self.db.query(q).await.map_err(|e| McpError {
-                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                message: format!("Failed to query thoughts: {}", e).into(),
-                data: None,
-            })?;
-            let rows: Vec<Thought> = resp
-                .take(0)
-                .map_err(|e| McpError {
-                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                    message: format!("Failed to parse thoughts: {}", e).into(),
-                    data: None,
-                })
-                .unwrap_or_default();
+            // Use HTTP SQL interface to avoid WebSocket serialization issues
+            let rows_json = self.http_sql_query(&q).await?;
+            debug!("Search: HTTP SQL returned {} thoughts", rows_json.len());
 
-            info!("Search: DB returned {} thoughts", rows.len());
+            // Parse JSON rows into Thought structs
+            let mut rows: Vec<Thought> = Vec::new();
+            for row in rows_json {
+                // Convert JSON row to Thought struct manually to handle custom deserialization
+                let thought = Self::parse_thought_from_json(row).map_err(|e| McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: format!("Failed to parse thought from JSON: {}", e).into(),
+                    data: None,
+                })?;
+                rows.push(thought);
+            }
+
+            debug!("Search: Successfully parsed {} thoughts", rows.len());
+            debug!(
+                "Search: parsed thoughts: {:?}",
+                rows.iter().map(|t| &t.id).collect::<Vec<_>>()
+            );
+
             for t in rows.iter() {
                 // Temporarily disable dimension check to debug
-                // if t.embedding.len() != expected_dim { 
+                // if t.embedding.len() != expected_dim {
                 //     info!("Search: DB thought has wrong dims: {} != {}", t.embedding.len(), expected_dim);
-                //     continue; 
+                //     continue;
                 // }
                 let sim = self.cosine_similarity(&embedding, &t.embedding);
+                debug!("Search: thought '{}' similarity: {:.4}", t.id, sim);
                 if sim < sim_thresh {
+                    debug!(
+                        "Search: thought '{}' filtered out (sim {:.4} < thresh {:.4})",
+                        t.id, sim, sim_thresh
+                    );
                     continue;
                 }
                 let prox =
                     compute_proximity(t.created_at.timestamp(), t.access_count, t.significance);
+                debug!(
+                    "Search: thought '{}' passed filter (sim: {:.4}, prox: {:.4})",
+                    t.id, sim, prox
+                );
                 matches.push(ThoughtMatch {
                     thought: t.clone(),
                     similarity_score: sim,
@@ -1524,7 +1639,9 @@ impl SurrealMindServer {
                     if seeds.contains(&t.id) {
                         continue;
                     }
-                    if t.embedding.len() != expected_dim { continue; }
+                    if t.embedding.len() != expected_dim {
+                        continue;
+                    }
                     let sim = self.cosine_similarity(&embedding, &t.embedding);
                     let prox =
                         compute_proximity(t.created_at.timestamp(), t.access_count, t.significance);
@@ -2054,6 +2171,75 @@ impl SurrealMindServer {
                 }
             }
         }
+    }
+
+    // Parse Thought from JSON row (manual deserialization to avoid WebSocket issues)
+    fn parse_thought_from_json(row: serde_json::Value) -> Result<Thought, anyhow::Error> {
+        let id = row
+            .get("id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+
+        let content = row
+            .get("content")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+
+        let embedding = row
+            .get("embedding")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_f64().map(|f| f as f32))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let significance = row
+            .get("significance")
+            .and_then(|v| v.as_f64())
+            .map(|f| f as f32)
+            .unwrap_or(0.5);
+
+        let access_count = row
+            .get("access_count")
+            .and_then(|v| v.as_i64())
+            .map(|i| i as u32)
+            .unwrap_or(0);
+
+        let injection_scale = row
+            .get("injection_scale")
+            .and_then(|v| v.as_i64())
+            .map(|i| i as u8)
+            .unwrap_or(3);
+
+        let submode = row
+            .get("submode")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        // For datetime fields, we'll use current time as fallback
+        let created_at = surrealdb::sql::Datetime::from(Utc::now());
+
+        let thought = Thought {
+            id,
+            content,
+            created_at,
+            embedding,
+            injected_memories: Vec::new(),
+            enriched_content: None,
+            injection_scale,
+            significance,
+            access_count,
+            last_accessed: None,
+            submode,
+            framework_enhanced: None,
+            framework_analysis: None,
+        };
+
+        Ok(thought)
     }
 
     fn cosine_similarity(&self, a: &[f32], b: &[f32]) -> f32 {

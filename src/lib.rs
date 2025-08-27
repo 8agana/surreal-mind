@@ -1,9 +1,9 @@
 pub mod embeddings;
 
 use anyhow::Result;
+use reqwest::Client;
 use serde::Deserialize as _;
 use std::path::Path;
-use reqwest::Client;
 
 #[derive(Debug, serde::Serialize)]
 pub struct ReembedStats {
@@ -70,16 +70,27 @@ struct Thought {
     framework_analysis: Option<serde_json::Value>,
 }
 
-pub async fn run_reembed(batch_size: usize, limit: Option<usize>, missing_only: bool, dry_run: bool) -> Result<ReembedStats> {
+pub async fn run_reembed(
+    batch_size: usize,
+    limit: Option<usize>,
+    missing_only: bool,
+    dry_run: bool,
+) -> Result<ReembedStats> {
     // HTTP SQL client
     let host = std::env::var("SURR_DB_URL").unwrap_or_else(|_| "127.0.0.1:8000".to_string());
-    let http_base = if host.starts_with("http") { host } else { format!("http://{}", host) };
+    let http_base = if host.starts_with("http") {
+        host
+    } else {
+        format!("http://{}", host)
+    };
     let sql_url = format!("{}/sql", http_base.trim_end_matches('/'));
     let user = std::env::var("SURR_DB_USER").unwrap_or_else(|_| "root".to_string());
     let pass = std::env::var("SURR_DB_PASS").unwrap_or_else(|_| "root".to_string());
     let ns = std::env::var("SURR_DB_NS").unwrap_or_else(|_| "surreal_mind".to_string());
     let dbname = std::env::var("SURR_DB_DB").unwrap_or_else(|_| "consciousness".to_string());
-    let http = Client::builder().timeout(std::time::Duration::from_secs(20)).build()?;
+    let http = Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .build()?;
 
     // Embedder
     let embedder = embeddings::create_embedder().await?;
@@ -95,7 +106,9 @@ pub async fn run_reembed(batch_size: usize, limit: Option<usize>, missing_only: 
 
     loop {
         let remaining = limit_total.saturating_sub(processed);
-        if remaining == 0 { break; }
+        if remaining == 0 {
+            break;
+        }
         let take = remaining.min(batch_size);
 
         let select_sql = format!(
@@ -111,11 +124,21 @@ pub async fn run_reembed(batch_size: usize, limit: Option<usize>, missing_only: 
             .send()
             .await?;
         if !resp.status().is_success() {
-            anyhow::bail!("HTTP select failed: {}", resp.text().await.unwrap_or_default());
+            anyhow::bail!(
+                "HTTP select failed: {}",
+                resp.text().await.unwrap_or_default()
+            );
         }
         let blocks: serde_json::Value = resp.json().await?;
-        let result = blocks.get(1).and_then(|b| b.get("result")).and_then(|r| r.as_array()).cloned().unwrap_or_default();
-        if result.is_empty() { break; }
+        let result = blocks
+            .get(1)
+            .and_then(|b| b.get("result"))
+            .and_then(|r| r.as_array())
+            .cloned()
+            .unwrap_or_default();
+        if result.is_empty() {
+            break;
+        }
 
         for item in result.iter() {
             let id_raw = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
@@ -123,18 +146,38 @@ pub async fn run_reembed(batch_size: usize, limit: Option<usize>, missing_only: 
             let tb = parts.next().unwrap_or("thoughts");
             let inner = parts.next().unwrap_or("").trim();
             let inner = inner.trim_start_matches('⟨').trim_end_matches('⟩');
-            let content = item.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let content = item
+                .get("content")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let cur_len = item.get("elen").and_then(|v| v.as_i64()).unwrap_or(0) as usize;
-            let needs_update = if missing_only { cur_len != expected_dim } else { true };
-            if !needs_update { skipped += 1; processed += 1; continue; }
+            let needs_update = if missing_only {
+                cur_len != expected_dim
+            } else {
+                true
+            };
+            if !needs_update {
+                skipped += 1;
+                processed += 1;
+                continue;
+            }
             if dry_run {
-                if cur_len == 0 { missing += 1; } else if cur_len != expected_dim { mismatched += 1; }
+                if cur_len == 0 {
+                    missing += 1;
+                } else if cur_len != expected_dim {
+                    mismatched += 1;
+                }
                 processed += 1;
                 continue;
             }
             let new_emb = embedder.embed(&content).await?;
             if new_emb.len() != expected_dim {
-                anyhow::bail!("Embedding dimension mismatch: expected {}, got {}", expected_dim, new_emb.len());
+                anyhow::bail!(
+                    "Embedding dimension mismatch: expected {}, got {}",
+                    expected_dim,
+                    new_emb.len()
+                );
             }
             let emb_json = serde_json::to_string(&new_emb)?;
             let update_sql = format!(
@@ -150,9 +193,16 @@ pub async fn run_reembed(batch_size: usize, limit: Option<usize>, missing_only: 
                 .send()
                 .await?;
             if !uresp.status().is_success() {
-                anyhow::bail!("HTTP update failed: {}", uresp.text().await.unwrap_or_default());
+                anyhow::bail!(
+                    "HTTP update failed: {}",
+                    uresp.text().await.unwrap_or_default()
+                );
             }
-            if cur_len == 0 { missing += 1; } else if cur_len != expected_dim { mismatched += 1; }
+            if cur_len == 0 {
+                missing += 1;
+            } else if cur_len != expected_dim {
+                mismatched += 1;
+            }
             updated += 1;
             processed += 1;
         }
@@ -160,7 +210,17 @@ pub async fn run_reembed(batch_size: usize, limit: Option<usize>, missing_only: 
         start += result.len();
     }
 
-    Ok(ReembedStats { expected_dim, batch_size, dry_run, missing_only, processed, updated, skipped, missing, mismatched })
+    Ok(ReembedStats {
+        expected_dim,
+        batch_size,
+        dry_run,
+        missing_only,
+        processed,
+        updated,
+        skipped,
+        missing,
+        mismatched,
+    })
 }
 
 // Custom serializer for String (ensures it's always serialized as a plain string)
@@ -168,7 +228,7 @@ pub fn serialize_as_string<S>(id: &str, serializer: S) -> Result<S::Ok, S::Error
 where
     S: serde::Serializer,
 {
-    Ok(serializer.serialize_str(id)?)
+    serializer.serialize_str(id)
 }
 
 // Custom deserializer for Thing or String
