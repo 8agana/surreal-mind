@@ -23,13 +23,13 @@ fn property_has_type(schema: &Value, property: &str, expected_type: &str) -> boo
 }
 
 #[test]
-fn test_list_tools_returns_three_tools() {
-    // This test verifies that exactly 3 tools are exposed
+fn test_list_tools_returns_expected_tools() {
+    // This test verifies that the expected tools are exposed
     // Note: In a real integration test, we would start the server and make actual calls
     // For now, we're testing the expected structure
 
-    let expected_tools = vec!["convo_think", "tech_think", "detailed_help"];
-    assert_eq!(expected_tools.len(), 3, "Should have exactly 3 tools");
+    let expected_tools = vec!["convo_think", "tech_think", "search_thoughts", "inner_voice", "detailed_help"];
+    assert_eq!(expected_tools.len(), 5, "Should have exactly 5 tools");
 }
 
 #[test]
@@ -216,7 +216,7 @@ fn test_tech_think_rejects_invalid_significance() {
 
 /// Integration test that would require actual server running
 /// This is a placeholder showing how real integration tests would work
-#[cfg(feature = "integration")]
+#[cfg(feature = "db_integration")]
 #[tokio::test]
 async fn test_actual_server_tool_listing() {
     // In a real integration test with the server running:
