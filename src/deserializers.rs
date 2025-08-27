@@ -117,7 +117,7 @@ where
 ///
 /// - Integer value `1` is explicitly rejected with a helpful error message to avoid ambiguity
 ///   between 1.0 (100% significance) and 1 on the 1-10 scale (10% significance)
-/// - Values outside 0.0-1.0 range after conversion are clamped
+/// - Values outside 0.0-1.0 range after conversion return an error
 ///
 /// # Examples
 ///

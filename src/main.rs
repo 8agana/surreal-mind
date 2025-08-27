@@ -39,30 +39,32 @@ where
 {
     let mut delay_ms = initial_delay_ms;
     let backoff_factor = 2.0;
-    
+
     // Get operation timeout from environment (default: 10 seconds)
     let operation_timeout_ms: u64 = std::env::var("SURR_OPERATION_TIMEOUT_MS")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(10000); // 10 seconds default
-    
+
     for attempt in 1..=max_retries {
         // Wrap the operation in a timeout
         let timeout_duration = std::time::Duration::from_millis(operation_timeout_ms);
         let result = tokio::time::timeout(timeout_duration, operation()).await;
-        
+
         match result {
             Ok(Ok(result)) => {
                 if attempt > 1 {
-                    info!("Operation '{}' succeeded on attempt {}/{}", operation_name, attempt, max_retries);
+                    info!(
+                        "Operation '{}' succeeded on attempt {}/{}",
+                        operation_name, attempt, max_retries
+                    );
                 }
                 return Ok(result);
             }
             Ok(Err(e)) => {
                 // Check if this is a retriable error by examining error message
                 let error_str = e.to_string().to_lowercase();
-                let is_retriable = 
-                    error_str.contains("connection") || 
+                let is_retriable = error_str.contains("connection") || 
                     error_str.contains("timeout") ||
                     error_str.contains("broken pipe") ||
                     error_str.contains("network") ||
@@ -74,49 +76,55 @@ where
                      !error_str.contains("syntax") && 
                      !error_str.contains("invalid") &&
                      !error_str.contains("permission"));
-                
+
                 if attempt == max_retries || !is_retriable {
                     return Err(McpError {
                         code: rmcp::model::ErrorCode::INTERNAL_ERROR,
                         message: format!(
                             "{} failed after {} retries: {}{}",
-                            operation_name, 
+                            operation_name,
                             attempt,
                             e,
-                            if !is_retriable { " (non-retriable error)" } else { "" }
-                        ).into(),
+                            if !is_retriable {
+                                " (non-retriable error)"
+                            } else {
+                                ""
+                            }
+                        )
+                        .into(),
                         data: None,
                     });
                 }
-                
+
                 warn!(
-                    "Attempt {}/{} for '{}' failed (will retry): {}", 
+                    "Attempt {}/{} for '{}' failed (will retry): {}",
                     attempt, max_retries, operation_name, e
                 );
-                
+
                 tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
                 delay_ms = (delay_ms as f64 * backoff_factor) as u64;
             }
             Err(_elapsed) => {
                 // Operation timed out
                 let timeout_msg = format!("Operation timed out after {}ms", operation_timeout_ms);
-                
+
                 if attempt == max_retries {
                     return Err(McpError {
                         code: rmcp::model::ErrorCode::INTERNAL_ERROR,
                         message: format!(
                             "{} failed after {} retries: {}",
                             operation_name, attempt, timeout_msg
-                        ).into(),
+                        )
+                        .into(),
                         data: None,
                     });
                 }
-                
+
                 warn!(
-                    "Attempt {}/{} for '{}' timed out (will retry)", 
+                    "Attempt {}/{} for '{}' timed out (will retry)",
                     attempt, max_retries, operation_name
                 );
-                
+
                 tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
                 delay_ms = (delay_ms as f64 * backoff_factor) as u64;
             }
@@ -131,12 +139,12 @@ fn get_retry_config() -> (u32, u64) {
         .ok()
         .and_then(|s| s.parse::<u32>().ok())
         .unwrap_or(3);
-    
+
     let initial_delay_ms = std::env::var("SURR_RETRY_DELAY_MS")
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(500);
-    
+
     (max_retries, initial_delay_ms)
 }
 
@@ -692,7 +700,7 @@ impl SurrealMindServer {
             })?;
 
         let full_query = format!("USE NS {}; USE DB {}; {}", ns, dbname, query);
-        info!("HTTP SQL Query: {}", full_query);
+        debug!("HTTP SQL Query: {}", full_query);
 
         let resp = http
             .post(&sql_url)
@@ -752,38 +760,17 @@ impl SurrealMindServer {
         let (max_retries, initial_delay_ms) = get_retry_config();
 
         // Define thoughts table with retry logic
-        if Self::db_serial_enabled() {
-            let _guard = self.db_gate.lock().await;
-            with_retry("initialize_schema_thoughts", max_retries, initial_delay_ms, || async {
-                self.db
-                    .query(
-                        r#"
-                DEFINE TABLE thoughts SCHEMAFULL;
-                DEFINE FIELD id ON TABLE thoughts TYPE string;
-                DEFINE FIELD content ON TABLE thoughts TYPE string;
-                DEFINE FIELD created_at ON TABLE thoughts TYPE datetime;
-                DEFINE FIELD embedding ON TABLE thoughts TYPE array<float>;
-                DEFINE FIELD injected_memories ON TABLE thoughts TYPE array<string>;
-                DEFINE FIELD enriched_content ON TABLE thoughts TYPE option<string>;
-                DEFINE FIELD injection_scale ON TABLE thoughts TYPE number;
-                DEFINE FIELD significance ON TABLE thoughts TYPE float;
-                DEFINE FIELD access_count ON TABLE thoughts TYPE number;
-                DEFINE FIELD last_accessed ON TABLE thoughts TYPE option<datetime>;
-                DEFINE FIELD submode ON TABLE thoughts TYPE option<string>;
-                DEFINE FIELD framework_enhanced ON TABLE thoughts TYPE option<bool>;
-                DEFINE FIELD framework_analysis ON TABLE thoughts TYPE option<object>;
-                DEFINE FIELD is_inner_voice ON TABLE thoughts TYPE option<bool>;
-                DEFINE FIELD inner_visibility ON TABLE thoughts TYPE option<string>;
-
-                DEFINE INDEX created_at_idx ON TABLE thoughts COLUMNS created_at;
-                DEFINE INDEX significance_idx ON TABLE thoughts COLUMNS significance;
-            "#,
-                    )
-                    .await
-            })
-            .await?;
+        let _guard = if Self::db_serial_enabled() {
+            Some(self.db_gate.lock().await)
         } else {
-            with_retry("initialize_schema_thoughts", max_retries, initial_delay_ms, || async {
+            None
+        };
+        
+        with_retry(
+            "initialize_schema_thoughts",
+            max_retries,
+            initial_delay_ms,
+            || async {
                 self.db
                     .query(
                         r#"
@@ -809,15 +796,19 @@ impl SurrealMindServer {
             "#,
                     )
                     .await
-            })
-            .await?;
-        }
+            },
+        )
+        .await?;
 
         // Define relationships table with retry logic
-        with_retry("initialize_schema_relationships", max_retries, initial_delay_ms, || async {
-            self.db
-                .query(
-                    r#"
+        with_retry(
+            "initialize_schema_relationships",
+            max_retries,
+            initial_delay_ms,
+            || async {
+                self.db
+                    .query(
+                        r#"
                 DEFINE TABLE recalls SCHEMAFULL;
                 DEFINE FIELD in ON TABLE recalls TYPE record<thoughts>;
                 DEFINE FIELD out ON TABLE recalls TYPE record<thoughts>;
@@ -826,22 +817,28 @@ impl SurrealMindServer {
                 DEFINE FIELD submode_match ON TABLE recalls TYPE option<bool>;
                 DEFINE FIELD flavor ON TABLE recalls TYPE option<string>;
             "#,
-                )
-                .await
-        })
+                    )
+                    .await
+            },
+        )
         .await?;
 
         // Backfill existing data with defaults (idempotent) with retry logic
-        with_retry("initialize_schema_backfill", max_retries, initial_delay_ms, || async {
-            self.db
-                .query(
-                    r#"
+        with_retry(
+            "initialize_schema_backfill",
+            max_retries,
+            initial_delay_ms,
+            || async {
+                self.db
+                    .query(
+                        r#"
                 UPDATE thoughts SET submode = "sarcastic" WHERE submode = NONE;
                 UPDATE thoughts SET framework_enhanced = false WHERE framework_enhanced = NONE;
             "#,
-                )
-                .await
-        })
+                    )
+                    .await
+            },
+        )
         .await?;
 
         info!("Schema initialized successfully");
@@ -963,19 +960,23 @@ impl SurrealMindServer {
             submode: Some(submode.clone()),
             framework_enhanced: Some(true), // Now enabled with framework processing
             framework_analysis: Some(framework_json.clone()), // Store framework output
-            is_inner_voice: Some(false), // convo_think thoughts are not inner voice
+            is_inner_voice: Some(false),    // convo_think thoughts are not inner voice
             inner_visibility: None,
         };
 
         // Store thought in SurrealDB with retry logic
         let (max_retries, initial_delay_ms) = get_retry_config();
-        
+
         if Self::db_serial_enabled() {
             let _guard = self.db_gate.lock().await;
-            with_retry("create_convo_thought", max_retries, initial_delay_ms, || async {
-                self.db
-                    .query(
-                        r#"CREATE type::thing('thoughts', $id) CONTENT {
+            with_retry(
+                "create_convo_thought",
+                max_retries,
+                initial_delay_ms,
+                || async {
+                    self.db
+                        .query(
+                            r#"CREATE type::thing('thoughts', $id) CONTENT {
                             id: $id,
                             content: $content,
                             created_at: time::now(),
@@ -989,26 +990,31 @@ impl SurrealMindServer {
                             framework_enhanced: $framework_enhanced,
                             framework_analysis: $framework_analysis
                         } RETURN NONE"#,
-                    )
-                    .bind(("id", thought.id.clone()))
-                    .bind(("content", thought.content.clone()))
-                    .bind(("embedding", thought.embedding.clone()))
-                    .bind(("injected_memories", thought.injected_memories.clone()))
-                    .bind(("enriched_content", thought.enriched_content.clone()))
-                    .bind(("injection_scale", thought.injection_scale))
-                    .bind(("significance", thought.significance))
-                    .bind(("access_count", thought.access_count))
-                    .bind(("submode", thought.submode.clone()))
-                    .bind(("framework_enhanced", thought.framework_enhanced))
-                    .bind(("framework_analysis", thought.framework_analysis.clone()))
-                    .await
-            })
+                        )
+                        .bind(("id", thought.id.clone()))
+                        .bind(("content", thought.content.clone()))
+                        .bind(("embedding", thought.embedding.clone()))
+                        .bind(("injected_memories", thought.injected_memories.clone()))
+                        .bind(("enriched_content", thought.enriched_content.clone()))
+                        .bind(("injection_scale", thought.injection_scale))
+                        .bind(("significance", thought.significance))
+                        .bind(("access_count", thought.access_count))
+                        .bind(("submode", thought.submode.clone()))
+                        .bind(("framework_enhanced", thought.framework_enhanced))
+                        .bind(("framework_analysis", thought.framework_analysis.clone()))
+                        .await
+                },
+            )
             .await?;
         } else {
-            with_retry("create_convo_thought", max_retries, initial_delay_ms, || async {
-                self.db
-                    .query(
-                        r#"CREATE type::thing('thoughts', $id) CONTENT {
+            with_retry(
+                "create_convo_thought",
+                max_retries,
+                initial_delay_ms,
+                || async {
+                    self.db
+                        .query(
+                            r#"CREATE type::thing('thoughts', $id) CONTENT {
                             id: $id,
                             content: $content,
                             created_at: time::now(),
@@ -1022,20 +1028,21 @@ impl SurrealMindServer {
                             framework_enhanced: $framework_enhanced,
                             framework_analysis: $framework_analysis
                         } RETURN NONE"#,
-                    )
-                    .bind(("id", thought.id.clone()))
-                    .bind(("content", thought.content.clone()))
-                    .bind(("embedding", thought.embedding.clone()))
-                    .bind(("injected_memories", thought.injected_memories.clone()))
-                    .bind(("enriched_content", thought.enriched_content.clone()))
-                    .bind(("injection_scale", thought.injection_scale))
-                    .bind(("significance", thought.significance))
-                    .bind(("access_count", thought.access_count))
-                    .bind(("submode", thought.submode.clone()))
-                    .bind(("framework_enhanced", thought.framework_enhanced))
-                    .bind(("framework_analysis", thought.framework_analysis.clone()))
-                    .await
-            })
+                        )
+                        .bind(("id", thought.id.clone()))
+                        .bind(("content", thought.content.clone()))
+                        .bind(("embedding", thought.embedding.clone()))
+                        .bind(("injected_memories", thought.injected_memories.clone()))
+                        .bind(("enriched_content", thought.enriched_content.clone()))
+                        .bind(("injection_scale", thought.injection_scale))
+                        .bind(("significance", thought.significance))
+                        .bind(("access_count", thought.access_count))
+                        .bind(("submode", thought.submode.clone()))
+                        .bind(("framework_enhanced", thought.framework_enhanced))
+                        .bind(("framework_analysis", thought.framework_analysis.clone()))
+                        .await
+                },
+            )
             .await?;
         }
 
@@ -1720,6 +1727,13 @@ impl SurrealMindServer {
                 let mut q = String::new();
                 q.push_str("SELECT id(in) AS nid, strength FROM recalls WHERE out = type::thing('thoughts', $sid) LIMIT $lim;\n");
                 q.push_str("SELECT id(out) AS nid, strength FROM recalls WHERE in = type::thing('thoughts', $sid) LIMIT $lim;\n");
+                
+                let _guard = if Self::db_serial_enabled() {
+                    Some(self.db_gate.lock().await)
+                } else {
+                    None
+                };
+                
                 let mut req = self.db.query(q);
                 req = req.bind(("sid", seed.clone())).bind(("lim", max_n));
                 let mut resp = req.await.map_err(|e| McpError {
@@ -1727,6 +1741,7 @@ impl SurrealMindServer {
                     message: format!("Failed to query recalls: {}", e).into(),
                     data: None,
                 })?;
+                drop(_guard);
                 let out1: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
                 let out2: Vec<serde_json::Value> = resp.take(1).unwrap_or_default();
                 for row in out1.into_iter().chain(out2.into_iter()) {
@@ -1758,6 +1773,13 @@ impl SurrealMindServer {
                     q2.push_str(
                         "SELECT id(out) AS nid, strength FROM recalls WHERE in = type::thing('thoughts', $mid) LIMIT $lim;\n",
                     );
+                    
+                    let _guard = if Self::db_serial_enabled() {
+                        Some(self.db_gate.lock().await)
+                    } else {
+                        None
+                    };
+                    
                     let mut resp2 = self
                         .db
                         .query(q2)
@@ -1769,6 +1791,7 @@ impl SurrealMindServer {
                             message: format!("Failed to query second-hop recalls: {}", e).into(),
                             data: None,
                         })?;
+                    drop(_guard);
                     let s1: Vec<serde_json::Value> = resp2.take(0).unwrap_or_default();
                     let s2: Vec<serde_json::Value> = resp2.take(1).unwrap_or_default();
                     for row in s1.into_iter().chain(s2.into_iter()) {
@@ -1804,12 +1827,20 @@ impl SurrealMindServer {
             if !neighbor_strength.is_empty() {
                 // Fetch neighbors thoughts in one go
                 let ids: Vec<String> = neighbor_strength.keys().cloned().collect();
+                
+                let _guard = if Self::db_serial_enabled() {
+                    Some(self.db_gate.lock().await)
+                } else {
+                    None
+                };
+                
                 let mut resp = self
                     .db
                     .query("SELECT id, content, created_at, embedding, significance, access_count, last_accessed, submode FROM thoughts WHERE id INSIDE $ids")
                     .bind(("ids", ids.clone()))
                     .await
                     .map_err(|e| McpError { code: rmcp::model::ErrorCode::INTERNAL_ERROR, message: format!("Failed to fetch neighbor thoughts: {}", e).into(), data: None })?;
+                drop(_guard);
                 let neighbors: Vec<Thought> = resp.take(0).unwrap_or_default();
                 let mut pool: Vec<ThoughtMatch> = Vec::new();
                 // Keep original seeds
@@ -1870,9 +1901,7 @@ impl SurrealMindServer {
 
         // Filter out inner voice thoughts from user-facing results
         // Inner voice thoughts should not be visible in search results to maintain privacy
-        sliced.retain(|m| {
-            !m.thought.is_inner_voice.unwrap_or(false)
-        });
+        sliced.retain(|m| !m.thought.is_inner_voice.unwrap_or(false));
 
         // Shape output
         let results: Vec<serde_json::Value> = sliced
@@ -2166,13 +2195,17 @@ impl SurrealMindServer {
         };
         // Store tech thought in SurrealDB with retry logic
         let (max_retries, initial_delay_ms) = get_retry_config();
-        
+
         if Self::db_serial_enabled() {
             let _guard = self.db_gate.lock().await;
-            with_retry("create_tech_thought", max_retries, initial_delay_ms, || async {
-                self.db
-                    .query(
-                        r#"CREATE type::thing('thoughts', $id) CONTENT {
+            with_retry(
+                "create_tech_thought",
+                max_retries,
+                initial_delay_ms,
+                || async {
+                    self.db
+                        .query(
+                            r#"CREATE type::thing('thoughts', $id) CONTENT {
                             id: $id,
                             content: $content,
                             created_at: time::now(),
@@ -2186,26 +2219,31 @@ impl SurrealMindServer {
                             framework_enhanced: $framework_enhanced,
                             framework_analysis: $framework_analysis
                         } RETURN NONE"#,
-                    )
-                    .bind(("id", thought.id.clone()))
-                    .bind(("content", thought.content.clone()))
-                    .bind(("embedding", thought.embedding.clone()))
-                    .bind(("injected_memories", thought.injected_memories.clone()))
-                    .bind(("enriched_content", thought.enriched_content.clone()))
-                    .bind(("injection_scale", thought.injection_scale))
-                    .bind(("significance", thought.significance))
-                    .bind(("access_count", thought.access_count))
-                    .bind(("submode", thought.submode.clone()))
-                    .bind(("framework_enhanced", thought.framework_enhanced))
-                    .bind(("framework_analysis", thought.framework_analysis.clone()))
-                    .await
-            })
+                        )
+                        .bind(("id", thought.id.clone()))
+                        .bind(("content", thought.content.clone()))
+                        .bind(("embedding", thought.embedding.clone()))
+                        .bind(("injected_memories", thought.injected_memories.clone()))
+                        .bind(("enriched_content", thought.enriched_content.clone()))
+                        .bind(("injection_scale", thought.injection_scale))
+                        .bind(("significance", thought.significance))
+                        .bind(("access_count", thought.access_count))
+                        .bind(("submode", thought.submode.clone()))
+                        .bind(("framework_enhanced", thought.framework_enhanced))
+                        .bind(("framework_analysis", thought.framework_analysis.clone()))
+                        .await
+                },
+            )
             .await?;
         } else {
-            with_retry("create_tech_thought", max_retries, initial_delay_ms, || async {
-                self.db
-                    .query(
-                        r#"CREATE type::thing('thoughts', $id) CONTENT {
+            with_retry(
+                "create_tech_thought",
+                max_retries,
+                initial_delay_ms,
+                || async {
+                    self.db
+                        .query(
+                            r#"CREATE type::thing('thoughts', $id) CONTENT {
                             id: $id,
                             content: $content,
                             created_at: time::now(),
@@ -2219,20 +2257,21 @@ impl SurrealMindServer {
                             framework_enhanced: $framework_enhanced,
                             framework_analysis: $framework_analysis
                         } RETURN NONE"#,
-                    )
-                    .bind(("id", thought.id.clone()))
-                    .bind(("content", thought.content.clone()))
-                    .bind(("embedding", thought.embedding.clone()))
-                    .bind(("injected_memories", thought.injected_memories.clone()))
-                    .bind(("enriched_content", thought.enriched_content.clone()))
-                    .bind(("injection_scale", thought.injection_scale))
-                    .bind(("significance", thought.significance))
-                    .bind(("access_count", thought.access_count))
-                    .bind(("submode", thought.submode.clone()))
-                    .bind(("framework_enhanced", thought.framework_enhanced))
-                    .bind(("framework_analysis", thought.framework_analysis.clone()))
-                    .await
-            })
+                        )
+                        .bind(("id", thought.id.clone()))
+                        .bind(("content", thought.content.clone()))
+                        .bind(("embedding", thought.embedding.clone()))
+                        .bind(("injected_memories", thought.injected_memories.clone()))
+                        .bind(("enriched_content", thought.enriched_content.clone()))
+                        .bind(("injection_scale", thought.injection_scale))
+                        .bind(("significance", thought.significance))
+                        .bind(("access_count", thought.access_count))
+                        .bind(("submode", thought.submode.clone()))
+                        .bind(("framework_enhanced", thought.framework_enhanced))
+                        .bind(("framework_analysis", thought.framework_analysis.clone()))
+                        .await
+                },
+            )
             .await?;
         }
 
@@ -2327,7 +2366,8 @@ impl SurrealMindServer {
                 message: format!(
                     "significance must be between 0.0 and 1.0 (got: {})",
                     significance
-                ).into(),
+                )
+                .into(),
                 data: None,
             });
         }
@@ -2368,8 +2408,11 @@ impl SurrealMindServer {
             })?;
 
         // Set inner_visibility default
-        let inner_visibility = params.inner_visibility.clone().unwrap_or_else(|| "context_only".to_string());
-        
+        let inner_visibility = params
+            .inner_visibility
+            .clone()
+            .unwrap_or_else(|| "context_only".to_string());
+
         // Basic framework analysis for inner voice (simpler than convo/tech)
         let enriched_content = if relevant_memories.is_empty() {
             params.content.clone()
@@ -2382,7 +2425,8 @@ impl SurrealMindServer {
         };
 
         let analysis = crate::cognitive::types::FrameworkOutput {
-            insights: vec![format!("Inner thought recorded: {}", 
+            insights: vec![format!(
+                "Inner thought recorded: {}",
                 if params.content.len() > 50 {
                     format!("{}...", &params.content[..50])
                 } else {
@@ -2424,13 +2468,17 @@ impl SurrealMindServer {
 
         // Store thought in SurrealDB with retry logic
         let (max_retries, initial_delay_ms) = get_retry_config();
-        
+
         if Self::db_serial_enabled() {
             let _guard = self.db_gate.lock().await;
-            with_retry("create_inner_voice_thought", max_retries, initial_delay_ms, || async {
-                self.db
-                    .query(
-                        r#"CREATE type::thing('thoughts', $id) CONTENT {
+            with_retry(
+                "create_inner_voice_thought",
+                max_retries,
+                initial_delay_ms,
+                || async {
+                    self.db
+                        .query(
+                            r#"CREATE type::thing('thoughts', $id) CONTENT {
                             id: $id,
                             content: $content,
                             created_at: time::now(),
@@ -2446,28 +2494,33 @@ impl SurrealMindServer {
                             is_inner_voice: $is_inner_voice,
                             inner_visibility: $inner_visibility
                         } RETURN NONE"#,
-                    )
-                    .bind(("id", thought.id.clone()))
-                    .bind(("content", thought.content.clone()))
-                    .bind(("embedding", thought.embedding.clone()))
-                    .bind(("injected_memories", thought.injected_memories.clone()))
-                    .bind(("enriched_content", thought.enriched_content.clone()))
-                    .bind(("injection_scale", thought.injection_scale))
-                    .bind(("significance", thought.significance))
-                    .bind(("access_count", thought.access_count))
-                    .bind(("submode", thought.submode.clone()))
-                    .bind(("framework_enhanced", thought.framework_enhanced))
-                    .bind(("framework_analysis", thought.framework_analysis.clone()))
-                    .bind(("is_inner_voice", thought.is_inner_voice))
-                    .bind(("inner_visibility", thought.inner_visibility.clone()))
-                    .await
-            })
+                        )
+                        .bind(("id", thought.id.clone()))
+                        .bind(("content", thought.content.clone()))
+                        .bind(("embedding", thought.embedding.clone()))
+                        .bind(("injected_memories", thought.injected_memories.clone()))
+                        .bind(("enriched_content", thought.enriched_content.clone()))
+                        .bind(("injection_scale", thought.injection_scale))
+                        .bind(("significance", thought.significance))
+                        .bind(("access_count", thought.access_count))
+                        .bind(("submode", thought.submode.clone()))
+                        .bind(("framework_enhanced", thought.framework_enhanced))
+                        .bind(("framework_analysis", thought.framework_analysis.clone()))
+                        .bind(("is_inner_voice", thought.is_inner_voice))
+                        .bind(("inner_visibility", thought.inner_visibility.clone()))
+                        .await
+                },
+            )
             .await?;
         } else {
-            with_retry("create_inner_voice_thought", max_retries, initial_delay_ms, || async {
-                self.db
-                    .query(
-                        r#"CREATE type::thing('thoughts', $id) CONTENT {
+            with_retry(
+                "create_inner_voice_thought",
+                max_retries,
+                initial_delay_ms,
+                || async {
+                    self.db
+                        .query(
+                            r#"CREATE type::thing('thoughts', $id) CONTENT {
                             id: $id,
                             content: $content,
                             created_at: time::now(),
@@ -2483,22 +2536,23 @@ impl SurrealMindServer {
                             is_inner_voice: $is_inner_voice,
                             inner_visibility: $inner_visibility
                         } RETURN NONE"#,
-                    )
-                    .bind(("id", thought.id.clone()))
-                    .bind(("content", thought.content.clone()))
-                    .bind(("embedding", thought.embedding.clone()))
-                    .bind(("injected_memories", thought.injected_memories.clone()))
-                    .bind(("enriched_content", thought.enriched_content.clone()))
-                    .bind(("injection_scale", thought.injection_scale))
-                    .bind(("significance", thought.significance))
-                    .bind(("access_count", thought.access_count))
-                    .bind(("submode", thought.submode.clone()))
-                    .bind(("framework_enhanced", thought.framework_enhanced))
-                    .bind(("framework_analysis", thought.framework_analysis.clone()))
-                    .bind(("is_inner_voice", thought.is_inner_voice))
-                    .bind(("inner_visibility", thought.inner_visibility.clone()))
-                    .await
-            })
+                        )
+                        .bind(("id", thought.id.clone()))
+                        .bind(("content", thought.content.clone()))
+                        .bind(("embedding", thought.embedding.clone()))
+                        .bind(("injected_memories", thought.injected_memories.clone()))
+                        .bind(("enriched_content", thought.enriched_content.clone()))
+                        .bind(("injection_scale", thought.injection_scale))
+                        .bind(("significance", thought.significance))
+                        .bind(("access_count", thought.access_count))
+                        .bind(("submode", thought.submode.clone()))
+                        .bind(("framework_enhanced", thought.framework_enhanced))
+                        .bind(("framework_analysis", thought.framework_analysis.clone()))
+                        .bind(("is_inner_voice", thought.is_inner_voice))
+                        .bind(("inner_visibility", thought.inner_visibility.clone()))
+                        .await
+                },
+            )
             .await?;
         }
 
@@ -2692,7 +2746,7 @@ impl SurrealMindServer {
             submode,
             framework_enhanced: None,
             framework_analysis: None,
-            is_inner_voice: None, // parsed from database
+            is_inner_voice: None,   // parsed from database
             inner_visibility: None, // parsed from database
         };
 
@@ -3192,6 +3246,8 @@ mod tests {
             submode: None,
             framework_enhanced: None,
             framework_analysis: None,
+            is_inner_voice: Some(false),
+            inner_visibility: None,
         };
         let recent_match = ThoughtMatch {
             thought: recent_thought,
@@ -3218,6 +3274,8 @@ mod tests {
             submode: None,
             framework_enhanced: None,
             framework_analysis: None,
+            is_inner_voice: Some(false),
+            inner_visibility: None,
         };
         let significant_match = ThoughtMatch {
             thought: significant_thought,
@@ -3244,6 +3302,8 @@ mod tests {
             submode: None,
             framework_enhanced: None,
             framework_analysis: None,
+            is_inner_voice: Some(false),
+            inner_visibility: None,
         };
         let related_match = ThoughtMatch {
             thought: related_thought,
