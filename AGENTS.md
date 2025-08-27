@@ -31,8 +31,8 @@ Common commands
   - Single test: cargo test test_list_tools_returns_convo_think
   - With logs: RUST_LOG=debug cargo test -- --nocapture
 - Environment setup
-  - Copy .env.example to .env (if exists) or create .env with NOMIC_API_KEY=your-key
-  - Without API key: Falls back to fake embeddings for testing
+  - Copy .env.example to .env (if exists) and set `OPENAI_API_KEY` for embeddings (default model `text-embedding-3-small`)
+  - Alternative provider: set `SURR_EMBED_PROVIDER=nomic` and `NOMIC_API_KEY`
 - Cargo aliases (defined in .cargo/config.toml)
   - cargo lint → clippy with -D warnings
   - cargo ci → composite check, fmt, clippy, test
@@ -50,12 +50,12 @@ High-level architecture
   - Indexes on created_at and significance for efficient queries
   - Hybrid storage: DB writes + in-memory cache for performance
 - Embedding system (src/embeddings.rs)
-  - Trait-based: Embedder trait with embed() and dimensions()
-  - NomicEmbedder: Real 768-dim embeddings via Nomic API (requires NOMIC_API_KEY)
-  - FakeEmbedder: Deterministic, normalized fallback when no API key (cosine meaningful)
-  - Factory: create_embedder() auto-selects based on environment
+  - Trait-based: `Embedder` with `embed()` and `dimensions()`; easy to swap providers
+  - OpenAIEmbedder: 1536-dim by default (`text-embedding-3-small`, requires `OPENAI_API_KEY`)
+  - NomicEmbedder: 768-dim alternative (`NOMIC_API_KEY`)
+  - Factory: `create_embedder()` selects provider via `SURR_EMBED_PROVIDER` or available keys
 - Tool pipeline (convo_think)
-  - Generate real/fake embedding based on NOMIC_API_KEY presence
+  - Generate embeddings via configured provider (OpenAI by default)
   - Retrieve memories using orbital mechanics (injection_scale 0-5):
     - 0: No injection  
     - 1: Mercury (0.2 distance) - hot memories only
@@ -75,6 +75,6 @@ High-level architecture
 Conventions specific to this repo
 - Environment: Always check for .env file; dotenv::dotenv().ok() in main()
 - Error handling: anyhow::Result for main paths, McpError for MCP protocol  
-- Testing: Tests currently use fake server instances (no embedder), need mock updates
+- Testing: Does not hit network; embedding-specific tests avoid external calls
 - CI compliance: Must pass make ci before commits (fmt, clippy -D warnings, tests)
-- Production: Build with --release, ensure NOMIC_API_KEY set for real embeddings
+- Production: Build with --release, ensure `OPENAI_API_KEY` (or set `SURR_EMBED_PROVIDER=nomic` with `NOMIC_API_KEY`)

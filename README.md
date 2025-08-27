@@ -5,7 +5,7 @@ A Model Context Protocol (MCP) server implementing bidirectional consciousness p
 ## Features
 - **Bidirectional Memory Injection**: Thoughts automatically pull relevant memories during storage
 - **Orbital Mechanics**: Memory relevance based on age, access patterns, and significance
-- **Semantic Understanding**: Nomic embeddings for true semantic similarity
+- **Semantic Understanding**: OpenAI embeddings for true semantic similarity
 - **Graph Persistence**: SurrealDB with embedded RocksDB for consciousness graph
 - **Injection Scales**: 0-5 (Sun to Pluto) controlling memory retrieval distance
 - **Submodes**: Conversational (sarcastic, philosophical, empathetic, problem_solving) and Technical (plan, build, debug) influence retrieval and enrichment
@@ -22,12 +22,11 @@ A Model Context Protocol (MCP) server implementing bidirectional consciousness p
    cp .env.example .env
    ```
 
-2. Add your Nomic API key:
+2. Add your OpenAI API key:
    ```
-   NOMIC_API_KEY=your-key-here
+   OPENAI_API_KEY=sk-...
    ```
-
-   Get a key from [Nomic Atlas](https://atlas.nomic.ai)
+   Optional: `SURR_EMBED_MODEL=text-embedding-3-small` (default), or switch provider with `SURR_EMBED_PROVIDER=nomic` and set `NOMIC_API_KEY`.
 
 ### Build
 ```bash
@@ -68,9 +67,9 @@ Additional environment variables for fine-tuning performance and behavior:
 export SURR_CACHE_MAX=5000          # LRU cache size (default: 5000)
 export SURR_CACHE_WARM=64           # Cache warm-up batch size on DB fallback (default: 64, max: 1000)
 
-# Embedding Configuration  
-export SURR_EMBED_RETRIES=3         # Max retries for Nomic API calls (default: 3)
-export SURR_EMBED_STRICT=false      # Require real embeddings vs fake fallback (default: false)
+# Embedding Configuration
+export SURR_EMBED_RETRIES=3         # Max retries for embedding API calls (default: 3)
+export SURR_EMBED_STRICT=false      # If true, error when no provider configured
 
 # Retrieval Tuning
 export SURR_RETRIEVE_CANDIDATES=500 # DB candidate limit override (default: SURR_DB_LIMIT, range: 50-5000)
@@ -275,9 +274,10 @@ When `SURR_SUBMODE_RETRIEVAL=true`, weights adjust based on submode profile.
 - `flavor`: Content flavor (contrarian, abstract, emotional, solution, neutral)
 
 ### Embeddings
-- **API Mode**: Uses Nomic API (768 dimensions)
-- **Fallback**: Fake embeddings for testing without API key
-- **Future**: Local Nomic model support planned
+- OpenAI: `text-embedding-3-small` (1536 dims) by default; set `OPENAI_API_KEY`.
+- Nomic: Optional alternative via `NOMIC_API_KEY` and `SURR_EMBED_PROVIDER=nomic` (768 dims).
+- Config: `SURR_EMBED_PROVIDER` (`openai|nomic|local`), `SURR_EMBED_MODEL`, `SURR_EMBED_DIM`.
+- Future: Local provider reserved via `SURR_EMBED_PROVIDER=local` (not yet implemented).
 
 ## Development
 
@@ -318,6 +318,20 @@ Env knobs:
 - `SURR_RETRIEVE_CANDIDATES`: DB fallback candidate cap (default `SURR_DB_LIMIT`, clamped 50–5000).
 - `SURR_SEARCH_GRAPH_MAX_NEIGHBORS`: cap neighbors per seed (default 20).
 - `SURR_CACHE_WARM`: cache warm-up batch (default 64; clamp 0–1000).
+
+### Re-embedding Script
+Standalone CLI to recompute embeddings outside MCP.
+
+Usage:
+- Build: `cargo build --release`
+- Dry run: `target/release/reembed --dry-run`  (or env `REEMBED_DRY_RUN=true`)
+- Re-embed mismatched/missing only: `target/release/reembed --batch-size 64`
+- Full re-embed: `target/release/reembed --all --batch-size 64`
+- Limits: `--limit 100` to cap total processed
+
+Reads DB/env from existing `.env` (symlinked to project root):
+- `SURR_DB_URL`, `SURR_DB_USER`, `SURR_DB_PASS`, `SURR_DB_NS`, `SURR_DB_DB`
+- Embeddings: `OPENAI_API_KEY` (default), `SURR_EMBED_PROVIDER`, `SURR_EMBED_MODEL`, `SURR_EMBED_DIM`
 - `SURR_SUBMODE_RETRIEVAL`: enable submode-aware proximity weights.
 - `SURR_DB_MAX_CONCURRENCY`: DB concurrency (default 1 = serial; recommended until WS issues are resolved).
 - `SURR_DB_TIMEOUT_MS`: DB query timeout for search/expansion.
