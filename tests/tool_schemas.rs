@@ -10,17 +10,6 @@ fn schema_has_property(schema: &Value, property: &str) -> bool {
     schema["properties"][property].is_object()
 }
 
-/// Helper function to validate that a property has a specific type
-fn property_has_type(schema: &Value, property: &str, expected_type: &str) -> bool {
-    let prop = &schema["properties"][property];
-    if let Some(type_val) = prop["type"].as_str() {
-        type_val == expected_type
-    } else if let Some(type_arr) = prop["type"].as_array() {
-        type_arr.iter().any(|t| t.as_str() == Some(expected_type))
-    } else {
-        false
-    }
-}
 
 #[test]
 fn test_list_tools_returns_expected_tools() {
