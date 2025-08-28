@@ -26,6 +26,22 @@ use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+fn db_timeout_ms() -> u64 {
+    std::env::var("SURR_DB_TIMEOUT_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(10_000)
+}
+
+fn normalize_submode(s: &str) -> String {
+    let mut out = s.trim().to_lowercase();
+    out = out.replace('-', "_");
+    if out == "problem solving" {
+        return "problem_solving".to_string();
+    }
+    out
+}
+
 // Retry utility for database operations with exponential backoff
 async fn with_retry<T, F, Fut>(
     operation_name: &str,
@@ -765,7 +781,7 @@ impl SurrealMindServer {
         } else {
             None
         };
-        
+
         with_retry(
             "initialize_schema_thoughts",
             max_retries,
@@ -910,14 +926,16 @@ impl SurrealMindServer {
         );
 
         // Create framework analysis and enriched content
-        let submode = params.submode.as_deref().unwrap_or("sarcastic");
+        let submode_raw = params.submode.as_deref().unwrap_or("sarcastic");
+        let submode_norm = normalize_submode(submode_raw);
         let (analysis, enriched_content) =
-            self.cognitive_enrich(submode, &params.content, &relevant_memories);
+            self.cognitive_enrich(&submode_norm, &params.content, &relevant_memories);
 
         // Validate and default submode
-        let submode = params
+        let submode_in = params
             .submode
             .clone()
+            .map(|s| normalize_submode(&s))
             .unwrap_or_else(|| "sarcastic".to_string());
         let valid_submodes = [
             "sarcastic",
@@ -925,10 +943,13 @@ impl SurrealMindServer {
             "empathetic",
             "problem_solving",
         ];
-        let submode = if valid_submodes.contains(&submode.as_str()) {
-            submode
+        let submode = if valid_submodes.contains(&submode_in.as_str()) {
+            submode_in
         } else {
-            tracing::warn!("Invalid submode '{}', defaulting to 'sarcastic'", submode);
+            tracing::warn!(
+                "Invalid submode '{}', defaulting to 'sarcastic'",
+                submode_in
+            );
             "sarcastic".to_string()
         };
 
@@ -1088,20 +1109,22 @@ impl SurrealMindServer {
                     .bind((format!("flavor{}", i), flavor.as_str()));
             }
 
-            if Self::db_serial_enabled() {
-                let _guard = self.db_gate.lock().await;
-                req.await.map_err(|e| McpError {
-                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                    message: format!("Failed to create relationships: {}", e).into(),
-                    data: None,
-                })?;
-            } else {
-                req.await.map_err(|e| McpError {
-                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                    message: format!("Failed to create relationships: {}", e).into(),
-                    data: None,
-                })?;
-            }
+let res = tokio::time::timeout(
+    std::time::Duration::from_millis(db_timeout_ms()),
+    async { req.await },
+)
+.await
+.map_err(|_| McpError {
+    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+    message: "Relationship creation timed out".into(),
+    data: None,
+})?
+.map_err(|e| McpError {
+    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+    message: format!("Failed to create relationships: {}", e).into(),
+    data: None,
+});
+res?;
         }
 
         // Also keep in memory for fast retrieval (bounded LRU)
@@ -1471,8 +1494,8 @@ impl SurrealMindServer {
             .ok()
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
-        let sm =
-            cognitive::profile::Submode::from_str(params.submode.as_deref().unwrap_or("sarcastic"));
+        let sm_in = params.submode.as_deref().unwrap_or("sarcastic");
+        let sm = cognitive::profile::Submode::from_str(&normalize_submode(sm_in));
         let prof = cognitive::profile::profile_for(sm);
 
         let now_ts = Utc::now().timestamp();
@@ -1727,20 +1750,30 @@ impl SurrealMindServer {
                 let mut q = String::new();
                 q.push_str("SELECT id(in) AS nid, strength FROM recalls WHERE out = type::thing('thoughts', $sid) LIMIT $lim;\n");
                 q.push_str("SELECT id(out) AS nid, strength FROM recalls WHERE in = type::thing('thoughts', $sid) LIMIT $lim;\n");
-                
+
                 let _guard = if Self::db_serial_enabled() {
                     Some(self.db_gate.lock().await)
                 } else {
                     None
                 };
-                
+
                 let mut req = self.db.query(q);
                 req = req.bind(("sid", seed.clone())).bind(("lim", max_n));
-                let mut resp = req.await.map_err(|e| McpError {
-                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                    message: format!("Failed to query recalls: {}", e).into(),
-                    data: None,
-                })?;
+let mut resp = tokio::time::timeout(
+        std::time::Duration::from_millis(db_timeout_ms()),
+        async { req.await },
+    )
+    .await
+    .map_err(|_| McpError {
+        code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+        message: "recalls query timed out".into(),
+        data: None,
+    })?
+    .map_err(|e| McpError {
+        code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+        message: format!("Failed to query recalls: {}", e).into(),
+        data: None,
+    })?;
                 drop(_guard);
                 let out1: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
                 let out2: Vec<serde_json::Value> = resp.take(1).unwrap_or_default();
@@ -1773,24 +1806,35 @@ impl SurrealMindServer {
                     q2.push_str(
                         "SELECT id(out) AS nid, strength FROM recalls WHERE in = type::thing('thoughts', $mid) LIMIT $lim;\n",
                     );
-                    
+
                     let _guard = if Self::db_serial_enabled() {
                         Some(self.db_gate.lock().await)
                     } else {
                         None
                     };
-                    
-                    let mut resp2 = self
-                        .db
-                        .query(q2)
-                        .bind(("mid", mid.clone()))
-                        .bind(("lim", max_n))
-                        .await
-                        .map_err(|e| McpError {
-                            code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                            message: format!("Failed to query second-hop recalls: {}", e).into(),
-                            data: None,
-                        })?;
+
+let mut resp2 = tokio::time::timeout(
+        std::time::Duration::from_millis(db_timeout_ms()),
+        async {
+            self
+                .db
+                .query(q2)
+                .bind(("mid", mid.clone()))
+                .bind(("lim", max_n))
+                .await
+        },
+    )
+    .await
+    .map_err(|_| McpError {
+        code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+        message: "second-hop recalls query timed out".into(),
+        data: None,
+    })?
+    .map_err(|e| McpError {
+        code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+        message: format!("Failed to query second-hop recalls: {}", e).into(),
+        data: None,
+    })?;
                     drop(_guard);
                     let s1: Vec<serde_json::Value> = resp2.take(0).unwrap_or_default();
                     let s2: Vec<serde_json::Value> = resp2.take(1).unwrap_or_default();
@@ -1827,19 +1871,34 @@ impl SurrealMindServer {
             if !neighbor_strength.is_empty() {
                 // Fetch neighbors thoughts in one go
                 let ids: Vec<String> = neighbor_strength.keys().cloned().collect();
-                
+
                 let _guard = if Self::db_serial_enabled() {
                     Some(self.db_gate.lock().await)
                 } else {
                     None
                 };
-                
-                let mut resp = self
-                    .db
-                    .query("SELECT id, content, created_at, embedding, significance, access_count, last_accessed, submode FROM thoughts WHERE id INSIDE $ids")
-                    .bind(("ids", ids.clone()))
-                    .await
-                    .map_err(|e| McpError { code: rmcp::model::ErrorCode::INTERNAL_ERROR, message: format!("Failed to fetch neighbor thoughts: {}", e).into(), data: None })?;
+
+let mut resp = tokio::time::timeout(
+        std::time::Duration::from_millis(db_timeout_ms()),
+        async {
+            self
+                .db
+                .query("SELECT id, content, created_at, embedding, significance, access_count, last_accessed, submode FROM thoughts WHERE id INSIDE $ids")
+                .bind(("ids", ids.clone()))
+                .await
+        },
+    )
+    .await
+    .map_err(|_| McpError {
+        code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+        message: "neighbor thoughts query timed out".into(),
+        data: None,
+    })?
+    .map_err(|e| McpError {
+        code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+        message: format!("Failed to fetch neighbor thoughts: {}", e).into(),
+        data: None,
+    })?;
                 drop(_guard);
                 let neighbors: Vec<Thought> = resp.take(0).unwrap_or_default();
                 let mut pool: Vec<ThoughtMatch> = Vec::new();
@@ -2088,7 +2147,8 @@ impl SurrealMindServer {
         params: ConvoThinkParams,
     ) -> Result<serde_json::Value, McpError> {
         // Map submode and defaults
-        let submode = params.submode.clone().unwrap_or_else(|| "plan".to_string());
+        let submode =
+            normalize_submode(&params.submode.clone().unwrap_or_else(|| "plan".to_string()));
         let injection_scale = params.injection_scale.unwrap_or(match submode.as_str() {
             "plan" => 3,
             "build" => 2,
@@ -2306,12 +2366,17 @@ impl SurrealMindServer {
                     .bind((format!("flavor{}", i), flavor.as_str()));
             }
 
-            if Self::db_serial_enabled() {
-                let _guard = self.db_gate.lock().await;
-                let _ = req.await;
-            } else {
-                let _ = req.await;
-            }
+let _ = tokio::time::timeout(
+    std::time::Duration::from_millis(db_timeout_ms()),
+    async { req.await },
+)
+.await
+.map_err(|_| McpError {
+    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+    message: "Relationship creation timed out".into(),
+    data: None,
+})
+.map(|_| ());
         }
 
         // user_friendly via existing helpers
@@ -2585,12 +2650,17 @@ impl SurrealMindServer {
                     .bind((format!("flavor{}", i), flavor.as_str()));
             }
 
-            if Self::db_serial_enabled() {
-                let _guard = self.db_gate.lock().await;
-                let _ = req.await;
-            } else {
-                let _ = req.await;
-            }
+let _ = tokio::time::timeout(
+    std::time::Duration::from_millis(db_timeout_ms()),
+    async { req.await },
+)
+.await
+.map_err(|_| McpError {
+    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+    message: "Relationship creation timed out".into(),
+    data: None,
+})
+.map(|_| ());
         }
 
         let verbose_analysis = params.verbose_analysis.unwrap_or(false); // Default to less verbose for inner voice
@@ -2729,8 +2799,20 @@ impl SurrealMindServer {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        // For datetime fields, we'll use current time as fallback
-        let created_at = surrealdb::sql::Datetime::from(Utc::now());
+        // Try to parse created_at from row; fallback to now if unavailable
+        let created_at = if let Some(tsv) = row.get("created_at") {
+            if let Some(s) = tsv.as_str() {
+                if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
+                    surrealdb::sql::Datetime::from(dt.with_timezone(&Utc))
+                } else {
+                    surrealdb::sql::Datetime::from(Utc::now())
+                }
+            } else {
+                surrealdb::sql::Datetime::from(Utc::now())
+            }
+        } else {
+            surrealdb::sql::Datetime::from(Utc::now())
+        };
 
         let thought = Thought {
             id,
@@ -3472,15 +3554,16 @@ mod tests {
 
         for (input, expected_err) in invalid_cases {
             let result = serde_json::from_value::<TestStruct>(input.clone());
-            assert!(result.is_err(), "Should have failed for input: {:?}", input);
-            if result.is_err() {
-                let err_msg = result.unwrap_err().to_string();
+            if let Err(e) = result {
+                let err_msg = e.to_string();
                 assert!(
                     err_msg.contains(expected_err),
                     "Error message '{}' should contain '{}'",
                     err_msg,
                     expected_err
                 );
+            } else {
+                panic!("Should have failed for input: {:?}", input);
             }
         }
     }
