@@ -17,6 +17,7 @@ use serde_json::json;
 use std::borrow::Cow;
 
 use lru::LruCache;
+use sha2::{Digest, Sha256};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use surrealdb::Surreal;
@@ -474,8 +475,34 @@ impl ServerHandler for SurrealMindServer {
         let help_schema = rmcp::object!({
             "type": "object",
             "properties": {
-                "tool": {"type": "string", "enum": ["convo_think", "tech_think", "inner_voice"], "description": "Which tool to describe (omit for overview)"},
+                "tool": {"type": "string", "enum": ["convo_think", "tech_think", "inner_voice", "knowledgegraph_create", "knowledgegraph_search"], "description": "Which tool to describe (omit for overview)"},
                 "format": {"type": "string", "enum": ["compact", "full"], "description": "Level of detail", "default": "full"}
+            }
+        });
+
+        let kg_create_schema = rmcp::object!({
+            "type": "object",
+            "properties": {
+                "kind": {"type": "string", "enum": ["entity", "relationship", "observation"], "description": "What to create/upsert"},
+                "data": {"type": "object", "description": "Payload for the given kind"},
+                "upsert": {"type": "boolean", "default": true, "description": "If true, match by external_id/content_hash to avoid duplicates"},
+                "source_thought_id": {"type": "string", "description": "Optional thought id for provenance; creates mentions edge"},
+                "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0, "description": "Optional confidence for mentions/relationships"}
+            },
+            "required": ["kind", "data"]
+        });
+
+        let kg_search_schema = rmcp::object!({
+            "type": "object",
+            "properties": {
+                "target": {"type": "string", "enum": ["entity", "relationship", "observation", "mixed"], "default": "entity"},
+                "query": {"type": "object", "properties": {
+                    "text": {"type": "string"},
+                    "filters": {"type": "object"}
+                }},
+                "top_k": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
+                "offset": {"type": "integer", "minimum": 0, "default": 0},
+                "action": {"type": "string", "enum": ["get"], "default": "get"}
             }
         });
 
@@ -507,6 +534,16 @@ impl ServerHandler for SurrealMindServer {
                     Cow::Borrowed("detailed_help"),
                     Cow::Borrowed("Show detailed help for tools and parameters"),
                     Arc::new(help_schema),
+                ),
+                Tool::new(
+                    Cow::Borrowed("knowledgegraph_create"),
+                    Cow::Borrowed("Create or upsert entities/relationships with provenance"),
+                    Arc::new(kg_create_schema),
+                ),
+                Tool::new(
+                    Cow::Borrowed("knowledgegraph_search"),
+                    Cow::Borrowed("Search entities and relationships; returns typed results"),
+                    Arc::new(kg_search_schema),
                 ),
             ],
             ..Default::default()
@@ -610,6 +647,24 @@ impl ServerHandler for SurrealMindServer {
                 debug!("inner_voice content (first 50 chars): {}", dbg_preview);
                 let result = self.create_inner_voice_thought(params).await?;
                 Ok(CallToolResult::structured(json!(result)))
+            }
+            "knowledgegraph_create" => {
+                let args = request.arguments.clone().ok_or_else(|| McpError {
+                    code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                    message: "Missing parameters".into(),
+                    data: None,
+                })?;
+                let result = self.kg_create_from_args(args).await?;
+                Ok(CallToolResult::structured(result))
+            }
+            "knowledgegraph_search" => {
+                let args = request.arguments.clone().ok_or_else(|| McpError {
+                    code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                    message: "Missing parameters".into(),
+                    data: None,
+                })?;
+                let result = self.kg_search_from_args(args).await?;
+                Ok(CallToolResult::structured(result))
             }
             "detailed_help" => {
                 let args = request.arguments.clone().unwrap_or_default();
@@ -932,6 +987,36 @@ impl SurrealMindServer {
         )
         .await?;
 
+        // Define knowledge-graph relationships (entities <-> entities)
+        with_retry(
+            "initialize_schema_kg_relationships",
+            max_retries,
+            initial_delay_ms,
+            || async {
+                self.db
+                    .query(
+                        r#"
+                DEFINE TABLE relationships TYPE RELATION;
+                DEFINE FIELD in ON TABLE relationships TYPE record<entities>;
+                DEFINE FIELD out ON TABLE relationships TYPE record<entities>;
+                DEFINE FIELD predicate ON TABLE relationships TYPE string;
+                DEFINE FIELD direction ON TABLE relationships TYPE string;
+                DEFINE FIELD strength ON TABLE relationships TYPE float;
+                DEFINE FIELD confidence ON TABLE relationships TYPE float;
+                DEFINE FIELD valid_from ON TABLE relationships TYPE option<datetime>;
+                DEFINE FIELD valid_to ON TABLE relationships TYPE option<datetime>;
+                DEFINE FIELD properties ON TABLE relationships TYPE option<object>;
+                DEFINE FIELD source_thought ON TABLE relationships TYPE option<record<thoughts>>;
+
+                DEFINE INDEX rel_pred_idx ON TABLE relationships COLUMNS predicate;
+                DEFINE INDEX rel_pair_idx ON TABLE relationships COLUMNS in, out, predicate;
+            "#,
+                    )
+                    .await
+            },
+        )
+        .await?;
+
         // Backfill existing data with defaults (idempotent) with retry logic
         with_retry(
             "initialize_schema_backfill",
@@ -952,7 +1037,6 @@ impl SurrealMindServer {
         )
         .await?;
 
-        info!("Schema initialized successfully");
         Ok(())
     }
 
@@ -2851,6 +2935,680 @@ impl SurrealMindServer {
                     json!({"tools": [{"name":"convo_think"}, {"name":"tech_think"}]})
                 }
             }
+        }
+    }
+
+    // --- Knowledge Graph: helpers and tool implementations ---
+    fn kg_parse_thing(id: &str, default_tb: &str) -> Option<(String, String)> {
+        let mut parts = id.splitn(2, ':');
+        let tb = parts.next().unwrap_or(default_tb);
+        let inner = parts.next().unwrap_or("");
+        let inner = inner.trim().trim_start_matches('⟨').trim_end_matches('⟩');
+        if inner.is_empty() {
+            None
+        } else {
+            Some((tb.to_string(), inner.to_string()))
+        }
+    }
+
+    fn kg_sha256_hex(parts: &[&str]) -> String {
+        let mut hasher = Sha256::new();
+        for p in parts {
+            hasher.update(p.as_bytes());
+            hasher.update(b"|");
+        }
+        let bytes = hasher.finalize();
+        let mut s = String::with_capacity(bytes.len() * 2);
+        for b in bytes {
+            use std::fmt::Write as _;
+            let _ = write!(&mut s, "{:02x}", b);
+        }
+        s
+    }
+
+    async fn upsert_entity_from_map(
+        &self,
+        data: &serde_json::Map<String, serde_json::Value>,
+        upsert: bool,
+        source_thought_id: Option<&str>,
+    ) -> Result<(String, bool), McpError> {
+        let name = data
+            .get("name")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| McpError {
+                code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                message: "entity.name is required".into(),
+                data: None,
+            })?
+            .to_string();
+        let etype = data
+            .get("type")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| McpError {
+                code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                message: "entity.type is required".into(),
+                data: None,
+            })?
+            .to_string();
+        let external_id = data
+            .get("external_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let aliases = data
+            .get("aliases")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<String>>()
+            })
+            .unwrap_or_default();
+        let properties = data.get("properties").cloned().unwrap_or_else(|| json!({}));
+
+        let name_norm = name.trim().to_lowercase();
+        let type_norm = etype.trim().to_lowercase();
+        let hash = Self::kg_sha256_hex(&[&name_norm, &type_norm]);
+
+        // Try to find existing
+        let mut found_id: Option<String> = None;
+        if upsert {
+            if let Some(ext) = &external_id {
+                let q = "SELECT id FROM entities WHERE external_id = $ext LIMIT 1";
+                let (max_retries, initial_delay_ms) = get_retry_config();
+                let _guard = if Self::db_serial_enabled() {
+                    Some(self.db_gate.lock().await)
+                } else {
+                    None
+                };
+                let mut resp = with_retry(
+                    "select_entity_by_external_id",
+                    max_retries,
+                    initial_delay_ms,
+                    || {
+                        let ext = ext.clone();
+                        async move { self.db.query(q).bind(("ext", ext)).await }
+                    },
+                )
+                .await?;
+                let rows: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
+                if let Some(row) = rows.into_iter().next()
+                    && let Some(id) = row.get("id").and_then(|v| v.as_str())
+                {
+                    found_id = Some(id.to_string());
+                }
+            }
+            if found_id.is_none() {
+                let q = "SELECT id FROM entities WHERE content_hash = $hash LIMIT 1";
+                let (max_retries, initial_delay_ms) = get_retry_config();
+                let _guard = if Self::db_serial_enabled() {
+                    Some(self.db_gate.lock().await)
+                } else {
+                    None
+                };
+                let mut resp = with_retry(
+                    "select_entity_by_hash",
+                    max_retries,
+                    initial_delay_ms,
+                    || {
+                        let hash = hash.clone();
+                        async move { self.db.query(q).bind(("hash", hash)).await }
+                    },
+                )
+                .await?;
+                let rows: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
+                if let Some(row) = rows.into_iter().next() {
+                    if let Some(id) = row.get("id").and_then(|v| v.as_str()) {
+                        found_id = Some(id.to_string());
+                    }
+                }
+            }
+        }
+
+        if let Some(eid) = found_id {
+            // Update basic fields on upsert
+            let q = r#"
+                UPDATE $rid SET
+                    name = $name,
+                    type = $etype,
+                    aliases = $aliases,
+                    properties = $properties,
+                    external_id = $external_id,
+                    content_hash = $hash,
+                    updated_at = time::now()
+                RETURN id;
+            "#;
+            let (tb, inner) =
+                Self::kg_parse_thing(&eid, "entities").unwrap_or(("entities".into(), eid.clone()));
+            let (max_retries, initial_delay_ms) = get_retry_config();
+            let _guard = if Self::db_serial_enabled() {
+                Some(self.db_gate.lock().await)
+            } else {
+                None
+            };
+            let mut resp = with_retry("update_entity", max_retries, initial_delay_ms, || {
+                let name = name.clone();
+                let etype = etype.clone();
+                let aliases = aliases.clone();
+                let properties = properties.clone();
+                let external_id = external_id.clone();
+                let hash = hash.clone();
+                let tb = tb.clone();
+                let inner = inner.clone();
+                async move {
+                    self.db
+                        .query(q)
+                        .bind(("rid", format!("{}:{}", tb, inner)))
+                        .bind(("name", name))
+                        .bind(("etype", etype))
+                        .bind(("aliases", aliases))
+                        .bind(("properties", properties))
+                        .bind(("external_id", external_id))
+                        .bind(("hash", hash))
+                        .await
+                }
+            })
+            .await?;
+            let rows: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
+            let id = rows
+                .get(0)
+                .and_then(|r| r.get("id").and_then(|v| v.as_str()))
+                .unwrap_or(&eid)
+                .to_string();
+
+            // provenance mention and counter
+            if let Some(tid) = source_thought_id {
+                if let Some((_, einner)) = Self::kg_parse_thing(&id, "entities") {
+                    let q = r#"
+                        CREATE mentions SET in = type::thing('thoughts', $tid), out = type::thing('entities', $eid), confidence = $conf;
+                    "#;
+                    let conf = 0.8f32;
+                    let (max_retries, initial_delay_ms) = get_retry_config();
+                    let _guard = if Self::db_serial_enabled() {
+                        Some(self.db_gate.lock().await)
+                    } else {
+                        None
+                    };
+                    with_retry(
+                        "create_mention_update",
+                        max_retries,
+                        initial_delay_ms,
+                        || {
+                            let tid = tid.to_string();
+                            let einner = einner.clone();
+                            async move {
+                                self.db
+                                    .query(q)
+                                    .bind(("tid", tid))
+                                    .bind(("eid", einner))
+                                    .bind(("conf", conf))
+                                    .await
+                            }
+                        },
+                    )
+                    .await?;
+                    let _ = self.increment_entity_mentions(&id, 1).await;
+                }
+            }
+            return Ok((id, false));
+        }
+
+        // Create new entity
+        let q = r#"
+            CREATE entities SET
+                name = $name,
+                type = $etype,
+                aliases = $aliases,
+                properties = $properties,
+                external_id = $external_id,
+                content_hash = $hash,
+                created_at = time::now(),
+                mention_count = 0
+            RETURN id;
+        "#;
+        let (max_retries, initial_delay_ms) = get_retry_config();
+        let _guard = if Self::db_serial_enabled() {
+            Some(self.db_gate.lock().await)
+        } else {
+            None
+        };
+        let mut resp = with_retry("create_entity", max_retries, initial_delay_ms, || {
+            let name = name.clone();
+            let etype = etype.clone();
+            let aliases = aliases.clone();
+            let properties = properties.clone();
+            let external_id = external_id.clone();
+            let hash = hash.clone();
+            async move {
+                self.db
+                    .query(q)
+                    .bind(("name", name))
+                    .bind(("etype", etype))
+                    .bind(("aliases", aliases))
+                    .bind(("properties", properties))
+                    .bind(("external_id", external_id))
+                    .bind(("hash", hash))
+                    .await
+            }
+        })
+        .await?;
+        let rows: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
+        let id = rows
+            .get(0)
+            .and_then(|r| r.get("id").and_then(|v| v.as_str()))
+            .unwrap_or("")
+            .to_string();
+
+        if let Some(tid) = source_thought_id {
+            if let Some((_, einner)) = Self::kg_parse_thing(&id, "entities") {
+                let q = r#"
+                    CREATE mentions SET in = type::thing('thoughts', $tid), out = type::thing('entities', $eid), confidence = $conf;
+                "#;
+                let conf = 0.8f32;
+                let (max_retries, initial_delay_ms) = get_retry_config();
+                let _guard = if Self::db_serial_enabled() {
+                    Some(self.db_gate.lock().await)
+                } else {
+                    None
+                };
+                with_retry("create_mention_new", max_retries, initial_delay_ms, || {
+                    let tid = tid.to_string();
+                    let einner = einner.clone();
+                    async move {
+                        self.db
+                            .query(q)
+                            .bind(("tid", tid))
+                            .bind(("eid", einner))
+                            .bind(("conf", conf))
+                            .await
+                    }
+                })
+                .await?;
+                let _ = self.increment_entity_mentions(&id, 1).await;
+            }
+        }
+
+        Ok((id, true))
+    }
+
+    async fn resolve_entity_ref(
+        &self,
+        value: &serde_json::Value,
+        upsert: bool,
+        source_thought_id: Option<&str>,
+    ) -> Result<String, McpError> {
+        if let Some(id) = value.as_str() {
+            // Assume full id
+            return Ok(id.to_string());
+        }
+        if let Some(obj) = value.as_object() {
+            let (id, _created) = self
+                .upsert_entity_from_map(obj, upsert, source_thought_id)
+                .await?;
+            return Ok(id);
+        }
+        Err(McpError {
+            code: rmcp::model::ErrorCode::INVALID_PARAMS,
+            message: "Invalid entity reference - expected id string or {name,type}".into(),
+            data: None,
+        })
+    }
+
+    pub async fn kg_create_from_args(
+        &self,
+        args: serde_json::Map<String, serde_json::Value>,
+    ) -> Result<serde_json::Value, McpError> {
+        let kind = args
+            .get("kind")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| McpError {
+                code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                message: "kind is required".into(),
+                data: None,
+            })?;
+        let data = args
+            .get("data")
+            .and_then(|v| v.as_object())
+            .ok_or_else(|| McpError {
+                code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                message: "data object is required".into(),
+                data: None,
+            })?;
+        let upsert = args.get("upsert").and_then(|v| v.as_bool()).unwrap_or(true);
+        let source_thought_id = args.get("source_thought_id").and_then(|v| v.as_str());
+        let confidence = args
+            .get("confidence")
+            .and_then(|v| v.as_f64())
+            .map(|f| f as f32)
+            .unwrap_or(0.8);
+
+        match kind {
+            "entity" => {
+                let (id, created) = self
+                    .upsert_entity_from_map(data, upsert, source_thought_id)
+                    .await?;
+                Ok(json!({
+                    "kind": "entity",
+                    "entity_id": id,
+                    "created": created
+                }))
+            }
+            "relationship" => {
+                // subject, object, predicate, direction, strength, confidence
+                let subject = data.get("subject").ok_or_else(|| McpError {
+                    code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                    message: "relationship.subject is required".into(),
+                    data: None,
+                })?;
+                let object = data.get("object").ok_or_else(|| McpError {
+                    code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                    message: "relationship.object is required".into(),
+                    data: None,
+                })?;
+                let predicate = data
+                    .get("predicate")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| McpError {
+                        code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                        message: "relationship.predicate is required".into(),
+                        data: None,
+                    })?
+                    .to_string();
+                let direction = data
+                    .get("direction")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("uni")
+                    .to_string();
+                let strength = data
+                    .get("strength")
+                    .and_then(|v| v.as_f64())
+                    .map(|f| f as f32)
+                    .unwrap_or(0.5);
+                let conf = data
+                    .get("confidence")
+                    .and_then(|v| v.as_f64())
+                    .map(|f| f as f32)
+                    .unwrap_or(confidence);
+
+                let sid = self
+                    .resolve_entity_ref(subject, true, source_thought_id)
+                    .await?;
+                let oid = self
+                    .resolve_entity_ref(object, true, source_thought_id)
+                    .await?;
+                let (_, sin) = Self::kg_parse_thing(&sid, "entities").ok_or_else(|| McpError {
+                    code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                    message: "Invalid subject id".into(),
+                    data: None,
+                })?;
+                let (_, oin) = Self::kg_parse_thing(&oid, "entities").ok_or_else(|| McpError {
+                    code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                    message: "Invalid object id".into(),
+                    data: None,
+                })?;
+
+                let q = r#"
+                    CREATE relationships SET
+                        in = type::thing('entities', $sid),
+                        out = type::thing('entities', $oid),
+                        predicate = $predicate,
+                        direction = $direction,
+                        strength = $strength,
+                        confidence = $confidence,
+                        source_thought = $sthought
+                    RETURN id;
+                "#;
+                let (max_retries, initial_delay_ms) = get_retry_config();
+                let _guard = if Self::db_serial_enabled() {
+                    Some(self.db_gate.lock().await)
+                } else {
+                    None
+                };
+                let mut resp =
+                    with_retry("create_relationship", max_retries, initial_delay_ms, || {
+                        let predicate = predicate.clone();
+                        let direction = direction.clone();
+                        let sin = sin.clone();
+                        let oin = oin.clone();
+                        let sthought = source_thought_id.map(|s| s.to_string());
+                        async move {
+                            self.db
+                                .query(q)
+                                .bind(("sid", sin))
+                                .bind(("oid", oin))
+                                .bind(("predicate", predicate))
+                                .bind(("direction", direction))
+                                .bind(("strength", strength))
+                                .bind(("confidence", conf))
+                                .bind(("sthought", sthought))
+                                .await
+                        }
+                    })
+                    .await?;
+                let mut items: Vec<String> = Vec::new();
+                if let Ok(arr) = resp.take::<Vec<serde_json::Value>>(0) {
+                    for row in arr {
+                        if let Some(id) = row.get("id").and_then(|v| v.as_str()) {
+                            items.push(id.to_string());
+                        }
+                    }
+                }
+
+                // Bi-directional reverse edge
+                if direction.to_lowercase() == "bi" {
+                    let q2 = r#"
+                        CREATE relationships SET
+                            in = type::thing('entities', $oid),
+                            out = type::thing('entities', $sid),
+                            predicate = $predicate,
+                            direction = 'bi',
+                            strength = $strength,
+                            confidence = $confidence,
+                            source_thought = $sthought
+                        RETURN id;
+                    "#;
+                    let (max_retries, initial_delay_ms) = get_retry_config();
+                    let _guard = if Self::db_serial_enabled() {
+                        Some(self.db_gate.lock().await)
+                    } else {
+                        None
+                    };
+                    let mut resp2 = with_retry(
+                        "create_relationship_reverse",
+                        max_retries,
+                        initial_delay_ms,
+                        || {
+                            let predicate = predicate.clone();
+                            let sin = sin.clone();
+                            let oin = oin.clone();
+                            let sthought = source_thought_id.map(|s| s.to_string());
+                            async move {
+                                self.db
+                                    .query(q2)
+                                    .bind(("sid", sin))
+                                    .bind(("oid", oin))
+                                    .bind(("predicate", predicate))
+                                    .bind(("strength", strength))
+                                    .bind(("confidence", conf))
+                                    .bind(("sthought", sthought))
+                                    .await
+                            }
+                        },
+                    )
+                    .await?;
+                    if let Some(arr) = resp2.take::<Vec<serde_json::Value>>(0).ok() {
+                        for row in arr {
+                            if let Some(id) = row.get("id").and_then(|v| v.as_str()) {
+                                items.push(id.to_string());
+                            }
+                        }
+                    }
+                }
+
+                Ok(json!({ "kind": "relationship", "created_edges": items }))
+            }
+            "observation" => Ok(json!({
+                "kind": "observation",
+                "status": "not_implemented_yet"
+            })),
+            _ => Err(McpError {
+                code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                message: format!("Unsupported kind: {}", kind).into(),
+                data: None,
+            }),
+        }
+    }
+
+    pub async fn kg_search_from_args(
+        &self,
+        args: serde_json::Map<String, serde_json::Value>,
+    ) -> Result<serde_json::Value, McpError> {
+        let target = args
+            .get("target")
+            .and_then(|v| v.as_str())
+            .unwrap_or("entity");
+        let top_k = args
+            .get("top_k")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(10)
+            .max(1) as i64;
+        let offset = args
+            .get("offset")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0)
+            .max(0) as i64;
+        let query = args.get("query").and_then(|v| v.as_object());
+        let filters = query.and_then(|q| q.get("filters").and_then(|v| v.as_object()));
+        match target {
+            "entity" => {
+                let mut conds: Vec<String> = Vec::new();
+                let mut binds: Vec<(&str, serde_json::Value)> = Vec::new();
+                if let Some(f) = filters {
+                    if let Some(name) = f.get("name").and_then(|v| v.as_str()) {
+                        conds.push(
+                            "string::lowercase(name) CONTAINS string::lowercase($name)".into(),
+                        );
+                        binds.push(("name", json!(name)));
+                    }
+                    if let Some(typ) = f.get("type").and_then(|v| v.as_str()) {
+                        conds.push("type = $etype".into());
+                        binds.push(("etype", json!(typ)));
+                    }
+                    if let Some(ext) = f.get("external_id").and_then(|v| v.as_str()) {
+                        conds.push("external_id = $ext".into());
+                        binds.push(("ext", json!(ext)));
+                    }
+                }
+                let where_sql = if conds.is_empty() {
+                    String::new()
+                } else {
+                    format!(" WHERE {}", conds.join(" AND "))
+                };
+                let q = format!(
+                    "SELECT id, name, type, external_id, mention_count FROM entities{} ORDER BY mention_count DESC, name ASC LIMIT $lim START $off",
+                    where_sql
+                );
+                let (max_retries, initial_delay_ms) = get_retry_config();
+                let _guard = if Self::db_serial_enabled() {
+                    Some(self.db_gate.lock().await)
+                } else {
+                    None
+                };
+                let mut resp = with_retry("search_entities", max_retries, initial_delay_ms, || {
+                    let mut qry = self
+                        .db
+                        .query(q.clone())
+                        .bind(("lim", top_k))
+                        .bind(("off", offset));
+                    for (k, v) in binds.clone() {
+                        qry = qry.bind((k, v));
+                    }
+                    async move { qry.await }
+                })
+                .await?;
+                let rows: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
+                let items: Vec<serde_json::Value> = rows
+                    .into_iter()
+                    .map(|r| {
+                        json!({
+                            "type": "entity",
+                            "id": r.get("id").and_then(|v| v.as_str()).unwrap_or("") ,
+                            "name": r.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                            "entity_type": r.get("type").and_then(|v| v.as_str()).unwrap_or(""),
+                            "external_id": r.get("external_id").and_then(|v| v.as_str()),
+                            "mention_count": r.get("mention_count").and_then(|v| v.as_i64()).unwrap_or(0)
+                        })
+                    })
+                    .collect();
+                Ok(json!({"items": items}))
+            }
+            "relationship" => {
+                let mut conds: Vec<String> = Vec::new();
+                let mut binds: Vec<(&str, serde_json::Value)> = Vec::new();
+                if let Some(f) = filters {
+                    if let Some(pred) = f.get("predicate").and_then(|v| v.as_str()) {
+                        conds.push("predicate = $pred".into());
+                        binds.push(("pred", json!(pred)));
+                    }
+                    if let Some(sid) = f.get("subject_id").and_then(|v| v.as_str()) {
+                        if let Some((_, inner)) = Self::kg_parse_thing(sid, "entities") {
+                            conds.push("in = type::thing('entities', $sid)".into());
+                            binds.push(("sid", json!(inner)));
+                        }
+                    }
+                    if let Some(oid) = f.get("object_id").and_then(|v| v.as_str()) {
+                        if let Some((_, inner)) = Self::kg_parse_thing(oid, "entities") {
+                            conds.push("out = type::thing('entities', $oid)".into());
+                            binds.push(("oid", json!(inner)));
+                        }
+                    }
+                }
+                let where_sql = if conds.is_empty() {
+                    String::new()
+                } else {
+                    format!(" WHERE {}", conds.join(" AND "))
+                };
+                let q = format!(
+                    "SELECT id, in, out, predicate, direction, strength, confidence FROM relationships{} LIMIT $lim START $off",
+                    where_sql
+                );
+                let (max_retries, initial_delay_ms) = get_retry_config();
+                let _guard = if Self::db_serial_enabled() {
+                    Some(self.db_gate.lock().await)
+                } else {
+                    None
+                };
+                let mut resp = with_retry(
+                    "search_relationships",
+                    max_retries,
+                    initial_delay_ms,
+                    || {
+                        let mut qry = self
+                            .db
+                            .query(q.clone())
+                            .bind(("lim", top_k))
+                            .bind(("off", offset));
+                        for (k, v) in binds.clone() {
+                            qry = qry.bind((k, v));
+                        }
+                        async move { qry.await }
+                    },
+                )
+                .await?;
+                let rows: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
+                let items: Vec<serde_json::Value> = rows
+                    .into_iter()
+                    .map(|r| json!({
+                        "type": "relationship",
+                        "id": r.get("id").and_then(|v| v.as_str()).unwrap_or("") ,
+                        "predicate": r.get("predicate").and_then(|v| v.as_str()).unwrap_or(""),
+                        "direction": r.get("direction").and_then(|v| v.as_str()).unwrap_or(""),
+                        "strength": r.get("strength").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                        "confidence": r.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                    }))
+                    .collect();
+                Ok(json!({"items": items}))
+            }
+            _ => Ok(json!({"items": []})),
         }
     }
 
