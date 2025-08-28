@@ -771,6 +771,58 @@ impl SurrealMindServer {
         Ok(result)
     }
 
+    /// Increment (or decrement) an entity's mention_count in a safe, idempotent way.
+    /// Accepts either a full Thing id like "entities:⟨...⟩" or a raw id with table inferred as 'entities'.
+    #[allow(dead_code)]
+    async fn increment_entity_mentions(&self, entity_id: &str, delta: i64) -> Result<(), McpError> {
+        // Only act on entities; ignore if the provided thing isn't an entity
+        let mut parts = entity_id.splitn(2, ':');
+        let tb = parts.next().unwrap_or("entities");
+        let inner = parts.next().unwrap_or("").trim();
+        if tb != "entities" {
+            return Ok(()); // forward-compatible no-op for non-entities
+        }
+        let inner = inner.trim_start_matches('⟨').trim_end_matches('⟩');
+        if inner.is_empty() {
+            return Ok(());
+        }
+
+        let q = r#"
+            UPDATE type::thing($tb, $id)
+            SET mention_count = math::max(0, (IF mention_count = NONE THEN 0 ELSE mention_count END) + $delta),
+                last_seen_at = time::now()
+            RETURN NONE;
+        "#;
+
+        let tb_s = tb.to_string();
+        let id_s = inner.to_string();
+        let (max_retries, initial_delay_ms) = get_retry_config();
+        let _guard = if Self::db_serial_enabled() {
+            Some(self.db_gate.lock().await)
+        } else {
+            None
+        };
+        with_retry(
+            "increment_entity_mentions",
+            max_retries,
+            initial_delay_ms,
+            || {
+                let tb_s = tb_s.clone();
+                let id_s = id_s.clone();
+                async move {
+                    self.db
+                        .query(q)
+                        .bind(("tb", tb_s))
+                        .bind(("id", id_s))
+                        .bind(("delta", delta))
+                        .await
+                }
+            },
+        )
+        .await
+        .map(|_| ())
+    }
+
     async fn initialize_schema(&self) -> Result<(), McpError> {
         info!("Initializing consciousness graph schema");
         let (max_retries, initial_delay_ms) = get_retry_config();
@@ -839,6 +891,47 @@ impl SurrealMindServer {
         )
         .await?;
 
+        // Define (forward-compatible) knowledge-graph tables: entities and mentions
+        with_retry(
+            "initialize_schema_entities",
+            max_retries,
+            initial_delay_ms,
+            || async {
+                self.db
+                    .query(
+                        r#"
+                DEFINE TABLE entities SCHEMAFULL;
+                DEFINE FIELD name ON TABLE entities TYPE string;
+                DEFINE FIELD type ON TABLE entities TYPE string;
+                DEFINE FIELD aliases ON TABLE entities TYPE array<string>;
+                DEFINE FIELD properties ON TABLE entities TYPE object;
+                DEFINE FIELD external_id ON TABLE entities TYPE option<string>;
+                DEFINE FIELD content_hash ON TABLE entities TYPE option<string>;
+                DEFINE FIELD mention_count ON TABLE entities TYPE number;
+                DEFINE FIELD created_at ON TABLE entities TYPE datetime;
+                DEFINE FIELD updated_at ON TABLE entities TYPE option<datetime>;
+                DEFINE FIELD last_seen_at ON TABLE entities TYPE option<datetime>;
+                DEFINE FIELD created_by_thought ON TABLE entities TYPE option<record<thoughts>>;
+
+                DEFINE INDEX entity_hash_idx ON TABLE entities COLUMNS content_hash UNIQUE;
+                DEFINE INDEX entity_name_idx ON TABLE entities COLUMNS name;
+                DEFINE INDEX entity_type_idx ON TABLE entities COLUMNS type;
+                DEFINE INDEX entity_extid_idx ON TABLE entities COLUMNS external_id;
+                DEFINE INDEX entity_mentions_idx ON TABLE entities COLUMNS mention_count;
+
+                DEFINE TABLE mentions TYPE RELATION;
+                DEFINE FIELD in ON TABLE mentions TYPE record<thoughts>;
+                DEFINE FIELD out ON TABLE mentions TYPE record<entities>;
+                DEFINE FIELD label ON TABLE mentions TYPE option<string>;
+                DEFINE FIELD span ON TABLE mentions TYPE option<object>;
+                DEFINE FIELD confidence ON TABLE mentions TYPE option<float>;
+            "#,
+                    )
+                    .await
+            },
+        )
+        .await?;
+
         // Backfill existing data with defaults (idempotent) with retry logic
         with_retry(
             "initialize_schema_backfill",
@@ -850,6 +943,8 @@ impl SurrealMindServer {
                         r#"
                 UPDATE thoughts SET submode = "sarcastic" WHERE submode = NONE;
                 UPDATE thoughts SET framework_enhanced = false WHERE framework_enhanced = NONE;
+                UPDATE entities SET mention_count = 0 WHERE mention_count = NONE;
+                UPDATE entities SET created_at = time::now() WHERE created_at = NONE;
             "#,
                     )
                     .await
