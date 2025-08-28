@@ -6,14 +6,14 @@ A Model Context Protocol (MCP) server implementing bidirectional consciousness p
 - **Bidirectional Memory Injection**: Thoughts automatically pull relevant memories during storage
 - **Orbital Mechanics**: Memory relevance based on age, access patterns, and significance
 - **Semantic Understanding**: OpenAI embeddings for true semantic similarity
-- **Graph Persistence**: SurrealDB with embedded RocksDB for consciousness graph
+- **Graph Persistence**: SurrealDB service for consciousness graph storage
 - **Injection Scales**: 0-5 (Sun to Pluto) controlling memory retrieval distance
 - **Submodes**: Conversational (sarcastic, philosophical, empathetic, problem_solving) and Technical (plan, build, debug) influence retrieval and enrichment
 
 ## Setup
 
 ### Prerequisites
-- Rust 1.80+ (uses rmcp 0.6.0 which requires recent async features)
+- Rust 1.85+ (uses edition 2024)
 - Cargo
 
 ### Environment Variables
@@ -33,19 +33,19 @@ A Model Context Protocol (MCP) server implementing bidirectional consciousness p
 cargo build --release
 ```
 
-### Database Modes
+### Database Setup
 
-#### WebSocket Mode (Default - for Service)
-Connect to a running SurrealDB service via WebSocket. Start SurrealDB first:
+The server connects to SurrealDB via WebSocket. You must run SurrealDB as a separate service:
+
 ```bash
-surreal start --user root --pass root --bind 127.0.0.1:8000
+# For in-memory testing (data lost on restart)
+surreal start --user root --pass root --bind 127.0.0.1:8000 memory
+
+# For persistent storage with RocksDB
+surreal start --user root --pass root --bind 127.0.0.1:8000 file:/path/to/data.db
 ```
 
-#### Embedded Mode (Alternative - for Local File)
-Use embedded RocksDB backend by starting with a file:// URL:
-```bash
-surreal start --user root --pass root file:/path/to/data.db
-```
+Note: The server connects via WebSocket only. Embedded in-process DB is not currently supported.
 
 Configure the server via environment variables:
 ```bash
@@ -88,7 +88,7 @@ export SURR_DB_TIMEOUT_MS=10000     # WebSocket query timeout in ms (default: 10
 export SURR_OPERATION_TIMEOUT_MS=5000 # Retry operation timeout in ms (default: 5000)
 
 # Logging
-export MCP_NO_LOG=false             # Disable MCP logs to stderr (default: false)
+export MCP_NO_LOG=true              # Set to true to disable MCP logs to stderr (default: false, logs enabled)
 ```
 
 ### Example: High-Performance Configuration
