@@ -3986,7 +3986,6 @@ impl SurrealMindServer {
                     items.retain(|it| it.get("similarity").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32 >= sim_thresh);
                     items.sort_by(|a,b| b.get("similarity").and_then(|v| v.as_f64()).partial_cmp(&a.get("similarity").and_then(|v| v.as_f64())).unwrap_or(std::cmp::Ordering::Equal));
                     let start = offset as usize;
-                    let end = start.saturating_add(top_k as usize);
                     let sliced = items.into_iter().skip(start).take(top_k as usize).collect::<Vec<_>>();
                     return Ok(json!({"items": sliced}));
                 }
