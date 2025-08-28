@@ -962,6 +962,7 @@ impl SurrealMindServer {
                 DEFINE FIELD properties ON TABLE entities TYPE object;
                 DEFINE FIELD external_id ON TABLE entities TYPE option<string>;
                 DEFINE FIELD content_hash ON TABLE entities TYPE option<string>;
+                DEFINE FIELD name_embedding ON TABLE entities TYPE option<array<float>>;
                 DEFINE FIELD mention_count ON TABLE entities TYPE number;
                 DEFINE FIELD created_at ON TABLE entities TYPE datetime;
                 DEFINE FIELD updated_at ON TABLE entities TYPE option<datetime>;
@@ -1033,6 +1034,7 @@ impl SurrealMindServer {
                 DEFINE FIELD properties ON TABLE observations TYPE option<object>;
                 DEFINE FIELD confidence ON TABLE observations TYPE option<float>;
                 DEFINE FIELD content_hash ON TABLE observations TYPE string;
+                DEFINE FIELD text_embedding ON TABLE observations TYPE option<array<float>>;
                 DEFINE FIELD source_thought ON TABLE observations TYPE option<record<thoughts>>;
                 DEFINE FIELD created_at ON TABLE observations TYPE datetime;
                 DEFINE FIELD updated_at ON TABLE observations TYPE option<datetime>;
@@ -2995,6 +2997,54 @@ impl SurrealMindServer {
         s
     }
 
+    // Extract a Surreal Thing id from JSON (handles String or {tb, id} shapes)
+    fn kg_value_to_id_string(v: &serde_json::Value) -> Option<String> {
+        match v {
+            serde_json::Value::String(s) => Some(s.clone()),
+            serde_json::Value::Object(map) => {
+                // Expect { tb: "entities", id: "..." } or id as object { String: "..." }
+                if let Some(id_val) = map.get("id") {
+                    match id_val {
+                        serde_json::Value::String(id) => {
+                            if let Some(tb) = map.get("tb").and_then(|t| t.as_str()) {
+                                Some(format!("{}:{}", tb, id))
+                            } else {
+                                Some(id.clone())
+                            }
+                        }
+                        serde_json::Value::Object(id_obj) => {
+                            if let Some(id_str) = id_obj.get("String").and_then(|s| s.as_str()) {
+                                if let Some(tb) = map.get("tb").and_then(|t| t.as_str()) {
+                                    Some(format!("{}:{}", tb, id_str))
+                                } else {
+                                    Some(id_str.to_string())
+                                }
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn kg_embed_entities_enabled() -> bool {
+        std::env::var("SURR_KG_EMBED_ENTITIES")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(true)
+    }
+
+    fn kg_embed_observations_enabled() -> bool {
+        std::env::var("SURR_KG_EMBED_OBSERVATIONS")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(true)
+    }
+
     async fn upsert_entity_from_map(
         &self,
         data: &serde_json::Map<String, serde_json::Value>,
@@ -3103,6 +3153,7 @@ impl SurrealMindServer {
                     properties = $properties,
                     external_id = $external_id,
                     content_hash = $hash,
+                    name_embedding = $name_embedding,
                     updated_at = time::now()
                 RETURN id;
             "#;
@@ -3114,6 +3165,12 @@ impl SurrealMindServer {
             } else {
                 None
             };
+            let name_embedding_val = if Self::kg_embed_entities_enabled() {
+                match self.embedder.embed(&name).await {
+                    Ok(v) => serde_json::json!(v),
+                    Err(_) => serde_json::Value::Null,
+                }
+            } else { serde_json::Value::Null };
             let mut resp = with_retry("update_entity", max_retries, initial_delay_ms, || {
                 let name = name.clone();
                 let etype = etype.clone();
@@ -3123,6 +3180,7 @@ impl SurrealMindServer {
                 let hash = hash.clone();
                 let tb = tb.clone();
                 let inner = inner.clone();
+                let name_embedding_json = name_embedding_val.clone();
                 async move {
                     self.db
                         .query(q)
@@ -3133,16 +3191,17 @@ impl SurrealMindServer {
                         .bind(("properties", properties))
                         .bind(("external_id", external_id))
                         .bind(("hash", hash))
+                        .bind(("name_embedding", name_embedding_json))
                         .await
                 }
             })
             .await?;
             let rows: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
-            let id = rows
-                .first()
-                .and_then(|r| r.get("id").and_then(|v| v.as_str()))
-                .unwrap_or(&eid)
-                .to_string();
+            let id = if let Some(row) = rows.first() {
+                Self::kg_value_to_id_string(row.get("id").unwrap_or(&serde_json::Value::Null)).unwrap_or_else(|| eid.clone())
+            } else {
+                eid.clone()
+            };
 
             // provenance mention and counter
             if let Some(tid) = source_thought_id
@@ -3554,10 +3613,11 @@ impl SurrealMindServer {
                     let q = r#"
                         UPDATE $rid SET
                             text = $text,
-                            occurred_at = time::parse($occurred_at),
+                            occurred_at = type::datetime($occurred_at),
                             entities = $entities,
                             properties = $properties,
                             confidence = $confidence,
+                            text_embedding = $text_embedding,
                             updated_at = time::now()
                         RETURN id;
                     "#;
@@ -3569,6 +3629,12 @@ impl SurrealMindServer {
                     } else {
                         None
                     };
+                    let text_embedding_val = if Self::kg_embed_observations_enabled() {
+                            match self.embedder.embed(&text).await {
+                                Ok(v) => serde_json::json!(v),
+                                Err(_) => serde_json::Value::Null,
+                            }
+                        } else { serde_json::Value::Null };
                     let mut resp =
                         with_retry("update_observation", max_retries, initial_delay_ms, || {
                             let text = text.clone();
@@ -3577,6 +3643,7 @@ impl SurrealMindServer {
                             let properties = properties.clone();
                             let tb_s = tb.clone();
                             let inner_s = inner.clone();
+                            let te_json = text_embedding_val.clone();
                             async move {
                                 self.db
                                     .query(q)
@@ -3586,6 +3653,7 @@ impl SurrealMindServer {
                                     .bind(("entities", entities))
                                     .bind(("properties", properties))
                                     .bind(("confidence", conf))
+                                    .bind(("text_embedding", te_json))
                                     .await
                             }
                         })
@@ -3673,11 +3741,12 @@ impl SurrealMindServer {
                     let q = r#"
                         CREATE observations SET
                             text = $text,
-                            occurred_at = time::parse($occurred_at),
+                            occurred_at = type::datetime($occurred_at),
                             entities = $entities,
                             properties = $properties,
                             confidence = $confidence,
                             content_hash = $hash,
+                            text_embedding = $text_embedding,
                             source_thought = $sthought,
                             created_at = time::now()
                         RETURN id;
@@ -3843,7 +3912,7 @@ impl SurrealMindServer {
                     format!(" WHERE {}", conds.join(" AND "))
                 };
                 let q = format!(
-                    "SELECT id, name, type, external_id, mention_count FROM entities{} ORDER BY mention_count DESC, name ASC LIMIT $lim START $off",
+                    "SELECT id, name, type, external_id, mention_count, name_embedding FROM entities{} ORDER BY mention_count DESC, name ASC LIMIT $lim START $off",
                     where_sql
                 );
                 let (max_retries, initial_delay_ms) = get_retry_config();
@@ -3865,19 +3934,62 @@ impl SurrealMindServer {
                 })
                 .await?;
                 let rows: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
-                let items: Vec<serde_json::Value> = rows
-                    .into_iter()
-                    .map(|r| {
-                        json!({
-                            "type": "entity",
-                            "id": r.get("id").and_then(|v| v.as_str()).unwrap_or("") ,
-                            "name": r.get("name").and_then(|v| v.as_str()).unwrap_or(""),
-                            "entity_type": r.get("type").and_then(|v| v.as_str()).unwrap_or(""),
-                            "external_id": r.get("external_id").and_then(|v| v.as_str()),
-                            "mention_count": r.get("mention_count").and_then(|v| v.as_i64()).unwrap_or(0)
-                        })
-                    })
-                    .collect();
+                // Optional semantic scoring
+                let mut items: Vec<serde_json::Value> = Vec::new();
+                let (qtxt_opt, qemb_opt, sim_thresh) = if let Some(qobj) = query {
+                    if let Some(qtxt) = qobj.get("text").and_then(|v| v.as_str()) {
+                        let env_sim = std::env::var("SURR_SEARCH_SIM_THRESH").ok().and_then(|s| s.parse::<f32>().ok());
+                        let fall_sim = std::env::var("SURR_SIM_THRESH").ok().and_then(|s| s.parse::<f32>().ok());
+                        let thresh = env_sim.or(fall_sim).unwrap_or(0.5).clamp(0.0, 1.0);
+                        if Self::kg_embed_entities_enabled() {
+                            let emb = self.embedder.embed(qtxt).await.ok();
+                            (Some(qtxt.to_string()), emb, thresh)
+                        } else { (Some(qtxt.to_string()), None, thresh) }
+                    } else { (None, None, 0.5) }
+                } else { (None, None, 0.5) };
+
+                for r in rows.into_iter() {
+                    let id = Self::kg_value_to_id_string(r.get("id").unwrap_or(&serde_json::Value::Null)).unwrap_or_default();
+                    let name = r.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let etype = r.get("type").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let external_id = r.get("external_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    let mention_count = r.get("mention_count").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let mut sim = 0.0f32;
+                    if let Some(ref qemb) = qemb_opt {
+                        if let Some(arr) = r.get("name_embedding").and_then(|v| v.as_array()) {
+                            let emb: Vec<f32> = arr.iter().filter_map(|x| x.as_f64().map(|f| f as f32)).collect();
+                            if emb.len() == qemb.len() {
+                                sim = self.cosine_similarity(qemb, &emb);
+                            }
+                        }
+                        if let Some(ref qtxt) = qtxt_opt {
+                            if name.to_lowercase().contains(&qtxt.to_lowercase()) {
+                                sim = (sim + 0.05).min(1.0);
+                            }
+                        }
+                    } else if let Some(ref qtxt) = qtxt_opt {
+                        // lexical boost only
+                        if name.to_lowercase().contains(&qtxt.to_lowercase()) { sim = 0.6; }
+                    }
+                    items.push(json!({
+                        "type": "entity",
+                        "id": id,
+                        "name": name,
+                        "entity_type": etype,
+                        "external_id": external_id,
+                        "mention_count": mention_count,
+                        "similarity": sim
+                    }));
+                }
+                if qemb_opt.is_some() || qtxt_opt.is_some() {
+                    // Filter and sort by similarity
+                    items.retain(|it| it.get("similarity").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32 >= sim_thresh);
+                    items.sort_by(|a,b| b.get("similarity").and_then(|v| v.as_f64()).partial_cmp(&a.get("similarity").and_then(|v| v.as_f64())).unwrap_or(std::cmp::Ordering::Equal));
+                    let start = offset as usize;
+                    let end = start.saturating_add(top_k as usize);
+                    let sliced = items.into_iter().skip(start).take(top_k as usize).collect::<Vec<_>>();
+                    return Ok(json!({"items": sliced}));
+                }
                 Ok(json!({"items": items}))
             }
             "relationship" => {
@@ -3962,11 +4074,11 @@ impl SurrealMindServer {
                         binds.push(("eid", json!(eid)));
                     }
                     if let Some(from) = f.get("occurred_from").and_then(|v| v.as_str()) {
-                        conds.push("occurred_at >= time::parse($from)".into());
+                        conds.push("occurred_at >= type::datetime($from)".into());
                         binds.push(("from", json!(from)));
                     }
                     if let Some(to) = f.get("occurred_to").and_then(|v| v.as_str()) {
-                        conds.push("occurred_at <= time::parse($to)".into());
+                        conds.push("occurred_at <= type::datetime($to)".into());
                         binds.push(("to", json!(to)));
                     }
                 }
