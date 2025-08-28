@@ -11,3 +11,4 @@ USE NS surreal_mind DB consciousness; SELECT count() AS total FROM thoughts GROU
 USE NS surreal_mind;
 USE DB consciousness;
 SELECT id, array::len(embedding) as embed_dim FROM thoughts LIMIT 10;
+SELECT * FROM entities;

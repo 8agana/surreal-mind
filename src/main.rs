@@ -3280,11 +3280,11 @@ impl SurrealMindServer {
         })
         .await?;
         let rows: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
-        let id = rows
-            .first()
-            .and_then(|r| r.get("id").and_then(|v| v.as_str()))
-            .unwrap_or("")
-            .to_string();
+        let id = if let Some(row) = rows.first() {
+            Self::kg_value_to_id_string(row.get("id").unwrap_or(&serde_json::Value::Null)).unwrap_or_default()
+        } else {
+            String::new()
+        };
 
         if let Some(tid) = source_thought_id
             && let Some((_, einner)) = Self::kg_parse_thing(&id, "entities")
@@ -3659,11 +3659,11 @@ impl SurrealMindServer {
                         })
                         .await?;
                     let rows: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
-                    let id = rows
-                        .first()
-                        .and_then(|r| r.get("id").and_then(|v| v.as_str()))
-                        .unwrap_or(&oid)
-                        .to_string();
+                    let id = if let Some(row) = rows.first() {
+                        Self::kg_value_to_id_string(row.get("id").unwrap_or(&serde_json::Value::Null)).unwrap_or_else(|| oid.clone())
+                    } else {
+                        oid.clone()
+                    };
 
                     // Provenance mentions
                     if let Some(tid) = source_thought_id
@@ -3781,11 +3781,11 @@ impl SurrealMindServer {
                         })
                         .await?;
                     let rows: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
-                    let id = rows
-                        .first()
-                        .and_then(|r| r.get("id").and_then(|v| v.as_str()))
-                        .unwrap_or("")
-                        .to_string();
+                    let id = if let Some(row) = rows.first() {
+                        Self::kg_value_to_id_string(row.get("id").unwrap_or(&serde_json::Value::Null)).unwrap_or_default()
+                    } else {
+                        String::new()
+                    };
 
                     if let Some(tid) = source_thought_id
                         && let Some((_, oinner)) = Self::kg_parse_thing(&id, "observations")
