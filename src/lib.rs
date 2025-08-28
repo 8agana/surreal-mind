@@ -1,9 +1,8 @@
 pub mod embeddings;
+pub mod serializers;
 
 use anyhow::Result;
 use reqwest::Client;
-use serde::Deserialize as _;
-use std::path::Path;
 
 #[derive(Debug, serde::Serialize)]
 pub struct ReembedStats {
@@ -18,39 +17,17 @@ pub struct ReembedStats {
     pub mismatched: usize,
 }
 
-// Load env from a deterministic set of locations so all binaries read the same file
+// Load env from a simple, standardized location resolution.
+// This uses dotenvy::dotenv().ok() which loads .env if present and silently ignores if missing.
 pub fn load_env() {
-    // 1) Explicit path wins
-    if let Ok(p) = std::env::var("SURR_ENV_FILE") {
-        let _ = dotenvy::from_filename(&p);
-        return;
-    }
-    // 2) Current working directory .env (Surrealist, MCP, etc.)
-    if Path::new(".env").exists() {
-        let _ = dotenvy::from_filename(".env");
-        return;
-    }
-    // 3) Crate directory .env (when running from target/release)
-    let crate_env = concat!(env!("CARGO_MANIFEST_DIR"), "/.env");
-    if Path::new(crate_env).exists() {
-        let _ = dotenvy::from_filename(crate_env);
-        return;
-    }
-    // 4) Project root .env (parent of crate dir)
-    let parent_env = concat!(env!("CARGO_MANIFEST_DIR"), "/../.env");
-    if Path::new(parent_env).exists() {
-        let _ = dotenvy::from_filename(parent_env);
-        return;
-    }
-    // 5) Fallback to dotenv search walk
     let _ = dotenvy::dotenv();
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct Thought {
     #[serde(
-        serialize_with = "serialize_as_string",
-        deserialize_with = "deserialize_thing_or_string"
+        serialize_with = "crate::serializers::serialize_as_string",
+        deserialize_with = "crate::serializers::deserialize_thing_or_string"
     )]
     id: String,
     content: String,
@@ -225,55 +202,4 @@ pub async fn run_reembed(
         missing,
         mismatched,
     })
-}
-
-// Custom serializer for String (ensures it's always serialized as a plain string)
-pub fn serialize_as_string<S>(id: &str, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    serializer.serialize_str(id)
-}
-
-// Custom deserializer for Thing or String
-pub fn deserialize_thing_or_string<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::de::Error;
-    let value = serde_json::Value::deserialize(deserializer)?;
-
-    match value {
-        serde_json::Value::String(s) => Ok(s),
-        serde_json::Value::Object(map) => {
-            if let Some(serde_json::Value::String(tb)) = map.get("tb") {
-                if let Some(id_val) = map.get("id") {
-                    match id_val {
-                        serde_json::Value::String(id) => Ok(format!("{}:{}", tb, id)),
-                        serde_json::Value::Object(id_obj) => {
-                            if let Some(serde_json::Value::String(id_str)) = id_obj.get("String") {
-                                Ok(format!("{}:{}", tb, id_str))
-                            } else {
-                                Ok(format!(
-                                    "{}:{}",
-                                    tb,
-                                    serde_json::to_string(id_val).unwrap_or_default()
-                                ))
-                            }
-                        }
-                        _ => Ok(format!(
-                            "{}:{}",
-                            tb,
-                            serde_json::to_string(id_val).unwrap_or_default()
-                        )),
-                    }
-                } else {
-                    Err(D::Error::custom("Thing object missing 'id' field"))
-                }
-            } else {
-                Err(D::Error::custom("Expected Thing object or string"))
-            }
-        }
-        _ => Err(D::Error::custom("Expected Thing object or string")),
-    }
 }
