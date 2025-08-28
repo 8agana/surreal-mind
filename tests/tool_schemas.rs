@@ -10,14 +10,19 @@ fn schema_has_property(schema: &Value, property: &str) -> bool {
     schema["properties"][property].is_object()
 }
 
-
 #[test]
 fn test_list_tools_returns_expected_tools() {
     // This test verifies that the expected tools are exposed
     // Note: In a real integration test, we would start the server and make actual calls
     // For now, we're testing the expected structure
 
-    let expected_tools = vec!["convo_think", "tech_think", "search_thoughts", "inner_voice", "detailed_help"];
+    let expected_tools = [
+        "convo_think",
+        "tech_think",
+        "search_thoughts",
+        "inner_voice",
+        "detailed_help",
+    ];
     assert_eq!(expected_tools.len(), 5, "Should have exactly 5 tools");
 }
 

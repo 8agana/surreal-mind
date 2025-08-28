@@ -13,7 +13,7 @@ A Model Context Protocol (MCP) server implementing bidirectional consciousness p
 ## Setup
 
 ### Prerequisites
-- Rust 1.75+ 
+- Rust 1.80+ (uses rmcp 0.6.0 which requires recent async features)
 - Cargo
 
 ### Environment Variables
@@ -33,10 +33,18 @@ A Model Context Protocol (MCP) server implementing bidirectional consciousness p
 cargo build --release
 ```
 
-### Database (Service Mode - Default)
-Run SurrealDB as a local service (default settings):
+### Database Modes
+
+#### WebSocket Mode (Default - for Service)
+Connect to a running SurrealDB service via WebSocket. Start SurrealDB first:
 ```bash
 surreal start --user root --pass root --bind 127.0.0.1:8000
+```
+
+#### Embedded Mode (Alternative - for Local File)
+Use embedded RocksDB backend by starting with a file:// URL:
+```bash
+surreal start --user root --pass root file:/path/to/data.db
 ```
 
 Configure the server via environment variables:
@@ -74,8 +82,10 @@ export SURR_EMBED_STRICT=false      # If true, error when no provider configured
 # Retrieval Tuning
 export SURR_RETRIEVE_CANDIDATES=500 # DB candidate limit override (default: SURR_DB_LIMIT, range: 50-5000)
 
-# Database Concurrency
+# Database Concurrency & Timeouts
 export SURR_DB_SERIAL=true          # Serialize DB queries to prevent deadlocks (default: false)
+export SURR_DB_TIMEOUT_MS=10000     # WebSocket query timeout in ms (default: 10000)
+export SURR_OPERATION_TIMEOUT_MS=5000 # Retry operation timeout in ms (default: 5000)
 
 # Logging
 export MCP_NO_LOG=false             # Disable MCP logs to stderr (default: false)
