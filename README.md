@@ -97,6 +97,7 @@ export SURR_RETRIEVE_CANDIDATES=500 # DB candidate limit override (default: SURR
 export SURR_DB_SERIAL=true          # Serialize DB queries to prevent deadlocks (default: false)
 export SURR_DB_TIMEOUT_MS=10000     # WebSocket query timeout in ms (default: 10000)
 export SURR_OPERATION_TIMEOUT_MS=5000 # Retry operation timeout in ms (default: 5000)
+export SURR_TOOL_TIMEOUT_MS=15000   # Hard timeout per tool call in ms (default: 15000)
 
 # Logging
 export MCP_NO_LOG=true              # Set to true to disable MCP logs to stderr (default: false, logs enabled)
