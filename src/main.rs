@@ -35,12 +35,15 @@ fn db_timeout_ms() -> u64 {
 }
 
 fn normalize_submode(s: &str) -> String {
-    let mut out = s.trim().to_lowercase();
-    out = out.replace('-', "_");
-    if out == "problem solving" {
-        return "problem_solving".to_string();
+    let out = s.trim().to_lowercase().replace('-', "_");
+    match out.as_str() {
+        // Common aliases
+        "problem solving" | "problem_solving" | "ps" => "problem_solving".to_string(),
+        "empathy" => "empathetic".to_string(),
+        "snarky" => "sarcastic".to_string(),
+        "philosophy" => "philosophical".to_string(),
+        other => other.to_string(),
     }
-    out
 }
 
 // Retry utility for database operations with exponential backoff
@@ -172,58 +175,6 @@ mod flavor;
 use embeddings::{Embedder, create_embedder};
 use flavor::tag_flavor;
 
-// Custom serializer for String (ensures it's always serialized as a plain string)
-fn serialize_as_string<S>(id: &str, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    serializer.serialize_str(id)
-}
-
-// Custom deserializer for Thing or String
-fn deserialize_thing_or_string<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::de::Error;
-    let value = serde_json::Value::deserialize(deserializer)?;
-
-    match value {
-        serde_json::Value::String(s) => Ok(s),
-        serde_json::Value::Object(map) => {
-            // Handle Thing object from SurrealDB
-            if let Some(serde_json::Value::String(tb)) = map.get("tb") {
-                if let Some(id_val) = map.get("id") {
-                    match id_val {
-                        serde_json::Value::String(id) => Ok(format!("{}:{}", tb, id)),
-                        serde_json::Value::Object(id_obj) => {
-                            if let Some(serde_json::Value::String(id_str)) = id_obj.get("String") {
-                                Ok(format!("{}:{}", tb, id_str))
-                            } else {
-                                Ok(format!(
-                                    "{}:{}",
-                                    tb,
-                                    serde_json::to_string(id_val).unwrap_or_default()
-                                ))
-                            }
-                        }
-                        _ => Ok(format!(
-                            "{}:{}",
-                            tb,
-                            serde_json::to_string(id_val).unwrap_or_default()
-                        )),
-                    }
-                } else {
-                    Err(D::Error::custom("Thing object missing 'id' field"))
-                }
-            } else {
-                Err(D::Error::custom("Expected Thing object or string"))
-            }
-        }
-        _ => Err(D::Error::custom("Expected Thing object or string")),
-    }
-}
-
 fn de_option_tags<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -255,8 +206,8 @@ where
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Thought {
     #[serde(
-        serialize_with = "serialize_as_string",
-        deserialize_with = "deserialize_thing_or_string"
+        serialize_with = "surreal_mind::serializers::serialize_as_string",
+        deserialize_with = "surreal_mind::serializers::deserialize_thing_or_string"
     )]
     id: String,
     content: String,
@@ -1287,21 +1238,21 @@ impl SurrealMindServer {
                     .bind((format!("flavor{}", i), flavor.as_str()));
             }
 
-            let _resp = tokio::time::timeout(
-                std::time::Duration::from_millis(db_timeout_ms()),
-                async { req.await },
-            )
-            .await
-            .map_err(|_| McpError {
-                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                message: "Relationship creation timed out".into(),
-                data: None,
-            })?
-            .map_err(|e| McpError {
-                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                message: format!("Failed to create relationships: {}", e).into(),
-                data: None,
-            })?;
+            let _resp =
+                tokio::time::timeout(std::time::Duration::from_millis(db_timeout_ms()), async {
+                    req.await
+                })
+                .await
+                .map_err(|_| McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: "Relationship creation timed out".into(),
+                    data: None,
+                })?
+                .map_err(|e| McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: format!("Failed to create relationships: {}", e).into(),
+                    data: None,
+                })?;
         }
 
         // Also keep in memory for fast retrieval (bounded LRU)
@@ -1548,10 +1499,9 @@ impl SurrealMindServer {
                     .bind((format!("id{}", i), m.thought.id.clone()))
                     .bind((format!("ac{}", i), new_ac));
             }
-            tokio::time::timeout(
-                std::time::Duration::from_millis(db_timeout_ms()),
-                async { req.await },
-            )
+            tokio::time::timeout(std::time::Duration::from_millis(db_timeout_ms()), async {
+                req.await
+            })
             .await
             .map_err(|_| McpError {
                 code: rmcp::model::ErrorCode::INTERNAL_ERROR,
@@ -2471,7 +2421,8 @@ impl SurrealMindServer {
 
                 req = req
                     .bind((format!("from{}", i), format!("thoughts:{}", thought.id)))
-                    .bind((format!("to{}", i),
+                    .bind((
+                        format!("to{}", i),
                         format!("thoughts:{}", memory.thought.id),
                     ))
                     .bind((format!("strength{}", i), memory.similarity_score))
@@ -2479,21 +2430,21 @@ impl SurrealMindServer {
                     .bind((format!("flavor{}", i), flavor.as_str()));
             }
 
-            let _ = tokio::time::timeout(
-                std::time::Duration::from_millis(db_timeout_ms()),
-                async { req.await },
-            )
-            .await
-            .map_err(|_| McpError {
-                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                message: "Relationship creation timed out".into(),
-                data: None,
-            })?
-            .map_err(|e| McpError {
-                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                message: format!("Failed to create relationships: {}", e).into(),
-                data: None,
-            })?;
+            let _ =
+                tokio::time::timeout(std::time::Duration::from_millis(db_timeout_ms()), async {
+                    req.await
+                })
+                .await
+                .map_err(|_| McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: "Relationship creation timed out".into(),
+                    data: None,
+                })?
+                .map_err(|e| McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: format!("Failed to create relationships: {}", e).into(),
+                    data: None,
+                })?;
         }
 
         // user_friendly via existing helpers
@@ -2722,21 +2673,21 @@ impl SurrealMindServer {
                     .bind((format!("flavor{}", i), flavor.as_str()));
             }
 
-            let _ = tokio::time::timeout(
-                std::time::Duration::from_millis(db_timeout_ms()),
-                async { req.await },
-            )
-            .await
-            .map_err(|_| McpError {
-                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                message: "Relationship creation timed out".into(),
-                data: None,
-            })?
-            .map_err(|e| McpError {
-                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                message: format!("Failed to create relationships: {}", e).into(),
-                data: None,
-            })?;
+            let _ =
+                tokio::time::timeout(std::time::Duration::from_millis(db_timeout_ms()), async {
+                    req.await
+                })
+                .await
+                .map_err(|_| McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: "Relationship creation timed out".into(),
+                    data: None,
+                })?
+                .map_err(|e| McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: format!("Failed to create relationships: {}", e).into(),
+                    data: None,
+                })?;
         }
 
         let verbose_analysis = params.verbose_analysis.unwrap_or(false); // Default to less verbose for inner voice
@@ -3757,10 +3708,10 @@ impl SurrealMindServer {
                                 sim = self.cosine_similarity(qemb, &emb);
                             }
                         }
-                        if let Some(ref qtxt) = qtxt_opt {
-                            if name.to_lowercase().contains(&qtxt.to_lowercase()) {
-                                sim = (sim + 0.05).min(1.0);
-                            }
+                        if let Some(ref qtxt) = qtxt_opt
+                            && name.to_lowercase().contains(&qtxt.to_lowercase())
+                        {
+                            sim = (sim + 0.05).min(1.0);
                         }
                     } else if let Some(ref qtxt) = qtxt_opt {
                         // lexical boost only

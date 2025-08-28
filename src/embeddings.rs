@@ -288,6 +288,34 @@ impl FakeEmbedder {
             }
             i = i.wrapping_add(1);
         }
+
+        // Optional tiny deterministic noise for more realistic behavior
+        let noise_enabled = std::env::var("SURR_FAKE_NOISE")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        if noise_enabled {
+            let amp: f32 = std::env::var("SURR_FAKE_NOISE_AMP")
+                .ok()
+                .and_then(|s| s.parse::<f32>().ok())
+                .unwrap_or(0.01);
+            let mut ni: u32 = 0;
+            for v in &mut out {
+                let mut h = Sha256::new();
+                h.update(b"noise:");
+                h.update(text.as_bytes());
+                h.update(ni.to_le_bytes());
+                let d = h.finalize();
+                // Use first 4 bytes to make a small offset in [-amp, amp)
+                let mut b4 = [0u8; 4];
+                b4.copy_from_slice(&d[..4]);
+                let u = u32::from_le_bytes(b4);
+                let r01 = (u as f32) / (u32::MAX as f32 + 1.0);
+                let noise = (r01 * 2.0 - 1.0) * amp;
+                *v += noise;
+                ni = ni.wrapping_add(1);
+            }
+        }
+
         // Normalize to unit length to emulate real embeddings
         let norm: f32 = out.iter().map(|x| x * x).sum::<f32>().sqrt();
         if norm > 0.0 {
