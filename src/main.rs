@@ -2375,8 +2375,12 @@ let _ = tokio::time::timeout(
     code: rmcp::model::ErrorCode::INTERNAL_ERROR,
     message: "Relationship creation timed out".into(),
     data: None,
-})
-.map(|_| ());
+})?
+.map_err(|e| McpError {
+    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+    message: format!("Failed to create relationships: {}", e).into(),
+    data: None,
+})?;
         }
 
         // user_friendly via existing helpers
@@ -2659,8 +2663,12 @@ let _ = tokio::time::timeout(
     code: rmcp::model::ErrorCode::INTERNAL_ERROR,
     message: "Relationship creation timed out".into(),
     data: None,
-})
-.map(|_| ());
+})?
+.map_err(|e| McpError {
+    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+    message: format!("Failed to create relationships: {}", e).into(),
+    data: None,
+})?;
         }
 
         let verbose_analysis = params.verbose_analysis.unwrap_or(false); // Default to less verbose for inner voice
