@@ -898,6 +898,8 @@ impl SurrealMindServer {
                 DEFINE FIELD created_at ON TABLE recalls TYPE datetime;
                 DEFINE FIELD submode_match ON TABLE recalls TYPE option<bool>;
                 DEFINE FIELD flavor ON TABLE recalls TYPE option<string>;
+                DEFINE INDEX recalls_in_idx ON TABLE recalls COLUMNS in;
+                DEFINE INDEX recalls_out_idx ON TABLE recalls COLUMNS out;
             "#,
                     )
                     .await
@@ -1406,7 +1408,7 @@ impl SurrealMindServer {
                 async {
                     self.db
                         .query(format!(
-                            "SELECT id, content, created_at, embedding, injected_memories, enriched_content, injection_scale, significance, access_count, last_accessed, submode, framework_enhanced, framework_analysis FROM thoughts ORDER BY created_at DESC LIMIT {}",
+                            "SELECT id, content, created_at, embedding, injected_memories, injection_scale, significance, access_count, last_accessed, submode, is_inner_voice FROM thoughts ORDER BY created_at DESC LIMIT {}",
                             limit
                         ))
                         .await
@@ -1875,8 +1877,8 @@ impl SurrealMindServer {
             seeds.truncate(top_k);
             for seed in seeds.iter() {
                 let mut q = String::new();
-                q.push_str("SELECT id(in) AS nid, strength FROM recalls WHERE out = type::thing('thoughts', $sid) LIMIT $lim;\n");
-                q.push_str("SELECT id(out) AS nid, strength FROM recalls WHERE in = type::thing('thoughts', $sid) LIMIT $lim;\n");
+                q.push_str("SELECT in AS nid, strength FROM recalls WHERE out = type::thing('thoughts', $sid) LIMIT $lim;\n");
+                q.push_str("SELECT out AS nid, strength FROM recalls WHERE in = type::thing('thoughts', $sid) LIMIT $lim;\n");
 
                 let mut req = self.db.query(q);
                 req = req.bind(("sid", seed.clone())).bind(("lim", max_n));
@@ -1899,7 +1901,7 @@ impl SurrealMindServer {
                 let out2: Vec<serde_json::Value> = resp.take(1).unwrap_or_default();
                 for row in out1.into_iter().chain(out2.into_iter()) {
                     if let (Some(nid), Some(stren)) = (row.get("nid"), row.get("strength")) {
-                        let nid_s = nid.as_str().unwrap_or("").to_string();
+                        let nid_s = Self::kg_value_to_id_string(nid).unwrap_or_default();
                         let st = stren.as_f64().unwrap_or(0.0) as f32;
                         if nid_s.is_empty() || st < min_edge_strength {
                             continue;
@@ -1921,10 +1923,10 @@ impl SurrealMindServer {
                     let orig_seed = via_map.get(mid).map(|(s, _)| s.clone());
                     let mut q2 = String::new();
                     q2.push_str(
-                        "SELECT id(in) AS nid, strength FROM recalls WHERE out = type::thing('thoughts', $mid) LIMIT $lim;\n",
+                        "SELECT in AS nid, strength FROM recalls WHERE out = type::thing('thoughts', $mid) LIMIT $lim;\n",
                     );
                     q2.push_str(
-                        "SELECT id(out) AS nid, strength FROM recalls WHERE in = type::thing('thoughts', $mid) LIMIT $lim;\n",
+                        "SELECT out AS nid, strength FROM recalls WHERE in = type::thing('thoughts', $mid) LIMIT $lim;\n",
                     );
 
                     let mut resp2 = tokio::time::timeout(
@@ -1952,7 +1954,7 @@ impl SurrealMindServer {
                     let s2: Vec<serde_json::Value> = resp2.take(1).unwrap_or_default();
                     for row in s1.into_iter().chain(s2.into_iter()) {
                         if let (Some(nid), Some(stren)) = (row.get("nid"), row.get("strength")) {
-                            let nid_s = nid.as_str().unwrap_or("").to_string();
+                            let nid_s = Self::kg_value_to_id_string(nid).unwrap_or_default();
                             let st2 = stren.as_f64().unwrap_or(0.0) as f32;
                             if nid_s.is_empty() || st2 < min_edge_strength {
                                 continue;
@@ -3244,8 +3246,10 @@ impl SurrealMindServer {
                 let mut items: Vec<String> = Vec::new();
                 if let Ok(arr) = resp.take::<Vec<serde_json::Value>>(0) {
                     for row in arr {
-                        if let Some(id) = row.get("id").and_then(|v| v.as_str()) {
-                            items.push(id.to_string());
+                        if let Some(id) = Self::kg_value_to_id_string(row.get("id").unwrap_or(&serde_json::Value::Null)) {
+                            if !id.is_empty() {
+                                items.push(id);
+                            }
                         }
                     }
                 }
