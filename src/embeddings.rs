@@ -251,6 +251,65 @@ impl Embedder for NomicEmbedder {
     }
 }
 
+// Deterministic, local FakeEmbedder for testing/dev (no network)
+pub struct FakeEmbedder {
+    dims: usize,
+}
+
+impl FakeEmbedder {
+    pub fn new(dims: Option<usize>) -> Self {
+        let d = dims.unwrap_or(768).max(1);
+        Self { dims: d }
+    }
+
+    // Produce a stable stream of pseudo-random f32 values in [-1.0, 1.0)
+    fn generate(&self, text: &str) -> Vec<f32> {
+        use sha2::{Digest, Sha256};
+        let mut out = Vec::with_capacity(self.dims);
+        let mut i: u32 = 0;
+        while out.len() < self.dims {
+            // hash(text || i)
+            let mut hasher = Sha256::new();
+            hasher.update(text.as_bytes());
+            hasher.update(i.to_le_bytes());
+            let digest = hasher.finalize();
+            // map chunks of 4 bytes to f32 in [-1,1)
+            for chunk in digest.chunks(4) {
+                if out.len() >= self.dims {
+                    break;
+                }
+                let mut bytes = [0u8; 4];
+                bytes.copy_from_slice(chunk);
+                let val_u32 = u32::from_le_bytes(bytes);
+                // Map to [0,1) using division then to [-1,1)
+                let v01 = (val_u32 as f32) / (u32::MAX as f32 + 1.0);
+                let v = v01 * 2.0 - 1.0;
+                out.push(v);
+            }
+            i = i.wrapping_add(1);
+        }
+        // Normalize to unit length to emulate real embeddings
+        let norm: f32 = out.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if norm > 0.0 {
+            for v in &mut out {
+                *v /= norm;
+            }
+        }
+        out
+    }
+}
+
+#[async_trait]
+impl Embedder for FakeEmbedder {
+    async fn embed(&self, text: &str) -> Result<Vec<f32>> {
+        Ok(self.generate(text))
+    }
+
+    fn dimensions(&self) -> usize {
+        self.dims
+    }
+}
+
 // Factory function to create embedder based on environment
 pub async fn create_embedder() -> Result<Arc<dyn Embedder>> {
     // Configuration: provider preference and keys
@@ -333,7 +392,42 @@ pub async fn create_embedder() -> Result<Arc<dyn Embedder>> {
         );
     }
 
-    anyhow::bail!(
-        "No embedding provider configured. Please set OPENAI_API_KEY (preferred) or NOMIC_API_KEY."
-    )
+    // Fallback to deterministic FakeEmbedder for local/testing usage
+    let dims = dim_override.or_else(|| {
+        std::env::var("SURR_EMBED_DIM")
+            .ok()
+            .and_then(|s| s.parse().ok())
+    });
+    let fake = FakeEmbedder::new(dims);
+    info!(
+        "Using FakeEmbedder (deterministic) with {} dimensions",
+        fake.dimensions()
+    );
+    Ok(Arc::new(fake))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn fake_embedder_is_deterministic() {
+        let fe = FakeEmbedder::new(Some(128));
+        let a1 = fe.embed("hello world").await.unwrap();
+        let a2 = fe.embed("hello world").await.unwrap();
+        assert_eq!(a1.len(), 128);
+        assert_eq!(a2.len(), 128);
+        assert!(a1.iter().zip(&a2).all(|(x, y)| (x - y).abs() < 1e-8));
+    }
+
+    #[tokio::test]
+    async fn fake_embedder_varies_with_input() {
+        let fe = FakeEmbedder::new(None); // default 768
+        let a = fe.embed("foo").await.unwrap();
+        let b = fe.embed("bar").await.unwrap();
+        assert_eq!(a.len(), 768);
+        assert_eq!(b.len(), 768);
+        // must differ for at least one index
+        assert!(a.iter().zip(&b).any(|(x, y)| (x - y).abs() > 1e-6));
+    }
 }

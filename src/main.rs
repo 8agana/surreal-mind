@@ -1109,22 +1109,22 @@ impl SurrealMindServer {
                     .bind((format!("flavor{}", i), flavor.as_str()));
             }
 
-let res = tokio::time::timeout(
-    std::time::Duration::from_millis(db_timeout_ms()),
-    async { req.await },
-)
-.await
-.map_err(|_| McpError {
-    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-    message: "Relationship creation timed out".into(),
-    data: None,
-})?
-.map_err(|e| McpError {
-    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-    message: format!("Failed to create relationships: {}", e).into(),
-    data: None,
-});
-res?;
+            let res =
+                tokio::time::timeout(std::time::Duration::from_millis(db_timeout_ms()), async {
+                    req.await
+                })
+                .await
+                .map_err(|_| McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: "Relationship creation timed out".into(),
+                    data: None,
+                })?
+                .map_err(|e| McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: format!("Failed to create relationships: {}", e).into(),
+                    data: None,
+                });
+            res?;
         }
 
         // Also keep in memory for fast retrieval (bounded LRU)
@@ -1759,21 +1759,21 @@ res?;
 
                 let mut req = self.db.query(q);
                 req = req.bind(("sid", seed.clone())).bind(("lim", max_n));
-let mut resp = tokio::time::timeout(
-        std::time::Duration::from_millis(db_timeout_ms()),
-        async { req.await },
-    )
-    .await
-    .map_err(|_| McpError {
-        code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-        message: "recalls query timed out".into(),
-        data: None,
-    })?
-    .map_err(|e| McpError {
-        code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-        message: format!("Failed to query recalls: {}", e).into(),
-        data: None,
-    })?;
+                let mut resp = tokio::time::timeout(
+                    std::time::Duration::from_millis(db_timeout_ms()),
+                    async { req.await },
+                )
+                .await
+                .map_err(|_| McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: "recalls query timed out".into(),
+                    data: None,
+                })?
+                .map_err(|e| McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: format!("Failed to query recalls: {}", e).into(),
+                    data: None,
+                })?;
                 drop(_guard);
                 let out1: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
                 let out2: Vec<serde_json::Value> = resp.take(1).unwrap_or_default();
@@ -1813,28 +1813,27 @@ let mut resp = tokio::time::timeout(
                         None
                     };
 
-let mut resp2 = tokio::time::timeout(
-        std::time::Duration::from_millis(db_timeout_ms()),
-        async {
-            self
-                .db
-                .query(q2)
-                .bind(("mid", mid.clone()))
-                .bind(("lim", max_n))
-                .await
-        },
-    )
-    .await
-    .map_err(|_| McpError {
-        code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-        message: "second-hop recalls query timed out".into(),
-        data: None,
-    })?
-    .map_err(|e| McpError {
-        code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-        message: format!("Failed to query second-hop recalls: {}", e).into(),
-        data: None,
-    })?;
+                    let mut resp2 = tokio::time::timeout(
+                        std::time::Duration::from_millis(db_timeout_ms()),
+                        async {
+                            self.db
+                                .query(q2)
+                                .bind(("mid", mid.clone()))
+                                .bind(("lim", max_n))
+                                .await
+                        },
+                    )
+                    .await
+                    .map_err(|_| McpError {
+                        code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                        message: "second-hop recalls query timed out".into(),
+                        data: None,
+                    })?
+                    .map_err(|e| McpError {
+                        code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                        message: format!("Failed to query second-hop recalls: {}", e).into(),
+                        data: None,
+                    })?;
                     drop(_guard);
                     let s1: Vec<serde_json::Value> = resp2.take(0).unwrap_or_default();
                     let s2: Vec<serde_json::Value> = resp2.take(1).unwrap_or_default();
@@ -1878,7 +1877,7 @@ let mut resp2 = tokio::time::timeout(
                     None
                 };
 
-let mut resp = tokio::time::timeout(
+                let mut resp = tokio::time::timeout(
         std::time::Duration::from_millis(db_timeout_ms()),
         async {
             self
@@ -2366,21 +2365,21 @@ let mut resp = tokio::time::timeout(
                     .bind((format!("flavor{}", i), flavor.as_str()));
             }
 
-let _ = tokio::time::timeout(
-    std::time::Duration::from_millis(db_timeout_ms()),
-    async { req.await },
-)
-.await
-.map_err(|_| McpError {
-    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-    message: "Relationship creation timed out".into(),
-    data: None,
-})?
-.map_err(|e| McpError {
-    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-    message: format!("Failed to create relationships: {}", e).into(),
-    data: None,
-})?;
+            let _ =
+                tokio::time::timeout(std::time::Duration::from_millis(db_timeout_ms()), async {
+                    req.await
+                })
+                .await
+                .map_err(|_| McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: "Relationship creation timed out".into(),
+                    data: None,
+                })?
+                .map_err(|e| McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: format!("Failed to create relationships: {}", e).into(),
+                    data: None,
+                })?;
         }
 
         // user_friendly via existing helpers
@@ -2654,21 +2653,21 @@ let _ = tokio::time::timeout(
                     .bind((format!("flavor{}", i), flavor.as_str()));
             }
 
-let _ = tokio::time::timeout(
-    std::time::Duration::from_millis(db_timeout_ms()),
-    async { req.await },
-)
-.await
-.map_err(|_| McpError {
-    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-    message: "Relationship creation timed out".into(),
-    data: None,
-})?
-.map_err(|e| McpError {
-    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-    message: format!("Failed to create relationships: {}", e).into(),
-    data: None,
-})?;
+            let _ =
+                tokio::time::timeout(std::time::Duration::from_millis(db_timeout_ms()), async {
+                    req.await
+                })
+                .await
+                .map_err(|_| McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: "Relationship creation timed out".into(),
+                    data: None,
+                })?
+                .map_err(|e| McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: format!("Failed to create relationships: {}", e).into(),
+                    data: None,
+                })?;
         }
 
         let verbose_analysis = params.verbose_analysis.unwrap_or(false); // Default to less verbose for inner voice

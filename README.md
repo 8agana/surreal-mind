@@ -47,6 +47,17 @@ surreal start --user root --pass root --bind 127.0.0.1:8000 file:/path/to/data.d
 
 Note: The server connects via WebSocket only. Embedded in-process DB is not currently supported.
 
+## Production Deployment
+- Defaults in this repo are for local development (127.0.0.1, http/ws without TLS). Do not use these defaults over a network.
+- Use secure transports in production:
+  - WebSocket (DB): set SURR_DB_URL to a wss:// endpoint, e.g., `export SURR_DB_URL=wss://db.example.com:8000`
+  - HTTP SQL (fallback): the server derives an HTTP base from SURR_DB_URL for the REST /sql endpoint. Ensure it is https:// when used remotely.
+- Credentials: SURR_DB_USER and SURR_DB_PASS are sent via HTTP Basic Auth for the REST SQL fallback. Always use TLS (https/wss) to protect credentials in transit.
+- Recommended environment hardening:
+  - `export SURR_ENFORCE_TLS=1` (advisory knob; when enabled, prefer/require https/wss URLs and fail fast on plain http/ws in future versions)
+  - Restrict exposure of the SurrealDB service to trusted networks only.
+- Logging: Consider setting `MCP_NO_LOG=true` in environments where stderr must remain JSON-only for MCP clients. Use `RUST_LOG=surreal_mind=info,rmcp=info` or quieter.
+
 Configure the server via environment variables:
 ```bash
 # Database Configuration (defaults shown)
