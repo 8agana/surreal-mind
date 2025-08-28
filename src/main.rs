@@ -976,7 +976,7 @@ impl SurrealMindServer {
 
                 DEFINE TABLE mentions TYPE RELATION;
                 DEFINE FIELD in ON TABLE mentions TYPE record<thoughts>;
-                DEFINE FIELD out ON TABLE mentions TYPE record<entities>;
+                DEFINE FIELD out ON TABLE mentions TYPE record<entities | observations>;
                 DEFINE FIELD label ON TABLE mentions TYPE option<string>;
                 DEFINE FIELD span ON TABLE mentions TYPE option<object>;
                 DEFINE FIELD confidence ON TABLE mentions TYPE option<float>;
@@ -1010,6 +1010,35 @@ impl SurrealMindServer {
 
                 DEFINE INDEX rel_pred_idx ON TABLE relationships COLUMNS predicate;
                 DEFINE INDEX rel_pair_idx ON TABLE relationships COLUMNS in, out, predicate;
+            "#,
+                    )
+                    .await
+            },
+        )
+        .await?;
+
+        // Define observations table and allow mentions to link observations
+        with_retry(
+            "initialize_schema_observations",
+            max_retries,
+            initial_delay_ms,
+            || async {
+                self.db
+                    .query(
+                        r#"
+                DEFINE TABLE observations SCHEMAFULL;
+                DEFINE FIELD text ON TABLE observations TYPE string;
+                DEFINE FIELD occurred_at ON TABLE observations TYPE datetime;
+                DEFINE FIELD entities ON TABLE observations TYPE array<string>;
+                DEFINE FIELD properties ON TABLE observations TYPE option<object>;
+                DEFINE FIELD confidence ON TABLE observations TYPE option<float>;
+                DEFINE FIELD content_hash ON TABLE observations TYPE string;
+                DEFINE FIELD source_thought ON TABLE observations TYPE option<record<thoughts>>;
+                DEFINE FIELD created_at ON TABLE observations TYPE datetime;
+                DEFINE FIELD updated_at ON TABLE observations TYPE option<datetime>;
+                
+                DEFINE INDEX obs_hash_idx ON TABLE observations COLUMNS content_hash UNIQUE;
+                DEFINE INDEX obs_time_idx ON TABLE observations COLUMNS occurred_at;
             "#,
                     )
                     .await
@@ -3056,10 +3085,10 @@ impl SurrealMindServer {
                 )
                 .await?;
                 let rows: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
-                if let Some(row) = rows.into_iter().next() {
-                    if let Some(id) = row.get("id").and_then(|v| v.as_str()) {
-                        found_id = Some(id.to_string());
-                    }
+                if let Some(row) = rows.into_iter().next()
+                    && let Some(id) = row.get("id").and_then(|v| v.as_str())
+                {
+                    found_id = Some(id.to_string());
                 }
             }
         }
@@ -3110,44 +3139,44 @@ impl SurrealMindServer {
             .await?;
             let rows: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
             let id = rows
-                .get(0)
+                .first()
                 .and_then(|r| r.get("id").and_then(|v| v.as_str()))
                 .unwrap_or(&eid)
                 .to_string();
 
             // provenance mention and counter
-            if let Some(tid) = source_thought_id {
-                if let Some((_, einner)) = Self::kg_parse_thing(&id, "entities") {
-                    let q = r#"
+            if let Some(tid) = source_thought_id
+                && let Some((_, einner)) = Self::kg_parse_thing(&id, "entities")
+            {
+                let q = r#"
                         CREATE mentions SET in = type::thing('thoughts', $tid), out = type::thing('entities', $eid), confidence = $conf;
                     "#;
-                    let conf = 0.8f32;
-                    let (max_retries, initial_delay_ms) = get_retry_config();
-                    let _guard = if Self::db_serial_enabled() {
-                        Some(self.db_gate.lock().await)
-                    } else {
-                        None
-                    };
-                    with_retry(
-                        "create_mention_update",
-                        max_retries,
-                        initial_delay_ms,
-                        || {
-                            let tid = tid.to_string();
-                            let einner = einner.clone();
-                            async move {
-                                self.db
-                                    .query(q)
-                                    .bind(("tid", tid))
-                                    .bind(("eid", einner))
-                                    .bind(("conf", conf))
-                                    .await
-                            }
-                        },
-                    )
-                    .await?;
-                    let _ = self.increment_entity_mentions(&id, 1).await;
-                }
+                let conf = 0.8f32;
+                let (max_retries, initial_delay_ms) = get_retry_config();
+                let _guard = if Self::db_serial_enabled() {
+                    Some(self.db_gate.lock().await)
+                } else {
+                    None
+                };
+                with_retry(
+                    "create_mention_update",
+                    max_retries,
+                    initial_delay_ms,
+                    || {
+                        let tid = tid.to_string();
+                        let einner = einner.clone();
+                        async move {
+                            self.db
+                                .query(q)
+                                .bind(("tid", tid))
+                                .bind(("eid", einner))
+                                .bind(("conf", conf))
+                                .await
+                        }
+                    },
+                )
+                .await?;
+                let _ = self.increment_entity_mentions(&id, 1).await;
             }
             return Ok((id, false));
         }
@@ -3193,38 +3222,38 @@ impl SurrealMindServer {
         .await?;
         let rows: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
         let id = rows
-            .get(0)
+            .first()
             .and_then(|r| r.get("id").and_then(|v| v.as_str()))
             .unwrap_or("")
             .to_string();
 
-        if let Some(tid) = source_thought_id {
-            if let Some((_, einner)) = Self::kg_parse_thing(&id, "entities") {
-                let q = r#"
+        if let Some(tid) = source_thought_id
+            && let Some((_, einner)) = Self::kg_parse_thing(&id, "entities")
+        {
+            let q = r#"
                     CREATE mentions SET in = type::thing('thoughts', $tid), out = type::thing('entities', $eid), confidence = $conf;
                 "#;
-                let conf = 0.8f32;
-                let (max_retries, initial_delay_ms) = get_retry_config();
-                let _guard = if Self::db_serial_enabled() {
-                    Some(self.db_gate.lock().await)
-                } else {
-                    None
-                };
-                with_retry("create_mention_new", max_retries, initial_delay_ms, || {
-                    let tid = tid.to_string();
-                    let einner = einner.clone();
-                    async move {
-                        self.db
-                            .query(q)
-                            .bind(("tid", tid))
-                            .bind(("eid", einner))
-                            .bind(("conf", conf))
-                            .await
-                    }
-                })
-                .await?;
-                let _ = self.increment_entity_mentions(&id, 1).await;
-            }
+            let conf = 0.8f32;
+            let (max_retries, initial_delay_ms) = get_retry_config();
+            let _guard = if Self::db_serial_enabled() {
+                Some(self.db_gate.lock().await)
+            } else {
+                None
+            };
+            with_retry("create_mention_new", max_retries, initial_delay_ms, || {
+                let tid = tid.to_string();
+                let einner = einner.clone();
+                async move {
+                    self.db
+                        .query(q)
+                        .bind(("tid", tid))
+                        .bind(("eid", einner))
+                        .bind(("conf", conf))
+                        .await
+                }
+            })
+            .await?;
+            let _ = self.increment_entity_mentions(&id, 1).await;
         }
 
         Ok((id, true))
@@ -3435,7 +3464,7 @@ impl SurrealMindServer {
                         },
                     )
                     .await?;
-                    if let Some(arr) = resp2.take::<Vec<serde_json::Value>>(0).ok() {
+                    if let Ok(arr) = resp2.take::<Vec<serde_json::Value>>(0) {
                         for row in arr {
                             if let Some(id) = row.get("id").and_then(|v| v.as_str()) {
                                 items.push(id.to_string());
@@ -3446,10 +3475,320 @@ impl SurrealMindServer {
 
                 Ok(json!({ "kind": "relationship", "created_edges": items }))
             }
-            "observation" => Ok(json!({
-                "kind": "observation",
-                "status": "not_implemented_yet"
-            })),
+            "observation" => {
+                // Required: text; Optional: occurred_at, entities[], properties, confidence
+                let text = data
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| McpError {
+                        code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                        message: "observation.text is required".into(),
+                        data: None,
+                    })?
+                    .to_string();
+
+                let occurred_at = data
+                    .get("occurred_at")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+
+                let entities_vals = data
+                    .get("entities")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+
+                // Resolve entity refs to ids
+                let mut resolved_entities: Vec<String> = Vec::new();
+                for ev in entities_vals.iter() {
+                    let eid = self.resolve_entity_ref(ev, true, source_thought_id).await?;
+                    resolved_entities.push(eid);
+                }
+                // Sort for stable hashing
+                resolved_entities.sort();
+
+                // Optional properties
+                let properties = data.get("properties").cloned().unwrap_or_else(|| json!({}));
+                let conf = data
+                    .get("confidence")
+                    .and_then(|v| v.as_f64())
+                    .map(|f| f as f32)
+                    .unwrap_or(confidence);
+
+                // Compute content hash deterministically: lower(text)|occurred_at|sorted entity ids
+                let text_norm = text.trim().to_lowercase();
+                let ents_joined = resolved_entities.join(",");
+                let hash = Self::kg_sha256_hex(&[&text_norm, &occurred_at, &ents_joined]);
+
+                // Upsert by content_hash
+                let mut found_id: Option<String> = None;
+                if upsert {
+                    let q = "SELECT id FROM observations WHERE content_hash = $hash LIMIT 1";
+                    let (max_retries, initial_delay_ms) = get_retry_config();
+                    let _guard = if Self::db_serial_enabled() {
+                        Some(self.db_gate.lock().await)
+                    } else {
+                        None
+                    };
+                    let mut resp = with_retry(
+                        "select_observation_by_hash",
+                        max_retries,
+                        initial_delay_ms,
+                        || {
+                            let hash = hash.clone();
+                            async move { self.db.query(q).bind(("hash", hash)).await }
+                        },
+                    )
+                    .await?;
+                    let rows: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
+                    if let Some(row) = rows.into_iter().next()
+                        && let Some(id) = row.get("id").and_then(|v| v.as_str())
+                    {
+                        found_id = Some(id.to_string());
+                    }
+                }
+
+                if let Some(oid) = found_id {
+                    // Update existing observation
+                    let q = r#"
+                        UPDATE $rid SET
+                            text = $text,
+                            occurred_at = time::parse($occurred_at),
+                            entities = $entities,
+                            properties = $properties,
+                            confidence = $confidence,
+                            updated_at = time::now()
+                        RETURN id;
+                    "#;
+                    let (tb, inner) = Self::kg_parse_thing(&oid, "observations")
+                        .unwrap_or(("observations".into(), oid.clone()));
+                    let (max_retries, initial_delay_ms) = get_retry_config();
+                    let _guard = if Self::db_serial_enabled() {
+                        Some(self.db_gate.lock().await)
+                    } else {
+                        None
+                    };
+                    let mut resp =
+                        with_retry("update_observation", max_retries, initial_delay_ms, || {
+                            let text = text.clone();
+                            let occurred_at = occurred_at.clone();
+                            let entities = resolved_entities.clone();
+                            let properties = properties.clone();
+                            let tb_s = tb.clone();
+                            let inner_s = inner.clone();
+                            async move {
+                                self.db
+                                    .query(q)
+                                    .bind(("rid", format!("{}:{}", tb_s, inner_s)))
+                                    .bind(("text", text))
+                                    .bind(("occurred_at", occurred_at))
+                                    .bind(("entities", entities))
+                                    .bind(("properties", properties))
+                                    .bind(("confidence", conf))
+                                    .await
+                            }
+                        })
+                        .await?;
+                    let rows: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
+                    let id = rows
+                        .first()
+                        .and_then(|r| r.get("id").and_then(|v| v.as_str()))
+                        .unwrap_or(&oid)
+                        .to_string();
+
+                    // Provenance mentions
+                    if let Some(tid) = source_thought_id
+                        && let Some((_, oinner)) = Self::kg_parse_thing(&id, "observations")
+                    {
+                        let q = r#"
+                            CREATE mentions SET in = type::thing('thoughts', $tid), out = type::thing('observations', $oid), confidence = $conf;
+                        "#;
+                        let (max_retries, initial_delay_ms) = get_retry_config();
+                        let _guard = if Self::db_serial_enabled() {
+                            Some(self.db_gate.lock().await)
+                        } else {
+                            None
+                        };
+                        with_retry(
+                            "create_mention_obs_update",
+                            max_retries,
+                            initial_delay_ms,
+                            || {
+                                let tid = tid.to_string();
+                                let oinner = oinner.clone();
+                                async move {
+                                    self.db
+                                        .query(q)
+                                        .bind(("tid", tid))
+                                        .bind(("oid", oinner))
+                                        .bind(("conf", conf))
+                                        .await
+                                }
+                            },
+                        )
+                        .await?;
+                        // Mentions to entities as well
+                        for eid in resolved_entities.iter() {
+                            if let Some((_, einner)) = Self::kg_parse_thing(eid, "entities") {
+                                let q2 = r#"CREATE mentions SET in = type::thing('thoughts', $tid), out = type::thing('entities', $eid), confidence = $conf2;"#;
+                                let conf2 = conf.min(0.7);
+                                let (max_retries, initial_delay_ms) = get_retry_config();
+                                let _guard = if Self::db_serial_enabled() {
+                                    Some(self.db_gate.lock().await)
+                                } else {
+                                    None
+                                };
+                                with_retry(
+                                    "create_mention_entity_update",
+                                    max_retries,
+                                    initial_delay_ms,
+                                    || {
+                                        let tid = tid.to_string();
+                                        let einner = einner.clone();
+                                        async move {
+                                            self.db
+                                                .query(q2)
+                                                .bind(("tid", tid))
+                                                .bind(("eid", einner))
+                                                .bind(("conf2", conf2))
+                                                .await
+                                        }
+                                    },
+                                )
+                                .await?;
+                                let _ = self.increment_entity_mentions(eid, 1).await;
+                            }
+                        }
+                    }
+
+                    Ok(json!({
+                        "kind": "observation",
+                        "observation_id": id,
+                        "created": false,
+                        "resolved_entities": resolved_entities
+                    }))
+                } else {
+                    // Create new observation
+                    let q = r#"
+                        CREATE observations SET
+                            text = $text,
+                            occurred_at = time::parse($occurred_at),
+                            entities = $entities,
+                            properties = $properties,
+                            confidence = $confidence,
+                            content_hash = $hash,
+                            source_thought = $sthought,
+                            created_at = time::now()
+                        RETURN id;
+                    "#;
+                    let sthought = source_thought_id.map(|s| s.to_string());
+                    let (max_retries, initial_delay_ms) = get_retry_config();
+                    let _guard = if Self::db_serial_enabled() {
+                        Some(self.db_gate.lock().await)
+                    } else {
+                        None
+                    };
+                    let mut resp =
+                        with_retry("create_observation", max_retries, initial_delay_ms, || {
+                            let text = text.clone();
+                            let occurred_at = occurred_at.clone();
+                            let entities = resolved_entities.clone();
+                            let properties = properties.clone();
+                            let hash = hash.clone();
+                            let sthought = sthought.clone();
+                            async move {
+                                self.db
+                                    .query(q)
+                                    .bind(("text", text))
+                                    .bind(("occurred_at", occurred_at))
+                                    .bind(("entities", entities))
+                                    .bind(("properties", properties))
+                                    .bind(("confidence", conf))
+                                    .bind(("hash", hash))
+                                    .bind(("sthought", sthought))
+                                    .await
+                            }
+                        })
+                        .await?;
+                    let rows: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
+                    let id = rows
+                        .first()
+                        .and_then(|r| r.get("id").and_then(|v| v.as_str()))
+                        .unwrap_or("")
+                        .to_string();
+
+                    if let Some(tid) = source_thought_id
+                        && let Some((_, oinner)) = Self::kg_parse_thing(&id, "observations")
+                    {
+                        let q = r#"
+                            CREATE mentions SET in = type::thing('thoughts', $tid), out = type::thing('observations', $oid), confidence = $conf;
+                        "#;
+                        let (max_retries, initial_delay_ms) = get_retry_config();
+                        let _guard = if Self::db_serial_enabled() {
+                            Some(self.db_gate.lock().await)
+                        } else {
+                            None
+                        };
+                        with_retry(
+                            "create_mention_obs_new",
+                            max_retries,
+                            initial_delay_ms,
+                            || {
+                                let tid = tid.to_string();
+                                let oinner = oinner.clone();
+                                async move {
+                                    self.db
+                                        .query(q)
+                                        .bind(("tid", tid))
+                                        .bind(("oid", oinner))
+                                        .bind(("conf", conf))
+                                        .await
+                                }
+                            },
+                        )
+                        .await?;
+                        for eid in resolved_entities.iter() {
+                            if let Some((_, einner)) = Self::kg_parse_thing(eid, "entities") {
+                                let q2 = r#"CREATE mentions SET in = type::thing('thoughts', $tid), out = type::thing('entities', $eid), confidence = $conf2;"#;
+                                let conf2 = conf.min(0.7);
+                                let (max_retries, initial_delay_ms) = get_retry_config();
+                                let _guard = if Self::db_serial_enabled() {
+                                    Some(self.db_gate.lock().await)
+                                } else {
+                                    None
+                                };
+                                with_retry(
+                                    "create_mention_entity_new",
+                                    max_retries,
+                                    initial_delay_ms,
+                                    || {
+                                        let tid = tid.to_string();
+                                        let einner = einner.clone();
+                                        async move {
+                                            self.db
+                                                .query(q2)
+                                                .bind(("tid", tid))
+                                                .bind(("eid", einner))
+                                                .bind(("conf2", conf2))
+                                                .await
+                                        }
+                                    },
+                                )
+                                .await?;
+                                let _ = self.increment_entity_mentions(eid, 1).await;
+                            }
+                        }
+                    }
+
+                    Ok(json!({
+                        "kind": "observation",
+                        "observation_id": id,
+                        "created": true,
+                        "resolved_entities": resolved_entities
+                    }))
+                }
+            }
             _ => Err(McpError {
                 code: rmcp::model::ErrorCode::INVALID_PARAMS,
                 message: format!("Unsupported kind: {}", kind).into(),
@@ -3470,12 +3809,12 @@ impl SurrealMindServer {
             .get("top_k")
             .and_then(|v| v.as_i64())
             .unwrap_or(10)
-            .max(1) as i64;
+            .max(1);
         let offset = args
             .get("offset")
             .and_then(|v| v.as_i64())
             .unwrap_or(0)
-            .max(0) as i64;
+            .max(0);
         let query = args.get("query").and_then(|v| v.as_object());
         let filters = query.and_then(|q| q.get("filters").and_then(|v| v.as_object()));
         match target {
@@ -3549,17 +3888,17 @@ impl SurrealMindServer {
                         conds.push("predicate = $pred".into());
                         binds.push(("pred", json!(pred)));
                     }
-                    if let Some(sid) = f.get("subject_id").and_then(|v| v.as_str()) {
-                        if let Some((_, inner)) = Self::kg_parse_thing(sid, "entities") {
-                            conds.push("in = type::thing('entities', $sid)".into());
-                            binds.push(("sid", json!(inner)));
-                        }
+                    if let Some(sid) = f.get("subject_id").and_then(|v| v.as_str())
+                        && let Some((_, inner)) = Self::kg_parse_thing(sid, "entities")
+                    {
+                        conds.push("in = type::thing('entities', $sid)".into());
+                        binds.push(("sid", json!(inner)));
                     }
-                    if let Some(oid) = f.get("object_id").and_then(|v| v.as_str()) {
-                        if let Some((_, inner)) = Self::kg_parse_thing(oid, "entities") {
-                            conds.push("out = type::thing('entities', $oid)".into());
-                            binds.push(("oid", json!(inner)));
-                        }
+                    if let Some(oid) = f.get("object_id").and_then(|v| v.as_str())
+                        && let Some((_, inner)) = Self::kg_parse_thing(oid, "entities")
+                    {
+                        conds.push("out = type::thing('entities', $oid)".into());
+                        binds.push(("oid", json!(inner)));
                     }
                 }
                 let where_sql = if conds.is_empty() {
@@ -3606,6 +3945,67 @@ impl SurrealMindServer {
                         "confidence": r.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.0),
                     }))
                     .collect();
+                Ok(json!({"items": items}))
+            }
+            "observation" => {
+                let mut conds: Vec<String> = Vec::new();
+                let mut binds: Vec<(&str, serde_json::Value)> = Vec::new();
+                if let Some(qobj) = query
+                    && let Some(qtxt) = qobj.get("text").and_then(|v| v.as_str())
+                {
+                    conds.push("string::lowercase(text) CONTAINS string::lowercase($qtxt)".into());
+                    binds.push(("qtxt", json!(qtxt)));
+                }
+                if let Some(f) = filters {
+                    if let Some(eid) = f.get("entity_id").and_then(|v| v.as_str()) {
+                        conds.push("entities CONTAINS $eid".into());
+                        binds.push(("eid", json!(eid)));
+                    }
+                    if let Some(from) = f.get("occurred_from").and_then(|v| v.as_str()) {
+                        conds.push("occurred_at >= time::parse($from)".into());
+                        binds.push(("from", json!(from)));
+                    }
+                    if let Some(to) = f.get("occurred_to").and_then(|v| v.as_str()) {
+                        conds.push("occurred_at <= time::parse($to)".into());
+                        binds.push(("to", json!(to)));
+                    }
+                }
+                let where_sql = if conds.is_empty() {
+                    String::new()
+                } else {
+                    format!(" WHERE {}", conds.join(" AND "))
+                };
+                let q = format!(
+                    "SELECT id, text, occurred_at, confidence FROM observations{} ORDER BY occurred_at DESC LIMIT $lim START $off",
+                    where_sql
+                );
+                let (max_retries, initial_delay_ms) = get_retry_config();
+                let _guard = if Self::db_serial_enabled() {
+                    Some(self.db_gate.lock().await)
+                } else {
+                    None
+                };
+                let mut resp =
+                    with_retry("search_observations", max_retries, initial_delay_ms, || {
+                        let mut qry = self
+                            .db
+                            .query(q.clone())
+                            .bind(("lim", top_k))
+                            .bind(("off", offset));
+                        for (k, v) in binds.clone() {
+                            qry = qry.bind((k, v));
+                        }
+                        async move { qry.await }
+                    })
+                    .await?;
+                let rows: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
+                let items: Vec<serde_json::Value> = rows.into_iter().map(|r| json!({
+                    "type": "observation",
+                    "id": r.get("id").and_then(|v| v.as_str()).unwrap_or(""),
+                    "text": r.get("text").and_then(|v| v.as_str()).unwrap_or(""),
+                    "occurred_at": r.get("occurred_at").and_then(|v| v.as_str()).unwrap_or(""),
+                    "confidence": r.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.0)
+                })).collect();
                 Ok(json!({"items": items}))
             }
             _ => Ok(json!({"items": []})),
