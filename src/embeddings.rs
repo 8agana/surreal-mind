@@ -22,6 +22,8 @@ pub struct OpenAIEmbedder {
 struct OpenAIRequest<'a> {
     model: &'a str,
     input: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dimensions: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -69,6 +71,11 @@ impl Embedder for OpenAIEmbedder {
         let body = OpenAIRequest {
             model: &self.model,
             input: text,
+            dimensions: if self.dims != 1536 && self.dims != 3072 {
+                Some(self.dims)
+            } else {
+                None // Use default for standard sizes
+            },
         };
 
         // Retry with simple exponential backoff
