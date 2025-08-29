@@ -1055,35 +1055,13 @@ impl SurrealMindServer {
         &self,
         params: ConvoThinkParams,
     ) -> Result<serde_json::Value, McpError> {
-        let mut injection_scale = params.injection_scale.unwrap_or(1); // Default Mercury (KG)
-        if injection_scale > 3 {
-            warn!(
-                "injection_scale > 3 requested ({}); clamping to 3",
-                injection_scale
-            );
-            injection_scale = 3;
-        }
-        if injection_scale > 3 {
-            return Err(McpError {
-                code: rmcp::model::ErrorCode::INVALID_PARAMS,
-                message: format!(
-                    "injection_scale must be between 0 and 3 (got: {}). Example: {{\"injection_scale\": 3}}",
-                    injection_scale
-                ).into(),
-                data: None,
-            });
-        }
-        let significance = params.significance.unwrap_or(0.5);
-        if !(0.0..=1.0).contains(&significance) {
-            return Err(McpError {
-                code: rmcp::model::ErrorCode::INVALID_PARAMS,
-                message: format!(
-                    "significance must be between 0.0 and 1.0 (got: {}). Use 0.1 for low importance, 0.5 for normal, 0.8 for high, 1.0 for critical. Example: {{\"significance\": 0.7}}"
-                    , significance
-                ).into(),
-                data: None,
-            });
-        }
+        // Graceful coercion: any input becomes 0-3
+        let injection_scale = params
+            .injection_scale
+            .unwrap_or(1) // Clamp minimum to 0
+            .min(3); // Clamp maximum to 3
+        // Graceful coercion: any input becomes 0.0-1.0
+        let significance = params.significance.unwrap_or(0.5).clamp(0.0, 1.0); // Default to medium and clamp to 0.0-1.0
 
         // Generate embedding using configured provider
         let embedding = self
@@ -1386,7 +1364,7 @@ impl SurrealMindServer {
             .and_then(|v| v.parse::<usize>().ok());
         let candidates = candidates_env.unwrap_or(top_k * 10).min(200);
         let q = format!(
-            "SELECT id, name, type, name_embedding, created_at, last_seen_at, last_accessed, access_count, mass FROM entities ORDER BY mention_count DESC LIMIT {}",
+            "SELECT id, name, type, name_embedding, created_at, last_seen_at, last_accessed, access_count, mass FROM entities ORDER BY last_accessed_at DESC NULLS LAST LIMIT {}",
             candidates
         );
 
@@ -2581,31 +2559,18 @@ impl SurrealMindServer {
         // Map submode and defaults
         let submode =
             normalize_submode(&params.submode.clone().unwrap_or_else(|| "plan".to_string()));
-        let injection_scale = params.injection_scale.unwrap_or(match submode.as_str() {
-            "plan" => 3,
-            "build" => 2,
-            "debug" => 3,
-            _ => 3,
-        });
-        if injection_scale > 3 {
-            return Err(McpError {
-                code: rmcp::model::ErrorCode::INVALID_PARAMS,
-                message: "injection_scale must be between 0 and 3".into(),
-                data: None,
-            });
-        }
-        let significance = params.significance.unwrap_or(0.5);
-        if !(0.0..=1.0).contains(&significance) {
-            return Err(McpError {
-                code: rmcp::model::ErrorCode::INVALID_PARAMS,
-                message: format!(
-                    "significance must be between 0.0 and 1.0 (got: {})",
-                    significance
-                )
-                .into(),
-                data: None,
-            });
-        }
+        // Graceful coercion: any input becomes 0-3
+        let injection_scale = params
+            .injection_scale
+            .unwrap_or(match submode.as_str() {
+                "plan" => 3,
+                "build" => 2,
+                "debug" => 3,
+                _ => 3,
+            }) // Clamp minimum to 0
+            .min(3); // Clamp maximum to 3
+        // Graceful coercion: any input becomes 0.0-1.0
+        let significance = params.significance.unwrap_or(0.5).clamp(0.0, 1.0); // Default to medium and clamp to 0.0-1.0
 
         // Embedding
         let embedding = self
@@ -2807,37 +2772,13 @@ impl SurrealMindServer {
         &self,
         params: InnerVoiceParams,
     ) -> Result<serde_json::Value, McpError> {
-        let mut injection_scale = params.injection_scale.unwrap_or(1); // Default to 1 for inner voice
-        if injection_scale > 3 {
-            warn!(
-                "inner_voice injection_scale > 3 ({}); clamping to 3",
-                injection_scale
-            );
-            injection_scale = 3;
-        }
-        if injection_scale > 3 {
-            return Err(McpError {
-                code: rmcp::model::ErrorCode::INVALID_PARAMS,
-                message: format!(
-                    "injection_scale must be between 0 and 3 (got: {}). Example: {{\"injection_scale\": 2}}",
-                    injection_scale
-                ).into(),
-                data: None,
-            });
-        }
-
-        let significance = params.significance.unwrap_or(0.3); // Lower default significance for private thoughts
-        if !(0.0..=1.0).contains(&significance) {
-            return Err(McpError {
-                code: rmcp::model::ErrorCode::INVALID_PARAMS,
-                message: format!(
-                    "significance must be between 0.0 and 1.0 (got: {})",
-                    significance
-                )
-                .into(),
-                data: None,
-            });
-        }
+        // Graceful coercion: any input becomes 0-3
+        let injection_scale = params
+            .injection_scale
+            .unwrap_or(1) // Clamp minimum to 0
+            .min(3); // Clamp maximum to 3
+        // Graceful coercion: any input becomes 0.0-1.0
+        let significance = params.significance.unwrap_or(0.3).clamp(0.0, 1.0); // Lower default significance for private thoughts and clamp to 0.0-1.0
 
         // Generate embedding
         let embedding = self
