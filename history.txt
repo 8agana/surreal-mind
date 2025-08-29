@@ -13,3 +13,7 @@ USE DB consciousness;
 SELECT id, array::len(embedding) as embed_dim FROM thoughts LIMIT 10;
 SELECT * FROM entities;
 SELECT COUNT() FROM entities;
+SELECT id, content FROM thoughts LIMIT 1;
+SELECT count() FROM thoughts GROUP ALL;
+DELETE thoughts;
+SELECT id, array::len(embedding) as dims FROM thoughts;

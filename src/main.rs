@@ -1393,33 +1393,35 @@ impl SurrealMindServer {
             // Drop read lock before any potential writes to the cache
             drop(thoughts);
             // Configurable limit for fallback query (override with SURR_RETRIEVE_CANDIDATES)
+            // Scale-based optimization: reduce candidates for higher injection scales
             let default_limit: usize = std::env::var("SURR_DB_LIMIT")
                 .ok()
                 .and_then(|s| s.parse::<usize>().ok())
                 .unwrap_or(500);
+            
+            // Adjust limit based on injection scale to prevent timeouts
+            let scale_adjusted_limit = match injection_scale {
+                0..=2 => default_limit,      // Full limit for low scales
+                3..=4 => default_limit.min(200), // Reduce for medium scales
+                5 => default_limit.min(100),     // Minimal for maximum scale
+                _ => default_limit.min(200),
+            };
+            
             let limit: usize = std::env::var("SURR_RETRIEVE_CANDIDATES")
                 .ok()
                 .and_then(|s| s.parse::<usize>().ok())
-                .unwrap_or(default_limit)
+                .unwrap_or(scale_adjusted_limit)
                 .clamp(50, 5000);
+            
+            debug!("Memory retrieval: injection_scale={}, limit={}, sim_thresh={}", 
+                   injection_scale, limit, eff_sim_thresh);
             // Select only needed columns to reduce payload size
-            let mut resp = tokio::time::timeout(
-                std::time::Duration::from_millis(db_timeout_ms()),
-                async {
-                    self.db
-                        .query(format!(
-                            "SELECT id, content, created_at, embedding, injected_memories, injection_scale, significance, access_count, last_accessed, submode, is_inner_voice FROM thoughts ORDER BY created_at DESC LIMIT {}",
-                            limit
-                        ))
-                        .await
-                },
-            )
-            .await
-            .map_err(|_| McpError {
-                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                message: "fallback DB query timed out".into(),
-                data: None,
-            })?
+            let mut resp = self.db
+                .query(format!(
+                    "SELECT id, content, created_at, embedding, injected_memories, injection_scale, significance, access_count, last_accessed, submode, is_inner_voice FROM thoughts ORDER BY created_at DESC LIMIT {}",
+                    limit
+                ))
+                .await
             .map_err(|e| McpError {
                 code: rmcp::model::ErrorCode::INTERNAL_ERROR,
                 message: format!("Failed to query thoughts: {}", e).into(),
@@ -1435,11 +1437,22 @@ impl SurrealMindServer {
                 .unwrap_or_default();
 
             // Consider DB results; do not update DB or cache yet
+            // Add early termination for performance
+            let early_termination_threshold = eff_sim_thresh * 0.8; // 80% of threshold
+            
             for thought in results.iter() {
                 if thought.embedding.len() != expected_dim {
                     continue;
                 }
                 let similarity = self.cosine_similarity(query_embedding, &thought.embedding);
+                
+                // Early termination: if we have enough matches and similarity is dropping
+                if matches.len() >= top_k * 2 && similarity < early_termination_threshold {
+                    debug!("Early termination: have {} matches, similarity {} below threshold", 
+                           matches.len(), similarity);
+                    break;
+                }
+                
                 let orbital_proximity = compute_proximity(
                     thought.created_at.timestamp(),
                     thought.access_count,
@@ -3061,10 +3074,21 @@ impl SurrealMindServer {
         })
         .await?;
         let rows: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
+        
+        // Debug logging to understand why IDs are empty
+        debug!("Entity CREATE response: {} rows returned", rows.len());
+        if let Some(row) = rows.first() {
+            debug!("First row: {:?}", row);
+        }
+        
         let id = if let Some(row) = rows.first() {
-            Self::kg_value_to_id_string(row.get("id").unwrap_or(&serde_json::Value::Null))
-                .unwrap_or_default()
+            let id_value = row.get("id").unwrap_or(&serde_json::Value::Null);
+            debug!("ID value from response: {:?}", id_value);
+            let extracted_id = Self::kg_value_to_id_string(id_value).unwrap_or_default();
+            debug!("Extracted entity ID: '{}'", extracted_id);
+            extracted_id
         } else {
+            warn!("Entity CREATE returned no rows - query may have failed");
             String::new()
         };
 
@@ -3517,12 +3541,21 @@ impl SurrealMindServer {
                         })
                         .await?;
                     let rows: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
+                    
+                    // Debug logging for observation CREATE
+                    debug!("Observation CREATE response: {} rows returned", rows.len());
+                    if let Some(row) = rows.first() {
+                        debug!("First row: {:?}", row);
+                    }
+                    
                     let id = if let Some(row) = rows.first() {
-                        Self::kg_value_to_id_string(
-                            row.get("id").unwrap_or(&serde_json::Value::Null),
-                        )
-                        .unwrap_or_default()
+                        let id_value = row.get("id").unwrap_or(&serde_json::Value::Null);
+                        debug!("ID value from response: {:?}", id_value);
+                        let extracted_id = Self::kg_value_to_id_string(id_value).unwrap_or_default();
+                        debug!("Extracted observation ID: '{}'", extracted_id);
+                        extracted_id
                     } else {
+                        warn!("Observation CREATE returned no rows - query may have failed");
                         String::new()
                     };
 
