@@ -34,3 +34,4 @@ sha2 = "0.10"
 # Bounded in-memory cache
 lru = "0.12"
 once_cell = "1.19"
+toml = "0.8"
