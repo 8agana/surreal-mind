@@ -1,4 +1,4 @@
-# DeepSeek: Config File and Submode Defaults
+# Zed: Config File and Submode Defaults
 
 ## Context
 We're moving all refined parameters to a config file so the API can be simplified to just `think(content, mode)`. You'll create the config structure and migrate existing parameters.
