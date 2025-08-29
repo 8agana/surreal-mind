@@ -1,0 +1,108 @@
+# Zed System Configuration
+# All parameters migrated from environment variables and function parameters
+# Enables simplified think(content, mode) API
+
+[system]
+# Embedding configuration
+embedding_provider = "openai"
+embedding_model = "text-embedding-3-small"
+embedding_dimensions = 768
+embed_retries = 3  # For SURR_EMBED_RETRIES
+# Database configuration
+database_url = "ws://127.0.0.1:8000"
+database_ns = "surreal_mind"
+database_db = "consciousness"
+# System behavior
+inject_debounce = 1000  # For SURR_INJECT_DEBOUNCE - milliseconds
+
+[retrieval]
+# Core retrieval settings
+max_injection_scale = 3
+default_injection_scale = 1
+kg_only = true  # New: only pull from KG, not thoughts
+similarity_threshold = 0.5
+top_k = 5
+# Performance and limits
+db_limit = 100  # For SURR_DB_LIMIT
+candidates = 20  # For SURR_RETRIEVE_CANDIDATES
+submode_tuning = true  # For SURR_SUBMODE_RETRIEVAL
+
+[orbital_mechanics]
+# How entities drift in the KG over time
+decay_rate = 0.1  # Per day - how much significance decays
+access_boost = 0.2  # Per access - significance boost on retrieval
+significance_weight = 0.3  # Base weight for stored significance
+recency_weight = 0.4  # Weight for temporal recency
+access_weight = 0.3  # Weight for access frequency
+
+# Submode configurations - different "orbits" for different thinking styles
+
+[submodes.plan]
+# Mars orbit - maximum context, strategic planning
+injection_scale = 3
+significance = 0.8
+kg_traverse_depth = 2
+frameworks = { SystemsThinking = 0.6, FirstPrinciples = 0.4 }
+orbital_weights = { recency = 0.2, access = 0.3, significance = 0.5 }
+auto_extract = true
+edge_boosts = { depends_on = 1.5, blocks = 1.3, relates_to = 1.1 }
+
+[submodes.build]
+# Mercury orbit - focused implementation, minimal distraction
+injection_scale = 1
+significance = 0.5
+kg_traverse_depth = 1
+frameworks = { OODA = 0.8, Lateral = 0.2 }
+orbital_weights = { recency = 0.7, access = 0.2, significance = 0.1 }
+auto_extract = false  # Don't pollute KG while building
+edge_boosts = { implements = 1.5, uses = 1.3 }
+
+[submodes.debug]
+# Mercury orbit - current issue focus with diagnostic frameworks
+injection_scale = 1
+significance = 0.9  # Debug thoughts are highly significant
+kg_traverse_depth = 1
+frameworks = { RootCause = 0.7, OODA = 0.3 }
+orbital_weights = { recency = 0.8, access = 0.1, significance = 0.1 }
+auto_extract = true
+edge_boosts = { causes = 2.0, fixes = 1.8, related_to = 1.2 }
+
+[submodes.sarcastic]
+# Venus orbit - contextual awareness for callbacks and references
+injection_scale = 2
+significance = 0.6
+kg_traverse_depth = 1
+frameworks = { Socratic = 0.6, OODA = 0.3, Lateral = 0.1 }
+orbital_weights = { recency = 0.5, access = 0.3, significance = 0.2 }
+auto_extract = true
+edge_boosts = { mocks = 1.5, references = 1.3 }
+
+[submodes.empathetic]
+# Venus orbit - emotional context and relational awareness
+injection_scale = 2
+significance = 0.7
+kg_traverse_depth = 1
+frameworks = { Socratic = 0.8, Lateral = 0.2 }
+orbital_weights = { recency = 0.4, access = 0.2, significance = 0.4 }
+auto_extract = true
+edge_boosts = { relates_to = 1.5, supports = 1.3 }
+
+[submodes.philosophical]
+# Mars orbit - deep connection chains and conceptual frameworks
+injection_scale = 3
+significance = 0.9
+kg_traverse_depth = 3  # Follow deep conceptual chains
+frameworks = { FirstPrinciples = 0.5, SystemsThinking = 0.3, Dialectical = 0.2 }
+orbital_weights = { recency = 0.1, access = 0.2, significance = 0.7 }
+auto_extract = true
+edge_boosts = { implies = 1.8, contradicts = 1.6, relates_to = 1.2 }
+
+[submodes.problem_solving]
+# Venus orbit - balanced analysis with multiple frameworks
+injection_scale = 2
+significance = 0.7
+kg_traverse_depth = 2
+frameworks = { RootCause = 0.4, SystemsThinking = 0.3, OODA = 0.3 }
+orbital_weights = { recency = 0.4, access = 0.3, significance = 0.3 }
+auto_extract = true
+edge_boosts = { solves = 2.0, blocks = 1.5, depends_on = 1.3 }
