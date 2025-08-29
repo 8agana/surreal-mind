@@ -1517,10 +1517,10 @@ impl SurrealMindServer {
                         for row in r1.into_iter().chain(r2.into_iter()) {
                             if let Some(nid) = Self::kg_value_to_id_string(
                                 row.get("nid").unwrap_or(&serde_json::Value::Null),
-                            ) {
-                                if !nid.is_empty() && m.neighbors.len() < max_neighbors {
-                                    m.neighbors.push(nid);
-                                }
+                            ) && !nid.is_empty()
+                                && m.neighbors.len() < max_neighbors
+                            {
+                                m.neighbors.push(nid);
                             }
                         }
                     }
@@ -1583,14 +1583,17 @@ impl SurrealMindServer {
 
         // Calculate orbital proximity threshold (minimum closeness) based on injection scale
         // Higher proximity means closer/more relevant
-        let min_orbital_proximity = match injection_scale {
+        let clamped_scale = if injection_scale > 3 {
+            3
+        } else {
+            injection_scale
+        };
+        let min_orbital_proximity = match clamped_scale {
             0 => return Ok(Vec::new()), // No injection
-            1 => 0.8,                   // Mercury - only hottest memories (was distance <= 0.2)
-            2 => 0.6,                   // Venus/Earth - recent context (was <= 0.4)
-            3 => 0.4,                   // Mars - foundational significance (was <= 0.6)
-            4 => 0.2,                   // Jupiter/Saturn - distant connections (was <= 0.8)
-            5 => 0.0,                   // Neptune/Pluto - everything relevant (was <= 1.0)
-            _ => 0.4,                   // Default to Mars
+            1 => 0.8,                   // 5 entities, 1-hop
+            2 => 0.6,                   // 10 entities, 1-hop
+            3 => 0.4,                   // 20 entities, 2-hop
+            _ => 0.4,
         };
 
         // Try to get from in-memory first, fall back to DB if needed
@@ -1650,11 +1653,10 @@ impl SurrealMindServer {
                 .and_then(|s| s.parse::<usize>().ok())
                 .unwrap_or(500);
 
-            // Adjust limit based on injection scale to prevent timeouts
-            let scale_adjusted_limit = match injection_scale {
-                0..=2 => default_limit,          // Full limit for low scales
-                3..=4 => default_limit.min(200), // Reduce for medium scales
-                5 => default_limit.min(100),     // Minimal for maximum scale
+            // Adjust limit based on injection scale (clamped 0–3) to prevent timeouts
+            let scale_adjusted_limit = match clamped_scale {
+                0..=2 => default_limit,      // Full limit for low scales
+                3 => default_limit.min(200), // Reduce for highest scale
                 _ => default_limit.min(200),
             };
 
