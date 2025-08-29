@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2025-08-29
+
+### Added
+- **KG-Only Retrieval System** - Complete refactor to pull from Knowledge Graph instead of thoughts (Warp, Codex)
+  - New `retrieve_from_kg()` function with submode-specific traversal
+  - Injection scales reduced to 0-3 (removed 4-5) for better performance
+  - Scale limits: 0=none, 1=5 entities (default), 2=10 entities, 3=20 entities
+- **Config System** - Comprehensive TOML configuration (Zed)
+  - Created `surreal_mind.toml` with all submode profiles
+  - Added `src/config.rs` loader with `anyhow::Result`
+  - Migrated environment variables to config file
+- **Inner Voice Auto-Extract** - Automatic entity extraction for KG (Warp)
+  - Creates entities and "mentions" edges from inner_voice thoughts
+  - Simple keyword extraction with stopword filtering
+- **LRU Cache Infrastructure** - For entity embeddings (Codex)
+  - 100 entity cache with 5-minute TTL
+  - Ready for future optimization
+
+### Changed
+- **Embedding Dimensions** - Reduced from 1536 to 768 (CC)
+  - Fixed OpenAIEmbedder to send dimensions parameter to API
+  - 2x performance improvement for cosine similarity
+  - All new thoughts use 768-dimensional embeddings
+- **API Compatibility** - Maintained backward compatibility (Codex)
+  - KG results mapped to thought-like format
+  - External APIs unchanged
+- **Test Scripts** - Updated to seed KG instead of thoughts (Codex)
+
+### Fixed
+- **Scale 3+ Timeouts** - Resolved by switching to KG retrieval
+- **Async Move/Clone Patterns** - Fixed closure errors in entity creation (Warp)
+- **Clippy Warnings** - All warnings resolved (Junie)
+- **Merge Conflicts** - Successfully integrated parallel work from 3 LLMs (Junie)
+
 ## 2025-08-27 14:54 CDT
 
 ### Added
