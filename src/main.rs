@@ -238,6 +238,18 @@ struct ThoughtMatch {
     orbital_proximity: f32,
 }
 
+// KG-only retrieval memory item
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct KGMemory {
+    pub entity_id: String,
+    pub name: String,
+    pub entity_type: String,
+    pub similarity: f32,
+    pub proximity: f32,
+    pub score: f32,
+    pub neighbors: Vec<String>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct DateRangeParam {
     #[serde(default)]
@@ -929,6 +941,9 @@ impl SurrealMindServer {
                 DEFINE FIELD updated_at ON TABLE entities TYPE option<datetime>;
                 DEFINE FIELD last_seen_at ON TABLE entities TYPE option<datetime>;
                 DEFINE FIELD created_by_thought ON TABLE entities TYPE option<record<thoughts>>;
+                DEFINE FIELD mass ON TABLE entities TYPE float;
+                DEFINE FIELD access_count ON TABLE entities TYPE number;
+                DEFINE FIELD last_accessed ON TABLE entities TYPE option<datetime>;
 
                 DEFINE INDEX entity_hash_idx ON TABLE entities COLUMNS content_hash UNIQUE;
                 DEFINE INDEX entity_name_idx ON TABLE entities COLUMNS name;
@@ -1038,7 +1053,14 @@ impl SurrealMindServer {
         &self,
         params: ConvoThinkParams,
     ) -> Result<serde_json::Value, McpError> {
-        let injection_scale = params.injection_scale.unwrap_or(3); // Default Mars level
+        let mut injection_scale = params.injection_scale.unwrap_or(1); // Default Mercury (KG)
+        if injection_scale > 3 {
+            warn!(
+                "injection_scale > 3 requested ({}); clamping to 3",
+                injection_scale
+            );
+            injection_scale = 3;
+        }
         if injection_scale > 5 {
             return Err(McpError {
                 code: rmcp::model::ErrorCode::INVALID_PARAMS,
@@ -1085,22 +1107,32 @@ impl SurrealMindServer {
             });
         }
 
-        // Retrieve relevant memories based on injection scale
-        let relevant_memories = self
-            .retrieve_memories_for_injection(&embedding, injection_scale, params.submode.as_deref())
+        // KG-based retrieval
+        let kg_memories = self
+            .retrieve_from_kg(
+                &embedding,
+                injection_scale,
+                params.submode.as_deref().unwrap_or("sarcastic"),
+            )
             .await?;
-
+        let relevant_memories: Vec<ThoughtMatch> = Vec::new(); // legacy recalls disabled under KG-only
         debug!(
-            "Retrieved {} memories for injection at scale {}",
-            relevant_memories.len(),
+            "Retrieved {} KG entities for injection at scale {}",
+            kg_memories.len(),
             injection_scale
         );
 
         // Create framework analysis and enriched content
         let submode_raw = params.submode.as_deref().unwrap_or("sarcastic");
         let submode_norm = normalize_submode(submode_raw);
-        let (analysis, enriched_content) =
+        let (analysis, mut enriched_content) =
             self.cognitive_enrich(&submode_norm, &params.content, &relevant_memories);
+        if !kg_memories.is_empty() {
+            enriched_content.push_str(&format!(
+                "\n\n[Memory context: {} related entities accessed]",
+                kg_memories.len()
+            ));
+        }
 
         // Validate and default submode
         let submode_in = params
@@ -1140,10 +1172,7 @@ impl SurrealMindServer {
             content: params.content.clone(),
             created_at: surrealdb::sql::Datetime::from(Utc::now()),
             embedding,
-            injected_memories: relevant_memories
-                .iter()
-                .map(|m| m.thought.id.clone())
-                .collect(),
+            injected_memories: kg_memories.iter().map(|m| m.entity_id.clone()).collect(),
             enriched_content: Some(enriched_content.clone()),
             injection_scale,
             significance,
@@ -1199,8 +1228,8 @@ impl SurrealMindServer {
 
         debug!("Successfully stored thought: {}", thought.id);
 
-        // Create bidirectional relationships with injected memories (single round trip for all)
-        if !relevant_memories.is_empty() {
+        // Create bidirectional relationships with injected memories (legacy recalls disabled in KG-only mode)
+        if false {
             let mut q = String::new();
             q.reserve(relevant_memories.len() * 128);
             for (i, memory) in relevant_memories.iter().enumerate() {
@@ -1289,6 +1318,228 @@ impl SurrealMindServer {
                 }
             }
         }))
+    }
+
+    fn kg_scale_to_limits(scale: u8) -> (u8, usize, u64) {
+        // Returns (depth, top_k, timeout_ms)
+        let s = if scale == 0 {
+            0
+        } else if scale > 3 {
+            3
+        } else {
+            scale
+        };
+        let timeout_ms: u64 = std::env::var("SURR_KG_TIMEOUT_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(5000);
+        match s {
+            0 => (0, 0, timeout_ms),
+            1 => {
+                let lim = std::env::var("SURR_KG_SCALE_1_LIMIT")
+                    .ok()
+                    .and_then(|v| v.parse::<usize>().ok())
+                    .unwrap_or(5);
+                (1, lim, timeout_ms)
+            }
+            2 => {
+                let lim = std::env::var("SURR_KG_SCALE_2_LIMIT")
+                    .ok()
+                    .and_then(|v| v.parse::<usize>().ok())
+                    .unwrap_or(10);
+                (1, lim, timeout_ms)
+            }
+            3 => {
+                let lim = std::env::var("SURR_KG_SCALE_3_LIMIT")
+                    .ok()
+                    .and_then(|v| v.parse::<usize>().ok())
+                    .unwrap_or(20);
+                (2, lim, timeout_ms)
+            }
+            _ => (1, 5, timeout_ms),
+        }
+    }
+
+    async fn retrieve_from_kg(
+        &self,
+        query_embedding: &[f32],
+        injection_scale: u8,
+        _submode: &str,
+    ) -> Result<Vec<KGMemory>, McpError> {
+        // Clamp/normalize scale
+        let (depth, top_k, timeout_ms) = Self::kg_scale_to_limits(injection_scale);
+        if injection_scale > 3 {
+            warn!(
+                "Requested injection_scale={} >3; clamping to 3",
+                injection_scale
+            );
+        }
+        if top_k == 0 || depth == 0 {
+            return Ok(Vec::new());
+        }
+
+        // Candidate pool size: modest multiple of top_k
+        let candidates = (top_k * 10).min(200);
+        let q = format!(
+            "SELECT id, name, type, name_embedding, created_at, last_seen_at, last_accessed, access_count, mass FROM entities ORDER BY mention_count DESC LIMIT {}",
+            candidates
+        );
+
+        let fut = async {
+            let mut resp = self.db.query(q).await.map_err(|e| McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!("Failed to query entities: {}", e).into(),
+                data: None,
+            })?;
+            let rows: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
+            let now = Utc::now();
+            let mut scored: Vec<KGMemory> = Vec::new();
+            for r in rows.into_iter() {
+                let id =
+                    Self::kg_value_to_id_string(r.get("id").unwrap_or(&serde_json::Value::Null))
+                        .unwrap_or_default();
+                if id.is_empty() {
+                    continue;
+                }
+                let name = r
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let etype = r
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                // Parse embedding
+                let emb: Option<Vec<f32>> =
+                    r.get("name_embedding")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|x| x.as_f64().map(|f| f as f32))
+                                .collect::<Vec<f32>>()
+                        });
+                let similarity = if let Some(e) = emb.as_ref() {
+                    if e.len() == query_embedding.len() {
+                        self.cosine_similarity(query_embedding, e)
+                    } else {
+                        0.0
+                    }
+                } else {
+                    0.0
+                };
+
+                // Recency/access/significance
+                let created_at = r
+                    .get("created_at")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                    .map(|d| d.with_timezone(&Utc));
+                let last_seen = r
+                    .get("last_seen_at")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                    .map(|d| d.with_timezone(&Utc));
+                let last_accessed = r
+                    .get("last_accessed")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                    .map(|d| d.with_timezone(&Utc));
+                let ts = last_accessed.or(last_seen).or(created_at).unwrap_or(now);
+                let age_days = (now - ts).num_seconds() as f32 / 86_400.0;
+                let recency_factor = (1.0 - (age_days / 30.0)).clamp(0.0, 1.0);
+                let ac = r.get("access_count").and_then(|v| v.as_i64()).unwrap_or(0) as u32;
+                let access_factor = ((ac as f32).ln() / 10.0).clamp(0.0, 1.0);
+                let mass = r
+                    .get("mass")
+                    .and_then(|v| v.as_f64())
+                    .map(|f| f as f32)
+                    .unwrap_or(0.5)
+                    .clamp(0.0, 1.0);
+                let proximity = 0.4 * recency_factor + 0.3 * access_factor + 0.3 * mass;
+                let score = similarity * proximity;
+
+                if score > 0.0 {
+                    scored.push(KGMemory {
+                        entity_id: id,
+                        name,
+                        entity_type: etype,
+                        similarity,
+                        proximity,
+                        score,
+                        neighbors: Vec::new(),
+                    });
+                }
+            }
+
+            // Sort and take top_k
+            scored.sort_by(|a, b| b.score.total_cmp(&a.score));
+            scored.truncate(top_k);
+
+            // Batch update access_count and last_accessed
+            if !scored.is_empty() {
+                let mut q = String::new();
+                for i in 0..scored.len() {
+                    q.push_str(&format!("UPDATE type::thing('entities', $id{0}) SET access_count = (IF access_count = NONE THEN 0 ELSE access_count END) + 1, last_accessed = time::now() RETURN NONE;\n", i));
+                }
+                let mut req = self.db.query(q);
+                for (i, m) in scored.iter().enumerate() {
+                    // entity_id is a Thing; parse inner id
+                    if let Some((_, inner)) = Self::kg_parse_thing(&m.entity_id, "entities") {
+                        req = req.bind((format!("id{}", i), inner));
+                    }
+                }
+                let _ = req.await; // best-effort
+            }
+
+            // Fetch neighbors (1-hop). For depth>1, a second hop could be added later.
+            if depth > 0 && !scored.is_empty() {
+                let max_neighbors = 25usize;
+                for m in scored.iter_mut() {
+                    if let Some((_, inner)) = Self::kg_parse_thing(&m.entity_id, "entities") {
+                        let mut qn = String::new();
+                        qn.push_str("SELECT in AS nid FROM relationships WHERE out = type::thing('entities', $eid) LIMIT $lim;\n");
+                        qn.push_str("SELECT out AS nid FROM relationships WHERE in = type::thing('entities', $eid) LIMIT $lim;\n");
+                        let mut resp = self
+                            .db
+                            .query(qn)
+                            .bind(("eid", inner))
+                            .bind(("lim", max_neighbors))
+                            .await
+                            .map_err(|e| McpError {
+                                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                                message: format!("Failed to fetch neighbors: {}", e).into(),
+                                data: None,
+                            })?;
+                        let r1: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
+                        let r2: Vec<serde_json::Value> = resp.take(1).unwrap_or_default();
+                        for row in r1.into_iter().chain(r2.into_iter()) {
+                            if let Some(nid) = Self::kg_value_to_id_string(
+                                row.get("nid").unwrap_or(&serde_json::Value::Null),
+                            ) {
+                                if !nid.is_empty() && m.neighbors.len() < max_neighbors {
+                                    m.neighbors.push(nid);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Ok(scored)
+        };
+
+        match tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), fut).await {
+            Ok(res) => res,
+            Err(_) => {
+                warn!(
+                    "KG retrieval timed out after {}ms; returning partial results if any",
+                    timeout_ms
+                );
+                Ok(Vec::new())
+            }
+        }
     }
 
     async fn retrieve_memories_for_injection(
@@ -2500,7 +2751,14 @@ impl SurrealMindServer {
         &self,
         params: InnerVoiceParams,
     ) -> Result<serde_json::Value, McpError> {
-        let injection_scale = params.injection_scale.unwrap_or(2); // Default to MEDIUM for inner voice
+        let mut injection_scale = params.injection_scale.unwrap_or(1); // Default to MERCURY for inner voice
+        if injection_scale > 3 {
+            warn!(
+                "inner_voice injection_scale > 3 ({}); clamping to 3",
+                injection_scale
+            );
+            injection_scale = 3;
+        }
         if injection_scale > 5 {
             return Err(McpError {
                 code: rmcp::model::ErrorCode::INVALID_PARAMS,
@@ -2550,9 +2808,9 @@ impl SurrealMindServer {
             });
         }
 
-        // Retrieve memories for injection
-        let relevant_memories = self
-            .retrieve_memories_for_injection(&embedding, injection_scale, None) // No submode for inner voice
+        // Retrieve KG entities for injection (no submode)
+        let kg_memories = self
+            .retrieve_from_kg(&embedding, injection_scale, "sarcastic")
             .await
             .map_err(|e| McpError {
                 code: rmcp::model::ErrorCode::INTERNAL_ERROR,
@@ -2567,13 +2825,13 @@ impl SurrealMindServer {
             .unwrap_or_else(|| "context_only".to_string());
 
         // Basic framework analysis for inner voice (simpler than convo/tech)
-        let enriched_content = if relevant_memories.is_empty() {
+        let enriched_content = if kg_memories.is_empty() {
             params.content.clone()
         } else {
             format!(
-                "{}\n\n[Memory context: {} related thoughts accessed]",
+                "{}\n\n[Memory context: {} related entities accessed]",
                 params.content,
-                relevant_memories.len()
+                kg_memories.len()
             )
         };
 
@@ -2603,10 +2861,7 @@ impl SurrealMindServer {
             content: params.content.clone(),
             created_at: surrealdb::sql::Datetime::from(Utc::now()),
             embedding,
-            injected_memories: relevant_memories
-                .iter()
-                .map(|m| m.thought.id.clone())
-                .collect(),
+            injected_memories: kg_memories.iter().map(|m| m.entity_id.clone()).collect(),
             enriched_content: Some(enriched_content.clone()),
             injection_scale,
             significance,
@@ -2670,54 +2925,17 @@ impl SurrealMindServer {
             cache.put(thought.id.clone(), thought.clone());
         }
 
-        // Create relationships (same pattern as other thoughts)
-        if !relevant_memories.is_empty() {
-            let flavor = tag_flavor(&params.content);
-
-            let mut q = String::new();
-            q.reserve(relevant_memories.len() * 128);
-            for i in 0..relevant_memories.len() {
-                q.push_str(&format!("RELATE $from{0}->recalls->$to{0} SET strength = $strength{0}, created_at = time::now(), submode_match = $submode_match{0}, flavor = $flavor{0} RETURN NONE;\n", i));
-                q.push_str(&format!("RELATE $to{0}->recalls->$from{0} SET strength = $strength{0}, created_at = time::now(), submode_match = $submode_match{0}, flavor = $flavor{0} RETURN NONE;\n", i));
-            }
-            let mut req = self.db.query(q);
-            for (i, memory) in relevant_memories.iter().enumerate() {
-                req = req
-                    .bind((format!("from{}", i), format!("thoughts:{}", thought.id)))
-                    .bind((
-                        format!("to{}", i),
-                        format!("thoughts:{}", memory.thought.id),
-                    ))
-                    .bind((format!("strength{}", i), memory.similarity_score))
-                    .bind((format!("submode_match{}", i), false)) // Inner voice doesn't match submodes
-                    .bind((format!("flavor{}", i), flavor.as_str()));
-            }
-
-            let _ =
-                tokio::time::timeout(std::time::Duration::from_millis(db_timeout_ms()), async {
-                    req.await
-                })
-                .await
-                .map_err(|_| McpError {
-                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                    message: "Relationship creation timed out".into(),
-                    data: None,
-                })?
-                .map_err(|e| McpError {
-                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                    message: format!("Failed to create relationships: {}", e).into(),
-                    data: None,
-                })?;
-        }
-
         let verbose_analysis = params.verbose_analysis.unwrap_or(false); // Default to less verbose for inner voice
         let limited = Self::apply_verbosity_limits(&analysis, verbose_analysis);
+
+        // Auto-extract entities from inner voice content into KG
+        let _ = self.auto_extract_to_kg(&thought.id, &params.content).await;
 
         Ok(json!({
             "thought_id": thought.id,
             "inner_voice": true,
             "visibility": inner_visibility,
-            "memories_injected": relevant_memories.len(),
+            "memories_injected": kg_memories.len(),
             "analysis": {
                 "key_point": if !limited.insights.is_empty() {
                     Self::make_conversational(&limited.insights[0])
@@ -2915,6 +3133,19 @@ impl SurrealMindServer {
             .unwrap_or_default();
         let properties = data.get("properties").cloned().unwrap_or_else(|| json!({}));
 
+        // Compute optional name embedding (entity name only)
+        let name_embedding: Option<Vec<f32>> = if Self::kg_embed_entities_enabled() {
+            match self.embedder.embed(&name).await {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    warn!("Failed to embed entity name '{}': {}", name, e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         let name_norm = name.trim().to_lowercase();
         let type_norm = etype.trim().to_lowercase();
         let hash = Self::kg_sha256_hex(&[&name_norm, &type_norm]);
@@ -2981,6 +3212,7 @@ impl SurrealMindServer {
             let (tb, inner) =
                 Self::kg_parse_thing(&eid, "entities").unwrap_or(("entities".into(), eid.clone()));
             let (max_retries, initial_delay_ms) = get_retry_config();
+            let name_embedding_val = name_embedding.clone();
             let mut resp = with_retry("update_entity", max_retries, initial_delay_ms, || {
                 let name = name.clone();
                 let etype = etype.clone();
@@ -2990,6 +3222,7 @@ impl SurrealMindServer {
                 let hash = hash.clone();
                 let tb = tb.clone();
                 let inner = inner.clone();
+                let name_embedding_clone = name_embedding_val.clone();
                 async move {
                     self.db
                         .query(q)
@@ -3000,7 +3233,7 @@ impl SurrealMindServer {
                         .bind(("properties", properties))
                         .bind(("external_id", external_id))
                         .bind(("hash", hash))
-                        .bind(("name_embedding", serde_json::Value::Null))
+                        .bind(("name_embedding", name_embedding_clone))
                         .await
                 }
             })
@@ -3053,11 +3286,16 @@ impl SurrealMindServer {
                 properties = $properties,
                 external_id = $external_id,
                 content_hash = $hash,
+                name_embedding = $name_embedding,
+                mass = 0.5,
+                access_count = 0,
+                last_accessed = NONE,
                 created_at = time::now(),
                 mention_count = 0
             RETURN id;
         "#;
         let (max_retries, initial_delay_ms) = get_retry_config();
+        let name_embedding_val2 = name_embedding.clone();
         let mut resp = with_retry("create_entity", max_retries, initial_delay_ms, || {
             let name = name.clone();
             let etype = etype.clone();
@@ -3065,6 +3303,7 @@ impl SurrealMindServer {
             let properties = properties.clone();
             let external_id = external_id.clone();
             let hash = hash.clone();
+            let name_embedding_clone = name_embedding_val2.clone();
             async move {
                 self.db
                     .query(q)
@@ -3074,6 +3313,7 @@ impl SurrealMindServer {
                     .bind(("properties", properties))
                     .bind(("external_id", external_id))
                     .bind(("hash", hash))
+                    .bind(("name_embedding", name_embedding_clone))
                     .await
             }
         })
@@ -4000,6 +4240,87 @@ impl SurrealMindServer {
         Ok(thought)
     }
 
+    // Auto-extract entities from content and write to KG with mentions
+    async fn auto_extract_to_kg(&self, thought_id: &str, content: &str) -> Result<(), McpError> {
+        // Basic stopwords
+        const STOP: &[&str] = &[
+            "the", "a", "an", "and", "or", "is", "are", "was", "were", "to", "of", "in", "on",
+            "for", "with", "as", "by", "at", "from", "that", "this", "it", "be", "have", "has",
+            "had",
+        ];
+        let stop: std::collections::HashSet<&str> = STOP.iter().cloned().collect();
+        let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut total_chars = 0usize;
+        for token in content.split(|c: char| !c.is_alphanumeric() && c != '_') {
+            let t = token.trim();
+            if t.len() < 2 {
+                continue;
+            }
+            total_chars += t.len();
+            let lower = t.to_lowercase();
+            if stop.contains(lower.as_str()) {
+                continue;
+            }
+            // Heuristic filters
+            if lower.chars().all(|c| c.is_numeric()) {
+                continue;
+            }
+            *counts.entry(t.to_string()).or_insert(0) += 1;
+        }
+        if counts.is_empty() {
+            return Ok(());
+        }
+
+        // Simple entity type classifier
+        let classify = |s: &str| -> &str {
+            if s.contains('_') {
+                "tool"
+            } else if s.chars().any(|c| c.is_uppercase()) {
+                "project"
+            } else {
+                "concept"
+            }
+        };
+
+        for (name, freq) in counts.into_iter() {
+            let etype = classify(&name).to_string();
+            let weight = if total_chars == 0 {
+                0.0
+            } else {
+                (freq as f32) / (total_chars as f32)
+            };
+            let mut data = serde_json::Map::new();
+            data.insert("name".into(), json!(name));
+            data.insert("type".into(), json!(etype));
+            data.insert("properties".into(), json!({"auto": true}));
+            // Upsert entity and create provenance mention
+            let _ = self
+                .upsert_entity_from_map(&data, true, Some(thought_id))
+                .await?;
+            // Also store mention edge with confidence ~ frequency ratio
+            if let Some((_, tid_inner)) = Self::kg_parse_thing(thought_id, "thoughts") {
+                let conf = (weight * 5.0).clamp(0.05, 0.9);
+                // Create mention to entity by name/type match
+                // Resolve entity id by content_hash
+                let name_norm = name.trim().to_lowercase();
+                let type_norm = etype.trim().to_lowercase();
+                let hash = Self::kg_sha256_hex(&[&name_norm, &type_norm]);
+                let q = r#"
+                    LET $eid = (SELECT id FROM entities WHERE content_hash = $hash LIMIT 1)[0].id;
+                    IF $eid != NONE THEN CREATE mentions SET in = type::thing('thoughts', $tid), out = $eid, confidence = $conf RETURN NONE END;
+                "#;
+                let _ = self
+                    .db
+                    .query(q)
+                    .bind(("hash", hash))
+                    .bind(("tid", tid_inner))
+                    .bind(("conf", conf))
+                    .await;
+            }
+        }
+        Ok(())
+    }
+
     fn cosine_similarity(&self, a: &[f32], b: &[f32]) -> f32 {
         // Enforce equal dimensions to avoid silent truncation skew
         if a.len() != b.len() {
@@ -4731,5 +5052,23 @@ mod tests {
                 panic!("Should have failed for input: {:?}", input);
             }
         }
+    }
+    #[test]
+    fn test_kg_retrieval() {
+        // Validate scale mapping without requiring DB
+        let (d0, k0, _t0) = super::SurrealMindServer::kg_scale_to_limits(0);
+        assert_eq!(d0, 0);
+        assert_eq!(k0, 0);
+        let (d1, k1, _t1) = super::SurrealMindServer::kg_scale_to_limits(1);
+        assert_eq!(d1, 1);
+        assert!(k1 >= 1);
+        let (d2, k2, _t2) = super::SurrealMindServer::kg_scale_to_limits(2);
+        assert_eq!(d2, 1);
+        assert!(k2 >= 1);
+        let (d3, k3, _t3) = super::SurrealMindServer::kg_scale_to_limits(3);
+        assert_eq!(d3, 2);
+        assert!(k3 >= 1);
+        let (d4, _k4, _t4) = super::SurrealMindServer::kg_scale_to_limits(99);
+        assert!(d4 <= 2);
     }
 }
