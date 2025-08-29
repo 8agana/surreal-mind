@@ -30,6 +30,7 @@ reqwest = { version = "0.12", features = ["json"] }
 async-trait = "0.1"
 dotenvy = "0.15"
 sha2 = "0.10"
+thiserror = "1.0"
 
 # Bounded in-memory cache
 lru = "0.12"

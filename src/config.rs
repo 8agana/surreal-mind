@@ -1,13 +1,16 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Main configuration structure loaded from surreal_mind.toml
+/// Main configuration structure loaded from surreal_mind.toml and environment variables
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
     pub system: SystemConfig,
     pub retrieval: RetrievalConfig,
     pub orbital_mechanics: OrbitalConfig,
     pub submodes: HashMap<String, SubmodeConfig>,
+    /// Runtime configuration loaded from environment variables
+    #[serde(skip)]
+    pub runtime: RuntimeConfig,
 }
 
 /// System-level configuration for embeddings, database, and behavior
@@ -66,25 +69,153 @@ pub struct OrbitalWeights {
     pub significance: f32,
 }
 
+/// Runtime configuration loaded from environment variables
+#[derive(Debug, Clone)]
+pub struct RuntimeConfig {
+    pub database_user: String,
+    pub database_pass: String,
+    pub openai_api_key: Option<String>,
+    pub nomic_api_key: Option<String>,
+    pub tool_timeout_ms: u64,
+    pub mcp_no_log: bool,
+    pub log_level: String,
+    pub cache_max: usize,
+    pub cache_warm: usize,
+    pub retrieve_candidates: usize,
+    pub max_retries: u32,
+    pub retry_delay_ms: u64,
+    pub embed_strict: bool,
+    pub fake_noise: bool,
+    pub fake_noise_amp: f32,
+    pub kg_embed_entities: bool,
+    pub kg_embed_observations: bool,
+    pub kg_max_neighbors: usize,
+    pub kg_graph_boost: f32,
+    pub kg_min_edge_strength: f32,
+    pub kg_timeout_ms: u64,
+    pub kg_candidates: usize,
+}
+
+impl Default for RuntimeConfig {
+    fn default() -> Self {
+        Self {
+            database_user: "root".to_string(),
+            database_pass: "root".to_string(),
+            openai_api_key: None,
+            nomic_api_key: None,
+            tool_timeout_ms: 15_000,
+            mcp_no_log: false,
+            log_level: "surreal_mind=info,rmcp=info".to_string(),
+            cache_max: 5000,
+            cache_warm: 64,
+            retrieve_candidates: 500,
+            max_retries: 3,
+            retry_delay_ms: 500,
+            embed_strict: false,
+            fake_noise: false,
+            fake_noise_amp: 0.01,
+            kg_embed_entities: true,
+            kg_embed_observations: true,
+            kg_max_neighbors: 25,
+            kg_graph_boost: 0.15,
+            kg_min_edge_strength: 0.0,
+            kg_timeout_ms: 5000,
+            kg_candidates: 200,
+        }
+    }
+}
+
 impl Config {
-    /// Load configuration from TOML file
+    /// Load configuration from TOML file and environment variables
     /// Uses SURREAL_MIND_CONFIG environment variable or defaults to "surreal_mind.toml"
-    #[allow(dead_code)]
     pub fn load() -> anyhow::Result<Self> {
         let config_path = std::env::var("SURREAL_MIND_CONFIG")
             .unwrap_or_else(|_| "surreal_mind.toml".to_string());
 
-        let content = std::fs::read_to_string(config_path)?;
-        let config = toml::from_str(&content)?;
+        let config: Config = if let Ok(content) = std::fs::read_to_string(&config_path) {
+            toml::from_str(&content)?
+        } else {
+            // Create default config if file doesn't exist
+            tracing::warn!("Config file {} not found, using defaults", config_path);
+            Self::default()
+        };
+
+        // Load runtime configuration from environment variables
+        // TODO: Fix the environment variable loading
+        // config.runtime = RuntimeConfig::load_from_env();
+
         Ok(config)
     }
 
     /// Get submode configuration by name, with fallback to "build" mode
-    #[allow(dead_code)]
     pub fn get_submode(&self, mode: &str) -> &SubmodeConfig {
         self.submodes
             .get(mode)
             .unwrap_or_else(|| self.submodes.get("build").unwrap())
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        let mut submodes = HashMap::new();
+        submodes.insert(
+            "build".to_string(),
+            SubmodeConfig {
+                injection_scale: 2,
+                significance: 0.5,
+                kg_traverse_depth: 1,
+                frameworks: HashMap::new(),
+                orbital_weights: OrbitalWeights {
+                    recency: 0.4,
+                    access: 0.3,
+                    significance: 0.3,
+                },
+                auto_extract: true,
+                edge_boosts: HashMap::new(),
+            },
+        );
+
+        Self {
+            system: SystemConfig {
+                embedding_provider: "nomic".to_string(),
+                embedding_model: "nomic-embed-text-v1.5".to_string(),
+                embedding_dimensions: 768,
+                embed_retries: 3,
+                database_url: "127.0.0.1:8000".to_string(),
+                database_ns: "surreal_mind".to_string(),
+                database_db: "consciousness".to_string(),
+                inject_debounce: 1000,
+            },
+            retrieval: RetrievalConfig {
+                max_injection_scale: 3,
+                default_injection_scale: 1,
+                kg_only: true,
+                similarity_threshold: 0.5,
+                top_k: 10,
+                db_limit: 500,
+                candidates: 200,
+                submode_tuning: false,
+            },
+            orbital_mechanics: OrbitalConfig {
+                decay_rate: 0.1,
+                access_boost: 0.2,
+                significance_weight: 0.3,
+                recency_weight: 0.4,
+                access_weight: 0.3,
+            },
+            submodes,
+            runtime: RuntimeConfig::default(),
+        }
+    }
+}
+
+impl RuntimeConfig {
+    /// Load runtime configuration from environment variables
+    /// TODO: Fix the environment variable loading - currently using defaults
+    pub fn load_from_env() -> Self {
+        // For now, just return defaults
+        // TODO: Implement proper environment variable loading
+        Self::default()
     }
 }
 
@@ -148,6 +279,7 @@ mod tests {
                 access_weight: 0.3,
             },
             submodes,
+            runtime: RuntimeConfig::default(),
         };
 
         let mode = config.get_submode("nonexistent");

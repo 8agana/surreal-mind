@@ -1,5 +1,10 @@
+pub mod config;
+pub mod deserializers;
 pub mod embeddings;
+pub mod error;
 pub mod serializers;
+pub mod server;
+pub mod tools;
 
 use anyhow::Result;
 use reqwest::Client;
@@ -23,33 +28,7 @@ pub fn load_env() {
     let _ = dotenvy::dotenv();
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct Thought {
-    #[serde(
-        serialize_with = "crate::serializers::serialize_as_string",
-        deserialize_with = "crate::serializers::deserialize_thing_or_string"
-    )]
-    id: String,
-    content: String,
-    created_at: surrealdb::sql::Datetime,
-    embedding: Vec<f32>,
-    injected_memories: Vec<String>,
-    enriched_content: Option<String>,
-    injection_scale: u8,
-    significance: f32,
-    access_count: u32,
-    last_accessed: Option<surrealdb::sql::Datetime>,
-    #[serde(default)]
-    submode: Option<String>,
-    #[serde(default)]
-    framework_enhanced: Option<bool>,
-    #[serde(default)]
-    framework_analysis: Option<serde_json::Value>,
-    #[serde(default)]
-    is_inner_voice: Option<bool>,
-    #[serde(default)]
-    inner_visibility: Option<String>,
-}
+// Types are defined in their respective modules
 
 pub async fn run_reembed(
     batch_size: usize,
