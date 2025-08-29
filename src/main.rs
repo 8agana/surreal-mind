@@ -27,6 +27,8 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+mod config;
+
 fn db_timeout_ms() -> u64 {
     std::env::var("SURR_DB_TIMEOUT_MS")
         .ok()
@@ -399,7 +401,7 @@ impl ServerHandler for SurrealMindServer {
             "type": "object",
             "properties": {
                 "content": {"type": "string", "description": "The thought content to store"},
-                "injection_scale": {"type": ["integer", "string"], "description": "Memory injection scale. Presets: NONE (0), LIGHT (1), MEDIUM (2), DEFAULT (3), HIGH (4), MAXIMUM (5). Or numeric 0-5"},
+                "injection_scale": {"type": ["integer", "string"], "description": "Memory injection scale (0–3). Presets: NONE (0), LIGHT (1), MEDIUM (2), DEFAULT (3)."},
                 "submode": {"type": "string", "description": "Conversation submode", "enum": ["sarcastic", "philosophical", "empathetic", "problem_solving"]},
                 "tags": {"type": "array", "items": {"type": "string"}, "description": "Additional tags"},
                 "significance": {"type": ["number", "string"], "description": "Significance weight. Strings: 'low' (0.2), 'medium' (0.5), 'high' (0.9). Numbers: 0.0-1.0 or integers 2-10 (mapped to 0.2-1.0)"},
@@ -412,7 +414,7 @@ impl ServerHandler for SurrealMindServer {
             "type": "object",
             "properties": {
                 "content": {"type": "string", "description": "Technical input (requirements, code, error, etc.)"},
-                "injection_scale": {"type": ["integer", "string"], "description": "Memory injection scale. Presets: NONE (0), LIGHT (1), MEDIUM (2), DEFAULT (3), HIGH (4), MAXIMUM (5). Or numeric 0-5"},
+                "injection_scale": {"type": ["integer", "string"], "description": "Memory injection scale (0–3). Presets: NONE (0), LIGHT (1), MEDIUM (2), DEFAULT (3)."},
                 "submode": {"type": "string", "description": "Technical mode", "enum": ["plan", "build", "debug"]},
                 "tags": {"type": "array", "items": {"type": "string"}, "description": "Additional tags"},
                 "significance": {"type": ["number", "string"], "description": "Significance weight. Strings: 'low' (0.2), 'medium' (0.5), 'high' (0.9). Numbers: 0.0-1.0 or integers 2-10 (mapped to 0.2-1.0)"},
@@ -425,7 +427,7 @@ impl ServerHandler for SurrealMindServer {
             "type": "object",
             "properties": {
                 "content": {"type": "string", "description": "Private inner thought content"},
-                "injection_scale": {"type": ["integer", "string"], "description": "Memory injection scale. Presets: NONE (0), LIGHT (1), MEDIUM (2), DEFAULT (3), HIGH (4), MAXIMUM (5). Or numeric 0-5"},
+                "injection_scale": {"type": ["integer", "string"], "description": "Memory injection scale (0–3). Presets: NONE (0), LIGHT (1), MEDIUM (2), DEFAULT (3)."},
                 "tags": {"type": "array", "items": {"type": "string"}, "description": "Additional tags"},
                 "significance": {"type": ["number", "string"], "description": "Significance weight. Strings: 'low' (0.2), 'medium' (0.5), 'high' (0.9). Numbers: 0.0-1.0 or integers 2-10 (mapped to 0.2-1.0)"},
                 "verbose_analysis": {"type": "boolean", "description": "Enable verbose framework analysis (default: true)", "default": true},
@@ -1061,12 +1063,12 @@ impl SurrealMindServer {
             );
             injection_scale = 3;
         }
-        if injection_scale > 5 {
+        if injection_scale > 3 {
             return Err(McpError {
                 code: rmcp::model::ErrorCode::INVALID_PARAMS,
                 message: format!(
-                    "injection_scale must be between 0 and 5 (got: {}). Valid presets: 0=NONE, 1=MERCURY (hot memories), 2=VENUS (recent), 3=MARS (default), 4=JUPITER (distant), 5=PLUTO (everything). Example: {{\"injection_scale\": 3}}"
-                    , injection_scale
+                    "injection_scale must be between 0 and 3 (got: {}). Example: {{\"injection_scale\": 3}}",
+                    injection_scale
                 ).into(),
                 data: None,
             });
@@ -1298,7 +1300,7 @@ impl SurrealMindServer {
         Ok(json!({
             "thought_id": thought.id,
             "submode_used": submode,
-            "memories_injected": relevant_memories.len(),
+            "memories_injected": kg_memories.len(),
             "analysis": {
                 "key_point": if !limited_analysis.insights.is_empty() {
                     // Take first insight and make it human-readable
@@ -1378,8 +1380,11 @@ impl SurrealMindServer {
             return Ok(Vec::new());
         }
 
-        // Candidate pool size: modest multiple of top_k
-        let candidates = (top_k * 10).min(200);
+        // Candidate pool size: modest multiple of top_k, overridable via SURR_KG_CANDIDATES
+        let candidates_env = std::env::var("SURR_KG_CANDIDATES")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok());
+        let candidates = candidates_env.unwrap_or(top_k * 10).min(200);
         let q = format!(
             "SELECT id, name, type, name_embedding, created_at, last_seen_at, last_accessed, access_count, mass FROM entities ORDER BY mention_count DESC LIMIT {}",
             candidates
@@ -1493,34 +1498,83 @@ impl SurrealMindServer {
                 let _ = req.await; // best-effort
             }
 
-            // Fetch neighbors (1-hop). For depth>1, a second hop could be added later.
+            // Fetch neighbors (1-hop) in a batched way to avoid O(k) roundtrips.
             if depth > 0 && !scored.is_empty() {
                 let max_neighbors = 25usize;
-                for m in scored.iter_mut() {
+                // Collect inner entity ids and an index map
+                let mut inner_ids: Vec<String> = Vec::new();
+                let mut index_map: std::collections::HashMap<String, usize> =
+                    std::collections::HashMap::new();
+                for (i, m) in scored.iter().enumerate() {
                     if let Some((_, inner)) = Self::kg_parse_thing(&m.entity_id, "entities") {
-                        let mut qn = String::new();
-                        qn.push_str("SELECT in AS nid FROM relationships WHERE out = type::thing('entities', $eid) LIMIT $lim;\n");
-                        qn.push_str("SELECT out AS nid FROM relationships WHERE in = type::thing('entities', $eid) LIMIT $lim;\n");
-                        let mut resp = self
-                            .db
-                            .query(qn)
-                            .bind(("eid", inner))
-                            .bind(("lim", max_neighbors))
-                            .await
-                            .map_err(|e| McpError {
-                                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                                message: format!("Failed to fetch neighbors: {}", e).into(),
-                                data: None,
-                            })?;
-                        let r1: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
-                        let r2: Vec<serde_json::Value> = resp.take(1).unwrap_or_default();
-                        for row in r1.into_iter().chain(r2.into_iter()) {
-                            if let Some(nid) = Self::kg_value_to_id_string(
-                                row.get("nid").unwrap_or(&serde_json::Value::Null),
-                            ) && !nid.is_empty()
-                                && m.neighbors.len() < max_neighbors
-                            {
-                                m.neighbors.push(nid);
+                        index_map.insert(inner.clone(), i);
+                        inner_ids.push(inner);
+                    }
+                }
+                if !inner_ids.is_empty() {
+                    // Build a single query with two SELECTs using IN over all ids
+                    let mut qn = String::new();
+                    // Construct array of Things via bound variables $e0..$eN
+                    qn.push_str("LET $eids = [");
+                    for i in 0..inner_ids.len() {
+                        if i > 0 {
+                            qn.push_str(", ");
+                        }
+                        qn.push_str(&format!("type::thing('entities', $e{})", i));
+                    }
+                    qn.push_str("];\n");
+                    qn.push_str(
+                        "SELECT out AS src, in AS nid FROM relationships WHERE out IN $eids;\n",
+                    );
+                    qn.push_str(
+                        "SELECT in AS src, out AS nid FROM relationships WHERE in IN $eids;\n",
+                    );
+
+                    let mut req = self.db.query(qn);
+                    for (i, id) in inner_ids.iter().enumerate() {
+                        req = req.bind((format!("e{}", i), id.clone()));
+                    }
+                    let mut resp = req.await.map_err(|e| McpError {
+                        code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                        message: format!("Failed to fetch neighbors (batched): {}", e).into(),
+                        data: None,
+                    })?;
+                    let r1: Vec<serde_json::Value> = resp.take(0).unwrap_or_default();
+                    let r2: Vec<serde_json::Value> = resp.take(1).unwrap_or_default();
+
+                    // Helper to process one result set
+                    let mut push_neighbor = |row: &serde_json::Value| {
+                        // src/nid may be Surreal Things; normalize to strings
+                        let src_id_opt = Self::kg_value_to_id_string(
+                            row.get("src").unwrap_or(&serde_json::Value::Null),
+                        );
+                        let nid_opt = Self::kg_value_to_id_string(
+                            row.get("nid").unwrap_or(&serde_json::Value::Null),
+                        );
+                        if let (Some(src_id), Some(nid)) = (src_id_opt, nid_opt)
+                            && let Some((_, inner)) = Self::kg_parse_thing(&src_id, "entities")
+                            && let Some(idx) = index_map.get(&inner)
+                            && !nid.is_empty()
+                            && scored[*idx].neighbors.len() < max_neighbors
+                        {
+                            scored[*idx].neighbors.push(nid);
+                        }
+                    };
+
+                    for row in r1.iter() {
+                        push_neighbor(row);
+                    }
+                    for row in r2.iter() {
+                        push_neighbor(row);
+                    }
+
+                    // Dedupe neighbors per entity
+                    for m in scored.iter_mut() {
+                        if !m.neighbors.is_empty() {
+                            m.neighbors.sort();
+                            m.neighbors.dedup();
+                            if m.neighbors.len() > max_neighbors {
+                                m.neighbors.truncate(max_neighbors);
                             }
                         }
                     }
@@ -1534,7 +1588,7 @@ impl SurrealMindServer {
             Ok(res) => res,
             Err(_) => {
                 warn!(
-                    "KG retrieval timed out after {}ms; returning partial results if any",
+                    "KG retrieval timed out after {}ms; returning empty set (tune SURR_KG_TIMEOUT_MS)",
                     timeout_ms
                 );
                 Ok(Vec::new())
@@ -2530,13 +2584,13 @@ impl SurrealMindServer {
         let injection_scale = params.injection_scale.unwrap_or(match submode.as_str() {
             "plan" => 3,
             "build" => 2,
-            "debug" => 4,
+            "debug" => 3,
             _ => 3,
         });
-        if injection_scale > 5 {
+        if injection_scale > 3 {
             return Err(McpError {
                 code: rmcp::model::ErrorCode::INVALID_PARAMS,
-                message: "injection_scale must be between 0 and 5".into(),
+                message: "injection_scale must be between 0 and 3".into(),
                 data: None,
             });
         }
@@ -2753,7 +2807,7 @@ impl SurrealMindServer {
         &self,
         params: InnerVoiceParams,
     ) -> Result<serde_json::Value, McpError> {
-        let mut injection_scale = params.injection_scale.unwrap_or(1); // Default to MERCURY for inner voice
+        let mut injection_scale = params.injection_scale.unwrap_or(1); // Default to 1 for inner voice
         if injection_scale > 3 {
             warn!(
                 "inner_voice injection_scale > 3 ({}); clamping to 3",
@@ -2761,12 +2815,12 @@ impl SurrealMindServer {
             );
             injection_scale = 3;
         }
-        if injection_scale > 5 {
+        if injection_scale > 3 {
             return Err(McpError {
                 code: rmcp::model::ErrorCode::INVALID_PARAMS,
                 message: format!(
-                    "injection_scale must be between 0 and 5 (got: {}). Valid presets: 0=NONE, 1=MERCURY (hot memories), 2=VENUS (recent), 3=MARS (default), 4=JUPITER (distant), 5=PLUTO (everything). Example: {{\"injection_scale\": 2}}"
-                    , injection_scale
+                    "injection_scale must be between 0 and 3 (got: {}). Example: {{\"injection_scale\": 2}}",
+                    injection_scale
                 ).into(),
                 data: None,
             });
@@ -2966,7 +3020,7 @@ impl SurrealMindServer {
             "best_for": ["Conversations", "Ideation", "Reflective thinking"],
             "parameters": {
                 "content": "string (required)",
-                "injection_scale": "0-5 or presets: NONE/LIGHT/MEDIUM/DEFAULT/HIGH/MAXIMUM",
+                "injection_scale": "0-3 or presets: NONE/LIGHT/MEDIUM/DEFAULT",
                 "submode": "sarcastic|philosophical|empathetic|problem_solving",
                 "significance": "0.0-1.0, or 2-10 (maps 0.2-1.0, 1 rejected), or 'low'|'medium'|'high'",
                 "verbose_analysis": "boolean (default true)",
@@ -2983,7 +3037,7 @@ impl SurrealMindServer {
             "best_for": ["Planning", "Building", "Debugging"],
             "parameters": {
                 "content": "string (required)",
-                "injection_scale": "0-5 or presets: NONE/LIGHT/MEDIUM/DEFAULT/HIGH/MAXIMUM",
+                "injection_scale": "0-3 or presets: NONE/LIGHT/MEDIUM/DEFAULT",
                 "submode": "plan|build|debug",
                 "significance": "0.0-1.0, or 2-10 (maps 0.2-1.0, 1 rejected), or 'low'|'medium'|'high'",
                 "verbose_analysis": "boolean (default true)",
@@ -2991,7 +3045,7 @@ impl SurrealMindServer {
             },
             "examples": [
                 json!({"content":"design module A","submode":"plan","injection_scale":"DEFAULT"}),
-                json!({"content":"fix panic in parser","submode":"debug","injection_scale":"HIGH","significance":10})
+                json!({"content":"fix panic in parser","submode":"debug","injection_scale":3,"significance":10})
             ]
         });
         match tool {

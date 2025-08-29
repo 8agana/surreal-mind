@@ -69,6 +69,7 @@ pub struct OrbitalWeights {
 impl Config {
     /// Load configuration from TOML file
     /// Uses SURREAL_MIND_CONFIG environment variable or defaults to "surreal_mind.toml"
+    #[allow(dead_code)]
     pub fn load() -> anyhow::Result<Self> {
         let config_path = std::env::var("SURREAL_MIND_CONFIG")
             .unwrap_or_else(|_| "surreal_mind.toml".to_string());
@@ -79,6 +80,7 @@ impl Config {
     }
 
     /// Get submode configuration by name, with fallback to "build" mode
+    #[allow(dead_code)]
     pub fn get_submode(&self, mode: &str) -> &SubmodeConfig {
         self.submodes
             .get(mode)
