@@ -40,10 +40,10 @@ where
                     Ok(id_str.to_string())
                 } else if let Some(id_obj) = id.as_object() {
                     // Handle nested id object
-                    if let Some(inner_id) = id_obj.get("String")
-                        && let Some(s) = inner_id.as_str()
-                    {
-                        return Ok(s.to_string());
+                    if let Some(inner_id) = id_obj.get("String") {
+                        if let Some(s) = inner_id.as_str() {
+                            return Ok(s.to_string());
+                        }
                     }
                     Ok(format!(
                         "thoughts:{}",
