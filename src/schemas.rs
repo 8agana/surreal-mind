@@ -54,13 +54,13 @@ pub fn search_thoughts_schema() -> Arc<Map<String, Value>> {
         "type": "object",
         "properties": {
             "content": {"type": "string"},
-            "top_k": {"type": "integer", "minimum": 1, "maximum": 50},
-            "offset": {"type": "integer", "minimum": 0},
+            "top_k": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 50},
+            "offset": {"type": ["integer", "number", "string"], "minimum": 0},
             "sim_thresh": {"type": "number", "minimum": 0.0, "maximum": 1.0},
             "submode": {"type": "string"},
             "min_significance": {"type": "number", "minimum": 0.0, "maximum": 1.0},
             "expand_graph": {"type": "boolean"},
-            "graph_depth": {"type": "integer", "minimum": 0, "maximum": 3},
+            "graph_depth": {"type": ["integer", "number", "string"], "minimum": 0, "maximum": 3},
             "graph_boost": {"type": "number"},
             "min_edge_strength": {"type": "number"},
             "sort_by": {"type": "string", "enum": ["score", "similarity", "recency", "significance"], "default": "score"}
@@ -91,7 +91,7 @@ pub fn kg_search_schema() -> Arc<Map<String, Value>> {
         "properties": {
             "query": {"type": "object"},
             "target": {"type": "string", "enum": ["entity", "relationship", "observation", "mixed"], "default": "mixed"},
-            "top_k": {"type": "integer", "minimum": 1, "maximum": 50}
+            "top_k": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 50}
         }
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))

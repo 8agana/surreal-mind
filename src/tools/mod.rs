@@ -5,3 +5,4 @@ pub mod inner_voice;
 pub mod knowledge_graph;
 pub mod search_thoughts;
 pub mod tech_think;
+pub mod detailed_help;
