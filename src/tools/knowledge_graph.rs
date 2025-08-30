@@ -31,7 +31,7 @@ impl SurrealMindServer {
                     .to_string();
                 let created_raw: Vec<surrealdb::sql::Value> = self
                     .db
-                    .query("CREATE kg_entities SET created_at = time::now(), name = $name, data = $data RETURN AFTER;")
+                    .query("CREATE kg_entities SET created_at = time::now(), name = $name, data = $data RETURN meta::id(id) as id, name, data, created_at;")
                     .bind(("name", name_s.clone()))
                     .bind(("data", data.clone()))
                     .await?
@@ -65,7 +65,7 @@ impl SurrealMindServer {
                     .to_string();
                 let created_raw: Vec<surrealdb::sql::Value> = self
                     .db
-                    .query("CREATE kg_edges SET created_at = time::now(), source = $src, target = $dst, rel_type = $kind, data = $data RETURN AFTER;")
+                    .query("CREATE kg_edges SET created_at = time::now(), source = $src, target = $dst, rel_type = $kind, data = $data RETURN meta::id(id) as id, source, target, rel_type, data, created_at;")
                     .bind(("src", src_s))
                     .bind(("dst", dst_s))
                     .bind(("kind", rel_kind_s))
@@ -125,12 +125,12 @@ impl SurrealMindServer {
         if target_s == "entity" || target_s == "mixed" {
             let sql = if name_like_s.is_empty() {
                 format!(
-                    "SELECT id, name, data, created_at FROM kg_entities LIMIT {}",
+                    "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities LIMIT {}",
                     top_k
                 )
             } else {
                 format!(
-                    "SELECT id, name, data, created_at FROM kg_entities WHERE string::lower(name) CONTAINS string::lower($name) LIMIT {}",
+                    "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities WHERE string::lower(name) CONTAINS string::lower($name) LIMIT {}",
                     top_k
                 )
             };
@@ -147,7 +147,7 @@ impl SurrealMindServer {
         }
         if target_s == "relationship" || target_s == "mixed" {
             let sql = format!(
-                "SELECT id, source, target, rel_type, data, created_at FROM kg_edges LIMIT {}",
+                "SELECT meta::id(id) as id, source, target, rel_type, data, created_at FROM kg_edges LIMIT {}",
                 top_k
             );
             let rows_raw: Vec<surrealdb::sql::Value> = self.db.query(sql).await?.take(0)?;
