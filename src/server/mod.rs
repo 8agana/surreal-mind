@@ -366,7 +366,6 @@ impl SurrealMindServer {
         // Minimal schema to ensure required tables exist
         let schema_sql = r#"
             DEFINE TABLE thoughts SCHEMAFULL;
-            DEFINE FIELD id ON TABLE thoughts TYPE string;
             DEFINE FIELD content ON TABLE thoughts TYPE string;
             DEFINE FIELD created_at ON TABLE thoughts TYPE datetime;
             DEFINE FIELD embedding ON TABLE thoughts TYPE array<float>;

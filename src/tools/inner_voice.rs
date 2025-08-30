@@ -59,10 +59,10 @@ impl SurrealMindServer {
             .inner_visibility
             .unwrap_or_else(|| "context_only".to_string());
 
-        // Insert into SurrealDB
-        let created_raw: Vec<surrealdb::sql::Value> = self
+        // Insert into SurrealDB and return plain string id
+        let created_raw: Vec<serde_json::Value> = self
             .db
-            .query("CREATE thoughts SET content = $content, created_at = time::now(), embedding = $embedding, injected_memories = [], enriched_content = NONE, injection_scale = $injection_scale, significance = $significance, access_count = 0, last_accessed = NONE, submode = NONE, framework_enhanced = NONE, framework_analysis = NONE, is_inner_voice = true, inner_visibility = $inner_visibility RETURN AFTER;")
+            .query("CREATE thoughts SET content = $content, created_at = time::now(), embedding = $embedding, injected_memories = [], enriched_content = NONE, injection_scale = $injection_scale, significance = $significance, access_count = 0, last_accessed = NONE, submode = NONE, framework_enhanced = NONE, framework_analysis = NONE, is_inner_voice = true, inner_visibility = $inner_visibility RETURN meta::id(id) as id;")
             .bind(("content", params.content.clone()))
             .bind(("embedding", embedding.clone()))
             .bind(("injection_scale", injection_scale))
@@ -71,12 +71,7 @@ impl SurrealMindServer {
             .await?
             .take(0)?;
 
-        let created: Vec<serde_json::Value> = created_raw
-            .into_iter()
-            .map(|v| serde_json::to_value(v).unwrap_or(serde_json::Value::Null))
-            .collect();
-
-        let thought_id = created
+        let thought_id = created_raw
             .first()
             .and_then(|v| v.get("id"))
             .and_then(|v| v.as_str())

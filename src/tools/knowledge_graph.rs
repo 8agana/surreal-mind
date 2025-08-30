@@ -29,18 +29,14 @@ impl SurrealMindServer {
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                let created_raw: Vec<surrealdb::sql::Value> = self
+                let created_raw: Vec<serde_json::Value> = self
                     .db
                     .query("CREATE kg_entities SET created_at = time::now(), name = $name, data = $data RETURN meta::id(id) as id, name, data, created_at;")
                     .bind(("name", name_s.clone()))
                     .bind(("data", data.clone()))
                     .await?
                     .take(0)?;
-                let created: Vec<serde_json::Value> = created_raw
-                    .into_iter()
-                    .map(|v| serde_json::to_value(v).unwrap_or(serde_json::Value::Null))
-                    .collect();
-                created
+                created_raw
                     .first()
                     .and_then(|v| v.get("id"))
                     .and_then(|v| v.as_str())
@@ -63,7 +59,7 @@ impl SurrealMindServer {
                     .and_then(|v| v.as_str())
                     .unwrap_or("related_to")
                     .to_string();
-                let created_raw: Vec<surrealdb::sql::Value> = self
+                let created_raw: Vec<serde_json::Value> = self
                     .db
                     .query("CREATE kg_edges SET created_at = time::now(), source = $src, target = $dst, rel_type = $kind, data = $data RETURN meta::id(id) as id, source, target, rel_type, data, created_at;")
                     .bind(("src", src_s))
@@ -72,11 +68,7 @@ impl SurrealMindServer {
                     .bind(("data", data.clone()))
                     .await?
                     .take(0)?;
-                let created: Vec<serde_json::Value> = created_raw
-                    .into_iter()
-                    .map(|v| serde_json::to_value(v).unwrap_or(serde_json::Value::Null))
-                    .collect();
-                created
+                created_raw
                     .first()
                     .and_then(|v| v.get("id"))
                     .and_then(|v| v.as_str())
@@ -138,11 +130,7 @@ impl SurrealMindServer {
             if !name_like_s.is_empty() {
                 q = q.bind(("name", name_like_s.clone()));
             }
-            let rows_raw: Vec<surrealdb::sql::Value> = q.await?.take(0)?;
-            let rows: Vec<serde_json::Value> = rows_raw
-                .into_iter()
-                .map(|v| serde_json::to_value(v).unwrap_or(serde_json::Value::Null))
-                .collect();
+            let rows: Vec<serde_json::Value> = q.await?.take(0)?;
             items.extend(rows);
         }
         if target_s == "relationship" || target_s == "mixed" {
@@ -150,11 +138,7 @@ impl SurrealMindServer {
                 "SELECT meta::id(id) as id, source, target, rel_type, data, created_at FROM kg_edges LIMIT {}",
                 top_k
             );
-            let rows_raw: Vec<surrealdb::sql::Value> = self.db.query(sql).await?.take(0)?;
-            let rows: Vec<serde_json::Value> = rows_raw
-                .into_iter()
-                .map(|v| serde_json::to_value(v).unwrap_or(serde_json::Value::Null))
-                .collect();
+            let rows: Vec<serde_json::Value> = self.db.query(sql).await?.take(0)?;
             items.extend(rows);
         }
 

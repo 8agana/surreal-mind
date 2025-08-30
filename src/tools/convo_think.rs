@@ -64,7 +64,6 @@ impl SurrealMindServer {
         self.db
             .query(
                 "CREATE type::thing('thoughts', $id) CONTENT {
-                    id: $id,
                     content: $content,
                     created_at: time::now(),
                     embedding: $embedding,
