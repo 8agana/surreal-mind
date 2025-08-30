@@ -41,18 +41,18 @@ impl SurrealMindServer {
         let submode = params.submode.unwrap_or_else(|| "plan".to_string());
 
         // Compute embedding
-        let embedding = self
-            .embedder
-            .embed(&params.content)
-            .await
-            .map_err(|e| SurrealMindError::Embedding { message: e.to_string() })?;
+        let embedding = self.embedder.embed(&params.content).await.map_err(|e| {
+            SurrealMindError::Embedding {
+                message: e.to_string(),
+            }
+        })?;
 
         let injection_scale = params.injection_scale.unwrap_or(2) as i64; // slightly higher default
         let significance = params.significance.unwrap_or(0.6_f32) as f64;
 
         // Generate a UUID for the thought
         let thought_id = uuid::Uuid::new_v4().to_string();
-        
+
         // Insert into SurrealDB using the generated ID
         self.db
             .query(

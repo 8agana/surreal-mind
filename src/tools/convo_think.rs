@@ -46,11 +46,11 @@ impl SurrealMindServer {
         tracing::debug!("convo_think content (first 200 chars): {}", dbg_preview);
 
         // Compute embedding
-        let embedding = self
-            .embedder
-            .embed(&params.content)
-            .await
-            .map_err(|e| SurrealMindError::Embedding { message: e.to_string() })?;
+        let embedding = self.embedder.embed(&params.content).await.map_err(|e| {
+            SurrealMindError::Embedding {
+                message: e.to_string(),
+            }
+        })?;
 
         // Defaults
         let submode = params.submode.unwrap_or_else(|| "sarcastic".to_string());
@@ -59,7 +59,7 @@ impl SurrealMindServer {
 
         // Generate a UUID for the thought
         let thought_id = uuid::Uuid::new_v4().to_string();
-        
+
         // Insert into SurrealDB using the generated ID
         self.db
             .query(

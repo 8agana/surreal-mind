@@ -29,7 +29,7 @@ where
 {
     use serde::de::Error;
     let value = serde_json::Value::deserialize(deserializer)?;
-    
+
     // Handle both String and Thing types
     match value {
         serde_json::Value::String(s) => Ok(s),
@@ -40,12 +40,15 @@ where
                     Ok(id_str.to_string())
                 } else if let Some(id_obj) = id.as_object() {
                     // Handle nested id object
-                    if let Some(inner_id) = id_obj.get("String") {
-                        if let Some(s) = inner_id.as_str() {
-                            return Ok(s.to_string());
-                        }
+                    if let Some(inner_id) = id_obj.get("String")
+                        && let Some(s) = inner_id.as_str()
+                    {
+                        return Ok(s.to_string());
                     }
-                    Ok(format!("thoughts:{}", serde_json::to_string(id).unwrap_or_default()))
+                    Ok(format!(
+                        "thoughts:{}",
+                        serde_json::to_string(id).unwrap_or_default()
+                    ))
                 } else {
                     Ok(format!("thoughts:{}", id))
                 }
@@ -53,7 +56,7 @@ where
                 Err(D::Error::custom("Missing id field"))
             }
         }
-        _ => Err(D::Error::custom("Invalid id type"))
+        _ => Err(D::Error::custom("Invalid id type")),
     }
 }
 
@@ -183,7 +186,7 @@ impl ServerHandler for SurrealMindServer {
         info!("tools/list requested");
 
         use rmcp::model::Tool;
-        use serde_json::{json, Map, Value};
+        use serde_json::{Map, Value, json};
         use std::sync::Arc;
 
         // Minimal JSON Schemas for each tool input
@@ -200,7 +203,10 @@ impl ServerHandler for SurrealMindServer {
             "required": ["content"]
         });
         let convo_think_schema_map: Arc<Map<String, Value>> = Arc::new(
-            convo_think_schema.as_object().cloned().unwrap_or_else(|| Map::new()),
+            convo_think_schema
+                .as_object()
+                .cloned()
+                .unwrap_or_else(Map::new),
         );
 
         let tech_think_schema = json!({
@@ -216,7 +222,10 @@ impl ServerHandler for SurrealMindServer {
             "required": ["content"]
         });
         let tech_think_schema_map: Arc<Map<String, Value>> = Arc::new(
-            tech_think_schema.as_object().cloned().unwrap_or_else(|| Map::new()),
+            tech_think_schema
+                .as_object()
+                .cloned()
+                .unwrap_or_else(Map::new),
         );
 
         let inner_voice_schema = json!({
@@ -232,7 +241,10 @@ impl ServerHandler for SurrealMindServer {
             "required": ["content"]
         });
         let inner_voice_schema_map: Arc<Map<String, Value>> = Arc::new(
-            inner_voice_schema.as_object().cloned().unwrap_or_else(|| Map::new()),
+            inner_voice_schema
+                .as_object()
+                .cloned()
+                .unwrap_or_else(Map::new),
         );
 
         let search_thoughts_schema = json!({
@@ -256,7 +268,7 @@ impl ServerHandler for SurrealMindServer {
             search_thoughts_schema
                 .as_object()
                 .cloned()
-                .unwrap_or_else(|| Map::new()),
+                .unwrap_or_else(Map::new),
         );
 
         let kg_create_schema = json!({
@@ -271,7 +283,10 @@ impl ServerHandler for SurrealMindServer {
             "required": ["kind", "data"]
         });
         let kg_create_schema_map: Arc<Map<String, Value>> = Arc::new(
-            kg_create_schema.as_object().cloned().unwrap_or_else(|| Map::new()),
+            kg_create_schema
+                .as_object()
+                .cloned()
+                .unwrap_or_else(Map::new),
         );
 
         let kg_search_schema = json!({
@@ -283,7 +298,10 @@ impl ServerHandler for SurrealMindServer {
             }
         });
         let kg_search_schema_map: Arc<Map<String, Value>> = Arc::new(
-            kg_search_schema.as_object().cloned().unwrap_or_else(|| Map::new()),
+            kg_search_schema
+                .as_object()
+                .cloned()
+                .unwrap_or_else(Map::new),
         );
 
         let detailed_help_schema = json!({
@@ -299,20 +317,65 @@ impl ServerHandler for SurrealMindServer {
             detailed_help_schema
                 .as_object()
                 .cloned()
-                .unwrap_or_else(|| Map::new()),
+                .unwrap_or_else(Map::new),
         );
 
         let tools = vec![
-            Tool { name: "convo_think".into(), description: Some("Store conversational thoughts with memory injection".into()), input_schema: convo_think_schema_map, annotations: None, output_schema: None },
-            Tool { name: "tech_think".into(), description: Some("Technical reasoning with memory injection".into()), input_schema: tech_think_schema_map, annotations: None, output_schema: None },
-            Tool { name: "inner_voice".into(), description: Some("Private inner thoughts with visibility controls".into()), input_schema: inner_voice_schema_map, annotations: None, output_schema: None },
-            Tool { name: "search_thoughts".into(), description: Some("Semantic search with optional KG expansion".into()), input_schema: search_thoughts_schema_map, annotations: None, output_schema: None },
-            Tool { name: "knowledgegraph_create".into(), description: Some("Create entities and relationships in the KG".into()), input_schema: kg_create_schema_map, annotations: None, output_schema: None },
-            Tool { name: "knowledgegraph_search".into(), description: Some("Search entities/relationships in the KG".into()), input_schema: kg_search_schema_map, annotations: None, output_schema: None },
-            Tool { name: "detailed_help".into(), description: Some("Get detailed help for a specific tool".into()), input_schema: detailed_help_schema_map, annotations: None, output_schema: None },
+            Tool {
+                name: "convo_think".into(),
+                description: Some("Store conversational thoughts with memory injection".into()),
+                input_schema: convo_think_schema_map,
+                annotations: None,
+                output_schema: None,
+            },
+            Tool {
+                name: "tech_think".into(),
+                description: Some("Technical reasoning with memory injection".into()),
+                input_schema: tech_think_schema_map,
+                annotations: None,
+                output_schema: None,
+            },
+            Tool {
+                name: "inner_voice".into(),
+                description: Some("Private inner thoughts with visibility controls".into()),
+                input_schema: inner_voice_schema_map,
+                annotations: None,
+                output_schema: None,
+            },
+            Tool {
+                name: "search_thoughts".into(),
+                description: Some("Semantic search with optional KG expansion".into()),
+                input_schema: search_thoughts_schema_map,
+                annotations: None,
+                output_schema: None,
+            },
+            Tool {
+                name: "knowledgegraph_create".into(),
+                description: Some("Create entities and relationships in the KG".into()),
+                input_schema: kg_create_schema_map,
+                annotations: None,
+                output_schema: None,
+            },
+            Tool {
+                name: "knowledgegraph_search".into(),
+                description: Some("Search entities/relationships in the KG".into()),
+                input_schema: kg_search_schema_map,
+                annotations: None,
+                output_schema: None,
+            },
+            Tool {
+                name: "detailed_help".into(),
+                description: Some("Get detailed help for a specific tool".into()),
+                input_schema: detailed_help_schema_map,
+                annotations: None,
+                output_schema: None,
+            },
         ];
 
-        Ok(ListToolsResult { tools, ..Default::default() })
+        Ok(ListToolsResult {
+            tools,
+            ..Default::default()
+        })
     }
 
     async fn call_tool(
@@ -449,11 +512,11 @@ impl SurrealMindServer {
             DEFINE INDEX idx_kged_created ON TABLE kg_edges FIELDS created_at;
         "#;
 
-        self
-            .db
-            .query(schema_sql)
-            .await
-            .map_err(|e| McpError { code: rmcp::model::ErrorCode::INTERNAL_ERROR, message: format!("Schema init failed: {}", e).into(), data: None })?;
+        self.db.query(schema_sql).await.map_err(|e| McpError {
+            code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+            message: format!("Schema init failed: {}", e).into(),
+            data: None,
+        })?;
 
         Ok(())
     }

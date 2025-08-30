@@ -41,7 +41,7 @@ impl SurrealMindServer {
                     .map(|v| serde_json::to_value(v).unwrap_or(serde_json::Value::Null))
                     .collect();
                 created
-                    .get(0)
+                    .first()
                     .and_then(|v| v.get("id"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
@@ -77,7 +77,7 @@ impl SurrealMindServer {
                     .map(|v| serde_json::to_value(v).unwrap_or(serde_json::Value::Null))
                     .collect();
                 created
-                    .get(0)
+                    .first()
                     .and_then(|v| v.get("id"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
@@ -113,10 +113,7 @@ impl SurrealMindServer {
             .and_then(|v| v.as_str())
             .unwrap_or("mixed")
             .to_string();
-        let top_k = args
-            .get("top_k")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(10) as usize;
+        let top_k = args.get("top_k").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
         let name_like_s: String = args
             .get("query")
             .and_then(|q| q.get("name"))
@@ -127,12 +124,20 @@ impl SurrealMindServer {
         let mut items: Vec<serde_json::Value> = Vec::new();
         if target_s == "entity" || target_s == "mixed" {
             let sql = if name_like_s.is_empty() {
-                format!("SELECT id, name, data, created_at FROM kg_entities LIMIT {}", top_k)
+                format!(
+                    "SELECT id, name, data, created_at FROM kg_entities LIMIT {}",
+                    top_k
+                )
             } else {
-                format!("SELECT id, name, data, created_at FROM kg_entities WHERE string::lower(name) CONTAINS string::lower($name) LIMIT {}", top_k)
+                format!(
+                    "SELECT id, name, data, created_at FROM kg_entities WHERE string::lower(name) CONTAINS string::lower($name) LIMIT {}",
+                    top_k
+                )
             };
             let mut q = self.db.query(sql);
-            if !name_like_s.is_empty() { q = q.bind(("name", name_like_s.clone())); }
+            if !name_like_s.is_empty() {
+                q = q.bind(("name", name_like_s.clone()));
+            }
             let rows_raw: Vec<surrealdb::sql::Value> = q.await?.take(0)?;
             let rows: Vec<serde_json::Value> = rows_raw
                 .into_iter()
@@ -141,7 +146,10 @@ impl SurrealMindServer {
             items.extend(rows);
         }
         if target_s == "relationship" || target_s == "mixed" {
-            let sql = format!("SELECT id, source, target, rel_type, data, created_at FROM kg_edges LIMIT {}", top_k);
+            let sql = format!(
+                "SELECT id, source, target, rel_type, data, created_at FROM kg_edges LIMIT {}",
+                top_k
+            );
             let rows_raw: Vec<surrealdb::sql::Value> = self.db.query(sql).await?.take(0)?;
             let rows: Vec<serde_json::Value> = rows_raw
                 .into_iter()

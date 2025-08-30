@@ -129,10 +129,13 @@ impl Config {
     /// Load configuration from TOML file and environment variables
     /// Uses SURREAL_MIND_CONFIG environment variable or defaults to "surreal_mind.toml"
     pub fn load() -> anyhow::Result<Self> {
+        // Load environment variables first
+        let _ = dotenvy::dotenv();
+
         let config_path = std::env::var("SURREAL_MIND_CONFIG")
             .unwrap_or_else(|_| "surreal_mind.toml".to_string());
 
-        let config: Config = if let Ok(content) = std::fs::read_to_string(&config_path) {
+        let mut config: Config = if let Ok(content) = std::fs::read_to_string(&config_path) {
             toml::from_str(&content)?
         } else {
             // Create default config if file doesn't exist
@@ -141,8 +144,7 @@ impl Config {
         };
 
         // Load runtime configuration from environment variables
-        // TODO: Fix the environment variable loading
-        // config.runtime = RuntimeConfig::load_from_env();
+        config.runtime = RuntimeConfig::load_from_env();
 
         Ok(config)
     }
@@ -211,11 +213,83 @@ impl Default for Config {
 
 impl RuntimeConfig {
     /// Load runtime configuration from environment variables
-    /// TODO: Fix the environment variable loading - currently using defaults
     pub fn load_from_env() -> Self {
-        // For now, just return defaults
-        // TODO: Implement proper environment variable loading
-        Self::default()
+        Self {
+            database_user: std::env::var("SURR_DB_USER").unwrap_or_else(|_| "root".to_string()),
+            database_pass: std::env::var("SURR_DB_PASS").unwrap_or_else(|_| "root".to_string()),
+            openai_api_key: std::env::var("OPENAI_API_KEY").ok(),
+            nomic_api_key: std::env::var("NOMIC_API_KEY").ok(),
+            tool_timeout_ms: std::env::var("SURR_TOOL_TIMEOUT_MS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(15_000),
+            mcp_no_log: std::env::var("MCP_NO_LOG")
+                .ok()
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false),
+            log_level: std::env::var("RUST_LOG")
+                .unwrap_or_else(|_| "surreal_mind=info,rmcp=info".to_string()),
+            cache_max: std::env::var("SURR_CACHE_MAX")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(5000),
+            cache_warm: std::env::var("SURR_CACHE_WARM")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(64),
+            retrieve_candidates: std::env::var("SURR_RETRIEVE_CANDIDATES")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(500),
+            max_retries: std::env::var("SURR_EMBED_RETRIES")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(3),
+            retry_delay_ms: std::env::var("SURR_RETRY_DELAY_MS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(500),
+            embed_strict: std::env::var("SURR_EMBED_STRICT")
+                .ok()
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false),
+            fake_noise: std::env::var("SURR_FAKE_NOISE")
+                .ok()
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false),
+            fake_noise_amp: std::env::var("SURR_FAKE_NOISE_AMP")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0.01),
+            kg_embed_entities: std::env::var("SURR_KG_EMBED_ENTITIES")
+                .ok()
+                .map(|v| v != "false" && v != "0")
+                .unwrap_or(true),
+            kg_embed_observations: std::env::var("SURR_KG_EMBED_OBSERVATIONS")
+                .ok()
+                .map(|v| v != "false" && v != "0")
+                .unwrap_or(true),
+            kg_max_neighbors: std::env::var("SURR_KG_MAX_NEIGHBORS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(25),
+            kg_graph_boost: std::env::var("SURR_KG_GRAPH_BOOST")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0.15),
+            kg_min_edge_strength: std::env::var("SURR_KG_MIN_EDGE_STRENGTH")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0.0),
+            kg_timeout_ms: std::env::var("SURR_KG_TIMEOUT_MS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(5000),
+            kg_candidates: std::env::var("SURR_KG_CANDIDATES")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(200),
+        }
     }
 }
 
