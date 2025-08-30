@@ -47,11 +47,11 @@ impl SurrealMindServer {
         tracing::debug!("inner_voice content (first 50 chars): {}", dbg_preview);
 
         // Compute embedding
-        let embedding = self
-            .embedder
-            .embed(&params.content)
-            .await
-            .map_err(|e| SurrealMindError::Embedding { message: e.to_string() })?;
+        let embedding = self.embedder.embed(&params.content).await.map_err(|e| {
+            SurrealMindError::Embedding {
+                message: e.to_string(),
+            }
+        })?;
 
         let injection_scale = params.injection_scale.unwrap_or(0) as i64; // default minimal
         let significance = params.significance.unwrap_or(0.4_f32) as f64;
@@ -77,7 +77,7 @@ impl SurrealMindServer {
             .collect();
 
         let thought_id = created
-            .get(0)
+            .first()
             .and_then(|v| v.get("id"))
             .and_then(|v| v.as_str())
             .unwrap_or("")

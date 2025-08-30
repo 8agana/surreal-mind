@@ -66,33 +66,47 @@ impl SurrealMindServer {
             })?;
 
         // Config
-        let top_k_default: usize = std::env::var("SURR_TOP_K").ok().and_then(|v| v.parse().ok()).filter(|&n| n >= 1 && n <= 50).unwrap_or(5);
-        let sim_thresh_default: f32 = std::env::var("SURR_SIM_THRESH").ok().and_then(|v| v.parse().ok()).unwrap_or(0.5);
-        let limit_default: usize = std::env::var("SURR_DB_LIMIT").ok().and_then(|v| v.parse().ok()).filter(|&n| n > 0).unwrap_or(500);
+        let top_k_default: usize = std::env::var("SURR_TOP_K")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|&n| (1..=50).contains(&n))
+            .unwrap_or(5);
+        let sim_thresh_default: f32 = std::env::var("SURR_SIM_THRESH")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.5);
+        let limit_default: usize = std::env::var("SURR_DB_LIMIT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or(500);
 
-        let top_k = params.top_k.unwrap_or(top_k_default).min(50).max(1);
+        let top_k = params.top_k.unwrap_or(top_k_default).clamp(1, 50);
         let offset = params.offset.unwrap_or(0);
-        let sim_thresh = params.sim_thresh.unwrap_or(sim_thresh_default).clamp(0.0, 1.0);
+        let sim_thresh = params
+            .sim_thresh
+            .unwrap_or(sim_thresh_default)
+            .clamp(0.0, 1.0);
 
         // Compute query embedding
-        let q_emb = self
-            .embedder
-            .embed(&params.content)
-            .await
-            .map_err(|e| SurrealMindError::Embedding { message: e.to_string() })?;
+        let q_emb = self.embedder.embed(&params.content).await.map_err(|e| {
+            SurrealMindError::Embedding {
+                message: e.to_string(),
+            }
+        })?;
 
         // Fetch only the fields we need for search, extracting id as string
         let take = limit_default;
-        
+
         // Use meta::id() to get just the record ID without the table prefix
         let sql = format!(
             "SELECT meta::id(id) as id, content, embedding, significance, submode FROM thoughts LIMIT {}",
             take
         );
-        
+
         // Execute and deserialize to simpler struct
         let mut response = self.db.query(sql).await?;
-        
+
         #[derive(Debug, Deserialize)]
         struct SimpleRow {
             // Now id will be a plain string from meta::id()
@@ -104,15 +118,27 @@ impl SurrealMindServer {
             #[serde(skip_serializing_if = "Option::is_none")]
             submode: Option<String>,
         }
-        
+
         let rows: Vec<SimpleRow> = response.take(0)?;
 
         // Compute cosine similarity locally
         fn cosine(a: &[f32], b: &[f32]) -> f32 {
-            if a.is_empty() || b.is_empty() || a.len() != b.len() { return 0.0; }
-            let mut dot = 0.0f32; let mut na = 0.0f32; let mut nb = 0.0f32;
-            for i in 0..a.len() { dot += a[i]*b[i]; na += a[i]*a[i]; nb += b[i]*b[i]; }
-            if na == 0.0 || nb == 0.0 { 0.0 } else { dot / (na.sqrt()*nb.sqrt()) }
+            if a.is_empty() || b.is_empty() || a.len() != b.len() {
+                return 0.0;
+            }
+            let mut dot = 0.0f32;
+            let mut na = 0.0f32;
+            let mut nb = 0.0f32;
+            for i in 0..a.len() {
+                dot += a[i] * b[i];
+                na += a[i] * a[i];
+                nb += b[i] * b[i];
+            }
+            if na == 0.0 || nb == 0.0 {
+                0.0
+            } else {
+                dot / (na.sqrt() * nb.sqrt())
+            }
         }
 
         let mut matches: Vec<(f32, SimpleRow)> = Vec::new();
@@ -129,7 +155,11 @@ impl SurrealMindServer {
         matches.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
         let total = matches.len();
         let end = (offset + top_k).min(total);
-        let sliced = if offset < total { &matches[offset..end] } else { &[] };
+        let sliced = if offset < total {
+            &matches[offset..end]
+        } else {
+            &[]
+        };
 
         let results: Vec<serde_json::Value> = sliced
             .iter()
