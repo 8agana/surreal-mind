@@ -186,139 +186,20 @@ impl ServerHandler for SurrealMindServer {
         info!("tools/list requested");
 
         use rmcp::model::Tool;
-        use serde_json::{Map, Value, json};
-        use std::sync::Arc;
 
-        // Minimal JSON Schemas for each tool input
-        let convo_think_schema = json!({
-            "type": "object",
-            "properties": {
-                "content": {"type": "string"},
-                "injection_scale": {"type": ["integer", "string"]},
-                "submode": {"type": "string"},
-                "tags": {"type": "array", "items": {"type": "string"}},
-                "significance": {"type": ["number", "string"]},
-                "verbose_analysis": {"type": "boolean"}
-            },
-            "required": ["content"]
-        });
-        let convo_think_schema_map: Arc<Map<String, Value>> = Arc::new(
-            convo_think_schema
-                .as_object()
-                .cloned()
-                .unwrap_or_else(Map::new),
-        );
+        let convo_think_schema_map = crate::schemas::convo_think_schema();
 
-        let tech_think_schema = json!({
-            "type": "object",
-            "properties": {
-                "content": {"type": "string"},
-                "injection_scale": {"type": ["integer", "string"]},
-                "submode": {"type": "string", "enum": ["plan", "build", "debug"], "default": "plan"},
-                "tags": {"type": "array", "items": {"type": "string"}},
-                "significance": {"type": ["number", "string"]},
-                "verbose_analysis": {"type": "boolean"}
-            },
-            "required": ["content"]
-        });
-        let tech_think_schema_map: Arc<Map<String, Value>> = Arc::new(
-            tech_think_schema
-                .as_object()
-                .cloned()
-                .unwrap_or_else(Map::new),
-        );
+        let tech_think_schema_map = crate::schemas::tech_think_schema();
 
-        let inner_voice_schema = json!({
-            "type": "object",
-            "properties": {
-                "content": {"type": "string"},
-                "injection_scale": {"type": ["integer", "string"]},
-                "tags": {"type": "array", "items": {"type": "string"}},
-                "significance": {"type": ["number", "string"]},
-                "verbose_analysis": {"type": "boolean"},
-                "inner_visibility": {"type": "string", "enum": ["private", "context_only"], "default": "context_only"}
-            },
-            "required": ["content"]
-        });
-        let inner_voice_schema_map: Arc<Map<String, Value>> = Arc::new(
-            inner_voice_schema
-                .as_object()
-                .cloned()
-                .unwrap_or_else(Map::new),
-        );
+        let inner_voice_schema_map = crate::schemas::inner_voice_schema();
 
-        let search_thoughts_schema = json!({
-            "type": "object",
-            "properties": {
-                "content": {"type": "string"},
-                "top_k": {"type": "integer", "minimum": 1, "maximum": 50},
-                "offset": {"type": "integer", "minimum": 0},
-                "sim_thresh": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-                "submode": {"type": "string"},
-                "min_significance": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-                "expand_graph": {"type": "boolean"},
-                "graph_depth": {"type": "integer", "minimum": 0, "maximum": 3},
-                "graph_boost": {"type": "number"},
-                "min_edge_strength": {"type": "number"},
-                "sort_by": {"type": "string", "enum": ["score", "similarity", "recency", "significance"], "default": "score"}
-            },
-            "required": ["content"]
-        });
-        let search_thoughts_schema_map: Arc<Map<String, Value>> = Arc::new(
-            search_thoughts_schema
-                .as_object()
-                .cloned()
-                .unwrap_or_else(Map::new),
-        );
+        let search_thoughts_schema_map = crate::schemas::search_thoughts_schema();
 
-        let kg_create_schema = json!({
-            "type": "object",
-            "properties": {
-                "kind": {"type": "string", "enum": ["entity", "relationship", "observation"], "default": "entity"},
-                "data": {"type": "object"},
-                "upsert": {"type": "boolean", "default": true},
-                "source_thought_id": {"type": "string"},
-                "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0}
-            },
-            "required": ["kind", "data"]
-        });
-        let kg_create_schema_map: Arc<Map<String, Value>> = Arc::new(
-            kg_create_schema
-                .as_object()
-                .cloned()
-                .unwrap_or_else(Map::new),
-        );
+        let kg_create_schema_map = crate::schemas::kg_create_schema();
 
-        let kg_search_schema = json!({
-            "type": "object",
-            "properties": {
-                "query": {"type": "object"},
-                "target": {"type": "string", "enum": ["entity", "relationship", "observation", "mixed"], "default": "mixed"},
-                "top_k": {"type": "integer", "minimum": 1, "maximum": 50}
-            }
-        });
-        let kg_search_schema_map: Arc<Map<String, Value>> = Arc::new(
-            kg_search_schema
-                .as_object()
-                .cloned()
-                .unwrap_or_else(Map::new),
-        );
+        let kg_search_schema_map = crate::schemas::kg_search_schema();
 
-        let detailed_help_schema = json!({
-            "type": "object",
-            "properties": {
-                "tool": {"type": "string", "enum": [
-                    "convo_think", "tech_think", "inner_voice", "search_thoughts", "knowledgegraph_create", "knowledgegraph_search"
-                ]},
-                "format": {"type": "string", "enum": ["compact", "full"], "default": "full"}
-            }
-        });
-        let detailed_help_schema_map: Arc<Map<String, Value>> = Arc::new(
-            detailed_help_schema
-                .as_object()
-                .cloned()
-                .unwrap_or_else(Map::new),
-        );
+        let detailed_help_schema_map = crate::schemas::detailed_help_schema();
 
         let tools = vec![
             Tool {
