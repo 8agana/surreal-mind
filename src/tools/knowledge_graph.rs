@@ -44,18 +44,22 @@ impl SurrealMindServer {
                     .to_string()
             }
             "relationship" => {
+                // Accept both {source,target,rel_type} and {from_id,to_id,relationship_type}
                 let src_s: String = data
                     .get("source")
+                    .or_else(|| data.get("from_id"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
                 let dst_s: String = data
                     .get("target")
+                    .or_else(|| data.get("to_id"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
                 let rel_kind_s: String = data
                     .get("rel_type")
+                    .or_else(|| data.get("relationship_type"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("related_to")
                     .to_string();
@@ -66,6 +70,37 @@ impl SurrealMindServer {
                     .bind(("dst", dst_s))
                     .bind(("kind", rel_kind_s))
                     .bind(("data", data.clone()))
+                    .await?
+                    .take(0)?;
+                created_raw
+                    .first()
+                    .and_then(|v| v.get("id"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string()
+            }
+            "observation" => {
+                let name_s: String = data
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let source_thought_id_s: String = args
+                    .get("source_thought_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let confidence_f: f64 = args
+                    .get("confidence")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0f64);
+                let created_raw: Vec<serde_json::Value> = self
+                    .db
+                    .query("CREATE kg_observations SET created_at = time::now(), name = $name, data = $data, source_thought_id = $src, confidence = $conf RETURN meta::id(id) as id, name, data, created_at;")
+                    .bind(("name", name_s.clone()))
+                    .bind(("data", data.clone()))
+                    .bind(("src", source_thought_id_s))
+                    .bind(("conf", confidence_f))
                     .await?
                     .take(0)?;
                 created_raw
@@ -139,6 +174,25 @@ impl SurrealMindServer {
                 top_k
             );
             let rows: Vec<serde_json::Value> = self.db.query(sql).await?.take(0)?;
+            items.extend(rows);
+        }
+        if target_s == "observation" || target_s == "mixed" {
+            let sql = if name_like_s.is_empty() {
+                format!(
+                    "SELECT meta::id(id) as id, name, data, created_at FROM kg_observations LIMIT {}",
+                    top_k
+                )
+            } else {
+                format!(
+                    "SELECT meta::id(id) as id, name, data, created_at FROM kg_observations WHERE string::lower(name) CONTAINS string::lower($name) LIMIT {}",
+                    top_k
+                )
+            };
+            let mut q = self.db.query(sql);
+            if !name_like_s.is_empty() {
+                q = q.bind(("name", name_like_s.clone()));
+            }
+            let rows: Vec<serde_json::Value> = q.await?.take(0)?;
             items.extend(rows);
         }
 

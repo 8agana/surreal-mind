@@ -282,10 +282,7 @@ impl ServerHandler for SurrealMindServer {
                 .await
                 .map_err(|e| e.into()),
             "detailed_help" => {
-                // TODO: Implement detailed help
-                Ok(CallToolResult::structured(
-                    serde_json::json!({"tools": ["convo_think", "tech_think", "inner_voice", "search_thoughts", "knowledgegraph_create", "knowledgegraph_search"]}),
-                ))
+                self.handle_detailed_help(request).await.map_err(|e| e.into())
             }
             _ => Err(McpError {
                 code: rmcp::model::ErrorCode::METHOD_NOT_FOUND,
@@ -390,6 +387,9 @@ impl SurrealMindServer {
 
             DEFINE TABLE kg_edges SCHEMALESS;
             DEFINE INDEX idx_kged_created ON TABLE kg_edges FIELDS created_at;
+
+            DEFINE TABLE kg_observations SCHEMALESS;
+            DEFINE INDEX idx_kgo_created ON TABLE kg_observations FIELDS created_at;
         "#;
 
         self.db.query(schema_sql).await.map_err(|e| McpError {

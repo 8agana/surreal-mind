@@ -27,9 +27,15 @@ struct SearchRow {
 #[derive(Debug, serde::Deserialize)]
 pub struct SearchThoughtsParams {
     pub content: String,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "crate::deserializers::de_option_usize_forgiving"
+    )]
     pub top_k: Option<usize>,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "crate::deserializers::de_option_usize_forgiving"
+    )]
     pub offset: Option<usize>,
     #[serde(default)]
     pub sim_thresh: Option<f32>,
@@ -41,7 +47,10 @@ pub struct SearchThoughtsParams {
     pub date_range: Option<DateRangeParam>,
     #[serde(default)]
     pub expand_graph: Option<bool>,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "crate::deserializers::de_option_u8_forgiving"
+    )]
     pub graph_depth: Option<u8>,
     #[serde(default)]
     pub graph_boost: Option<f32>,
