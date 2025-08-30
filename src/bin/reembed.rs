@@ -57,11 +57,11 @@ async fn main() -> Result<()> {
         let existing_embedding = thought["embedding"].as_array();
 
         // Check if already correct dimensions
-        if let Some(emb) = existing_embedding
-            && emb.len() == embed_dims
-        {
-            skip_count += 1;
-            continue;
+        if let Some(emb) = existing_embedding {
+            if emb.len() == embed_dims {
+                skip_count += 1;
+                continue;
+            }
         }
 
         // Generate new embedding
