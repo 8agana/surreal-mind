@@ -100,6 +100,27 @@ Searches the knowledge graph for entities and relationships.
 - `target` (string): "entity", "relationship", "observation", "mixed"
 - `top_k` (int): Max results
 
+Relationship search items project IDs to strings for stability:
+- `id`: edge id (string)
+- `source_id`: entity id string (bare `meta::id`, not a Thing)
+- `target_id`: entity id string (bare `meta::id`)
+- `rel_type`: relationship type
+
+### 7. `knowledgegraph_moderate`
+Unified review-and-decide workflow for KG candidates.
+
+**Parameters:**
+- `action`: `"review" | "decide" | "review_and_decide"` (default: `review`)
+- `target`: `"entity" | "relationship" | "mixed"` (default: `mixed`)
+- `status`: `"pending" | "approved" | "rejected"` (default: `pending`)
+- `limit`, `offset`: pagination
+- `min_conf`: minimum confidence filter (default: 0.0)
+- `items`: when `decide`, an array of `{ id, kind: 'entity'|'relationship', decision: 'approve'|'reject', feedback?, canonical_id? }`
+
+Notes:
+- Relationship candidates accept `canonical_id` to override/force the source entity when approving.
+- Approval promotes candidates to `kg_entities`/`kg_edges` and backfills `promoted_id` on the candidate row.
+
 ## Database Schema
 
 ### Thoughts Table

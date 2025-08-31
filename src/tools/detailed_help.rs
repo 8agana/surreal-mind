@@ -15,12 +15,11 @@ impl SurrealMindServer {
             message: "Missing parameters".into(),
         })?;
 
-        let tool = args
-            .get("tool")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| SurrealMindError::Validation {
+        let tool = args.get("tool").and_then(|v| v.as_str()).ok_or_else(|| {
+            SurrealMindError::Validation {
                 message: "'tool' parameter is required".into(),
-            })?;
+            }
+        })?;
         let format = args
             .get("format")
             .and_then(|v| v.as_str())
@@ -100,6 +99,22 @@ impl SurrealMindServer {
                 "arguments": {"target": "'entity'|'relationship'|'mixed'", "query": "object — {name?}", "top_k": "integer"},
                 "returns": {"items": "array"}
             }),
+            "knowledgegraph_moderate" => json!({
+                "name": "knowledgegraph_moderate",
+                "description": "Unified moderation: review candidates and/or apply decisions in one call.",
+                "arguments": {
+                    "action": "'review'|'decide'|'review_and_decide' (default: 'review')",
+                    "target": "'entity'|'relationship'|'mixed' (default: 'mixed')",
+                    "status": "'pending'|'approved'|'rejected'|'auto_approved' (default: 'pending')",
+                    "min_conf": "number — minimum confidence filter",
+                    "limit": "integer — page size",
+                    "offset": "integer — page offset",
+                    "cursor": "string — (reserved)",
+                    "items": "array — decisions: [{id, kind, decision, feedback?, canonical_id?}]",
+                    "dry_run": "boolean — simulate decisions without writes"
+                },
+                "returns": {"review": {"items": "array"}, "results": "array"}
+            }),
             _ => {
                 return Err(SurrealMindError::Validation {
                     message: format!("Unknown tool: {}", tool),
@@ -121,4 +136,3 @@ impl SurrealMindServer {
         Ok(CallToolResult::structured(output))
     }
 }
-

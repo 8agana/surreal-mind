@@ -103,12 +103,83 @@ pub fn kg_search_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
+pub fn kg_review_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "target": {"type": "string", "enum": ["entity", "relationship", "mixed"], "default": "mixed"},
+            "status": {"type": "string", "enum": ["pending", "approved", "rejected", "auto_approved"], "default": "pending"},
+            "min_conf": {"type": ["number", "string"], "minimum": 0.0, "maximum": 1.0},
+            "limit": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 200, "default": 50},
+            "offset": {"type": ["integer", "number", "string"], "minimum": 0, "default": 0},
+            "query": {"type": "object"}
+        }
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn kg_decide_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "kind": {"type": "string", "enum": ["entity", "relationship"]},
+                        "decision": {"type": "string", "enum": ["approve", "reject"]},
+                        "feedback": {"type": "string"},
+                        "canonical_id": {"type": "string"}
+                    },
+                    "required": ["id", "kind", "decision"]
+                }
+            }
+        },
+        "required": ["items"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn kg_moderate_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["review", "decide", "review_and_decide"], "default": "review"},
+            "target": {"type": "string", "enum": ["entity", "relationship", "mixed"], "default": "mixed"},
+            "status": {"type": "string", "enum": ["pending", "approved", "rejected", "auto_approved"], "default": "pending"},
+            "min_conf": {"type": ["number", "string"], "minimum": 0.0, "maximum": 1.0},
+            "limit": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 200, "default": 50},
+            "offset": {"type": ["integer", "number", "string"], "minimum": 0, "default": 0},
+            "cursor": {"type": "string"},
+            "query": {"type": "object"},
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "kind": {"type": "string", "enum": ["entity", "relationship"]},
+                        "decision": {"type": "string", "enum": ["approve", "reject"]},
+                        "feedback": {"type": "string"},
+                        "canonical_id": {"type": "string"}
+                    },
+                    "required": ["id", "kind", "decision"]
+                }
+            },
+            "dry_run": {"type": "boolean", "default": false}
+        }
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
 pub fn detailed_help_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
         "properties": {
             "tool": {"type": "string", "enum": [
-                "convo_think", "tech_think", "inner_voice", "search_thoughts", "knowledgegraph_create", "knowledgegraph_search"
+                "convo_think", "tech_think", "inner_voice", "search_thoughts", "knowledgegraph_create", "knowledgegraph_search", "knowledgegraph_moderate"
             ]},
             "format": {"type": "string", "enum": ["compact", "full"], "default": "full"}
         }

@@ -196,8 +196,10 @@ impl ServerHandler for SurrealMindServer {
         let search_thoughts_schema_map = crate::schemas::search_thoughts_schema();
 
         let kg_create_schema_map = crate::schemas::kg_create_schema();
-
+        
         let kg_search_schema_map = crate::schemas::kg_search_schema();
+        
+        let kg_moderate_schema_map = crate::schemas::kg_moderate_schema();
 
         let detailed_help_schema_map = crate::schemas::detailed_help_schema();
 
@@ -245,6 +247,13 @@ impl ServerHandler for SurrealMindServer {
                 output_schema: None,
             },
             Tool {
+                name: "knowledgegraph_moderate".into(),
+                description: Some("Review and/or decide on KG candidates".into()),
+                input_schema: kg_moderate_schema_map,
+                annotations: None,
+                output_schema: None,
+            },
+            Tool {
                 name: "detailed_help".into(),
                 description: Some("Get detailed help for a specific tool".into()),
                 input_schema: detailed_help_schema_map,
@@ -281,9 +290,14 @@ impl ServerHandler for SurrealMindServer {
                 .handle_knowledgegraph_search(request)
                 .await
                 .map_err(|e| e.into()),
-            "detailed_help" => {
-                self.handle_detailed_help(request).await.map_err(|e| e.into())
-            }
+            "knowledgegraph_moderate" => self
+                .handle_knowledgegraph_moderate(request)
+                .await
+                .map_err(|e| e.into()),
+            "detailed_help" => self
+                .handle_detailed_help(request)
+                .await
+                .map_err(|e| e.into()),
             _ => Err(McpError {
                 code: rmcp::model::ErrorCode::METHOD_NOT_FOUND,
                 message: format!("Unknown tool: {}", request.name).into(),
@@ -395,6 +409,21 @@ impl SurrealMindServer {
             DEFINE INDEX idx_kgo_created ON TABLE kg_observations FIELDS created_at;
             DEFINE INDEX idx_kgo_name ON TABLE kg_observations FIELDS name;
             DEFINE INDEX idx_kgo_name_src ON TABLE kg_observations FIELDS name, source_thought_id;
+
+            -- Approval workflow candidate tables
+            DEFINE TABLE kg_entity_candidates SCHEMALESS;
+            DEFINE INDEX idx_kgec_status_created ON TABLE kg_entity_candidates FIELDS status, created_at;
+            DEFINE INDEX idx_kgec_confidence ON TABLE kg_entity_candidates FIELDS confidence;
+            DEFINE INDEX idx_kgec_name_type ON TABLE kg_entity_candidates FIELDS name, entity_type, status;
+
+            DEFINE TABLE kg_edge_candidates SCHEMALESS;
+            DEFINE INDEX idx_kgedc_status_created ON TABLE kg_edge_candidates FIELDS status, created_at;
+            DEFINE INDEX idx_kgedc_confidence ON TABLE kg_edge_candidates FIELDS confidence;
+            DEFINE INDEX idx_kgedc_triplet ON TABLE kg_edge_candidates FIELDS source_name, target_name, rel_type, status;
+
+            -- Optional feedback helpers
+            DEFINE TABLE kg_blocklist SCHEMALESS;
+            DEFINE INDEX idx_kgb_item ON TABLE kg_blocklist FIELDS item;
         "#;
 
         self.db.query(schema_sql).await.map_err(|e| McpError {
@@ -429,5 +458,138 @@ impl SurrealMindServer {
         } else {
             dot / (norm_a * norm_b)
         }
+    }
+
+    /// Perform KG-only memory injection: find similar KG entities and attach their IDs.
+    pub async fn inject_memories(
+        &self,
+        thought_id: &str,
+        embedding: &[f32],
+        injection_scale: i64,
+        submode: Option<&str>,
+    ) -> crate::error::Result<(usize, Option<String>)> {
+        if injection_scale <= 0 {
+            return Ok((0, None));
+        }
+
+        // Orbital mechanics: determine limit and threshold from scale
+        let scale = injection_scale.clamp(0, 3) as u8;
+        let (limit, mut prox_thresh) = match scale {
+            0 => (0usize, 1.0f32),
+            1 => (5usize, 0.8f32),   // Mercury
+            2 => (10usize, 0.6f32),  // Venus
+            _ => (20usize, 0.4f32),  // Mars
+        };
+        if limit == 0 { return Ok((0, None)); }
+
+        // Optional: submode-aware retrieval tweaks
+        // Guarded behind SURR_SUBMODE_RETRIEVAL=true to keep default behavior stable
+        if std::env::var("SURR_SUBMODE_RETRIEVAL").ok().as_deref() == Some("true") {
+            if let Some(sm) = submode {
+                // Use lightweight profile deltas to adjust similarity threshold
+                use crate::cognitive::profile::{profile_for, Submode};
+                let profile = profile_for(Submode::from_str(sm));
+                let delta = profile.injection.threshold_delta;
+                // Clamp within [0.0, 0.99]
+                prox_thresh = (prox_thresh + delta).clamp(0.0, 0.99);
+            }
+        }
+
+        // Candidate pool size for KG entities
+        let retrieve = std::env::var("SURR_KG_CANDIDATES")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(200);
+
+        // Fetch candidate entities (id, name, embedding, entity_type)
+        let sql = format!(
+            "SELECT meta::id(id) as id, name, data, embedding FROM kg_entities LIMIT {}",
+            retrieve
+        );
+        let rows: Vec<serde_json::Value> = self.db.query(sql).await?.take(0)?;
+
+        // Iterate, compute or reuse embeddings, score by cosine similarity
+        let mut scored: Vec<(String, f32, String, String)> = Vec::new();
+        for r in rows {
+            if let Some(id) = r.get("id").and_then(|v| v.as_str()) {
+                // Try to use existing embedding; compute and persist if missing and allowed
+                let mut emb_opt: Option<Vec<f32>> = None;
+                if let Some(ev) = r.get("embedding").and_then(|v| v.as_array()) {
+                    let vecf: Vec<f32> = ev.iter().filter_map(|x| x.as_f64()).map(|f| f as f32).collect();
+                    if vecf.len() == embedding.len() { emb_opt = Some(vecf); }
+                }
+                if emb_opt.is_none() {
+                    // Build text for entity embedding: name + type
+                    let name_s = r.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let etype = r
+                        .get("data")
+                        .and_then(|d| d.get("entity_type"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let text = if etype.is_empty() { name_s.to_string() } else { format!("{} ({})", name_s, etype) };
+                    let new_emb = self.embedder.embed(&text).await.unwrap_or_default();
+                    if new_emb.len() == embedding.len() {
+                        emb_opt = Some(new_emb.clone());
+                        // Persist embedding for future fast retrieval (best-effort)
+                        let _ = self
+                            .db
+                            .query("UPDATE type::thing($tb, $id) SET embedding = $emb RETURN meta::id(id) as id")
+                            .bind(("tb", "kg_entities"))
+                            .bind(("id", id.to_string()))
+                            .bind(("emb", new_emb))
+                            .await;
+                    }
+                }
+                if let Some(emb_e) = emb_opt {
+                    let sim = self.cosine_similarity(embedding, &emb_e);
+                    if sim >= prox_thresh {
+                        let name_s = r.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let etype = r
+                            .get("data")
+                            .and_then(|d| d.get("entity_type"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        scored.push((id.to_string(), sim, name_s, etype));
+                    }
+                }
+            }
+        }
+
+        // Sort by similarity and take top by orbital limit
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let selected: Vec<(String, f32, String, String)> = scored.into_iter().take(limit).collect();
+        let memory_ids: Vec<String> = selected.iter().map(|(id, _, _, _)| id.clone()).collect();
+
+        // Optional enrichment with names/types
+        let enriched = if !selected.is_empty() {
+            let mut s = String::new();
+            if let Some(sm) = submode {
+                s.push_str(&format!("Submode: {}\n", sm));
+            }
+            s.push_str("Nearby entities:\n");
+            for (i, (_id, sim, name, etype)) in selected.iter().take(5).enumerate() {
+                if etype.is_empty() {
+                    s.push_str(&format!("- ({:.2}) {}\n", sim, name));
+                } else {
+                    s.push_str(&format!("- ({:.2}) {} [{}]\n", sim, name, etype));
+                }
+                if i >= 4 { break; }
+            }
+            Some(s)
+        } else { None };
+
+        // Persist to the thought
+        let mut q = self
+            .db
+            .query("UPDATE type::thing($tb, $id) SET injected_memories = $mems, enriched_content = $enr RETURN meta::id(id) as id")
+            .bind(("tb", "thoughts"))
+            .bind(("id", thought_id.to_string()))
+            .bind(("mems", memory_ids.clone()))
+            .bind(("enr", enriched.clone().unwrap_or_default()));
+        // Note: empty string will act like clearing or setting to empty; acceptable for now
+        let _: Vec<serde_json::Value> = q.await?.take(0)?;
+
+        Ok((memory_ids.len(), enriched))
     }
 }

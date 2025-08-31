@@ -38,7 +38,7 @@ async fn main() -> Result<()> {
     })?;
 
     info!("✅ Server initialized successfully");
-    info!("🛠️  Available tools: convo_think, tech_think, inner_voice, search_thoughts, knowledgegraph_create, knowledgegraph_search");
+    info!("🛠️  Available tools: convo_think, tech_think, inner_voice, search_thoughts, knowledgegraph_create, knowledgegraph_search, knowledgegraph_moderate");
 
     // Start MCP server with stdio transport
     let service = server.serve(stdio()).await.map_err(|e| {
