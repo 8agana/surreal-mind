@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Data model for a single entity extracted from text
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ExtractedEntity {
     pub name: String,
     pub entity_type: String,
@@ -61,14 +61,22 @@ impl HeuristicExtractor {
             let word = word.trim_matches(|c: char| !c.is_alphanumeric());
             if word.len() >= 3 && word.chars().next().unwrap().is_uppercase() {
                 // Skip common words that shouldn't be entities
-                let common_words = ["The", "This", "That", "When", "What", "How", "Why", "Who"];
-                if !common_words.contains(&word) {
-                    entities.push(ExtractedEntity {
-                        name: word.to_string(),
-                        entity_type: self.classify_entity_type(word),
-                        properties: serde_json::json!({}),
-                        confidence: 0.7,
-                    });
+                let common_words = ["The", "This", "That", "When", "What", "How", "Why", "Who", "Using", "And", "For", "With", "A", "An", "In", "On", "At", "To", "From", "By"];
+                if !common_words.contains(&word) && !word.ends_with("ed") && !word.ends_with("ing") && word.len() >= 3 {
+                    // Less restrictive proper noun detection - extract any word that starts with uppercase
+                    // or is a technical term (contains numbers, underscores, or is in our known list)
+                    let starts_uppercase = word.chars().next().unwrap().is_uppercase();
+                    let is_technical = word.contains('_') || word.chars().any(|c| c.is_numeric());
+                    let is_known_tech_term = ["Database", "API", "Compiler", "Connection", "Query"].contains(&word);
+
+                    if starts_uppercase || is_technical || is_known_tech_term {
+                        entities.push(ExtractedEntity {
+                            name: word.to_string(),
+                            entity_type: self.classify_entity_type(word),
+                            properties: serde_json::json!({}),
+                            confidence: if is_known_tech_term { 0.9 } else { 0.7 },
+                        });
+                    }
                 }
             }
         }
@@ -85,7 +93,7 @@ impl HeuristicExtractor {
             }
         }
 
-        // 3. Extract known vendor/brand keywords
+        // 3. Extract known vendor/brand keywords and generic terms
         let vendor_keywords = [
             ("rust", "language"),
             ("cargo", "tool"),
@@ -93,6 +101,12 @@ impl HeuristicExtractor {
             ("tokio", "library"),
             ("surrealdb", "database"),
             ("surreal", "database"),
+            ("database", "technology"),
+            ("api", "interface"),
+            ("compiler", "tool"),
+            ("connection", "technology"),
+            ("query", "operation"),
+            ("issue", "problem"),
             ("github", "platform"),
             ("firefox", "browser"),
             ("chrome", "browser"),
@@ -130,15 +144,49 @@ impl HeuristicExtractor {
     fn classify_entity_type(&self, word: &str) -> String {
         let word_lower = word.to_lowercase();
 
-        if word_lower.contains("ci") || word_lower.contains("cd") || word_lower.contains("pipeline")
-        {
+        // Known technology/programming terms
+        let tech_terms = [
+            ("rust", "language"),
+            ("javascript", "language"),
+            ("java", "language"),
+            ("python", "language"),
+            ("surrealdb", "database"),
+            ("mongodb", "database"),
+            ("mysql", "database"),
+            ("postgres", "database"),
+            ("docker", "tool"),
+            ("kubernetes", "tool"),
+            ("git", "tool"),
+            ("api", "interface"),
+        ];
+
+        for (term, etype) in tech_terms.iter() {
+            if word_lower.contains(term) {
+                return etype.to_string();
+            }
+        }
+
+        if word_lower.contains("ci") || word_lower.contains("cd") || word_lower.contains("pipeline") {
             "process".to_string()
-        } else if word_lower.contains("error") || word_lower.contains("warning") {
+        } else if word_lower.contains("browser") || word_lower.contains("firefox") || word_lower.contains("chrome") {
+            "browser".to_string()
+        } else if word_lower.contains("database") || word_lower.contains("surrealdb") || word_lower.contains("connection") {
+            "technology".to_string()
+        } else if word_lower.contains("api") || word_lower.contains("interface") {
+            "interface".to_string()
+        } else if word_lower.contains("error") || word_lower.contains("warning") || word_lower.contains("issue") {
             "issue".to_string()
+        } else if word_lower.contains("compiler") || word_lower.contains("tool") {
+            "tool".to_string()
         } else if word_lower.contains("function") || word_lower.contains("method") {
             "code_entity".to_string()
+        } else if word_lower.contains("query") || word_lower.contains("operation") {
+            "operation".to_string()
+        } else if word_lower.len() >= 4 && word.chars().all(|c| c.is_ascii_alphabetic()) {
+            // Likely a proper name if all letters and reasonably long
+            "person".to_string()
         } else {
-            "person".to_string() // Default fallback
+            "concept".to_string() // Default fallback
         }
     }
 
@@ -153,7 +201,7 @@ impl HeuristicExtractor {
         chars.iter().all(|c| c.is_alphanumeric() || *c == '_') && word.contains('_')
     }
 
-    /// Extract relationships using pattern matching
+    /// Extract relationships from text using pattern matching
     fn extract_relationships(
         &self,
         text: &str,
@@ -161,46 +209,75 @@ impl HeuristicExtractor {
     ) -> Vec<ExtractedRelationship> {
         let mut relationships = Vec::new();
         let text_lower = text.to_lowercase();
+// Relationship patterns with better context
+let relation_patterns = [
+    (" fixed ", "fixed"),
+    (" broke ", "broke"),
+    (" caused ", "caused"),
+    (" requires ", "requires"),
+    (" depends ", "depends_on"),
+    (" depend ", "depends_on"),
+    (" blocked ", "blocked_by"),
+    (" warned ", "warned_about"),
+    (" solved ", "solved"),
+    (" added ", "added_to"),
+    (" removed ", "removed_from"),
+    (" changed ", "modified"),
+    (" used ", "uses"),
+    (" implemented ", "implemented_in"),
+    (" integrated ", "integrated_with"),
+];
 
-        // Relationship patterns
-        let relation_patterns = [
-            ("fixed", "fixed"),
-            ("broke", "broke"),
-            ("caused", "caused"),
-            ("requires", "requires"),
-            ("depends", "depends_on"),
-            ("blocked", "blocked_by"),
-            ("warned", "warned_about"),
-            ("solved", "solved"),
-            ("added", "added_to"),
-            ("removed", "removed_from"),
-            ("changed", "modified"),
-        ];
+for (pattern, rel_type) in relation_patterns.iter() {
+    if text_lower.contains(pattern.trim()) {
+        // Find entities within a reasonable context window around the pattern
+        let pattern_pos = text_lower.find(pattern.trim()).unwrap();
+        let window_start = pattern_pos.saturating_sub(50);
+        let window_end = (pattern_pos + pattern.len() + 50).min(text.len());
 
-        for (pattern, rel_type) in relation_patterns.iter() {
-            if text_lower.contains(pattern) {
-                // Simple heuristic: first entity before pattern, first after
-                let parts: Vec<&str> = text.split(pattern).collect();
-                if parts.len() >= 2 {
-                    let source_part = parts[0].split_whitespace().last().unwrap_or("");
-                    let target_part = parts[1].split_whitespace().next().unwrap_or("");
+        let context_window = &text_lower[window_start..window_end];
 
-                    // Find matching entities
-                    let source_entity = entities.iter().find(|e| e.name.contains(source_part));
-                    let target_entity = entities.iter().find(|e| e.name.contains(target_part));
-
-                    if let (Some(source), Some(target)) = (source_entity, target_entity) {
-                        relationships.push(ExtractedRelationship {
-                            source_name: source.name.clone(),
-                            target_name: target.name.clone(),
-                            rel_type: rel_type.to_string(),
-                            properties: serde_json::json!({}),
-                            confidence: 0.6,
-                        });
-                    }
-                }
+        // Find entities mentioned in the context
+        let mut relevant_entities = Vec::new();
+        for entity in entities.iter() {
+            // More robust case-insensitive matching
+            let entity_lower = entity.name.to_lowercase();
+            if context_window.contains(&entity_lower) {
+                relevant_entities.push(entity.clone());
             }
         }
+
+        // Create relationships between relevant entities
+        if relevant_entities.len() >= 2 {
+            for i in 0..relevant_entities.len() {
+                for j in (i + 1)..relevant_entities.len() {
+                    relationships.push(ExtractedRelationship {
+                        source_name: relevant_entities[i].name.clone(),
+                        target_name: relevant_entities[j].name.clone(),
+                        rel_type: rel_type.to_string(),
+                        properties: serde_json::json!({}),
+                        confidence: 0.5,
+                    });
+                }
+            }
+        } else if relevant_entities.len() == 1 && entities.len() > 1 {
+            // If only one entity found in context, relate to the most likely other entity
+            let other_entities: Vec<&ExtractedEntity> = entities.iter()
+                .filter(|e| !relevant_entities.contains(e))
+                .collect();
+
+            if let Some(other) = other_entities.first() {
+                relationships.push(ExtractedRelationship {
+                    source_name: relevant_entities[0].name.clone(),
+                    target_name: other.name.clone(),
+                    rel_type: rel_type.to_string(),
+                    properties: serde_json::json!({}),
+                    confidence: 0.4,
+                });
+            }
+        }
+    }
+}
 
         relationships
     }
@@ -208,31 +285,46 @@ impl HeuristicExtractor {
     /// Extract events from text (past tense actions with objects)
     fn extract_events(&self, text: &str) -> Vec<ExtractedEvent> {
         let mut events = Vec::new();
+        let text_lower = text.to_lowercase();
 
-        // Simple past tense verb detection (very basic)
+        // Expanded past tense verb detection
         let past_verbs = [
             "fixed", "broke", "added", "removed", "changed", "created", "deleted", "updated",
+            "implemented", "integrated", "resolved", "completed", "finished", "started", "began",
         ];
 
-        for verb in past_verbs.iter() {
-            if text.to_lowercase().contains(verb) {
-                // Find the object (words after the verb)
-                let parts: Vec<&str> = text.split(verb).collect();
-                if parts.len() >= 2 {
-                    let object = parts[1]
-                        .split_whitespace()
-                        .take(3) // Take first few words as description
-                        .collect::<Vec<&str>>()
-                        .join(" ");
+        // Also check for present perfect (have/has + past participle)
+        let present_perfect = [
+            "have fixed", "have added", "have removed", "have changed", "have created",
+            "has fixed", "has added", "has removed", "has changed", "has created",
+        ];
 
-                    if !object.is_empty() {
-                        events.push(ExtractedEvent {
-                            description: format!("{} {}", verb, object.trim()),
-                            entities_involved: vec![], // Would be populated by linking to extracted entities
-                            timestamp: None,
-                            confidence: 0.5,
-                        });
-                    }
+        // Combine both patterns
+        let all_verb_patterns = past_verbs.iter()
+            .map(|v| v.to_string())
+            .chain(present_perfect.iter().map(|v| v.to_string()))
+            .collect::<Vec<_>>();
+
+        for verb_pattern in all_verb_patterns.iter() {
+            if text_lower.contains(verb_pattern) {
+                // Find the object (words after the verb pattern)
+                let verb_pos = text_lower.find(verb_pattern).unwrap_or(0);
+                let after_verb = &text[verb_pos + verb_pattern.len()..];
+                let object_words: Vec<&str> = after_verb
+                    .split_whitespace()
+                    .take(5) // Take up to 5 words as object description
+                    .filter(|word| !word.starts_with(",") && !word.starts_with("."))
+                    .collect();
+
+                let object = object_words.join(" ");
+
+                if !object.is_empty() && object.len() >= 3 {
+                    events.push(ExtractedEvent {
+                        description: format!("{} {}", verb_pattern.trim(), object.trim()),
+                        entities_involved: vec![], // Would be populated by linking to extracted entities
+                        timestamp: None,
+                        confidence: 0.6,
+                    });
                 }
             }
         }
@@ -327,13 +419,14 @@ impl HeuristicExtractor {
             all_events.extend(events);
         }
 
-        // Deduplicate entities across all texts
+        // Deduplicate entities across all texts (case-insensitive)
         let mut seen = HashMap::new();
         all_entities.retain(|e| {
-            if seen.contains_key(&e.name) {
+            let key = e.name.to_lowercase();
+            if seen.contains_key(&key) {
                 false
             } else {
-                seen.insert(e.name.clone(), true);
+                seen.insert(key, true);
                 true
             }
         });

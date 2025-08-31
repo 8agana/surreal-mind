@@ -141,14 +141,23 @@ impl SurrealMindServer {
                 .collect();
 
             let session_total = recent_texts.len();
+            tracing::info!("🎯 KG extraction starting: {} session thoughts, confidence_min={:.2}, max_nodes={}, max_edges={}",
+                         session_total, confidence_min, max_nodes, max_edges);
 
             if !recent_texts.is_empty() {
                 // Extract knowledge
                 let extractor = HeuristicExtractor::new();
                 let extraction = extractor.extract(&recent_texts).await?;
 
+                // Debug: Show what relationships were extracted
+                tracing::info!("🔍 Raw relationships extracted: {}", extraction.relationships.len());
+                for (idx, rel) in extraction.relationships.iter().enumerate() {
+                    tracing::debug!("  [{}] '{}' -> '{}' [{}] (confidence: {:.2})",
+                                  idx + 1, rel.source_name, rel.target_name, rel.rel_type, rel.confidence);
+                }
+
                 // Filter by confidence
-                let entities: Vec<_> = extraction
+                let filtered_entities: Vec<_> = extraction
                     .entities
                     .into_iter()
                     .filter(|e| e.confidence >= confidence_min as f32)
@@ -162,62 +171,101 @@ impl SurrealMindServer {
                     .take(max_edges)
                     .collect();
 
+                // Debug: Show relationships after filtering
+                tracing::info!("📊 Relationships after confidence filtering: {}", relationships.len());
+                for (idx, rel) in relationships.iter().enumerate() {
+                    tracing::debug!("  Filtered [{}] '{}' -> '{}' [{}] (confidence: {:.2})",
+                                  idx + 1, rel.source_name, rel.target_name, rel.rel_type, rel.confidence);
+                }
+
                 if !dry_run {
                     // Upsert entities to KG
+                    tracing::debug!("Starting KG extraction: {} entities, {} relationships", filtered_entities.len(), relationships.len());
                     let mut entity_ids = Vec::new();
-                    for entity in &entities {
+                    for entity in &filtered_entities {
+                        tracing::debug!("Processing entity: {} (type: {})", entity.name, entity.entity_type);
                         let existing: Vec<serde_json::Value> = self.db
-                            .query("SELECT meta::id(id) as id FROM kg_entities WHERE string.lower(name) = $name_lower AND data.entity_type = $type LIMIT 1")
-                            .bind(("name_lower", entity.name.to_lowercase()))
+                            .query("SELECT meta::id(id) as id FROM kg_entities WHERE name = $name AND data.entity_type = $type LIMIT 1")
+                            .bind(("name", entity.name.clone()))
                             .bind(("type", entity.entity_type.clone()))
                             .await?
                             .take(0)?;
 
                         let entity_id = if existing.is_empty() {
                             // Create new entity
+                            tracing::debug!("Creating new entity: {} (type: {})", entity.name, entity.entity_type);
                             let created: Vec<serde_json::Value> = self.db
                                 .query("CREATE kg_entities SET created_at = time::now(), name = $name, data = $data RETURN meta::id(id) as id, name, data")
                                 .bind(("name", entity.name.clone()))
                                 .bind(("data", entity.properties.clone()))
                                 .await?
                                 .take(0)?;
-                            created
+                            let new_id = created
                                 .first()
                                 .and_then(|c| c.get("id"))
                                 .and_then(|id| id.as_str())
                                 .unwrap_or("")
-                                .to_string()
+                                .to_string();
+                            tracing::debug!("Created entity with ID: {}", new_id);
+                            new_id
                         } else {
                             // Use existing
-                            existing
+                            let existing_id = existing
                                 .first()
                                 .and_then(|e| e.get("id"))
                                 .and_then(|id| id.as_str())
                                 .unwrap_or("")
-                                .to_string()
+                                .to_string();
+                            tracing::debug!("Using existing entity ID: {}", existing_id);
+                            existing_id
                         };
                         entity_ids.push(entity_id);
                     }
 
                     // Create relationships
+                    tracing::info!("🎯 Starting relationship creation for {} relationships", relationships.len());
                     let mut relationship_ids = Vec::new();
-                    for relationship in &relationships {
-                        // Find entity IDs
-                        let source_id = entities
-                            .iter()
-                            .position(|e| e.name == relationship.source_name)
-                            .and_then(|idx| entity_ids.get(idx))
-                            .cloned()
-                            .unwrap_or_default();
+                    for (rel_idx, relationship) in relationships.iter().enumerate() {
+                        tracing::info!("🔍 Processing relationship {}: '{}' -> '{}' [{}]",
+                                     rel_idx + 1, relationship.source_name, relationship.target_name, relationship.rel_type);
 
-                        let target_id = entities
+                        // Debug: Show all entities available for matching
+                        tracing::debug!("📋 Available entities for matching:");
+                        for (idx, entity) in filtered_entities.iter().enumerate() {
+                            tracing::debug!("  [{}] {} (id: {})", idx, entity.name, entity_ids.get(idx).unwrap_or(&"N/A".to_string()));
+                        }
+
+                        // Find entity IDs (case-insensitive matching)
+                        let source_match = filtered_entities
                             .iter()
-                            .position(|e| e.name == relationship.target_name)
-                            .and_then(|idx| entity_ids.get(idx))
-                            .cloned()
-                            .unwrap_or_default();
+                            .enumerate()
+                            .find(|(_, e)| e.name.to_lowercase() == relationship.source_name.to_lowercase());
+
+                        let source_id = if let Some((idx, entity)) = source_match {
+                            tracing::debug!("✅ Source match found: '{}' matches entity '{}' at index {}", relationship.source_name, entity.name, idx);
+                            entity_ids.get(idx).cloned().unwrap_or_default()
+                        } else {
+                            tracing::warn!("❌ Source match failed: '{}' not found in entities", relationship.source_name);
+                            String::new()
+                        };
+
+                        let target_match = filtered_entities
+                            .iter()
+                            .enumerate()
+                            .find(|(_, e)| e.name.to_lowercase() == relationship.target_name.to_lowercase());
+
+                        let target_id = if let Some((idx, entity)) = target_match {
+                            tracing::debug!("✅ Target match found: '{}' matches entity '{}' at index {}", relationship.target_name, entity.name, idx);
+                            entity_ids.get(idx).cloned().unwrap_or_default()
+                        } else {
+                            tracing::warn!("❌ Target match failed: '{}' not found in entities", relationship.target_name);
+                            String::new()
+                        };
+
+                        tracing::debug!("🔗 Relationship IDs: source='{}', target='{}'", source_id, target_id);
 
                         if !source_id.is_empty() && !target_id.is_empty() {
+                            tracing::debug!("Creating relationship in database: {} -> {} [{}]", source_id, target_id, relationship.rel_type);
                             let created: Vec<serde_json::Value> = self.db
                                 .query("CREATE kg_edges SET created_at = time::now(), source = $source, target = $target, rel_type = $rel_type, data = $data RETURN meta::id(id) as id, source, target, rel_type")
                                 .bind(("source", source_id.clone()))
@@ -233,13 +281,20 @@ impl SurrealMindServer {
                                     .and_then(|id| id.as_str())
                                     .unwrap_or("")
                                     .to_string();
+                                tracing::debug!("Created relationship with ID: {}", rel_id);
                                 relationship_ids.push(rel_id);
+                            } else {
+                                tracing::warn!("No relationship created for: {} -> {} [{}]", source_id, target_id, relationship.rel_type);
                             }
+                        } else {
+                            tracing::warn!("Skipping relationship creation - empty IDs: source='{}', target='{}'", source_id, target_id);
                         }
                     }
 
+                    tracing::info!("📊 Relationship creation summary: {} attempted, {} created", relationships.len(), relationship_ids.len());
+
                     // Generate structured entity list for return
-                    let entities_return: Vec<serde_json::Value> = entities
+                    let entities_return: Vec<serde_json::Value> = filtered_entities
                         .iter()
                         .enumerate()
                         .map(|(idx, entity)| {
@@ -259,7 +314,7 @@ impl SurrealMindServer {
                         .filter_map(|(idx, _)| {
                             relationship_ids.get(idx).map(|rel_id: &String| {
                                 let rel = &relationships[idx];
-                                let source_id = entities
+                                let source_id = filtered_entities
                                     .iter()
                                     .position(|e| e.name == rel.source_name)
                                     .and_then(|idx| entity_ids.get(idx))
@@ -268,7 +323,7 @@ impl SurrealMindServer {
                                 json!({
                                     "id": rel_id.clone(),
                                     "source_id": source_id,
-                                    "target_id": entities.iter()
+                                    "target_id": filtered_entities.iter()
                                         .position(|e| e.name == rel.target_name)
                                         .and_then(|idx| entity_ids.get(idx))
                                         .cloned()
@@ -285,7 +340,7 @@ impl SurrealMindServer {
                         "entities": entities_return,
                         "relationships": relationships_return,
                         "created": {
-                            "entities": entities.len(),
+                            "entities": filtered_entities.len(),
                             "relationships": relationships.len()
                         },
                         "session": {
@@ -298,7 +353,7 @@ impl SurrealMindServer {
                     // Dry run - just include summary
                     result["extracted"] = json!({
                         "handoff": format!("DRY RUN: {}", extraction.synthesis),
-                        "entities": entities.len(),
+                        "entities": filtered_entities.len(),
                         "relationships": relationships.len(),
                         "session": {
                             "from": format!("{} hours ago", session_hours),
