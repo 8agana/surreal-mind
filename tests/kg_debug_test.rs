@@ -26,48 +26,75 @@ async fn debug_kg_relationship_creation() {
     // Extract knowledge
     let extraction_result = extractor.extract(&test_text).await.unwrap();
     println!("🔍 DEBUG: Extraction result:");
-    println!("  - Entities extracted: {}", extraction_result.entities.len());
-    println!("  - Relationships extracted: {}", extraction_result.relationships.len());
+    println!(
+        "  - Entities extracted: {}",
+        extraction_result.entities.len()
+    );
+    println!(
+        "  - Relationships extracted: {}",
+        extraction_result.relationships.len()
+    );
 
     // Show all entities
     println!("📋 DEBUG: Extracted entities:");
     for (i, entity) in extraction_result.entities.iter().enumerate() {
-        println!("  [{}] '{}' (type: {}, confidence: {:.2})",
-                 i, entity.name, entity.entity_type, entity.confidence);
+        println!(
+            "  [{}] '{}' (type: {}, confidence: {:.2})",
+            i, entity.name, entity.entity_type, entity.confidence
+        );
     }
 
     // Show all relationships
     println!("🔗 DEBUG: Extracted relationships:");
     for (i, rel) in extraction_result.relationships.iter().enumerate() {
-        println!("  [{}] '{}' -> '{}' [{}] (confidence: {:.2})",
-                 i, rel.source_name, rel.target_name, rel.rel_type, rel.confidence);
+        println!(
+            "  [{}] '{}' -> '{}' [{}] (confidence: {:.2})",
+            i, rel.source_name, rel.target_name, rel.rel_type, rel.confidence
+        );
     }
 
     // Test entity matching logic (the likely issue)
     println!("🎯 DEBUG: Testing entity matching logic:");
     for rel in &extraction_result.relationships {
-        println!("  Checking relationship: '{}' -> '{}' [{}]", rel.source_name, rel.target_name, rel.rel_type);
+        println!(
+            "  Checking relationship: '{}' -> '{}' [{}]",
+            rel.source_name, rel.target_name, rel.rel_type
+        );
 
         // Test exact name matching
-        let source_match_exact = extraction_result.entities.iter()
+        let source_match_exact = extraction_result
+            .entities
+            .iter()
             .find(|e| e.name == rel.source_name);
-        let target_match_exact = extraction_result.entities.iter()
+        let target_match_exact = extraction_result
+            .entities
+            .iter()
             .find(|e| e.name == rel.target_name);
 
         println!("    Exact source match: {}", source_match_exact.is_some());
         println!("    Exact target match: {}", target_match_exact.is_some());
 
         // Test case-insensitive matching
-        let source_match_case = extraction_result.entities.iter()
+        let source_match_case = extraction_result
+            .entities
+            .iter()
             .find(|e| e.name.to_lowercase() == rel.source_name.to_lowercase());
-        let target_match_case = extraction_result.entities.iter()
+        let target_match_case = extraction_result
+            .entities
+            .iter()
             .find(|e| e.name.to_lowercase() == rel.target_name.to_lowercase());
 
-        println!("    Case-insensitive source match: {}", source_match_case.is_some());
+        println!(
+            "    Case-insensitive source match: {}",
+            source_match_case.is_some()
+        );
         if source_match_case.is_some() {
             println!("      Source entity: '{}'", source_match_case.unwrap().name);
         }
-        println!("    Case-insensitive target match: {}", target_match_case.is_some());
+        println!(
+            "    Case-insensitive target match: {}",
+            target_match_case.is_some()
+        );
         if target_match_case.is_some() {
             println!("      Target entity: '{}'", target_match_case.unwrap().name);
         }
@@ -80,17 +107,32 @@ async fn debug_kg_relationship_creation() {
 
     // Test confidence filtering
     let confidence_min = 0.5;
-    let filtered_entities: Vec<_> = extraction_result.entities.iter()
+    let filtered_entities: Vec<_> = extraction_result
+        .entities
+        .iter()
         .filter(|e| e.confidence >= confidence_min)
         .collect();
 
-    let filtered_relationships: Vec<_> = extraction_result.relationships.iter()
+    let filtered_relationships: Vec<_> = extraction_result
+        .relationships
+        .iter()
         .filter(|r| r.confidence >= confidence_min)
         .collect();
 
-    println!("🎚️  DEBUG: After confidence filtering (min: {:.2}):", confidence_min);
-    println!("  - Entities: {} -> {}", extraction_result.entities.len(), filtered_entities.len());
-    println!("  - Relationships: {} -> {}", extraction_result.relationships.len(), filtered_relationships.len());
+    println!(
+        "🎚️  DEBUG: After confidence filtering (min: {:.2}):",
+        confidence_min
+    );
+    println!(
+        "  - Entities: {} -> {}",
+        extraction_result.entities.len(),
+        filtered_entities.len()
+    );
+    println!(
+        "  - Relationships: {} -> {}",
+        extraction_result.relationships.len(),
+        filtered_relationships.len()
+    );
 
     // Test the full relationship creation simulation
     println!("🧪 DEBUG: Simulating relationship creation process:");
@@ -98,53 +140,86 @@ async fn debug_kg_relationship_creation() {
 
     for rel in &filtered_relationships {
         // Find entity IDs (simulated)
-        let source_match = filtered_entities.iter()
+        let source_match = filtered_entities
+            .iter()
             .enumerate()
             .find(|(_, e)| e.name.to_lowercase() == rel.source_name.to_lowercase());
 
-        let target_match = filtered_entities.iter()
+        let target_match = filtered_entities
+            .iter()
             .enumerate()
             .find(|(_, e)| e.name.to_lowercase() == rel.target_name.to_lowercase());
 
-        if let (Some((source_idx, source_entity)), Some((target_idx, target_entity))) = (source_match, target_match) {
-            println!("  ✅ Would create relationship: '{}' ({}) -> '{}' ({}) [{}]",
-                     source_entity.name, source_idx,
-                     target_entity.name, target_idx,
-                     rel.rel_type);
+        if let (Some((source_idx, source_entity)), Some((target_idx, target_entity))) =
+            (source_match, target_match)
+        {
+            println!(
+                "  ✅ Would create relationship: '{}' ({}) -> '{}' ({}) [{}]",
+                source_entity.name, source_idx, target_entity.name, target_idx, rel.rel_type
+            );
             relationship_count += 1;
         } else {
-            println!("  ❌ Would skip relationship '{}' -> '{}' (entity not found)",
-                     rel.source_name, rel.target_name);
+            println!(
+                "  ❌ Would skip relationship '{}' -> '{}' (entity not found)",
+                rel.source_name, rel.target_name
+            );
         }
     }
 
     println!("🎉 DEBUG: Simulation results:");
-    println!("  - Entities available for matching: {}", filtered_entities.len());
-    println!("  - Relationships that would be created: {}", relationship_count);
-    println!("  - Success rate: {:.1}%", if !filtered_relationships.is_empty() {
-        (relationship_count as f32 / filtered_relationships.len() as f32) * 100.0
-    } else { 0.0 });
+    println!(
+        "  - Entities available for matching: {}",
+        filtered_entities.len()
+    );
+    println!(
+        "  - Relationships that would be created: {}",
+        relationship_count
+    );
+    println!(
+        "  - Success rate: {:.1}%",
+        if !filtered_relationships.is_empty() {
+            (relationship_count as f32 / filtered_relationships.len() as f32) * 100.0
+        } else {
+            0.0
+        }
+    );
 
     // Assertions
-    assert!(!extraction_result.entities.is_empty(), "Should extract at least some entities");
-    assert!(!extraction_result.relationships.is_empty(), "Should extract at least some relationships");
+    assert!(
+        !extraction_result.entities.is_empty(),
+        "Should extract at least some entities"
+    );
+    assert!(
+        !extraction_result.relationships.is_empty(),
+        "Should extract at least some relationships"
+    );
 
     // Key diagnostic: Check if the issue is in entity matching
     let total_relationships = extraction_result.relationships.len();
-    let matching_relationships = filtered_relationships.iter()
+    let matching_relationships = filtered_relationships
+        .iter()
         .filter(|rel| {
-            filtered_entities.iter().any(|e| e.name.to_lowercase() == rel.source_name.to_lowercase()) &&
-            filtered_entities.iter().any(|e| e.name.to_lowercase() == rel.target_name.to_lowercase())
+            filtered_entities
+                .iter()
+                .any(|e| e.name.to_lowercase() == rel.source_name.to_lowercase())
+                && filtered_entities
+                    .iter()
+                    .any(|e| e.name.to_lowercase() == rel.target_name.to_lowercase())
         })
         .count();
 
     let match_rate = if total_relationships > 0 {
         (matching_relationships as f32 / total_relationships as f32) * 100.0
-    } else { 100.0 };
+    } else {
+        100.0
+    };
 
     println!("📊 DEBUG: Entity matching diagnostics:");
     println!("  - Total relationships: {}", total_relationships);
-    println!("  - Relationships with matching entities: {}", matching_relationships);
+    println!(
+        "  - Relationships with matching entities: {}",
+        matching_relationships
+    );
     println!("  - Entity match rate: {:.1}%", match_rate);
 
     if match_rate < 80.0 {
@@ -175,34 +250,60 @@ async fn debug_specific_user_case() {
         println!("    '{}' (type: {})", entity.name, entity.entity_type);
     }
 
-    println!("  - Relationships: {}", extraction_result.relationships.len());
+    println!(
+        "  - Relationships: {}",
+        extraction_result.relationships.len()
+    );
     for rel in &extraction_result.relationships {
-        println!("    '{}' -> '{}' [{}]", rel.source_name, rel.target_name, rel.rel_type);
+        println!(
+            "    '{}' -> '{}' [{}]",
+            rel.source_name, rel.target_name, rel.rel_type
+        );
 
         // Check if entities match
-        let source_exists = extraction_result.entities.iter()
+        let source_exists = extraction_result
+            .entities
+            .iter()
             .any(|e| e.name.to_lowercase() == rel.source_name.to_lowercase());
-        let target_exists = extraction_result.entities.iter()
+        let target_exists = extraction_result
+            .entities
+            .iter()
             .any(|e| e.name.to_lowercase() == rel.target_name.to_lowercase());
 
-        println!("      Source '{}' exists: {}", rel.source_name, source_exists);
-        println!("      Target '{}' exists: {}", rel.target_name, target_exists);
-        println!("      Relationship would create: {}", source_exists && target_exists);
+        println!(
+            "      Source '{}' exists: {}",
+            rel.source_name, source_exists
+        );
+        println!(
+            "      Target '{}' exists: {}",
+            rel.target_name, target_exists
+        );
+        println!(
+            "      Relationship would create: {}",
+            source_exists && target_exists
+        );
     }
 
     // Check for the specific "Sam fixed surreal" relationship
-    let sam_surreal_rel = extraction_result.relationships.iter()
-        .find(|r| r.source_name.to_lowercase().contains("sam") &&
-                  r.target_name.to_lowercase().contains("surreal"));
+    let sam_surreal_rel = extraction_result.relationships.iter().find(|r| {
+        r.source_name.to_lowercase().contains("sam")
+            && r.target_name.to_lowercase().contains("surreal")
+    });
 
     if let Some(rel) = sam_surreal_rel {
         println!("🎯 Found 'Sam fixed surreal' pattern:");
-        println!("  Source: '{}', Target: '{}', Type: '{}'", rel.source_name, rel.target_name, rel.rel_type);
+        println!(
+            "  Source: '{}', Target: '{}', Type: '{}'",
+            rel.source_name, rel.target_name, rel.rel_type
+        );
     } else {
         println!("❌ 'Sam fixed surreal' pattern not found");
         println!("   Available relationships:");
         for rel in &extraction_result.relationships {
-            println!("   - '{}' -> '{}' [{}]", rel.source_name, rel.target_name, rel.rel_type);
+            println!(
+                "   - '{}' -> '{}' [{}]",
+                rel.source_name, rel.target_name, rel.rel_type
+            );
         }
     }
 }
@@ -242,7 +343,10 @@ async fn debug_database_relationship_workflow() {
             println!("  ✅ Would create: {} -> {} [{}]", source, target, rel_type);
             simulated_creations += 1;
         } else {
-            println!("  ❌ Would skip: {} -> {} [{}] (missing entities)", source, target, rel_type);
+            println!(
+                "  ❌ Would skip: {} -> {} [{}] (missing entities)",
+                source, target, rel_type
+            );
             simulated_skips += 1;
         }
     }

@@ -88,10 +88,16 @@ impl SurrealMindServer {
             .bind(("submode", submode.clone()))
             .await?;
 
+        // Memory injection (simple cosine similarity over recent thoughts)
+        let (mem_count, _enriched) = self
+            .inject_memories(&thought_id, &embedding, injection_scale, Some(&submode))
+            .await
+            .unwrap_or((0, None));
+
         let result = json!({
             "thought_id": thought_id,
             "submode_used": submode,
-            "memories_injected": 0,
+            "memories_injected": mem_count
         });
 
         Ok(CallToolResult::structured(result))
