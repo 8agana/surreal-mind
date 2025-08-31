@@ -167,7 +167,7 @@ impl SurrealMindServer {
                     let mut entity_ids = Vec::new();
                     for entity in &entities {
                         let existing: Vec<serde_json::Value> = self.db
-                            .query("SELECT meta::id(id) as id FROM kg_entities WHERE string::lower(name) = $name_lower AND data.entity_type = $type LIMIT 1")
+                            .query("SELECT meta::id(id) as id FROM kg_entities WHERE string.lower(name) = $name_lower AND data.entity_type = $type LIMIT 1")
                             .bind(("name_lower", entity.name.to_lowercase()))
                             .bind(("type", entity.entity_type.clone()))
                             .await?

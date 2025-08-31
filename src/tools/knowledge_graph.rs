@@ -49,7 +49,7 @@ impl SurrealMindServer {
 
                 // Try upsert: find existing by name + entity_type when available
                 if upsert {
-                    let mut sql = "SELECT meta::id(id) as id FROM kg_entities WHERE string::lower(name) = string::lower($name)".to_string();
+                    let mut sql = "SELECT meta::id(id) as id FROM kg_entities WHERE string.lower(name) = string.lower($name)".to_string();
                     if entity_type_s.is_some() {
                         sql.push_str(" AND data.entity_type = $etype");
                     }
@@ -160,7 +160,7 @@ impl SurrealMindServer {
                 if upsert && !name_s.is_empty() && !source_thought_id_s.is_empty() {
                     let found: Vec<serde_json::Value> = self
                         .db
-                        .query("SELECT meta::id(id) as id FROM kg_observations WHERE string::lower(name) = string::lower($name) AND source_thought_id = $src LIMIT 1")
+                        .query("SELECT meta::id(id) as id FROM kg_observations WHERE string.lower(name) = string.lower($name) AND source_thought_id = $src LIMIT 1")
                         .bind(("name", name_s.clone()))
                         .bind(("src", source_thought_id_s.clone()))
                         .await?
@@ -256,7 +256,7 @@ impl SurrealMindServer {
                 )
             } else {
                 format!(
-                    "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities WHERE string::lower(name) CONTAINS string::lower($name) LIMIT {}",
+                    "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities WHERE string.lower(name) CONTAINS string.lower($name) LIMIT {}",
                     top_k
                 )
             };
@@ -283,7 +283,7 @@ impl SurrealMindServer {
                 )
             } else {
                 format!(
-                    "SELECT meta::id(id) as id, name, data, created_at FROM kg_observations WHERE string::lower(name) CONTAINS string::lower($name) LIMIT {}",
+                    "SELECT meta::id(id) as id, name, data, created_at FROM kg_observations WHERE string.lower(name) CONTAINS string.lower($name) LIMIT {}",
                     top_k
                 )
             };
