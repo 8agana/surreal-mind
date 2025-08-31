@@ -384,8 +384,8 @@ impl SurrealMindServer {
 
             DEFINE TABLE kg_entities SCHEMALESS;
             DEFINE INDEX idx_kge_created ON TABLE kg_entities FIELDS created_at;
-            DEFINE INDEX idx_kge_name ON TABLE kg_entities FIELDS string.lower(name);
-            DEFINE INDEX idx_kge_name_type ON TABLE kg_entities FIELDS string.lower(name), data.entity_type;
+            DEFINE INDEX idx_kge_name ON TABLE kg_entities FIELDS name;
+            DEFINE INDEX idx_kge_name_type ON TABLE kg_entities FIELDS name, data.entity_type;
 
             DEFINE TABLE kg_edges SCHEMALESS;
             DEFINE INDEX idx_kged_created ON TABLE kg_edges FIELDS created_at;
@@ -393,8 +393,8 @@ impl SurrealMindServer {
 
             DEFINE TABLE kg_observations SCHEMALESS;
             DEFINE INDEX idx_kgo_created ON TABLE kg_observations FIELDS created_at;
-            DEFINE INDEX idx_kgo_name ON TABLE kg_observations FIELDS string.lower(name);
-            DEFINE INDEX idx_kgo_name_src ON TABLE kg_observations FIELDS string.lower(name), source_thought_id;
+            DEFINE INDEX idx_kgo_name ON TABLE kg_observations FIELDS name;
+            DEFINE INDEX idx_kgo_name_src ON TABLE kg_observations FIELDS name, source_thought_id;
         "#;
 
         self.db.query(schema_sql).await.map_err(|e| McpError {
