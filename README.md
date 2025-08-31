@@ -254,11 +254,81 @@ Examples:
 }
 ```
 
+### MCP Tool: inner_voice
+Private inner thoughts with visibility controls, similar to convo_think but for internal reasoning.
+
+Parameters:
+- `content` (required): The thought content
+- `injection_scale`: Memory injection distance (same formats as convo_think)
+- `submode`: Conversation style (optional)
+- `tags`: Additional categorization
+- `significance`: Importance weight (same formats as convo_think)
+- `verbose_analysis`: Boolean (default true)
+- `inner_visibility`: "private" (default) | "context_only" — controls when thought is exposed
+
+Example:
+```json
+{
+  "tool": "inner_voice",
+  "arguments": {
+    "content": "This is a private reflection on the user's request",
+    "inner_visibility": "private",
+    "significance": "medium"
+  }
+}
+```
+
+### MCP Tool: knowledgegraph_create
+Create entities and relationships in the Knowledge Graph (KG) for advanced semantic connections.
+
+Parameters:
+- `kind` (required): "entity" (default) | "relationship" | "observation"
+- `data` (required): Object containing KG data (e.g., {"name": "example", "type": "concept"})
+- `upsert`: Boolean (default true) — update if exists
+- `source_thought_id`: String (optional) — link to originating thought
+- `confidence`: Number 0.0-1.0 (optional) — confidence score
+
+Example:
+```json
+{
+  "tool": "knowledgegraph_create",
+  "arguments": {
+    "kind": "entity",
+    "data": {
+      "name": "AI Consciousness",
+      "type": "concept",
+      "description": "Persistent AI mind state"
+    },
+    "confidence": 0.9
+  }
+}
+```
+
+### MCP Tool: knowledgegraph_search
+Search entities/relationships in the Knowledge Graph with semantic matching.
+
+Parameters:
+- `query` (required): Object with search criteria (e.g., {"name": "AI", "type": "concept"})
+- `target`: "entity" (default) | "relationship" | "observation" | "mixed"
+- `top_k`: Integer 1-50 (optional)
+
+Example:
+```json
+{
+  "tool": "knowledgegraph_search",
+  "arguments": {
+    "query": {"name": "consciousness"},
+    "target": "entity",
+    "top_k": 10
+  }
+}
+```
+
 ### MCP Tool: detailed_help
 Returns deterministic, example-rich documentation for tools and parameters.
 
 Parameters:
-- `tool`: "convo_think" | "tech_think" (optional; overview when omitted)
+- `tool`: "convo_think" | "tech_think" | "inner_voice" | "search_thoughts" | "knowledgegraph_create" | "knowledgegraph_search" (optional; overview when omitted)
 - `format`: "full" (default) | "compact"
 
 Examples:
@@ -267,23 +337,42 @@ Examples:
 {"tool":"detailed_help","arguments":{"format":"compact"}}
 ```
 
+### MCP Tool: search_thoughts
+## Available Tools and Binaries
+
+This project includes:
+
+### Main MCP Server Binary
+- `cargo run` or `./target/release/surreal-mind`: Starts the MCP server with stdio transport
+- Handles all 7 tools: convo_think, tech_think, inner_voice, search_thoughts, knowledgegraph_create, knowledgegraph_search, detailed_help
+
+### Additional Binaries (src/bin/)
+- `cargo run --bin reembed`: CLI for re-embedding thoughts (fixes dimension mismatches, recomputes embeddings)
+- `cargo run --bin check_db_contents`: Utility to inspect DB contents
+- `cargo run --bin db_check`: DB connectivity test
+- `cargo run --bin simple_db_test`: Basic DB operations test
+- `cargo run --bin reembed_thoughts`: Script for bulk re-embedding (uses Python wrapper)
+
+Use `cargo build --release` to build all binaries to `./target/release/`.
+
 ## Architecture
 
 ### Orbital Mechanics
 Memory distance calculated from:
 - **Age** (40%): How recent the memory is
-- **Access** (30%): How often it's been accessed  
+- **Access** (30%): How often it's been accessed
 - **Significance** (30%): Explicit importance
 
 When `SURR_SUBMODE_RETRIEVAL=true`, weights adjust based on submode profile.
 
 ### Storage
-- **SurrealDB**: Embedded with RocksDB backend at `./surreal_data`
+- **SurrealDB**: Persistent storage with optional in-memory mode for testing
 - **Namespace**: `surreal_mind`
 - **Database**: `consciousness`
-- **Tables**: 
+- **Tables**:
   - `thoughts` (nodes): Stores content, embeddings, and framework analysis
   - `recalls` (edges): Bidirectional relationships with strength and flavor
+  - `kg_entities`, `kg_relationships`, `kg_observations`: Knowledge Graph data
 
 ### New Persistence Fields
 **Thoughts table:**
@@ -341,22 +430,31 @@ Env knobs:
 - `SURR_SEARCH_GRAPH_MAX_NEIGHBORS`: cap neighbors per seed (default 20).
 - `SURR_CACHE_WARM`: cache warm-up batch (default 64; clamp 0–1000).
 
+### Knowledge Graph
+Advanced semantic graph connecting thoughts, entities, and observations:
+- **Entities**: Concepts, people, topics (auto-embedded)
+- **Relationships**: Connections between entities with confidence scores
+- **Observations**: Timestamped facts with provenance
+
+Graph expansion in search uses edge strengths and neighbor boosts for deeper context retrieval.
+
 ### Re-embedding Script
 Standalone CLI to recompute embeddings outside MCP.
 
 Usage:
 - Build: `cargo build --release`
-- Dry run: `target/release/reembed --dry-run`  (or env `REEMBED_DRY_RUN=true`)
-- Re-embed mismatched/missing only: `target/release/reembed --batch-size 64`
-- Full re-embed: `target/release/reembed --all --batch-size 64`
+- Run: `cargo run --bin reembed` (or `./target/release/reembed`)
+- Dry run: `--dry-run` (or env `REEMBED_DRY_RUN=true`)
+- Re-embed mismatched/missing only: `--batch-size 64`
+- Full re-embed: `--all --batch-size 64`
 - Limits: `--limit 100` to cap total processed
 
-Reads DB/env from existing `.env` (symlinked to project root):
-- `SURR_DB_URL`, `SURR_DB_USER`, `SURR_DB_PASS`, `SURR_DB_NS`, `SURR_DB_DB`
+Reads DB/env from `.env`:
+- Database: `SURR_DB_URL`, `SURR_DB_USER`, `SURR_DB_PASS`, `SURR_DB_NS`, `SURR_DB_DB`
 - Embeddings: `OPENAI_API_KEY` (default), `SURR_EMBED_PROVIDER`, `SURR_EMBED_MODEL`, `SURR_EMBED_DIM`
-- `SURR_SUBMODE_RETRIEVAL`: enable submode-aware proximity weights.
-- `SURR_DB_MAX_CONCURRENCY`: DB concurrency (default 1 = serial; recommended until WS issues are resolved).
-- `SURR_DB_TIMEOUT_MS`: DB query timeout for search/expansion.
+- Submode: `SURR_SUBMODE_RETRIEVAL` (enable proximity weights)
+- Concurrency: `SURR_DB_MAX_CONCURRENCY` (default 1 = serial)
+- Timeouts: `SURR_DB_TIMEOUT_MS`
 
 Example:
 ```json
