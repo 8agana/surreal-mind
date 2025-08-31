@@ -35,6 +35,7 @@ static FRAMEWORKS: Lazy<Vec<Arc<dyn Framework + Send + Sync>>> = Lazy::new(|| {
     ]
 });
 
+#[allow(clippy::new_without_default)]
 impl CognitiveEngine {
     pub fn new() -> Self {
         Self {
@@ -150,7 +151,9 @@ impl CognitiveEngine {
                         *idx_ref += 1;
                         if seen.insert(candidate.clone()) {
                             if let Some(slot) = alloc.iter_mut().find(|(n, _)| n == fw) {
-                                if slot.1 > 0 { slot.1 -= 1; }
+                                if slot.1 > 0 {
+                                    slot.1 -= 1;
+                                }
                             }
                             out.push(candidate.clone());
                             progressed = true;

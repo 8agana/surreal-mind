@@ -196,9 +196,9 @@ impl ServerHandler for SurrealMindServer {
         let search_thoughts_schema_map = crate::schemas::search_thoughts_schema();
 
         let kg_create_schema_map = crate::schemas::kg_create_schema();
-        
+
         let kg_search_schema_map = crate::schemas::kg_search_schema();
-        
+
         let kg_moderate_schema_map = crate::schemas::kg_moderate_schema();
 
         let detailed_help_schema_map = crate::schemas::detailed_help_schema();
@@ -391,6 +391,11 @@ impl SurrealMindServer {
             DEFINE FIELD framework_analysis ON TABLE thoughts FLEXIBLE TYPE option<object>;
             DEFINE FIELD is_inner_voice ON TABLE thoughts TYPE option<bool>;
             DEFINE FIELD inner_visibility ON TABLE thoughts TYPE option<string>;
+            DEFINE FIELD is_summary ON TABLE thoughts TYPE option<bool>;
+            DEFINE FIELD summary_of ON TABLE thoughts TYPE option<array<string>>;
+            DEFINE FIELD pipeline ON TABLE thoughts TYPE option<string>;
+            DEFINE FIELD status ON TABLE thoughts TYPE option<string>;
+            DEFINE INDEX thoughts_status_idx ON TABLE thoughts FIELDS status;
             DEFINE INDEX idx_thoughts_created ON TABLE thoughts FIELDS created_at;
 
             DEFINE TABLE recalls SCHEMALESS;
@@ -437,7 +442,7 @@ impl SurrealMindServer {
 
     /// Calculate cosine similarity between two vectors
     #[allow(dead_code)]
-    fn cosine_similarity(&self, a: &[f32], b: &[f32]) -> f32 {
+    pub fn cosine_similarity(&self, a: &[f32], b: &[f32]) -> f32 {
         if a.len() != b.len() {
             tracing::warn!(
                 "cosine_similarity dimension mismatch: a={}, b={}",
@@ -476,18 +481,20 @@ impl SurrealMindServer {
         let scale = injection_scale.clamp(0, 3) as u8;
         let (limit, mut prox_thresh) = match scale {
             0 => (0usize, 1.0f32),
-            1 => (5usize, 0.8f32),   // Mercury
-            2 => (10usize, 0.6f32),  // Venus
-            _ => (20usize, 0.4f32),  // Mars
+            1 => (5usize, 0.8f32),  // Mercury
+            2 => (10usize, 0.6f32), // Venus
+            _ => (20usize, 0.4f32), // Mars
         };
-        if limit == 0 { return Ok((0, None)); }
+        if limit == 0 {
+            return Ok((0, None));
+        }
 
         // Optional: submode-aware retrieval tweaks
         // Guarded behind SURR_SUBMODE_RETRIEVAL=true to keep default behavior stable
         if std::env::var("SURR_SUBMODE_RETRIEVAL").ok().as_deref() == Some("true") {
             if let Some(sm) = submode {
                 // Use lightweight profile deltas to adjust similarity threshold
-                use crate::cognitive::profile::{profile_for, Submode};
+                use crate::cognitive::profile::{Submode, profile_for};
                 let profile = profile_for(Submode::from_str(sm));
                 let delta = profile.injection.threshold_delta;
                 // Clamp within [0.0, 0.99]
@@ -515,8 +522,14 @@ impl SurrealMindServer {
                 // Try to use existing embedding; compute and persist if missing and allowed
                 let mut emb_opt: Option<Vec<f32>> = None;
                 if let Some(ev) = r.get("embedding").and_then(|v| v.as_array()) {
-                    let vecf: Vec<f32> = ev.iter().filter_map(|x| x.as_f64()).map(|f| f as f32).collect();
-                    if vecf.len() == embedding.len() { emb_opt = Some(vecf); }
+                    let vecf: Vec<f32> = ev
+                        .iter()
+                        .filter_map(|x| x.as_f64())
+                        .map(|f| f as f32)
+                        .collect();
+                    if vecf.len() == embedding.len() {
+                        emb_opt = Some(vecf);
+                    }
                 }
                 if emb_opt.is_none() {
                     // Build text for entity embedding: name + type
@@ -526,7 +539,11 @@ impl SurrealMindServer {
                         .and_then(|d| d.get("entity_type"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("");
-                    let text = if etype.is_empty() { name_s.to_string() } else { format!("{} ({})", name_s, etype) };
+                    let text = if etype.is_empty() {
+                        name_s.to_string()
+                    } else {
+                        format!("{} ({})", name_s, etype)
+                    };
                     let new_emb = self.embedder.embed(&text).await.unwrap_or_default();
                     if new_emb.len() == embedding.len() {
                         emb_opt = Some(new_emb.clone());
@@ -543,7 +560,11 @@ impl SurrealMindServer {
                 if let Some(emb_e) = emb_opt {
                     let sim = self.cosine_similarity(embedding, &emb_e);
                     if sim >= prox_thresh {
-                        let name_s = r.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let name_s = r
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
                         let etype = r
                             .get("data")
                             .and_then(|d| d.get("entity_type"))
@@ -574,13 +595,17 @@ impl SurrealMindServer {
                 } else {
                     s.push_str(&format!("- ({:.2}) {} [{}]\n", sim, name, etype));
                 }
-                if i >= 4 { break; }
+                if i >= 4 {
+                    break;
+                }
             }
             Some(s)
-        } else { None };
+        } else {
+            None
+        };
 
         // Persist to the thought
-        let mut q = self
+        let q = self
             .db
             .query("UPDATE type::thing($tb, $id) SET injected_memories = $mems, enriched_content = $enr RETURN meta::id(id) as id")
             .bind(("tb", "thoughts"))

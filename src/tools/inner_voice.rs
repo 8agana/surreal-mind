@@ -1,4 +1,5 @@
-//! inner_voice tool handler for storing private inner thoughts
+//surreal-mind-inner-voice-refactor/src/tools/inner_voice.rs
+//! inner_voice tool handler for RAG retrieval, synthesis, and optional KG staging
 
 use crate::error::{Result, SurrealMindError};
 use crate::kg_extractor::HeuristicExtractor;
@@ -6,35 +7,22 @@ use crate::server::SurrealMindServer;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde_json::json;
 
-/// Parameters for the inner_voice tool
+/// Parameters for the inner_voice tool (RAG)
 #[derive(Debug, serde::Deserialize)]
 pub struct InnerVoiceParams {
     pub content: String,
     #[serde(
         default,
-        deserialize_with = "crate::deserializers::de_option_u8_forgiving"
+        deserialize_with = "crate::deserializers::de_option_u64_forgiving"
     )]
-    pub injection_scale: Option<u8>,
-    #[serde(default, deserialize_with = "crate::deserializers::de_option_tags")]
-    pub tags: Option<Vec<String>>,
+    pub top_k: Option<u64>,
     #[serde(
         default,
         deserialize_with = "crate::deserializers::de_option_f32_forgiving"
     )]
-    pub significance: Option<f32>,
+    pub sim_thresh: Option<f32>,
     #[serde(default)]
-    pub verbose_analysis: Option<bool>,
-    #[serde(default)]
-    pub inner_visibility: Option<String>,
-    #[serde(default)]
-    pub extract_to_kg: Option<bool>,
-    #[serde(
-        default,
-        deserialize_with = "crate::deserializers::de_option_f32_forgiving"
-    )]
-    pub session_hours: Option<f32>,
-    #[serde(default)]
-    pub dry_run: Option<bool>,
+    pub stage_kg: Option<bool>,
     #[serde(
         default,
         deserialize_with = "crate::deserializers::de_option_f32_forgiving"
@@ -50,10 +38,14 @@ pub struct InnerVoiceParams {
         deserialize_with = "crate::deserializers::de_option_u64_forgiving"
     )]
     pub max_edges: Option<u64>,
+    #[serde(default)]
+    pub save: Option<bool>,
+    #[serde(default)]
+    pub auto_mark_removal: Option<bool>,
 }
 
 impl SurrealMindServer {
-    /// Handle the inner_voice tool call
+    /// Handle the inner_voice tool call (RAG + optional KG staging + save)
     pub async fn handle_inner_voice(
         &self,
         request: CallToolRequestParam,
@@ -68,489 +60,179 @@ impl SurrealMindServer {
 
         // Redact content at info level to avoid logging private thoughts
         tracing::info!("inner_voice called (content_len={})", params.content.len());
-        let dbg_preview: String = params.content.chars().take(50).collect(); // Shorter preview for privacy
+        let dbg_preview: String = params.content.chars().take(50).collect();
         tracing::debug!("inner_voice content (first 50 chars): {}", dbg_preview);
 
-        // Compute embedding
-        let embedding = self.embedder.embed(&params.content).await.map_err(|e| {
+        // Defaults from env or params
+        let top_k = params.top_k.unwrap_or_else(|| {
+            std::env::var("SURR_TOP_K")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(5)
+        }) as usize;
+        let sim_thresh = params.sim_thresh.unwrap_or_else(|| {
+            std::env::var("SURR_SIM_THRESH")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.5)
+        });
+        let stage_kg = params.stage_kg.unwrap_or(false);
+        let confidence_min = params.confidence_min.unwrap_or(0.6);
+        let max_nodes = params.max_nodes.unwrap_or(30) as usize;
+        let max_edges = params.max_edges.unwrap_or(60) as usize;
+        let save = params.save.unwrap_or(true);
+        let auto_mark_removal = params.auto_mark_removal.unwrap_or(false);
+
+        // Embed query
+        let query_embedding = self.embedder.embed(&params.content).await.map_err(|e| {
             SurrealMindError::Embedding {
                 message: e.to_string(),
             }
         })?;
 
-        let injection_scale = params.injection_scale.unwrap_or(0) as i64; // default minimal
-        let significance = params.significance.unwrap_or(0.4_f32) as f64;
-        let inner_visibility = params
-            .inner_visibility
-            .unwrap_or_else(|| "context_only".to_string());
-
-        // Check for auto-trigger from content pattern
-        let auto_extract =
-            std::env::var("AUTO_EXTRACT").unwrap_or_else(|_| "false".to_string()) == "true";
-        let extract_to_kg = params.extract_to_kg.unwrap_or(false)
-            || (auto_extract && params.content.to_lowercase().contains("prep for comp"));
-
-        let session_hours = params.session_hours.unwrap_or(6.0) as f64;
-        let dry_run = params.dry_run.unwrap_or(false);
-        // Default threshold was too high for heuristic relationships (0.4–0.5)
-        // Lower to 0.4 so valid edges aren’t filtered out silently
-        let confidence_min = params.confidence_min.unwrap_or(0.4) as f64;
-        let max_nodes = params.max_nodes.unwrap_or(30) as usize;
-        let max_edges = params.max_edges.unwrap_or(60) as usize;
-
-        // Insert into SurrealDB and return plain string id
-        let created_raw: Vec<serde_json::Value> = self
+        // Retrieve top thoughts with similarity
+        let limit: usize = std::env::var("SURR_DB_LIMIT")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(500);
+        let retrieved: Vec<serde_json::Value> = self
             .db
-            .query("CREATE thoughts SET content = $content, created_at = time::now(), embedding = $embedding, injected_memories = [], enriched_content = NONE, injection_scale = $injection_scale, significance = $significance, access_count = 0, last_accessed = NONE, submode = NONE, framework_enhanced = NONE, framework_analysis = NONE, is_inner_voice = true, inner_visibility = $inner_visibility RETURN meta::id(id) as id;")
-            .bind(("content", params.content.clone()))
-            .bind(("embedding", embedding.clone()))
-            .bind(("injection_scale", injection_scale))
-            .bind(("significance", significance))
-            .bind(("inner_visibility", inner_visibility.clone()))
+            .query("SELECT meta::id(id) as id, content, embedding FROM thoughts LIMIT $limit")
+            .bind(("limit", limit as i64))
             .await?
             .take(0)?;
 
-        let thought_id = created_raw
-            .first()
-            .and_then(|v| v.get("id"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-
-        // Memory injection (respect inner voice minimal default scale)
-        let (mem_count, _enriched) = self
-            .inject_memories(&thought_id, &embedding, injection_scale, None)
-            .await
-            .unwrap_or((0, None));
-
-        // Initialize result with basic data
-        let mut result = json!({
-            "thought_id": thought_id,
-            "inner_voice": true,
-            "visibility": inner_visibility,
-            "memories_injected": mem_count
-        });
-
-        // KG Extraction Flow
-        if extract_to_kg {
-            tracing::info!("KG extraction triggered for inner_voice");
-
-            // Query recent session thoughts
-            let recent_query = format!(
-                "SELECT meta::id(id) as id, content, created_at FROM thoughts WHERE created_at > time::now() - {}h AND is_inner_voice = true ORDER BY created_at ASC LIMIT 100",
-                session_hours
-            );
-
-            let recent_raw: Vec<serde_json::Value> = self.db.query(recent_query).await?.take(0)?;
-            let recent_texts: Vec<String> = recent_raw
-                .iter()
-                .filter_map(|r| r.get("content").and_then(|c| c.as_str()))
-                .map(|s| s.to_string())
-                .collect();
-
-            let session_total = recent_texts.len();
-            tracing::info!(
-                "🎯 KG extraction starting: {} session thoughts, confidence_min={:.2}, max_nodes={}, max_edges={}",
-                session_total,
-                confidence_min,
-                max_nodes,
-                max_edges
-            );
-
-            if !recent_texts.is_empty() {
-                // Extract knowledge
-                let extractor = HeuristicExtractor::new();
-                let extraction = extractor.extract(&recent_texts).await?;
-
-                // Debug: Show what relationships were extracted
-                tracing::info!(
-                    "🔍 Raw relationships extracted: {}",
-                    extraction.relationships.len()
-                );
-                for (idx, rel) in extraction.relationships.iter().enumerate() {
-                    tracing::debug!(
-                        "  [{}] '{}' -> '{}' [{}] (confidence: {:.2})",
-                        idx + 1,
-                        rel.source_name,
-                        rel.target_name,
-                        rel.rel_type,
-                        rel.confidence
-                    );
-                }
-
-                // Filter by confidence
-                let filtered_entities: Vec<_> = extraction
-                    .entities
-                    .into_iter()
-                    .filter(|e| e.confidence >= confidence_min as f32)
-                    .take(max_nodes)
+        let mut scored_sources: Vec<(String, f32, String)> = vec![];
+        for row in &retrieved {
+            if let (Some(id), Some(content), Some(emb_arr)) = (
+                row.get("id").and_then(|v| v.as_str()),
+                row.get("content").and_then(|v| v.as_str()),
+                row.get("embedding").and_then(|v| v.as_array()),
+            ) {
+                let emb: Vec<f32> = emb_arr
+                    .iter()
+                    .filter_map(|v| v.as_f64())
+                    .map(|f| f as f32)
                     .collect();
-
-                // Pre-capture total relationships extracted before consuming the vector
-                let extracted_rels_total = extraction.relationships.len();
-                let relationships: Vec<_> = extraction
-                    .relationships
-                    .into_iter()
-                    .filter(|r| r.confidence >= confidence_min as f32)
-                    .take(max_edges)
-                    .collect();
-
-                // Debug: Show relationships after filtering
-                tracing::info!(
-                    "📊 Relationships after confidence filtering: {}",
-                    relationships.len()
-                );
-                if relationships.is_empty() && extracted_rels_total > 0 {
-                    tracing::warn!(
-                        "All relationships were filtered out (confidence_min={:.2}). Consider lowering threshold.",
-                        confidence_min
-                    );
-                }
-                for (idx, rel) in relationships.iter().enumerate() {
-                    tracing::debug!(
-                        "  Filtered [{}] '{}' -> '{}' [{}] (confidence: {:.2})",
-                        idx + 1,
-                        rel.source_name,
-                        rel.target_name,
-                        rel.rel_type,
-                        rel.confidence
-                    );
-                }
-
-                if !dry_run {
-                    // Approval env controls
-                    let approval_mode = std::env::var("SURR_KG_APPROVAL_MODE")
-                        .unwrap_or_else(|_| "hybrid".to_string()); // off|hybrid|strict
-                    let auto_approve_threshold: f64 = std::env::var("SURR_KG_AUTO_APPROVE_THRESHOLD")
-                        .ok()
-                        .and_then(|s| s.parse::<f64>().ok())
-                        .unwrap_or(0.6);
-
-                    // Upsert entities to KG
-                    tracing::debug!(
-                        "Starting KG extraction: {} entities, {} relationships",
-                        filtered_entities.len(),
-                        relationships.len()
-                    );
-                    let mut entity_ids = Vec::new();
-                    let mut pending_entity_count = 0usize;
-                    for entity in &filtered_entities {
-                        tracing::debug!(
-                            "Processing entity: {} (type: {})",
-                            entity.name,
-                            entity.entity_type
-                        );
-                        let eligible_for_direct = approval_mode == "off"
-                            || (approval_mode == "hybrid"
-                                && (entity.confidence as f64) >= auto_approve_threshold);
-
-                        if eligible_for_direct {
-                            let existing: Vec<serde_json::Value> = self.db
-                                .query("SELECT meta::id(id) as id FROM kg_entities WHERE name = $name AND data.entity_type = $type LIMIT 1")
-                                .bind(("name", entity.name.clone()))
-                                .bind(("type", entity.entity_type.clone()))
-                                .await?
-                                .take(0)?;
-
-                            let entity_id = if existing.is_empty() {
-                                // Create new entity
-                                tracing::debug!(
-                                    "Creating new entity: {} (type: {})",
-                                    entity.name,
-                                    entity.entity_type
-                                );
-                                // Merge properties with entity_type for stable upsert matching
-                                let mut data_val = entity.properties.clone();
-                                if !data_val.is_object() {
-                                    data_val = serde_json::json!({});
-                                }
-                                if let Some(obj) = data_val.as_object_mut() {
-                                    obj.insert(
-                                        "entity_type".to_string(),
-                                        serde_json::Value::String(entity.entity_type.clone()),
-                                    );
-                                }
-                                let created: Vec<serde_json::Value> = self.db
-                                    .query("CREATE kg_entities SET created_at = time::now(), name = $name, entity_type = $etype, data = $data RETURN meta::id(id) as id, name, data")
-                                    .bind(("name", entity.name.clone()))
-                                    .bind(("etype", entity.entity_type.clone()))
-                                    .bind(("data", data_val))
-                                    .await?
-                                    .take(0)?;
-                                let new_id = created
-                                    .first()
-                                    .and_then(|c| c.get("id"))
-                                    .and_then(|id| id.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                tracing::debug!("Created entity with ID: {}", new_id);
-                                new_id
-                            } else {
-                                // Use existing
-                                let existing_id = existing
-                                    .first()
-                                    .and_then(|e| e.get("id"))
-                                    .and_then(|id| id.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                tracing::debug!("Using existing entity ID: {}", existing_id);
-                                existing_id
-                            };
-                            entity_ids.push(entity_id);
-                        } else {
-                            // Stage as candidate
-                            let mut data_val = entity.properties.clone();
-                            if !data_val.is_object() { data_val = serde_json::json!({}); }
-                            if let Some(obj) = data_val.as_object_mut() {
-                                obj.insert(
-                                    "entity_type".to_string(),
-                                    serde_json::Value::String(entity.entity_type.clone()),
-                                );
-                            }
-                            let _: Vec<serde_json::Value> = self.db
-                                .query("CREATE kg_entity_candidates SET created_at = time::now(), name = $name, entity_type = $etype, data = $data, confidence = $conf, source_thought_id = $src, status = 'pending' RETURN meta::id(id) as id")
-                                .bind(("name", entity.name.clone()))
-                                .bind(("etype", entity.entity_type.clone()))
-                                .bind(("data", data_val))
-                                .bind(("conf", entity.confidence as f64))
-                                .bind(("src", thought_id.clone()))
-                                .await?
-                                .take(0)?;
-                            pending_entity_count += 1;
-                        }
+                if emb.len() == query_embedding.len() {
+                    let sim = self.cosine_similarity(&query_embedding, &emb);
+                    if sim >= sim_thresh {
+                        let excerpt = content.chars().take(200).collect();
+                        scored_sources.push((id.to_string(), sim, excerpt));
                     }
-
-                    // Create relationships
-                    tracing::info!(
-                        "🎯 Starting relationship creation for {} relationships",
-                        relationships.len()
-                    );
-                    // Track relationship IDs aligned by attempt index
-                    let mut relationship_ids: Vec<Option<String>> = vec![None; relationships.len()];
-                    let mut pending_relationship_count = 0usize;
-                    for (rel_idx, relationship) in relationships.iter().enumerate() {
-                        tracing::info!(
-                            "🔍 Processing relationship {}: '{}' -> '{}' [{}]",
-                            rel_idx + 1,
-                            relationship.source_name,
-                            relationship.target_name,
-                            relationship.rel_type
-                        );
-
-                        // Debug: Show all entities available for matching
-                        tracing::debug!("📋 Available entities for matching:");
-                        for (idx, entity) in filtered_entities.iter().enumerate() {
-                            tracing::debug!(
-                                "  [{}] {} (id: {})",
-                                idx,
-                                entity.name,
-                                entity_ids.get(idx).unwrap_or(&"N/A".to_string())
-                            );
-                        }
-
-                        // Find entity IDs (case-insensitive matching)
-                        let source_match = filtered_entities.iter().enumerate().find(|(_, e)| {
-                            e.name.to_lowercase() == relationship.source_name.to_lowercase()
-                        });
-
-                        let source_id = if let Some((idx, entity)) = source_match {
-                            tracing::debug!(
-                                "✅ Source match found: '{}' matches entity '{}' at index {}",
-                                relationship.source_name,
-                                entity.name,
-                                idx
-                            );
-                            entity_ids.get(idx).cloned().unwrap_or_default()
-                        } else {
-                            tracing::warn!(
-                                "❌ Source match failed: '{}' not found in entities",
-                                relationship.source_name
-                            );
-                            String::new()
-                        };
-
-                        let target_match = filtered_entities.iter().enumerate().find(|(_, e)| {
-                            e.name.to_lowercase() == relationship.target_name.to_lowercase()
-                        });
-
-                        let target_id = if let Some((idx, entity)) = target_match {
-                            tracing::debug!(
-                                "✅ Target match found: '{}' matches entity '{}' at index {}",
-                                relationship.target_name,
-                                entity.name,
-                                idx
-                            );
-                            entity_ids.get(idx).cloned().unwrap_or_default()
-                        } else {
-                            tracing::warn!(
-                                "❌ Target match failed: '{}' not found in entities",
-                                relationship.target_name
-                            );
-                            String::new()
-                        };
-
-                        tracing::debug!(
-                            "🔗 Relationship IDs: source='{}', target='{}'",
-                            source_id,
-                            target_id
-                        );
-
-                        if !source_id.is_empty() && !target_id.is_empty() {
-                            let eligible_for_direct = approval_mode == "off"
-                                || (approval_mode == "hybrid"
-                                    && (relationship.confidence as f64) >= auto_approve_threshold);
-                            tracing::debug!(
-                                "Creating relationship in database: {} -> {} [{}]",
-                                source_id,
-                                target_id,
-                                relationship.rel_type
-                            );
-                            if eligible_for_direct {
-                                let created: Vec<serde_json::Value> = self.db
-                                    .query("CREATE kg_edges SET created_at = time::now(), source = type::thing('kg_entities', $source), target = type::thing('kg_entities', $target), rel_type = $rel_type, data = $data RETURN meta::id(id) as id")
-                                    .bind(("source", source_id.clone()))
-                                    .bind(("target", target_id.clone()))
-                                    .bind(("rel_type", relationship.rel_type.clone()))
-                                    .bind(("data", relationship.properties.clone()))
-                                    .await?
-                                    .take(0)?;
-
-                                if let Some(created_rel) = created.first() {
-                                    let rel_id = created_rel
-                                        .get("id")
-                                        .and_then(|id| id.as_str())
-                                        .unwrap_or("")
-                                        .to_string();
-                                    tracing::debug!("Created relationship with ID: {}", rel_id);
-                                    relationship_ids[rel_idx] = Some(rel_id);
-                                } else {
-                                    tracing::warn!(
-                                        "No relationship created for: {} -> {} [{}]",
-                                        source_id,
-                                        target_id,
-                                        relationship.rel_type
-                                    );
-                                }
-                            } else {
-                                // Stage candidate edge
-                                let _: Vec<serde_json::Value> = self.db
-                                    .query("CREATE kg_edge_candidates SET created_at = time::now(), source_name = $sname, target_name = $tname, source_id = $sid, target_id = $tid, rel_type = $rtype, data = $data, confidence = $conf, source_thought_id = $src, status = 'pending' RETURN meta::id(id) as id")
-                                    .bind(("sname", relationship.source_name.clone()))
-                                    .bind(("tname", relationship.target_name.clone()))
-                                    .bind(("sid", source_id.clone()))
-                                    .bind(("tid", target_id.clone()))
-                                    .bind(("rtype", relationship.rel_type.clone()))
-                                    .bind(("data", relationship.properties.clone()))
-                                    .bind(("conf", relationship.confidence as f64))
-                                    .bind(("src", thought_id.clone()))
-                                    .await?
-                                    .take(0)?;
-                                pending_relationship_count += 1;
-                            }
-                        } else {
-                            tracing::warn!(
-                                "Skipping relationship creation - empty IDs: source='{}', target='{}'",
-                                source_id,
-                                target_id
-                            );
-                        }
-                    }
-
-                    tracing::info!(
-                        "📊 Relationship creation summary: {} attempted, {} created",
-                        relationships.len(),
-                        relationship_ids.iter().filter(|v| v.is_some()).count()
-                    );
-
-                    // Generate structured entity list for return
-                    let entities_return: Vec<serde_json::Value> = filtered_entities
-                        .iter()
-                        .enumerate()
-                        .map(|(idx, entity)| {
-                            let id = entity_ids.get(idx).cloned().unwrap_or_default();
-                            json!({
-                                "id": id,
-                                "name": entity.name,
-                                "entity_type": entity.entity_type
-                            })
-                        })
-                        .collect();
-
-                    // Generate structured relationship list for return
-                    let relationships_return: Vec<serde_json::Value> = relationships
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(idx, _)| {
-                            if let Some(Some(rel_id)) = relationship_ids.get(idx) {
-                                let rel = &relationships[idx];
-                                let source_id = filtered_entities
-                                    .iter()
-                                    .position(|e| e.name == rel.source_name)
-                                    .and_then(|i| entity_ids.get(i))
-                                    .cloned()
-                                    .unwrap_or_default();
-                                let target_id_val = filtered_entities
-                                    .iter()
-                                    .position(|e| e.name == rel.target_name)
-                                    .and_then(|i| entity_ids.get(i))
-                                    .cloned()
-                                    .unwrap_or_default();
-                                Some(json!({
-                                    "id": rel_id,
-                                    "source_id": source_id,
-                                    "target_id": target_id_val,
-                                    "rel_type": rel.rel_type
-                                }))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-
-                    // Add KG extraction results to response
-                    result["extracted"] = json!({
-                        "handoff": extraction.synthesis,
-                        "entities": entities_return,
-                        "relationships": relationships_return,
-                        "created": {
-                            "entities": entity_ids.len(),
-                            "relationships": relationship_ids.iter().filter(|v| v.is_some()).count(),
-                            "pending_entities": pending_entity_count,
-                            "pending_relationships": pending_relationship_count
-                        },
-                        "session": {
-                            "from": format!("{} hours ago", session_hours),
-                            "to": "now",
-                            "total_thoughts": session_total
-                        }
-                    });
-                } else {
-                    // Dry run - just include summary
-                    result["extracted"] = json!({
-                        "handoff": format!("DRY RUN: {}", extraction.synthesis),
-                        "entities": filtered_entities.len(),
-                        "relationships": relationships.len(),
-                        "session": {
-                            "from": format!("{} hours ago", session_hours),
-                            "to": "now",
-                            "total_thoughts": session_total
-                        }
-                    });
                 }
-            } else {
-                result["extracted"] = json!({
-                    "handoff": "No recent thoughts found in session window",
-                    "entities": [],
-                    "relationships": [],
-                    "created": {"entities": 0, "relationships": 0},
-                    "session": {
-                        "from": format!("{} hours ago", session_hours),
-                        "to": "now",
-                        "total_thoughts": 0
-                    }
-                });
             }
         }
+        // Sort by similarity desc, take top_k
+        scored_sources.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        scored_sources.truncate(top_k);
+
+        // Synthesize answer: simple extractive summary from top 3 sources
+        let synthesized_answer = if !scored_sources.is_empty() {
+            let mut synthesis = String::new();
+            for (i, (_id, _sim, excerpt)) in scored_sources.iter().enumerate().take(3) {
+                if i > 0 {
+                    synthesis.push('\n');
+                }
+                synthesis.push_str(excerpt);
+            }
+            synthesis.chars().take(600).collect()
+        } else {
+            "No relevant thoughts found.".to_string()
+        };
+
+        let source_ids: Vec<String> = scored_sources.iter().map(|(id, _, _)| id.clone()).collect();
+
+        // Save synthesized answer as summary thought if enabled
+        let mut saved_thought_id: Option<String> = None;
+        if save {
+            let created_raw: Vec<serde_json::Value> = self
+                .db
+                .query("CREATE thoughts SET content = $synth, created_at = time::now(), embedding = $embedding, injected_memories = [], enriched_content = NONE, injection_scale = 0, significance = 0.5, access_count = 0, last_accessed = NONE, submode = NONE, framework_enhanced = NONE, framework_analysis = NONE, is_summary = true, summary_of = $source_ids, pipeline = 'inner_voice', status = 'active' RETURN meta::id(id) as id;")
+                .bind(("synth", synthesized_answer.clone()))
+                .bind(("embedding", query_embedding.clone()))
+                .bind(("source_ids", source_ids.clone()))
+                .await?
+                .take(0)?;
+            saved_thought_id = created_raw
+                .first()
+                .and_then(|v| v.get("id"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+        }
+
+        // If staging KG, run extractor on retrieved sources
+        let mut pending_entities = 0;
+        let mut pending_relationships = 0;
+        let mut marked_for_removal = 0;
+        if stage_kg && !scored_sources.is_empty() {
+            let source_texts: Vec<String> = scored_sources
+                .iter()
+                .map(|(_, _, excerpt)| excerpt.clone())
+                .collect();
+            let extractor = HeuristicExtractor::new();
+            let extraction = extractor.extract(&source_texts).await?;
+
+            // Stage entities
+            for entity in extraction
+                .entities
+                .into_iter()
+                .filter(|e| e.confidence >= confidence_min)
+                .take(max_nodes)
+            {
+                self.db.query("CREATE kg_entity_candidates SET name = $name, entity_type = $etype, data = $data, confidence = $conf, source_thought_id = $sid")
+                    .bind(("name", entity.name))
+                    .bind(("etype", entity.entity_type))
+                    .bind(("data", entity.properties))
+                    .bind(("conf", entity.confidence as f64))
+                    .bind(("sid", source_ids.join(",")))
+                    .await?;
+                pending_entities += 1;
+            }
+
+            // Stage relationships
+            for rel in extraction
+                .relationships
+                .into_iter()
+                .filter(|r| r.confidence >= confidence_min)
+                .take(max_edges)
+            {
+                self.db.query("CREATE kg_edge_candidates SET source_name = $src, target_name = $tgt, rel_type = $rtype, data = $data, confidence = $conf, source_thought_id = $sid")
+                    .bind(("src", rel.source_name))
+                    .bind(("tgt", rel.target_name))
+                    .bind(("rtype", rel.rel_type))
+                    .bind(("data", rel.properties))
+                    .bind(("conf", rel.confidence as f64))
+                    .bind(("sid", source_ids.join(",")))
+                    .await?;
+                pending_relationships += 1;
+            }
+
+            // Auto-mark for removal if enabled
+            if auto_mark_removal && !source_ids.is_empty() {
+                self.db
+                    .query("UPDATE thoughts SET status = 'removal' WHERE id IN $ids")
+                    .bind(("ids", source_ids.clone()))
+                    .await?;
+                marked_for_removal = source_ids.len();
+            }
+        }
+
+        // Return result
+        let result = json!({
+            "synthesized_answer": synthesized_answer,
+            "saved_thought_id": saved_thought_id,
+            "sources": scored_sources.into_iter().map(|(id, sim, excerpt)| json!({
+                "thought_id": id,
+                "similarity": sim,
+                "excerpt": excerpt
+            })).collect::<Vec<_>>(),
+            "staged": {
+                "pending_entities": pending_entities,
+                "pending_relationships": pending_relationships
+            },
+            "marked_for_removal": marked_for_removal
+        });
 
         Ok(CallToolResult::structured(result))
     }

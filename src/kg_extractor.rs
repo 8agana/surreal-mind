@@ -66,19 +66,93 @@ impl HeuristicExtractor {
         // Includes both capitalized and lowercase forms for robust matching
         let stopwords: HashSet<&'static str> = [
             // Pronouns / determiners
-            "i","you","he","she","it","we","they","me","him","her","us","them",
-            "my","your","his","her","its","our","their","mine","yours","ours","theirs",
-            "a","an","the","this","that","these","those","there","here",
+            "i",
+            "you",
+            "he",
+            "she",
+            "it",
+            "we",
+            "they",
+            "me",
+            "him",
+            "her",
+            "us",
+            "them",
+            "my",
+            "your",
+            "his",
+            "her",
+            "its",
+            "our",
+            "their",
+            "mine",
+            "yours",
+            "ours",
+            "theirs",
+            "a",
+            "an",
+            "the",
+            "this",
+            "that",
+            "these",
+            "those",
+            "there",
+            "here",
             // Discourse / fillers
-            "let","lets","ok","okay","hi","hello","thanks","thank","please","note","btw","fyi",
-            "also","but","so","then","now","next","well","yeah","yep","nope",
+            "let",
+            "lets",
+            "ok",
+            "okay",
+            "hi",
+            "hello",
+            "thanks",
+            "thank",
+            "please",
+            "note",
+            "btw",
+            "fyi",
+            "also",
+            "but",
+            "so",
+            "then",
+            "now",
+            "next",
+            "well",
+            "yeah",
+            "yep",
+            "nope",
             // Time words
-            "today","yesterday","tomorrow","tonight","morning","evening","afternoon",
+            "today",
+            "yesterday",
+            "tomorrow",
+            "tonight",
+            "morning",
+            "evening",
+            "afternoon",
             // Days
-            "monday","tuesday","wednesday","thursday","friday","saturday","sunday",
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
             // Months
-            "january","february","march","april","may","june","july","august","september","october","november","december",
-        ].into_iter().collect();
+            "january",
+            "february",
+            "march",
+            "april",
+            "may",
+            "june",
+            "july",
+            "august",
+            "september",
+            "october",
+            "november",
+            "december",
+        ]
+        .into_iter()
+        .collect();
 
         // 1. Extract proper nouns (basic capitalization heuristic)
         for raw in text.split_whitespace() {
@@ -86,7 +160,9 @@ impl HeuristicExtractor {
             let cleaned = raw
                 .trim_matches(|c: char| !c.is_alphanumeric())
                 .replace(['’', '\'', '"'], "");
-            if cleaned.len() < 3 { continue; }
+            if cleaned.len() < 3 {
+                continue;
+            }
 
             // Primary proper-noun style: starts uppercase and contains at least one lowercase letter
             // Avoid shouting words like ALLCAPS unless they are known tech terms (handled later)
@@ -95,10 +171,15 @@ impl HeuristicExtractor {
             let lower = cleaned.to_lowercase();
             if starts_upper {
                 // Skip common stopwords/time words when capitalized at sentence start
-                if stopwords.contains(lower.as_str()) { continue; }
-                if cleaned.ends_with("ed") || cleaned.ends_with("ing") { continue; }
+                if stopwords.contains(lower.as_str()) {
+                    continue;
+                }
+                if cleaned.ends_with("ed") || cleaned.ends_with("ing") {
+                    continue;
+                }
                 // Accept if looks like a proper noun token
-                if has_lower || cleaned.contains('_') || cleaned.chars().any(|c| c.is_ascii_digit()) {
+                if has_lower || cleaned.contains('_') || cleaned.chars().any(|c| c.is_ascii_digit())
+                {
                     entities.push(ExtractedEntity {
                         name: cleaned.clone(),
                         entity_type: self.classify_entity_type(&cleaned),

@@ -38,17 +38,14 @@ pub fn inner_voice_schema() -> Arc<Map<String, Value>> {
         "type": "object",
         "properties": {
             "content": {"type": "string"},
-            "injection_scale": {"type": ["integer", "string"]},
-            "tags": {"type": "array", "items": {"type": "string"}},
-            "significance": {"type": ["number", "string"]},
-            "verbose_analysis": {"type": "boolean"},
-            "inner_visibility": {"type": "string", "enum": ["private", "context_only"], "default": "context_only"},
-            "extract_to_kg": {"type": "boolean", "default": false},
-            "session_hours": {"type": ["number", "string"], "default": 6},
-            "dry_run": {"type": "boolean", "default": false},
+            "top_k": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 50},
+            "sim_thresh": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "stage_kg": {"type": "boolean", "default": false},
             "confidence_min": {"type": ["number", "string"], "minimum": 0.0, "maximum": 1.0, "default": 0.6},
             "max_nodes": {"type": ["integer", "number", "string"], "default": 30},
-            "max_edges": {"type": ["integer", "number", "string"], "default": 60}
+            "max_edges": {"type": ["integer", "number", "string"], "default": 60},
+            "save": {"type": "boolean", "default": true},
+            "auto_mark_removal": {"type": "boolean", "default": false}
         },
         "required": ["content"]
     });

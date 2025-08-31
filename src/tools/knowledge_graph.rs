@@ -30,10 +30,7 @@ impl SurrealMindServer {
             .and_then(|v| v.as_str())
             .unwrap_or("pending")
             .to_string();
-        let min_conf = args
-            .get("min_conf")
-            .and_then(|v| v.as_f64())
-            .unwrap_or(0.0);
+        let min_conf = args.get("min_conf").and_then(|v| v.as_f64()).unwrap_or(0.0);
         let limit = match args.get("limit") {
             Some(v) => match v {
                 serde_json::Value::Number(n) => n.as_u64().unwrap_or(50) as usize,
@@ -50,8 +47,14 @@ impl SurrealMindServer {
             },
             None => 0,
         };
-        let cursor = args.get("cursor").and_then(|v| v.as_str()).map(|s| s.to_string());
-        let dry_run = args.get("dry_run").and_then(|v| v.as_bool()).unwrap_or(false);
+        let _cursor = args
+            .get("cursor")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let dry_run = args
+            .get("dry_run")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
         let mut out = serde_json::Map::new();
 
@@ -94,9 +97,13 @@ impl SurrealMindServer {
                 items.extend(rows);
             }
 
-            out.insert("review".to_string(), serde_json::Value::Object(serde_json::Map::from_iter(vec![
-                ("items".to_string(), serde_json::Value::Array(items)),
-            ])));
+            out.insert(
+                "review".to_string(),
+                serde_json::Value::Object(serde_json::Map::from_iter(vec![(
+                    "items".to_string(),
+                    serde_json::Value::Array(items),
+                )])),
+            );
         }
 
         // Optional decide phase
@@ -147,8 +154,16 @@ impl SurrealMindServer {
                                 .await?
                                 .take(0)?;
                             if let Some(candidate) = row {
-                                let name = candidate.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                let etype = candidate.get("entity_type").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                let name = candidate
+                                    .get("name")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let etype = candidate
+                                    .get("entity_type")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
                                 let data = candidate.get("data").cloned().unwrap_or(json!({}));
 
                                 let found: Vec<serde_json::Value> = self
@@ -159,7 +174,11 @@ impl SurrealMindServer {
                                     .await?
                                     .take(0)?;
                                 let final_id: String = if let Some(first) = found.first() {
-                                    first.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string()
+                                    first
+                                        .get("id")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string()
                                 } else {
                                     let created: Vec<serde_json::Value> = self
                                         .db
@@ -169,7 +188,12 @@ impl SurrealMindServer {
                                         .bind(("data", data.clone()))
                                         .await?
                                         .take(0)?;
-                                    created.first().and_then(|v| v.get("id")).and_then(|v| v.as_str()).unwrap_or("").to_string()
+                                    created
+                                        .first()
+                                        .and_then(|v| v.get("id"))
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string()
                                 };
                                 let _ = self
                                     .db
@@ -190,7 +214,9 @@ impl SurrealMindServer {
                                 .bind(("id", id_s.clone()))
                                 .bind(("fb", feedback_s.clone()))
                                 .await?;
-                            results.push(json!({"id": id_s, "kind": "entity", "decision": "rejected"}));
+                            results.push(
+                                json!({"id": id_s, "kind": "entity", "decision": "rejected"}),
+                            );
                         }
                         ("relationship", "approve") => {
                             let row: Option<serde_json::Value> = self
@@ -207,12 +233,20 @@ impl SurrealMindServer {
                                 .await?
                                 .take(0)?;
                             if let Some(candidate) = row {
-                                let rel_type = candidate.get("rel_type").and_then(|v| v.as_str()).unwrap_or("related_to").to_string();
+                                let rel_type = candidate
+                                    .get("rel_type")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("related_to")
+                                    .to_string();
                                 let data = candidate.get("data").cloned().unwrap_or(json!({}));
-                                let src_id_val = candidate.get("source_id").and_then(|v| v.as_str());
-                                let dst_id_val = candidate.get("target_id").and_then(|v| v.as_str());
-                                let src_name = candidate.get("source_name").and_then(|v| v.as_str());
-                                let dst_name = candidate.get("target_name").and_then(|v| v.as_str());
+                                let src_id_val =
+                                    candidate.get("source_id").and_then(|v| v.as_str());
+                                let dst_id_val =
+                                    candidate.get("target_id").and_then(|v| v.as_str());
+                                let src_name =
+                                    candidate.get("source_name").and_then(|v| v.as_str());
+                                let dst_name =
+                                    candidate.get("target_name").and_then(|v| v.as_str());
 
                                 let src_bare_opt = if let Some(cid) = canonical_id_opt.as_deref() {
                                     self.resolve_entity_id_str(cid).await?
@@ -220,15 +254,21 @@ impl SurrealMindServer {
                                     self.resolve_entity_id_str(idstr).await?
                                 } else if let Some(name) = src_name {
                                     self.resolve_entity_id_str(name).await?
-                                } else { None };
+                                } else {
+                                    None
+                                };
 
                                 let dst_bare_opt = if let Some(idstr) = dst_id_val {
                                     self.resolve_entity_id_str(idstr).await?
                                 } else if let Some(name) = dst_name {
                                     self.resolve_entity_id_str(name).await?
-                                } else { None };
+                                } else {
+                                    None
+                                };
 
-                                if let (Some(src_bare), Some(dst_bare)) = (src_bare_opt, dst_bare_opt) {
+                                if let (Some(src_bare), Some(dst_bare)) =
+                                    (src_bare_opt, dst_bare_opt)
+                                {
                                     let found: Vec<serde_json::Value> = self
                                         .db
                                         .query("SELECT meta::id(id) as id FROM kg_edges WHERE source = type::thing('kg_entities', $src) AND target = type::thing('kg_entities', $dst) AND rel_type = $kind LIMIT 1")
@@ -238,7 +278,11 @@ impl SurrealMindServer {
                                         .await?
                                         .take(0)?;
                                     let final_id: String = if let Some(first) = found.first() {
-                                        first.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string()
+                                        first
+                                            .get("id")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string()
                                     } else {
                                         let created: Vec<serde_json::Value> = self
                                             .db
@@ -249,7 +293,12 @@ impl SurrealMindServer {
                                             .bind(("data", data.clone()))
                                             .await?
                                             .take(0)?;
-                                        created.first().and_then(|v| v.get("id")).and_then(|v| v.as_str()).unwrap_or("").to_string()
+                                        created
+                                            .first()
+                                            .and_then(|v| v.get("id"))
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string()
                                     };
 
                                     let _ = self
@@ -262,7 +311,12 @@ impl SurrealMindServer {
                                         .await?;
                                     results.push(json!({"id": id_s, "kind": "relationship", "decision": "approved", "promoted_id": final_id}));
                                 } else {
-                                    return Err(SurrealMindError::Validation { message: format!("Could not resolve entity IDs for candidate edge {}", id_s) });
+                                    return Err(SurrealMindError::Validation {
+                                        message: format!(
+                                            "Could not resolve entity IDs for candidate edge {}",
+                                            id_s
+                                        ),
+                                    });
                                 }
                             }
                         }
@@ -274,10 +328,17 @@ impl SurrealMindServer {
                                 .bind(("id", id_s.clone()))
                                 .bind(("fb", feedback_s.clone()))
                                 .await?;
-                            results.push(json!({"id": id_s, "kind": "relationship", "decision": "rejected"}));
+                            results.push(
+                                json!({"id": id_s, "kind": "relationship", "decision": "rejected"}),
+                            );
                         }
                         _ => {
-                            return Err(SurrealMindError::Validation { message: format!("Unsupported decision: kind='{}' decision='{}'", kind_s, decision_s) });
+                            return Err(SurrealMindError::Validation {
+                                message: format!(
+                                    "Unsupported decision: kind='{}' decision='{}'",
+                                    kind_s, decision_s
+                                ),
+                            });
                         }
                     }
                 }
@@ -414,10 +475,14 @@ impl SurrealMindServer {
                 let dst_bare = dst_id.unwrap();
 
                 // Build Thing records for bind parameters
-                let src_thing = surrealdb::sql::Thing::from_str(&format!("kg_entities:{}", src_bare)).ok();
-                let dst_thing = surrealdb::sql::Thing::from_str(&format!("kg_entities:{}", dst_bare)).ok();
+                let src_thing =
+                    surrealdb::sql::Thing::from_str(&format!("kg_entities:{}", src_bare)).ok();
+                let dst_thing =
+                    surrealdb::sql::Thing::from_str(&format!("kg_entities:{}", dst_bare)).ok();
                 if src_thing.is_none() || dst_thing.is_none() {
-                    return Err(SurrealMindError::Validation { message: "Failed to construct record links for relationship".into() });
+                    return Err(SurrealMindError::Validation {
+                        message: "Failed to construct record links for relationship".into(),
+                    });
                 }
                 let src_thing = src_thing.unwrap();
                 let dst_thing = dst_thing.unwrap();
@@ -651,10 +716,7 @@ impl SurrealMindServer {
             .and_then(|v| v.as_str())
             .unwrap_or("pending")
             .to_string();
-        let min_conf = args
-            .get("min_conf")
-            .and_then(|v| v.as_f64())
-            .unwrap_or(0.0);
+        let min_conf = args.get("min_conf").and_then(|v| v.as_f64()).unwrap_or(0.0);
         let limit = match args.get("limit") {
             Some(v) => match v {
                 serde_json::Value::Number(n) => n.as_u64().unwrap_or(50) as usize,
@@ -721,8 +783,8 @@ impl SurrealMindServer {
             .and_then(|v| v.as_array())
             .cloned()
             .ok_or_else(|| SurrealMindError::Validation {
-                message: "'items' must be an array".into(),
-            })?;
+            message: "'items' must be an array".into(),
+        })?;
 
         let mut results: Vec<serde_json::Value> = Vec::new();
 
@@ -855,13 +917,17 @@ impl SurrealMindServer {
                             self.resolve_entity_id_str(idstr).await?
                         } else if let Some(name) = src_name {
                             self.resolve_entity_id_str(name).await?
-                        } else { None };
+                        } else {
+                            None
+                        };
 
                         let dst_bare_opt = if let Some(idstr) = dst_id_val {
                             self.resolve_entity_id_str(idstr).await?
                         } else if let Some(name) = dst_name {
                             self.resolve_entity_id_str(name).await?
-                        } else { None };
+                        } else {
+                            None
+                        };
 
                         if let (Some(src_bare), Some(dst_bare)) = (src_bare_opt, dst_bare_opt) {
                             // Upsert or create edge
@@ -908,7 +974,12 @@ impl SurrealMindServer {
                                 .await?;
                             results.push(json!({"id": id_s, "kind": "relationship", "decision": "approved", "promoted_id": final_id}));
                         } else {
-                            return Err(SurrealMindError::Validation { message: format!("Could not resolve entity IDs for candidate edge {}", id_s) });
+                            return Err(SurrealMindError::Validation {
+                                message: format!(
+                                    "Could not resolve entity IDs for candidate edge {}",
+                                    id_s
+                                ),
+                            });
                         }
                     }
                 }
@@ -920,10 +991,16 @@ impl SurrealMindServer {
                         .bind(("id", id_s.clone()))
                         .bind(("fb", feedback_s.clone()))
                         .await?;
-                    results.push(json!({"id": id_s, "kind": "relationship", "decision": "rejected"}));
+                    results
+                        .push(json!({"id": id_s, "kind": "relationship", "decision": "rejected"}));
                 }
                 _ => {
-                    return Err(SurrealMindError::Validation { message: format!("Unsupported decision: kind='{}' decision='{}'", kind_s, decision_s) });
+                    return Err(SurrealMindError::Validation {
+                        message: format!(
+                            "Unsupported decision: kind='{}' decision='{}'",
+                            kind_s, decision_s
+                        ),
+                    });
                 }
             }
         }
