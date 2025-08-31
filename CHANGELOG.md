@@ -1,3 +1,13 @@
+## 2025-08-31 - Phase 2: maintenance_ops
+
+- Added maintenance_ops tool with subcommands:
+  - list_removal_candidates (status='removal', age >= SURR_RETENTION_DAYS)
+  - export_removals (JSON export to SURR_ARCHIVE_DIR; parquet placeholder)
+  - finalize_removal (delete exported thoughts)
+- Added maintenance_ops schema and server wiring; updated detailed_help.
+- Safety: dry_run supported for all actions; best-effort operations.
+- No breaking changes; backward compatible.
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
