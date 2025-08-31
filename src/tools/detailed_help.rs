@@ -120,6 +120,18 @@ impl SurrealMindServer {
                 },
                 "returns": {"review": {"items": "array"}, "results": "array"}
             }),
+            "maintenance_ops" => json!({
+                "name": "maintenance_ops",
+                "description": "Maintenance operations for archival and cleanup of thoughts.",
+                "arguments": {
+                    "subcommand": "string (required) — 'list_removal_candidates'|'export_removals'|'finalize_removal'",
+                    "dry_run": "boolean (default: false) — simulate operation without changes",
+                    "limit": "integer|string (default: 100) — max items to process",
+                    "format": "string (default: 'parquet') — export format",
+                    "output_dir": "string (default: './archive') — export directory"
+                },
+                "returns": {"depends on subcommand": "object with counts, paths, or messages"}
+            }),
             _ => {
                 return Err(SurrealMindError::Validation {
                     message: format!("Unknown tool: {}", tool),

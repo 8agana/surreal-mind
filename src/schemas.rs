@@ -176,10 +176,25 @@ pub fn detailed_help_schema() -> Arc<Map<String, Value>> {
         "type": "object",
         "properties": {
             "tool": {"type": "string", "enum": [
-                "convo_think", "tech_think", "inner_voice", "search_thoughts", "knowledgegraph_create", "knowledgegraph_search", "knowledgegraph_moderate"
+                "convo_think", "tech_think", "inner_voice", "search_thoughts", "knowledgegraph_create", "knowledgegraph_search", "knowledgegraph_moderate", "maintenance_ops"
             ]},
             "format": {"type": "string", "enum": ["compact", "full"], "default": "full"}
         }
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn maintenance_ops_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "subcommand": {"type": "string", "enum": ["list_removal_candidates", "export_removals", "finalize_removal"], "description": "Maintenance operation to perform"},
+            "dry_run": {"type": "boolean", "default": false, "description": "Simulate operation without making changes"},
+            "limit": {"type": ["integer", "number", "string"], "default": 100, "description": "Maximum number of thoughts to process"},
+            "format": {"type": "string", "enum": ["parquet"], "default": "parquet", "description": "Export format (only parquet supported)"},
+            "output_dir": {"type": "string", "default": "./archive", "description": "Directory for export files"}
+        },
+        "required": ["subcommand"]
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }

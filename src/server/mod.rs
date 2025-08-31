@@ -193,6 +193,8 @@ impl ServerHandler for SurrealMindServer {
 
         let inner_voice_schema_map = crate::schemas::inner_voice_schema();
 
+        let maintenance_ops_schema_map = crate::schemas::maintenance_ops_schema();
+
         let search_thoughts_schema_map = crate::schemas::search_thoughts_schema();
 
         let kg_create_schema_map = crate::schemas::kg_create_schema();
@@ -226,8 +228,15 @@ impl ServerHandler for SurrealMindServer {
                 output_schema: None,
             },
             Tool {
+                name: "maintenance_ops".into(),
+                description: Some("Maintenance operations for archival and cleanup".into()),
+                input_schema: maintenance_ops_schema_map,
+                annotations: None,
+                output_schema: None,
+            },
+            Tool {
                 name: "search_thoughts".into(),
-                description: Some("Semantic search with optional KG expansion".into()),
+                description: Some("Search thoughts with similarity and graph expansion".into()),
                 input_schema: search_thoughts_schema_map,
                 annotations: None,
                 output_schema: None,
@@ -278,6 +287,10 @@ impl ServerHandler for SurrealMindServer {
             "convo_think" => self.handle_convo_think(request).await.map_err(|e| e.into()),
             "tech_think" => self.handle_tech_think(request).await.map_err(|e| e.into()),
             "inner_voice" => self.handle_inner_voice(request).await.map_err(|e| e.into()),
+            "maintenance_ops" => self
+                .handle_maintenance_ops(request)
+                .await
+                .map_err(|e| e.into()),
             "search_thoughts" => self
                 .handle_search_thoughts(request)
                 .await
