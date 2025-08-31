@@ -42,7 +42,13 @@ pub fn inner_voice_schema() -> Arc<Map<String, Value>> {
             "tags": {"type": "array", "items": {"type": "string"}},
             "significance": {"type": ["number", "string"]},
             "verbose_analysis": {"type": "boolean"},
-            "inner_visibility": {"type": "string", "enum": ["private", "context_only"], "default": "context_only"}
+            "inner_visibility": {"type": "string", "enum": ["private", "context_only"], "default": "context_only"},
+            "extract_to_kg": {"type": "boolean", "default": false},
+            "session_hours": {"type": ["number", "string"], "default": 6},
+            "dry_run": {"type": "boolean", "default": false},
+            "confidence_min": {"type": ["number", "string"], "minimum": 0.0, "maximum": 1.0, "default": 0.6},
+            "max_nodes": {"type": ["integer", "number", "string"], "default": 30},
+            "max_edges": {"type": ["integer", "number", "string"], "default": 60}
         },
         "required": ["content"]
     });

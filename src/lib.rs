@@ -2,6 +2,7 @@ pub mod config;
 pub mod deserializers;
 pub mod embeddings;
 pub mod error;
+pub mod kg_extractor;
 pub mod schemas;
 pub mod serializers;
 pub mod server;
