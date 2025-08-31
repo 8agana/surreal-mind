@@ -1,5 +1,5 @@
-use surreal_mind::server::SurrealMindServer;
 use rmcp::model::CallToolRequestParam;
+use surreal_mind::server::SurrealMindServer;
 
 #[tokio::test]
 async fn relationship_flow_smoke() {
@@ -58,7 +58,10 @@ async fn relationship_flow_smoke() {
 
     // Create relationship (upsert-safe)
     let mut r_args = serde_json::Map::new();
-    r_args.insert("kind".into(), serde_json::Value::String("relationship".into()));
+    r_args.insert(
+        "kind".into(),
+        serde_json::Value::String("relationship".into()),
+    );
     r_args.insert(
         "data".into(),
         serde_json::json!({"from_id": id_a, "to_id": id_b, "relationship_type": "relates_to", "notes": "smoke"}),
@@ -82,7 +85,10 @@ async fn relationship_flow_smoke() {
 
     // Verify via search
     let mut s_args = serde_json::Map::new();
-    s_args.insert("target".into(), serde_json::Value::String("relationship".into()));
+    s_args.insert(
+        "target".into(),
+        serde_json::Value::String("relationship".into()),
+    );
     s_args.insert("top_k".into(), serde_json::Value::Number(10u64.into()));
     let items_val = server
         .handle_knowledgegraph_search(CallToolRequestParam {

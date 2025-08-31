@@ -56,14 +56,19 @@ impl SurrealMindServer {
             }),
             "inner_voice" => json!({
                 "name": "inner_voice",
-                "description": "Private inner thoughts; stored with is_inner_voice=true and visibility controls.",
+                "description": "RAG query tool: retrieves relevant thoughts, synthesizes answer from sources, optionally stages KG candidates from retrieved thoughts; saves summary thought by default.",
                 "arguments": {
-                    "content": "string (required)",
-                    "injection_scale": "integer|string (0-5 or presets)",
-                    "significance": "number|string (0.0-1.0)",
-                    "inner_visibility": "string — 'private'|'context_only' (default: 'context_only')"
+                    "content": "string (required) — query text",
+                    "top_k": "integer|string (1-50, default: 5) — max thoughts to retrieve",
+                    "sim_thresh": "number (0.0-1.0, default: 0.5) — similarity threshold",
+                    "stage_kg": "boolean (default: false) — stage candidates from retrieved thoughts",
+                    "confidence_min": "number (0.0-1.0, default: 0.6) — staging threshold",
+                    "max_nodes": "integer|string (default: 30) — max entities to stage",
+                    "max_edges": "integer|string (default: 60) — max relationships to stage",
+                    "save": "boolean (default: true) — persist synthesized summary thought",
+                    "auto_mark_removal": "boolean (default: false) — set sources to status='removal' after staging"
                 },
-                "returns": {"thought_id": "string", "inner_voice": true, "visibility": "string"}
+                "returns": {"synthesized_answer": "string", "saved_thought_id": "string?", "sources": "array", "staged": "object", "marked_for_removal": "number"}
             }),
             "search_thoughts" => json!({
                 "name": "search_thoughts",

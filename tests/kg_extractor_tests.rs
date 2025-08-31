@@ -22,4 +22,3 @@ async fn extractor_keeps_clear_entities() {
     assert!(names.iter().any(|n| n == "SurrealDB"));
     assert!(names.iter().any(|n| n == "Rust"));
 }
-
