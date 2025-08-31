@@ -310,6 +310,61 @@ where
                 Err(D::Error::custom(format!("invalid usize value: '{}'", s)))
             }
         }
-        other => Err(D::Error::custom(format!("invalid type for usize: {}", other))),
+        other => Err(D::Error::custom(format!(
+            "invalid type for usize: {}",
+            other
+        ))),
+    }
+}
+
+/// Deserializes Option<u64> accepting integers, floats (rounded), and numeric strings.
+/// Examples: 5, 5.0, "5", "5.7" -> 6
+pub fn de_option_u64_forgiving<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::Error;
+    let opt = Option::<serde_json::Value>::deserialize(deserializer)?;
+    let Some(v) = opt else { return Ok(None) };
+    match v {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::Number(n) => {
+            if let Some(u) = n.as_u64() {
+                Ok(Some(u))
+            } else if let Some(i) = n.as_i64() {
+                let v = if i < 0 { 0 } else { i as u64 };
+                Ok(Some(v))
+            } else if let Some(f) = n.as_f64() {
+                if !f.is_finite() {
+                    return Err(D::Error::custom("non-finite numeric for u64"));
+                }
+                let r = f.round();
+                let v = if r < 0.0 { 0 } else { r as u64 };
+                Ok(Some(v))
+            } else {
+                Err(D::Error::custom("invalid numeric for u64"))
+            }
+        }
+        serde_json::Value::String(s) => {
+            let s = s.trim();
+            if s.is_empty() {
+                return Ok(None);
+            }
+            // Try integer first, then float
+            if let Ok(i) = s.parse::<i64>() {
+                let v = if i < 0 { 0 } else { i as u64 };
+                Ok(Some(v))
+            } else if let Ok(f) = s.parse::<f64>() {
+                if !f.is_finite() {
+                    return Err(D::Error::custom("non-finite numeric for u64"));
+                }
+                let r = f.round();
+                let v = if r < 0.0 { 0 } else { r as u64 };
+                Ok(Some(v))
+            } else {
+                Err(D::Error::custom(format!("invalid u64 value: '{}'", s)))
+            }
+        }
+        other => Err(D::Error::custom(format!("invalid type for u64: {}", other))),
     }
 }
