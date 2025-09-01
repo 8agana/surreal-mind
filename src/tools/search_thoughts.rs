@@ -83,7 +83,7 @@ impl SurrealMindServer {
         let sim_thresh_default: f32 = std::env::var("SURR_SIM_THRESH")
             .ok()
             .and_then(|v| v.parse().ok())
-            .unwrap_or(0.5);
+            .unwrap_or(0.3); // Lowered from 0.5 for better retrieval
         let limit_default: usize = std::env::var("SURR_DB_LIMIT")
             .ok()
             .and_then(|v| v.parse().ok())
@@ -109,7 +109,7 @@ impl SurrealMindServer {
 
         // Use meta::id() to get just the record ID without the table prefix
         let sql = format!(
-            "SELECT meta::id(id) as id, content, embedding, significance, submode FROM thoughts LIMIT {}",
+            "SELECT meta::id(id) as id, content, embedding, significance, submode FROM thoughts WHERE embedding != NONE LIMIT {}",
             take
         );
 
@@ -129,6 +129,12 @@ impl SurrealMindServer {
         }
 
         let rows: Vec<SimpleRow> = response.take(0)?;
+
+        tracing::debug!(
+            "search_thoughts: Retrieved {} thoughts, query embedding dims: {}",
+            rows.len(),
+            q_emb.len()
+        );
 
         // Compute cosine similarity locally
         fn cosine(a: &[f32], b: &[f32]) -> f32 {
@@ -151,14 +157,51 @@ impl SurrealMindServer {
         }
 
         let mut matches: Vec<(f32, SimpleRow)> = Vec::new();
+        let mut skipped_mismatched = 0;
+        let mut below_threshold = 0;
+
         for row in rows.into_iter() {
             if row.embedding.len() == q_emb.len() {
                 let sim = cosine(&q_emb, &row.embedding);
+                
+                // Debug logging for high similarity scores
+                if sim >= 0.3 {
+                    tracing::info!(
+                        "Found potential match: sim={:.4}, id={}, content_preview={}...",
+                        sim,
+                        row.id,
+                        &row.content.chars().take(50).collect::<String>()
+                    );
+                }
+                
                 if sim >= sim_thresh {
                     matches.push((sim, row));
+                } else {
+                    below_threshold += 1;
                 }
+            } else {
+                skipped_mismatched += 1;
+                tracing::warn!(
+                    "Dimension mismatch: query={}, thought={}, id={}",
+                    q_emb.len(),
+                    row.embedding.len(),
+                    row.id
+                );
             }
         }
+
+        if skipped_mismatched > 0 {
+            tracing::warn!(
+                "Skipped {} thoughts with mismatched embedding dimensions",
+                skipped_mismatched
+            );
+        }
+        tracing::debug!(
+            "search_thoughts: {} matches above threshold {}, {} below threshold",
+            matches.len(),
+            sim_thresh,
+            below_threshold
+        );
 
         // Sort by similarity desc and apply offset/top_k
         matches.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));

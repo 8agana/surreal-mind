@@ -486,12 +486,11 @@ impl SurrealMindServer {
         injection_scale: i64,
         submode: Option<&str>,
     ) -> crate::error::Result<(usize, Option<String>)> {
-        if injection_scale <= 0 {
-            return Ok((0, None));
-        }
-
         // Orbital mechanics: determine limit and threshold from scale
         let scale = injection_scale.clamp(0, 3) as u8;
+        if scale == 0 {
+            return Ok((0, None));
+        }
         let (limit, mut prox_thresh) = match scale {
             0 => (0usize, 1.0f32),
             1 => (5usize, 0.8f32),  // Mercury

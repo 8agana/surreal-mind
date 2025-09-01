@@ -47,6 +47,15 @@ impl SurrealMindServer {
             }
         })?;
 
+        // Validate embedding
+        if embedding.is_empty() {
+            tracing::error!("Generated embedding is empty for content");
+            return Err(SurrealMindError::Embedding {
+                message: "Generated embedding is empty".into(),
+            });
+        }
+        tracing::debug!("Generated embedding with {} dimensions", embedding.len());
+
         let injection_scale = params.injection_scale.unwrap_or(2) as i64; // slightly higher default
         let significance = params.significance.unwrap_or(0.6_f32) as f64;
 

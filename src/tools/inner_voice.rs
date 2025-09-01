@@ -74,7 +74,7 @@ impl SurrealMindServer {
             std::env::var("SURR_SIM_THRESH")
                 .ok()
                 .and_then(|s| s.parse().ok())
-                .unwrap_or(0.5)
+                .unwrap_or(0.3) // Lowered from 0.5 for better retrieval
         });
         let stage_kg = params.stage_kg.unwrap_or(false);
         let confidence_min = params.confidence_min.unwrap_or(0.6);
@@ -94,13 +94,15 @@ impl SurrealMindServer {
         let limit: usize = std::env::var("SURR_DB_LIMIT")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(500);
+            .unwrap_or(1000); // Increased from 500 to ensure more candidates
         let retrieved: Vec<serde_json::Value> = self
             .db
             .query("SELECT meta::id(id) as id, content, embedding FROM thoughts LIMIT $limit")
             .bind(("limit", limit as i64))
             .await?
             .take(0)?;
+
+        tracing::debug!("Retrieved {} thoughts for inner_voice RAG", retrieved.len());
 
         let mut scored_sources: Vec<(String, f32, String)> = vec![];
         for row in &retrieved {
