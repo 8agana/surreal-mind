@@ -176,7 +176,14 @@ pub fn detailed_help_schema() -> Arc<Map<String, Value>> {
         "type": "object",
         "properties": {
             "tool": {"type": "string", "enum": [
-                "convo_think", "tech_think", "inner_voice", "search_thoughts", "knowledgegraph_create", "knowledgegraph_search", "knowledgegraph_moderate", "maintenance_ops"
+                // New tool names
+                "think_convo", "think_plan", "think_debug", "think_build", "think_stuck",
+                "inner_voice", "think_search",
+                "memories_create", "memories_search", "memories_moderate",
+                "maintenance_ops",
+                // Legacy aliases (supported for compatibility in help)
+                "convo_think", "tech_think", "search_thoughts",
+                "knowledgegraph_create", "knowledgegraph_search", "knowledgegraph_moderate"
             ]},
             "format": {"type": "string", "enum": ["compact", "full"], "default": "full"}
         }

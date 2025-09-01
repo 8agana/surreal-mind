@@ -26,34 +26,65 @@ impl SurrealMindServer {
             .unwrap_or("full");
 
         let help = match tool {
-            "convo_think" => json!({
-                "name": "convo_think",
-                "description": "Store conversational thoughts with optional memory injection and submodes.",
+            // New think tools
+            "think_convo" => json!({
+                "name": "think_convo",
+                "description": "Store conversational thoughts with optional memory injection.",
                 "arguments": {
                     "content": "string (required) — the thought text",
                     "injection_scale": "integer|string (0-5 or presets) — memory injection level",
-                    "submode": "string — e.g., 'sarcastic' (default)",
                     "tags": "string[] — optional tags",
                     "significance": "number|string (0.0-1.0 or presets) — importance"
                 },
-                "returns": {"thought_id": "string", "memories_injected": "number", "submode_used": "string"},
-                "examples": [{
-                    "request": {"name": "convo_think", "arguments": {"content": "Note this idea.", "injection_scale": 2}},
-                    "response": {"thought_id": "...", "memories_injected": 0, "submode_used": "sarcastic"}
-                }]
+                "returns": {"thought_id": "string", "memories_injected": "number", "submode_used": "string"}
             }),
-            "tech_think" => json!({
-                "name": "tech_think",
-                "description": "Technical reasoning with memory injection; defaults submode to 'plan'.",
+            "think_plan" => json!({
+                "name": "think_plan",
+                "description": "Architecture and strategy thinking (systems_thinking). High context injection.",
                 "arguments": {
                     "content": "string (required)",
-                    "injection_scale": "integer|string (0-5 or presets)",
-                    "submode": "string — 'plan'|'build'|'debug' (default: 'plan')",
-                    "tags": "string[]",
-                    "significance": "number|string (0.0-1.0)"
+                    "injection_scale": "integer|string (default: 3)",
+                    "significance": "number|string (default: 0.7)",
+                    "tags": "string[]"
                 },
                 "returns": {"thought_id": "string", "memories_injected": "number", "submode_used": "string"}
             }),
+            "think_debug" => json!({
+                "name": "think_debug",
+                "description": "Problem solving (root_cause_analysis). Maximum context injection.",
+                "arguments": {
+                    "content": "string (required)",
+                    "injection_scale": "integer|string (default: 4)",
+                    "significance": "number|string (default: 0.8)",
+                    "tags": "string[]"
+                },
+                "returns": {"thought_id": "string", "memories_injected": "number", "submode_used": "string"}
+            }),
+            "think_build" => json!({
+                "name": "think_build",
+                "description": "Implementation thinking (incremental). Focused context injection.",
+                "arguments": {
+                    "content": "string (required)",
+                    "injection_scale": "integer|string (default: 2)",
+                    "significance": "number|string (default: 0.6)",
+                    "tags": "string[]"
+                },
+                "returns": {"thought_id": "string", "memories_injected": "number", "submode_used": "string"}
+            }),
+            "think_stuck" => json!({
+                "name": "think_stuck",
+                "description": "Breaking through blocks (lateral_thinking). Varied context injection.",
+                "arguments": {
+                    "content": "string (required)",
+                    "injection_scale": "integer|string (default: 3)",
+                    "significance": "number|string (default: 0.9)",
+                    "tags": "string[]"
+                },
+                "returns": {"thought_id": "string", "memories_injected": "number", "submode_used": "string"}
+            }),
+            // Legacy aliases for help
+            "convo_think" => json!({"alias_of": "think_convo"}),
+            "tech_think" => json!({"alias_of": "think_plan"}),
             "inner_voice" => json!({
                 "name": "inner_voice",
                 "description": "RAG query tool: retrieves relevant thoughts, synthesizes answer from sources, optionally stages KG candidates from retrieved thoughts; saves summary thought by default.",
@@ -70,8 +101,8 @@ impl SurrealMindServer {
                 },
                 "returns": {"synthesized_answer": "string", "saved_thought_id": "string?", "sources": "array", "staged": "object", "marked_for_removal": "number"}
             }),
-            "search_thoughts" => json!({
-                "name": "search_thoughts",
+            "think_search" => json!({
+                "name": "think_search",
                 "description": "Semantic search over stored thoughts; computes similarity client-side.",
                 "arguments": {
                     "content": "string (required) — query text",
@@ -88,9 +119,11 @@ impl SurrealMindServer {
                 },
                 "returns": {"total": "number", "offset": "number", "top_k": "number", "results": "array"}
             }),
-            "knowledgegraph_create" => json!({
-                "name": "knowledgegraph_create",
-                "description": "Create KG entities or relationships; returns created id.",
+            // Legacy alias
+            "search_thoughts" => json!({"alias_of": "think_search"}),
+            "memories_create" => json!({
+                "name": "memories_create",
+                "description": "Create personal memory entities or relationships; returns created id.",
                 "arguments": {
                     "kind": "string — 'entity'|'relationship'",
                     "data": "object — entity: {name, entity_type?, properties?} | relationship: {source, target, rel_type, properties?}",
@@ -98,14 +131,14 @@ impl SurrealMindServer {
                 },
                 "returns": {"created": true, "id": "string", "kind": "string"}
             }),
-            "knowledgegraph_search" => json!({
-                "name": "knowledgegraph_search",
-                "description": "Search KG entities/relationships by name substring; returns items.",
+            "memories_search" => json!({
+                "name": "memories_search",
+                "description": "Search personal memory entities/relationships; returns items.",
                 "arguments": {"target": "'entity'|'relationship'|'mixed'", "query": "object — {name?}", "top_k": "integer"},
                 "returns": {"items": "array"}
             }),
-            "knowledgegraph_moderate" => json!({
-                "name": "knowledgegraph_moderate",
+            "memories_moderate" => json!({
+                "name": "memories_moderate",
                 "description": "Unified moderation: review candidates and/or apply decisions in one call.",
                 "arguments": {
                     "action": "'review'|'decide'|'review_and_decide' (default: 'review')",
@@ -120,6 +153,10 @@ impl SurrealMindServer {
                 },
                 "returns": {"review": {"items": "array"}, "results": "array"}
             }),
+            // Legacy aliases for KG help
+            "knowledgegraph_create" => json!({"alias_of": "memories_create"}),
+            "knowledgegraph_search" => json!({"alias_of": "memories_search"}),
+            "knowledgegraph_moderate" => json!({"alias_of": "memories_moderate"}),
             "maintenance_ops" => json!({
                 "name": "maintenance_ops",
                 "description": "Maintenance operations for archival and cleanup of thoughts.",

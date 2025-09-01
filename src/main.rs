@@ -31,7 +31,7 @@ async fn main() -> Result<()> {
 
     info!("✅ Server initialized successfully");
     info!(
-        "🛠️  Available tools: convo_think, tech_think, inner_voice, search_thoughts, knowledgegraph_create, knowledgegraph_search, knowledgegraph_moderate, maintenance_ops"
+        "🛠️  Available tools: think_convo, think_plan, think_debug, think_build, think_stuck, inner_voice, think_search, memories_create, memories_search, memories_moderate, maintenance_ops"
     );
 
     // Start MCP server with stdio transport
