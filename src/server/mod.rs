@@ -215,16 +215,37 @@ impl ServerHandler for SurrealMindServer {
 
         let tools = vec![
             Tool {
-                name: "convo_think".into(),
+                name: "think_convo".into(),
                 description: Some("Store conversational thoughts with memory injection".into()),
                 input_schema: convo_think_schema_map,
                 annotations: None,
                 output_schema: None,
             },
             Tool {
-                name: "tech_think".into(),
-                description: Some("Technical reasoning with memory injection".into()),
-                input_schema: tech_think_schema_map,
+                name: "think_plan".into(),
+                description: Some("Architecture and strategy thinking (high context)".into()),
+                input_schema: tech_think_schema_map.clone(),
+                annotations: None,
+                output_schema: None,
+            },
+            Tool {
+                name: "think_debug".into(),
+                description: Some("Problem solving with maximum context (root cause analysis)".into()),
+                input_schema: tech_think_schema_map.clone(),
+                annotations: None,
+                output_schema: None,
+            },
+            Tool {
+                name: "think_build".into(),
+                description: Some("Implementation thinking (focused context)".into()),
+                input_schema: tech_think_schema_map.clone(),
+                annotations: None,
+                output_schema: None,
+            },
+            Tool {
+                name: "think_stuck".into(),
+                description: Some("Breaking through blocks (lateral thinking)".into()),
+                input_schema: tech_think_schema_map.clone(),
                 annotations: None,
                 output_schema: None,
             },
@@ -243,29 +264,29 @@ impl ServerHandler for SurrealMindServer {
                 output_schema: None,
             },
             Tool {
-                name: "search_thoughts".into(),
+                name: "think_search".into(),
                 description: Some("Search thoughts with similarity and graph expansion".into()),
                 input_schema: search_thoughts_schema_map,
                 annotations: None,
                 output_schema: None,
             },
             Tool {
-                name: "knowledgegraph_create".into(),
-                description: Some("Create entities and relationships in the KG".into()),
+                name: "memories_create".into(),
+                description: Some("Create entities and relationships in personal memory graph".into()),
                 input_schema: kg_create_schema_map,
                 annotations: None,
                 output_schema: None,
             },
             Tool {
-                name: "knowledgegraph_search".into(),
-                description: Some("Search entities/relationships in the KG".into()),
+                name: "memories_search".into(),
+                description: Some("Search entities/relationships in personal memory graph".into()),
                 input_schema: kg_search_schema_map,
                 annotations: None,
                 output_schema: None,
             },
             Tool {
-                name: "knowledgegraph_moderate".into(),
-                description: Some("Review and/or decide on KG candidates".into()),
+                name: "memories_moderate".into(),
+                description: Some("Review and/or decide on memory graph candidates".into()),
                 input_schema: kg_moderate_schema_map,
                 annotations: None,
                 output_schema: None,
@@ -292,17 +313,44 @@ impl ServerHandler for SurrealMindServer {
     ) -> std::result::Result<CallToolResult, McpError> {
         // Route to appropriate tool handler
         match request.name.as_ref() {
+            // New think tools
+            "think_convo" => self.handle_convo_think(request).await.map_err(|e| e.into()),
+            "think_plan" => self.handle_think_plan(request).await.map_err(|e| e.into()),
+            "think_debug" => self.handle_think_debug(request).await.map_err(|e| e.into()),
+            "think_build" => self.handle_think_build(request).await.map_err(|e| e.into()),
+            "think_stuck" => self.handle_think_stuck(request).await.map_err(|e| e.into()),
+            // Back-compat aliases
             "convo_think" => self.handle_convo_think(request).await.map_err(|e| e.into()),
             "tech_think" => self.handle_tech_think(request).await.map_err(|e| e.into()),
+            // Intelligence and utility
             "inner_voice" => self.handle_inner_voice(request).await.map_err(|e| e.into()),
             "maintenance_ops" => self
                 .handle_maintenance_ops(request)
+                .await
+                .map_err(|e| e.into()),
+            // Search rename
+            "think_search" => self
+                .handle_search_thoughts(request)
                 .await
                 .map_err(|e| e.into()),
             "search_thoughts" => self
                 .handle_search_thoughts(request)
                 .await
                 .map_err(|e| e.into()),
+            // Memory tools (rename of knowledgegraph_*)
+            "memories_create" => self
+                .handle_knowledgegraph_create(request)
+                .await
+                .map_err(|e| e.into()),
+            "memories_search" => self
+                .handle_knowledgegraph_search(request)
+                .await
+                .map_err(|e| e.into()),
+            "memories_moderate" => self
+                .handle_knowledgegraph_moderate(request)
+                .await
+                .map_err(|e| e.into()),
+            // Back-compat for KG
             "knowledgegraph_create" => self
                 .handle_knowledgegraph_create(request)
                 .await
@@ -315,6 +363,7 @@ impl ServerHandler for SurrealMindServer {
                 .handle_knowledgegraph_moderate(request)
                 .await
                 .map_err(|e| e.into()),
+            // Help
             "detailed_help" => self
                 .handle_detailed_help(request)
                 .await

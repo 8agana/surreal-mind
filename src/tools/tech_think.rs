@@ -29,6 +29,36 @@ pub struct TechThinkParams {
 impl SurrealMindServer {
     /// Handle the tech_think tool call
     pub async fn handle_tech_think(&self, request: CallToolRequestParam) -> Result<CallToolResult> {
+        self.handle_think_with_profile(request, "plan", 2, 0.6).await
+    }
+
+    /// Handle think_plan (Architecture and strategy) — injection_scale: 3, significance: 0.7
+    pub async fn handle_think_plan(&self, request: CallToolRequestParam) -> Result<CallToolResult> {
+        self.handle_think_with_profile(request, "plan", 3, 0.7).await
+    }
+
+    /// Handle think_debug (Root cause analysis) — injection_scale: 4, significance: 0.8
+    pub async fn handle_think_debug(&self, request: CallToolRequestParam) -> Result<CallToolResult> {
+        self.handle_think_with_profile(request, "debug", 4, 0.8).await
+    }
+
+    /// Handle think_build (Implementation) — injection_scale: 2, significance: 0.6
+    pub async fn handle_think_build(&self, request: CallToolRequestParam) -> Result<CallToolResult> {
+        self.handle_think_with_profile(request, "build", 2, 0.6).await
+    }
+
+    /// Handle think_stuck (Lateral thinking) — injection_scale: 3, significance: 0.9
+    pub async fn handle_think_stuck(&self, request: CallToolRequestParam) -> Result<CallToolResult> {
+        self.handle_think_with_profile(request, "stuck", 3, 0.9).await
+    }
+
+    async fn handle_think_with_profile(
+        &self,
+        request: CallToolRequestParam,
+        forced_submode: &str,
+        default_injection_scale: u8,
+        default_significance: f32,
+    ) -> Result<CallToolResult> {
         let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {
             message: "Missing parameters".into(),
         })?;
@@ -37,35 +67,26 @@ impl SurrealMindServer {
                 message: format!("Invalid parameters: {}", e),
             })?;
 
-        // Default submode for tech_think is "plan"
-        let submode = params.submode.unwrap_or_else(|| "plan".to_string());
+        // Force submode per tool
+        let submode = forced_submode.to_string();
 
         // Compute embedding
         let embedding = self.embedder.embed(&params.content).await.map_err(|e| {
-            SurrealMindError::Embedding {
-                message: e.to_string(),
-            }
+            SurrealMindError::Embedding { message: e.to_string() }
         })?;
 
-        // Validate embedding
         if embedding.is_empty() {
             tracing::error!("Generated embedding is empty for content");
-            return Err(SurrealMindError::Embedding {
-                message: "Generated embedding is empty".into(),
-            });
+            return Err(SurrealMindError::Embedding { message: "Generated embedding is empty".into() });
         }
         tracing::debug!("Generated embedding with {} dimensions", embedding.len());
 
-        let injection_scale = params.injection_scale.unwrap_or(2) as i64; // slightly higher default
-        let significance = params.significance.unwrap_or(0.6_f32) as f64;
+        let injection_scale = params.injection_scale.unwrap_or(default_injection_scale) as i64;
+        let significance = params.significance.unwrap_or(default_significance) as f64;
 
-        // Generate a UUID for the thought
         let thought_id = uuid::Uuid::new_v4().to_string();
-        
-        // Get embedding metadata for tracking
         let (provider, model, dim) = self.get_embedding_metadata();
 
-        // Insert into SurrealDB using the generated ID
         self.db
             .query(
                 "CREATE type::thing('thoughts', $id) CONTENT {
@@ -100,7 +121,6 @@ impl SurrealMindServer {
             .bind(("dim", dim))
             .await?;
 
-        // Memory injection
         let (mem_count, _enriched) = self
             .inject_memories(&thought_id, &embedding, injection_scale, Some(&submode))
             .await

@@ -17,13 +17,20 @@ fn test_list_tools_returns_expected_tools() {
     // For now, we're testing the expected structure
 
     let expected_tools = [
-        "convo_think",
-        "tech_think",
-        "search_thoughts",
+        "think_convo",
+        "think_plan",
+        "think_debug",
+        "think_build",
+        "think_stuck",
         "inner_voice",
+        "think_search",
+        "memories_create",
+        "memories_search",
+        "memories_moderate",
+        "maintenance_ops",
         "detailed_help",
     ];
-    assert_eq!(expected_tools.len(), 5, "Should have exactly 5 tools");
+    assert_eq!(expected_tools.len(), 12, "Tool roster should list 12 entries in Phase 1");
 }
 
 #[test]

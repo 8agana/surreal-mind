@@ -36,8 +36,6 @@ Replace submode parameters with discrete, specialized tools:
 ---
 
 ## Phase 1: Tool Renaming and Simplification
-**Timeline:** 1-2 days  
-**Risk:** Low  
 **Dependencies:** None
 
 ### 1.1 Rename Existing Tools
