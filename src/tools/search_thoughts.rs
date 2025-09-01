@@ -163,24 +163,24 @@ impl SurrealMindServer {
         for row in rows.into_iter() {
             if row.embedding.len() == q_emb.len() {
                 let sim = cosine(&q_emb, &row.embedding);
-                
+
                 // DEEP DEBUG: Log first few dimensions of embeddings for debugging
                 tracing::debug!(
                     "EMBEDDING DEBUG: id={}, sim={:.6}, query_first_5=[{:.6}, {:.6}, {:.6}, {:.6}, {:.6}], stored_first_5=[{:.6}, {:.6}, {:.6}, {:.6}, {:.6}]",
                     row.id,
                     sim,
-                    q_emb.get(0).unwrap_or(&0.0),
+                    q_emb.first().unwrap_or(&0.0),
                     q_emb.get(1).unwrap_or(&0.0),
                     q_emb.get(2).unwrap_or(&0.0),
                     q_emb.get(3).unwrap_or(&0.0),
                     q_emb.get(4).unwrap_or(&0.0),
-                    row.embedding.get(0).unwrap_or(&0.0),
+                    row.embedding.first().unwrap_or(&0.0),
                     row.embedding.get(1).unwrap_or(&0.0),
                     row.embedding.get(2).unwrap_or(&0.0),
                     row.embedding.get(3).unwrap_or(&0.0),
                     row.embedding.get(4).unwrap_or(&0.0)
                 );
-                
+
                 // Debug logging for high similarity scores
                 if sim >= 0.3 {
                     tracing::info!(
@@ -190,7 +190,7 @@ impl SurrealMindServer {
                         &row.content.chars().take(50).collect::<String>()
                     );
                 }
-                
+
                 if sim >= sim_thresh {
                     matches.push((sim, row));
                 } else {

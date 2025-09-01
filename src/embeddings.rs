@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -260,6 +260,25 @@ pub async fn create_embedder() -> Result<Arc<dyn Embedder>> {
     // 4) Else error (no fake embedder)
 
     match provider.as_str() {
+        "candle" | "local" => {
+            // Local, in-process embeddings via Candle. Default to BGE small 384-dim for speed/quality.
+            let model = std::env::var("SURR_EMBED_MODEL")
+                .ok()
+                .filter(|m| !m.trim().is_empty())
+                .unwrap_or_else(|| "BAAI/bge-small-en-v1.5".to_string());
+            let dims = dim_override
+                .or_else(|| {
+                    std::env::var("SURR_EMBED_DIM")
+                        .ok()
+                        .and_then(|s| s.parse().ok())
+                })
+                .unwrap_or(384);
+            info!(
+                "Using Candle (local) embeddings (model={}, dims={})",
+                model, dims
+            );
+            return Ok(Arc::new(CandleEmbedder::new(model, dims)?));
+        }
         "openai" => {
             let key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
             if is_placeholder(&key) {
@@ -271,12 +290,6 @@ pub async fn create_embedder() -> Result<Arc<dyn Embedder>> {
                 .unwrap_or_else(|| "text-embedding-3-small".to_string());
             info!("Using OpenAI embeddings (model={})", model);
             return Ok(Arc::new(OpenAIEmbedder::new(key, model, dim_override)?));
-        }
-        "local" => {
-            // Reserved for a future local embedder implementation
-            anyhow::bail!(
-                "SURR_EMBED_PROVIDER=local is not implemented yet. Please configure OPENAI_API_KEY."
-            );
         }
         _ => {
             // Auto-detect
@@ -298,11 +311,11 @@ pub async fn create_embedder() -> Result<Arc<dyn Embedder>> {
 
     if strict {
         anyhow::bail!(
-            "No embedding provider configured; set OPENAI_API_KEY (or SURR_EMBED_PROVIDER)."
+            "No embedding provider configured; set SURR_EMBED_PROVIDER (candle|openai) and related env."
         );
     }
 
-    // Fallback to deterministic FakeEmbedder for local/testing usage
+    // Fallback to deterministic FakeEmbedder for local/testing usage (explicit opt-in recommended)
     let dims = dim_override.or_else(|| {
         std::env::var("SURR_EMBED_DIM")
             .ok()
@@ -314,6 +327,36 @@ pub async fn create_embedder() -> Result<Arc<dyn Embedder>> {
         fake.dimensions()
     );
     Ok(Arc::new(fake))
+}
+
+// Candle-based local embedder (scaffold)
+pub struct CandleEmbedder {
+    model_id: String,
+    dims: usize,
+}
+
+impl CandleEmbedder {
+    pub fn new(model_id: String, dims: usize) -> Result<Self> {
+        // We intentionally do not attempt heavy model loading here.
+        // CC will install candle + model artifacts; we keep this minimal and compile-safe.
+        Ok(Self { model_id, dims })
+    }
+}
+
+#[async_trait]
+impl Embedder for CandleEmbedder {
+    async fn embed(&self, _text: &str) -> Result<Vec<f32>> {
+        // Placeholder: real implementation will use candle/tokenizers to produce embeddings.
+        Err(anyhow!(
+            "CandleEmbedder embed() not yet implemented. Model '{}', dims {}",
+            self.model_id,
+            self.dims
+        ))
+    }
+
+    fn dimensions(&self) -> usize {
+        self.dims
+    }
 }
 
 #[cfg(test)]
