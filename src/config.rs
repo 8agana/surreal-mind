@@ -85,8 +85,6 @@ pub struct RuntimeConfig {
     pub max_retries: u32,
     pub retry_delay_ms: u64,
     pub embed_strict: bool,
-    pub fake_noise: bool,
-    pub fake_noise_amp: f32,
     pub kg_embed_entities: bool,
     pub kg_embed_observations: bool,
     pub kg_max_neighbors: usize,
@@ -112,8 +110,6 @@ impl Default for RuntimeConfig {
             max_retries: 3,
             retry_delay_ms: 500,
             embed_strict: false,
-            fake_noise: false,
-            fake_noise_amp: 0.01,
             kg_embed_entities: true,
             kg_embed_observations: true,
             kg_max_neighbors: 25,
@@ -253,14 +249,6 @@ impl RuntimeConfig {
                 .ok()
                 .map(|v| v == "true" || v == "1")
                 .unwrap_or(false),
-            fake_noise: std::env::var("SURR_FAKE_NOISE")
-                .ok()
-                .map(|v| v == "true" || v == "1")
-                .unwrap_or(false),
-            fake_noise_amp: std::env::var("SURR_FAKE_NOISE_AMP")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0.01),
             kg_embed_entities: std::env::var("SURR_KG_EMBED_ENTITIES")
                 .ok()
                 .map(|v| v != "false" && v != "0")

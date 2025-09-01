@@ -61,6 +61,9 @@ impl SurrealMindServer {
 
         // Generate a UUID for the thought
         let thought_id = uuid::Uuid::new_v4().to_string();
+        
+        // Get embedding metadata for tracking
+        let (provider, model, dim) = self.get_embedding_metadata();
 
         // Insert into SurrealDB using the generated ID
         self.db
@@ -79,7 +82,11 @@ impl SurrealMindServer {
                     framework_enhanced: NONE,
                     framework_analysis: NONE,
                     is_inner_voice: false,
-                    inner_visibility: NONE
+                    inner_visibility: NONE,
+                    embedding_provider: $provider,
+                    embedding_model: $model,
+                    embedding_dim: $dim,
+                    embedded_at: time::now()
                 } RETURN NONE;",
             )
             .bind(("id", thought_id.clone()))
@@ -88,6 +95,9 @@ impl SurrealMindServer {
             .bind(("injection_scale", injection_scale))
             .bind(("significance", significance))
             .bind(("submode", submode.clone()))
+            .bind(("provider", provider))
+            .bind(("model", model))
+            .bind(("dim", dim))
             .await?;
 
         // Memory injection

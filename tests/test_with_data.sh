@@ -5,6 +5,7 @@ echo "=== Testing search_thoughts with Data ==="
 
 # Create several test thoughts first
 echo "1. Creating test thoughts..."
+export SURR_EMBED_PROVIDER=candle
 {
     # Initialize
     echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'
