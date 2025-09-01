@@ -4,9 +4,9 @@
 
 [system]
 # Embedding configuration
-embedding_provider = "openai"
-embedding_model = "text-embedding-3-small"
-embedding_dimensions = 768
+embedding_provider = "candle"
+embedding_model = "BAAI/bge-small-en-v1.5"
+embedding_dimensions = 384
 embed_retries = 3  # For SURR_EMBED_RETRIES
 # Database configuration
 database_url = "ws://127.0.0.1:8000"

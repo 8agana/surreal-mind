@@ -84,6 +84,14 @@ pub struct Thought {
     pub is_inner_voice: Option<bool>,
     #[serde(default)]
     pub inner_visibility: Option<String>,
+    #[serde(default)]
+    pub embedding_model: Option<String>,
+    #[serde(default)]
+    pub embedding_provider: Option<String>,
+    #[serde(default)]
+    pub embedding_dim: Option<i64>,
+    #[serde(default)]
+    pub embedded_at: Option<surrealdb::sql::Datetime>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -325,7 +333,53 @@ impl SurrealMindServer {
     pub async fn new() -> Result<Self> {
         info!("Connecting to SurrealDB service via WebSocket");
 
+        // Load typed configuration and export critical embedding settings to env
+        // so downstream components (embedder factory, metadata helpers) read consistent values.
+        if let Ok(cfg) = crate::config::Config::load() {
+            // Set environment variables for downstream components (unsafe due to global process state)
+            unsafe {
+                std::env::set_var("SURR_EMBED_PROVIDER", cfg.system.embedding_provider.clone());
+                std::env::set_var("SURR_EMBED_MODEL", cfg.system.embedding_model.clone());
+                std::env::set_var(
+                    "SURR_EMBED_DIM",
+                    cfg.system.embedding_dimensions.to_string(),
+                );
+                std::env::set_var("SURR_EMBED_RETRIES", cfg.system.embed_retries.to_string());
+                // Retrieval defaults for tools that read env directly
+                std::env::set_var(
+                    "SURR_SIM_THRESH",
+                    cfg.retrieval.similarity_threshold.to_string(),
+                );
+                std::env::set_var("SURR_TOP_K", cfg.retrieval.top_k.to_string());
+                std::env::set_var("SURR_DB_LIMIT", cfg.retrieval.db_limit.to_string());
+                std::env::set_var("SURR_KG_CANDIDATES", cfg.retrieval.candidates.to_string());
+            }
+            // DB connection defaults (do not override if user already set env)
+            std::env::var("SURR_DB_URL").unwrap_or_else(|_| {
+                unsafe { std::env::set_var("SURR_DB_URL", cfg.system.database_url.clone()); }
+                cfg.system.database_url.clone()
+            });
+            std::env::var("SURR_DB_NS").unwrap_or_else(|_| {
+                unsafe { std::env::set_var("SURR_DB_NS", cfg.system.database_ns.clone()); }
+                cfg.system.database_ns.clone()
+            });
+            std::env::var("SURR_DB_DB").unwrap_or_else(|_| {
+                unsafe { std::env::set_var("SURR_DB_DB", cfg.system.database_db.clone()); }
+                cfg.system.database_db.clone()
+            });
+        }
+
         let url = std::env::var("SURR_DB_URL").unwrap_or_else(|_| "127.0.0.1:8000".to_string());
+        // Normalize URL for SurrealDB Ws engine (expects host:port, no scheme)
+        fn normalize_ws_url(s: &str) -> String {
+            s.strip_prefix("ws://")
+                .or_else(|| s.strip_prefix("wss://"))
+                .or_else(|| s.strip_prefix("http://"))
+                .or_else(|| s.strip_prefix("https://"))
+                .unwrap_or(s)
+                .to_string()
+        }
+        let url = normalize_ws_url(&url);
         let user = std::env::var("SURR_DB_USER").unwrap_or_else(|_| "root".to_string());
         let pass = std::env::var("SURR_DB_PASS").unwrap_or_else(|_| "root".to_string());
         let ns = std::env::var("SURR_DB_NS").unwrap_or_else(|_| "surreal_mind".to_string());
@@ -408,8 +462,14 @@ impl SurrealMindServer {
             DEFINE FIELD summary_of ON TABLE thoughts TYPE option<array<string>>;
             DEFINE FIELD pipeline ON TABLE thoughts TYPE option<string>;
             DEFINE FIELD status ON TABLE thoughts TYPE option<string>;
+            -- Embedding metadata for future re-embedding
+            DEFINE FIELD embedding_model ON TABLE thoughts TYPE option<string>;
+            DEFINE FIELD embedding_provider ON TABLE thoughts TYPE option<string>;
+            DEFINE FIELD embedding_dim ON TABLE thoughts TYPE option<int>;
+            DEFINE FIELD embedded_at ON TABLE thoughts TYPE option<datetime>;
             DEFINE INDEX thoughts_status_idx ON TABLE thoughts FIELDS status;
             DEFINE INDEX idx_thoughts_created ON TABLE thoughts FIELDS created_at;
+            DEFINE INDEX idx_thoughts_embedding_model ON TABLE thoughts FIELDS embedding_model;
 
             DEFINE TABLE recalls SCHEMALESS;
             DEFINE INDEX idx_recalls_created ON TABLE recalls FIELDS created_at;
@@ -451,6 +511,16 @@ impl SurrealMindServer {
         })?;
 
         Ok(())
+    }
+
+    /// Get embedding metadata for tracking model/provider info
+    pub fn get_embedding_metadata(&self) -> (String, String, i64) {
+        let provider = std::env::var("SURR_EMBED_PROVIDER")
+            .unwrap_or_else(|_| "unknown".to_string());
+        let model = std::env::var("SURR_EMBED_MODEL")
+            .unwrap_or_else(|_| "unknown".to_string());
+        let dim = self.embedder.dimensions() as i64;
+        (provider, model, dim)
     }
 
     /// Calculate cosine similarity between two vectors

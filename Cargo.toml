@@ -6,9 +6,9 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0"
 async-trait = "0.1"
-candle-core = "0.9.1"
-candle-nn = "0.9.1"
-candle-transformers = "0.9.1"
+candle-core = { version = "0.9.1", features = ["metal"] }
+candle-nn = { version = "0.9.1" }
+candle-transformers = { version = "0.9.1", features = ["metal"] }
 chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"
 hf-hub = "0.4.3"
@@ -21,7 +21,6 @@ reqwest = { version = "0.12", features = ["json"] }
 rmcp = { version = "0.6.1", features = ["macros", "transport-io"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-sha2 = "0.10"
 # SurrealDB with WebSocket client
 surrealdb = { version = "2.0", features = ["protocol-ws"] }
 thiserror = "1.0"
@@ -37,4 +36,3 @@ uuid = { version = "1.0", features = ["serde", "v4"] }
 # Enables DB-backed integration tests (not enabled by default)
 db_integration = []
 default = []
-

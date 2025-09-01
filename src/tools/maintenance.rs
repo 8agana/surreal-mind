@@ -162,8 +162,7 @@ impl SurrealMindServer {
         let filename = format!("thoughts_removal_{}.parquet", timestamp);
         let file_path = Path::new(output_dir).join(filename);
 
-        // For now, serialize to JSON (placeholder until parquet lib is added)
-        // TODO: Add parquet serialization dependency and implement proper export
+        // For now, serialize to JSON (placeholder until parquet export is implemented)
         let json_data = serde_json::to_string_pretty(&thoughts).map_err(|e| {
             SurrealMindError::Serialization {
                 message: format!("Failed to serialize thoughts: {}", e),

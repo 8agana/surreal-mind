@@ -5,6 +5,7 @@ echo "=== Testing search_thoughts ==="
 
 # Test 1: Check if tools list includes search_thoughts
 echo "1. Checking if search_thoughts tool is available..."
+export SURR_EMBED_PROVIDER=candle
 {
     echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'
     echo '{"jsonrpc":"2.0","method":"notifications/initialized"}'

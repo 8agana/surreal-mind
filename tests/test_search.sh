@@ -53,7 +53,7 @@ EOF
     # Use a temporary file for the request
     echo "$search_request" > /tmp/search_request.json
 
-    output=$(cat /tmp/search_request.json | timeout 10s cargo run --bin surreal-mind 2>/dev/null) || exit_code=$?
+output=$(cat /tmp/search_request.json | SURR_EMBED_PROVIDER=candle timeout 10s cargo run --bin surreal-mind 2>/dev/null) || exit_code=$?
 
     if [[ $exit_code -eq 0 ]] && echo "$output" | grep -q "$expected_pattern"; then
         echo -e "${GREEN}✅ PASS${NC}"

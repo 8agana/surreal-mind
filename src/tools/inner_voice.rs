@@ -148,12 +148,18 @@ impl SurrealMindServer {
         // Save synthesized answer as summary thought if enabled
         let mut saved_thought_id: Option<String> = None;
         if save {
+            // Get embedding metadata for tracking
+            let (provider, model, dim) = self.get_embedding_metadata();
+            
             let created_raw: Vec<serde_json::Value> = self
                 .db
-                .query("CREATE thoughts SET content = $synth, created_at = time::now(), embedding = $embedding, injected_memories = [], enriched_content = NONE, injection_scale = 0, significance = 0.5, access_count = 0, last_accessed = NONE, submode = NONE, framework_enhanced = NONE, framework_analysis = NONE, is_summary = true, summary_of = $source_ids, pipeline = 'inner_voice', status = 'active' RETURN meta::id(id) as id;")
+                .query("CREATE thoughts SET content = $synth, created_at = time::now(), embedding = $embedding, injected_memories = [], enriched_content = NONE, injection_scale = 0, significance = 0.5, access_count = 0, last_accessed = NONE, submode = NONE, framework_enhanced = NONE, framework_analysis = NONE, is_summary = true, summary_of = $source_ids, pipeline = 'inner_voice', status = 'active', embedding_provider = $provider, embedding_model = $model, embedding_dim = $dim, embedded_at = time::now() RETURN meta::id(id) as id;")
                 .bind(("synth", synthesized_answer.clone()))
                 .bind(("embedding", query_embedding.clone()))
                 .bind(("source_ids", source_ids.clone()))
+                .bind(("provider", provider))
+                .bind(("model", model))
+                .bind(("dim", dim))
                 .await?
                 .take(0)?;
             saved_thought_id = created_raw

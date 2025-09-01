@@ -1,3 +1,4 @@
+pub mod bge_embedder;
 pub mod cognitive;
 pub mod config;
 pub mod deserializers;
@@ -58,6 +59,9 @@ pub async fn run_reembed(
     // Embedder
     let embedder = embeddings::create_embedder().await?;
     let expected_dim = embedder.dimensions();
+    let provider = std::env::var("SURR_EMBED_PROVIDER").unwrap_or_else(|_| "candle".to_string());
+    let model = std::env::var("SURR_EMBED_MODEL")
+        .unwrap_or_else(|_| "BAAI/bge-small-en-v1.5".to_string());
 
     let mut start: usize = 0;
     let mut processed: usize = 0;
@@ -144,8 +148,8 @@ pub async fn run_reembed(
             }
             let emb_json = serde_json::to_string(&new_emb)?;
             let update_sql = format!(
-                "USE NS {} DB {}; UPDATE type::thing('{}', '{}') SET embedding = {} RETURN NONE;",
-                ns, dbname, tb, inner, emb_json
+                "USE NS {} DB {}; UPDATE type::thing('{}', '{}') SET embedding = {}, embedding_provider = '{}', embedding_model = '{}', embedding_dim = {}, embedded_at = time::now() RETURN NONE;",
+                ns, dbname, tb, inner, emb_json, provider, model, expected_dim
             );
             let uresp = http
                 .post(&sql_url)
