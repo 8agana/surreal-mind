@@ -30,7 +30,9 @@ async fn main() -> Result<()> {
 
     // Get all thoughts using a raw query with meta::id() to avoid Thing serialization
     println!("\n📚 Fetching all thoughts from database...");
-    let result = db.query("SELECT meta::id(id) as id, content, array::len(embedding) as emb_len FROM thoughts").await?;
+    let result = db
+        .query("SELECT meta::id(id) as id, content, array::len(embedding) as emb_len FROM thoughts")
+        .await?;
     let mut response = result.check()?;
     let thoughts: Vec<serde_json::Value> = response.take(0)?;
     println!("✅ Found {} thoughts to process", thoughts.len());
@@ -67,7 +69,10 @@ async fn main() -> Result<()> {
             Ok(new_embedding) => {
                 // Update thought with new embedding using the proper ID format
                 // Need to wrap UUID in backticks because of hyphens
-                let query = format!("UPDATE thoughts:`{}` SET embedding = $embedding", thought_id);
+                let query = format!(
+                    "UPDATE thoughts:`{}` SET embedding = $embedding",
+                    thought_id
+                );
 
                 match db.query(&query).bind(("embedding", new_embedding)).await {
                     Ok(_) => success_count += 1,
