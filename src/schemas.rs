@@ -7,7 +7,6 @@ pub fn convo_think_schema() -> Arc<Map<String, Value>> {
         "properties": {
             "content": {"type": "string"},
             "injection_scale": {"type": ["integer", "string"]},
-            "submode": {"type": "string"},
             "tags": {"type": "array", "items": {"type": "string"}},
             "significance": {"type": ["number", "string"]},
             "verbose_analysis": {"type": "boolean"}
@@ -23,7 +22,6 @@ pub fn tech_think_schema() -> Arc<Map<String, Value>> {
         "properties": {
             "content": {"type": "string"},
             "injection_scale": {"type": ["integer", "string"]},
-            "submode": {"type": "string", "enum": ["plan", "build", "debug"], "default": "plan"},
             "tags": {"type": "array", "items": {"type": "string"}},
             "significance": {"type": ["number", "string"]},
             "verbose_analysis": {"type": "boolean"}
@@ -60,7 +58,6 @@ pub fn search_thoughts_schema() -> Arc<Map<String, Value>> {
             "top_k": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 50},
             "offset": {"type": ["integer", "number", "string"], "minimum": 0},
             "sim_thresh": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-            "submode": {"type": "string"},
             "min_significance": {"type": "number", "minimum": 0.0, "maximum": 1.0},
             "expand_graph": {"type": "boolean"},
             "graph_depth": {"type": ["integer", "number", "string"], "minimum": 0, "maximum": 3},

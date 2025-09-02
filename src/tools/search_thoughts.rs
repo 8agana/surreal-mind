@@ -19,6 +19,7 @@ struct SearchRow {
     #[serde(default)]
     access_count: u32,
     last_accessed: Option<surrealdb::sql::Datetime>,
+    // submode removed from public API; retain only to tolerate legacy rows
     #[serde(skip_serializing_if = "Option::is_none")]
     submode: Option<String>,
 }
@@ -39,8 +40,6 @@ pub struct SearchThoughtsParams {
     pub offset: Option<usize>,
     #[serde(default)]
     pub sim_thresh: Option<f32>,
-    #[serde(default)]
-    pub submode: Option<String>,
     #[serde(default)]
     pub min_significance: Option<f32>,
     #[serde(default)]
@@ -110,7 +109,7 @@ impl SurrealMindServer {
         // Use meta::id() to get just the record ID without the table prefix
         // Filter by embedding_dim FIRST to avoid dimension mismatches
         let q_dim = q_emb.len() as i64;
-        let sql = "SELECT meta::id(id) as id, content, embedding, significance, submode, created_at \
+        let sql = "SELECT meta::id(id) as id, content, embedding, significance, created_at \
                    FROM thoughts WHERE embedding_dim = $dim LIMIT $limit";
 
         // Execute and deserialize to simpler struct
@@ -129,8 +128,6 @@ impl SurrealMindServer {
             embedding: Vec<f32>,
             #[serde(default)]
             significance: f32,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            submode: Option<String>,
             created_at: surrealdb::sql::Datetime,
         }
 
@@ -251,7 +248,6 @@ impl SurrealMindServer {
                     "id": row.id,
                     "content": row.content,
                     "similarity": sim,
-                    "submode": row.submode,
                     "significance": row.significance
                 })
             })

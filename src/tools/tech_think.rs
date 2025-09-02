@@ -14,7 +14,6 @@ pub struct TechThinkParams {
         deserialize_with = "crate::deserializers::de_option_u8_forgiving"
     )]
     pub injection_scale: Option<u8>,
-    pub submode: Option<String>,
     #[serde(default, deserialize_with = "crate::deserializers::de_option_tags")]
     pub tags: Option<Vec<String>>,
     #[serde(
@@ -69,7 +68,7 @@ impl SurrealMindServer {
     async fn handle_think_with_profile(
         &self,
         request: CallToolRequestParam,
-        forced_submode: &str,
+        _forced_submode: &str,
         default_injection_scale: u8,
         default_significance: f32,
         tool_name: &str,
@@ -82,8 +81,7 @@ impl SurrealMindServer {
                 message: format!("Invalid parameters: {}", e),
             })?;
 
-        // Force submode per tool
-        let submode = forced_submode.to_string();
+        // Submode removed: this field is deprecated and not stored/used
 
         // Compute embedding
         let embedding = self.embedder.embed(&params.content).await.map_err(|e| {
@@ -118,7 +116,7 @@ impl SurrealMindServer {
                     significance: $significance,
                     access_count: 0,
                     last_accessed: NONE,
-                    submode: $submode,
+                    submode: NONE,
                     framework_enhanced: NONE,
                     framework_analysis: NONE,
                     is_inner_voice: false,
@@ -134,7 +132,7 @@ impl SurrealMindServer {
             .bind(("embedding", embedding.clone()))
             .bind(("injection_scale", injection_scale))
             .bind(("significance", significance))
-            .bind(("submode", submode.clone()))
+            // no submode binding
             .bind(("provider", provider))
             .bind(("model", model))
             .bind(("dim", dim))
@@ -145,7 +143,7 @@ impl SurrealMindServer {
                 &thought_id,
                 &embedding,
                 injection_scale,
-                Some(&submode),
+                None,
                 Some(tool_name),
             )
             .await
@@ -153,7 +151,8 @@ impl SurrealMindServer {
 
         let result = json!({
             "thought_id": thought_id,
-            "submode_used": submode,
+            "embedding_model": self.get_embedding_metadata().1,
+            "embedding_dim": self.embedder.dimensions(),
             "memories_injected": mem_count
         });
 
