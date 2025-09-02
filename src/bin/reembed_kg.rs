@@ -1,8 +1,7 @@
 use anyhow::Result;
 use chrono::Utc;
 use serde_json::Value;
-use surreal_mind::bge_embedder::BGEEmbedder;
-use surreal_mind::embeddings::Embedder;
+use surreal_mind::embeddings::create_embedder;
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::Ws;
 use surrealdb::opt::auth::Root;
@@ -27,10 +26,12 @@ async fn main() -> Result<()> {
         println!("🔎 Dry run: no writes to DB");
     }
 
-    // Embedder
-    let embedder = BGEEmbedder::new()?;
+    // Embedder (same policy as core): OpenAI primary (1536) if key; else Candle BGE (384)
+    let embedder = create_embedder().await?;
     let dims = embedder.dimensions();
-    println!("✅ BGE-small ready ({} dims)", dims);
+    let prov = std::env::var("SURR_EMBED_PROVIDER").unwrap_or_else(|_| "openai".to_string());
+    let model = std::env::var("SURR_EMBED_MODEL").unwrap_or_else(|_| "text-embedding-3-small".to_string());
+    println!("✅ Embedder ready (provider={}, model={}, dims={})", prov, model, dims);
 
     // DB connection
     let url = std::env::var("SURR_DB_URL").unwrap_or_else(|_| "127.0.0.1:8000".to_string());
@@ -59,17 +60,27 @@ async fn main() -> Result<()> {
         };
         let rows: Vec<Value> = db.query(sql).await?.take(0)?;
         println!("📚 Entities to check: {}", rows.len());
-        for (i, r) in rows.iter().enumerate() {
+        for i in 0..rows.len() {
+            let r = &rows[i];
             if i % 50 == 0 && i > 0 {
                 println!("  Entities progress: {}/{}", i, rows.len());
             }
-            let id = r.get("id").and_then(|v| v.as_str()).unwrap_or("");
-            let name = r.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let id = r
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let name = r
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let emb_len = r.get("emb_len").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
             let model = r
                 .get("embedding_model")
                 .and_then(|v| v.as_str())
-                .unwrap_or("");
+                .unwrap_or("")
+                .to_string();
             let etype = r
                 .get("entity_type")
                 .and_then(|v| v.as_str())
@@ -81,14 +92,12 @@ async fn main() -> Result<()> {
                         .map(|s| s.to_string())
                 })
                 .unwrap_or_default();
-            if emb_len == dims
-                && (model == "BAAI/bge-small-en-v1.5" || model == "bge-small-en-v1.5")
-            {
+            if emb_len == dims && (model == model || model == "text-embedding-3-small" || model == "BAAI/bge-small-en-v1.5" || model == "bge-small-en-v1.5") {
                 skipped_entities += 1;
                 continue;
             }
             let text = if etype.is_empty() {
-                name.to_string()
+                name.clone()
             } else {
                 format!("{} ({})", name, etype)
             };
@@ -96,11 +105,13 @@ async fn main() -> Result<()> {
             if !dry_run {
                 let ts = Utc::now().to_rfc3339();
                 let q = format!(
-                    "UPDATE kg_entities:`{}` SET embedding = $emb, embedding_provider = 'candle', embedding_model = 'BAAI/bge-small-en-v1.5', embedding_dim = $dim, embedded_at = $ts",
+                    "UPDATE kg_entities:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts",
                     id
                 );
                 db.query(q)
                     .bind(("emb", emb))
+                    .bind(("prov", prov.clone()))
+                    .bind(("model", model.clone()))
                     .bind(("dim", dims as i64))
                     .bind(("ts", ts))
                     .await?;
@@ -117,25 +128,33 @@ async fn main() -> Result<()> {
         };
         let rows: Vec<Value> = db.query(sql).await?.take(0)?;
         println!("📚 Observations to check: {}", rows.len());
-        for (i, r) in rows.iter().enumerate() {
+        for i in 0..rows.len() {
+            let r = &rows[i];
             if i % 50 == 0 && i > 0 {
                 println!("  Observations progress: {}/{}", i, rows.len());
             }
-            let id = r.get("id").and_then(|v| v.as_str()).unwrap_or("");
-            let name = r.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let id = r
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let name = r
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let emb_len = r.get("emb_len").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
             let model = r
                 .get("embedding_model")
                 .and_then(|v| v.as_str())
-                .unwrap_or("");
-            if emb_len == dims
-                && (model == "BAAI/bge-small-en-v1.5" || model == "bge-small-en-v1.5")
-            {
+                .unwrap_or("")
+                .to_string();
+            if emb_len == dims && (model == model || model == "text-embedding-3-small" || model == "BAAI/bge-small-en-v1.5" || model == "bge-small-en-v1.5") {
                 skipped_obs += 1;
                 continue;
             }
             // Use name plus lightweight data summary if present
-            let mut text = name.to_string();
+            let mut text = name.clone();
             if let Some(d) = r.get("data") {
                 if let Some(obj) = d.as_object() {
                     if let Some(desc) = obj.get("description").and_then(|v| v.as_str()) {
@@ -148,11 +167,13 @@ async fn main() -> Result<()> {
             if !dry_run {
                 let ts = Utc::now().to_rfc3339();
                 let q = format!(
-                    "UPDATE kg_observations:`{}` SET embedding = $emb, embedding_provider = 'candle', embedding_model = 'BAAI/bge-small-en-v1.5', embedding_dim = $dim, embedded_at = $ts",
+                    "UPDATE kg_observations:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts",
                     id
                 );
                 db.query(q)
                     .bind(("emb", emb))
+                    .bind(("prov", prov.clone()))
+                    .bind(("model", model.clone()))
                     .bind(("dim", dims as i64))
                     .bind(("ts", ts))
                     .await?;
@@ -170,10 +191,7 @@ async fn main() -> Result<()> {
         "Observations: updated={}, skipped={}",
         updated_obs, skipped_obs
     );
-    println!(
-        "Provider=model: candle / BAAI/bge-small-en-v1.5 ({} dims)",
-        dims
-    );
+    println!("Provider/model: {} / {} ({} dims)", prov, model, dims);
 
     Ok(())
 }

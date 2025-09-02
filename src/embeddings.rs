@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 #[async_trait]
 pub trait Embedder: Send + Sync {
@@ -146,60 +146,15 @@ impl Embedder for OpenAIEmbedder {
     }
 }
 
-// Deterministic FakeEmbedder for local/testing fallback
-#[derive(Clone)]
-struct FakeEmbedder {
-    dims: usize,
-}
-
-impl FakeEmbedder {
-    fn new(dims: usize) -> Self {
-        Self { dims }
-    }
-}
-
-#[async_trait]
-impl Embedder for FakeEmbedder {
-    async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-        let mut seed: u64 = 1469598103934665603; // FNV-1a offset basis
-        for b in text.as_bytes() {
-            seed ^= *b as u64;
-            seed = seed.wrapping_mul(1099511628211);
-        }
-        // LCG PRNG
-        let mut state = if seed == 0 { 88172645463393265 } else { seed };
-        let mut v = Vec::with_capacity(self.dims);
-        for _ in 0..self.dims {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
-            let x = (state >> 11) as f64 / ((1u64 << 53) as f64); // [0,1)
-            let y = (x * 2.0 - 1.0) as f32; // [-1,1)
-            v.push(y);
-        }
-        // Normalize to unit vector for stable cosine similarity
-        let norm = v
-            .iter()
-            .map(|x| (*x as f64) * (*x as f64))
-            .sum::<f64>()
-            .sqrt();
-        if norm > 0.0 {
-            for e in &mut v {
-                *e = (*e as f64 / norm) as f32;
-            }
-        }
-        Ok(v)
-    }
-    fn dimensions(&self) -> usize {
-        self.dims
-    }
-}
+// No per-call fallback wrapper. Selection happens at startup to avoid mixed dims.
 
 // Factory function to create embedder based on environment
 pub async fn create_embedder() -> Result<Arc<dyn Embedder>> {
     // Load .env file if it exists
     let _ = dotenvy::dotenv();
 
-    // Configuration: provider preference and keys
-    let provider = std::env::var("SURR_EMBED_PROVIDER").unwrap_or_default();
+    // Configuration: prefer OpenAI when key present; else Candle
+    let provider = std::env::var("SURR_EMBED_PROVIDER").unwrap_or_else(|_| "openai".to_string());
     // Allow explicit dimension override for custom models
     let dim_override = std::env::var("SURR_EMBED_DIM")
         .ok()
@@ -214,55 +169,44 @@ pub async fn create_embedder() -> Result<Arc<dyn Embedder>> {
             || t.eq_ignore_ascii_case("changeme")
     };
 
-    let fake = |reason: &str| -> Arc<dyn Embedder> {
-        let dims = dim_override.unwrap_or(768);
-        warn!(
-            "{}; falling back to deterministic FakeEmbedder (dims={})",
-            reason, dims
-        );
-        Arc::new(FakeEmbedder::new(dims))
+    // Helper to build BGE
+    let make_bge = || -> Result<Arc<dyn Embedder>> {
+        let b = crate::bge_embedder::BGEEmbedder::new()?;
+        Ok(Arc::new(b))
     };
 
     match provider.as_str() {
         "candle" | "local" => {
-            // Local, in-process embeddings via Candle using BGE-small-en-v1.5 (384 dims)
-            let _model = std::env::var("SURR_EMBED_MODEL")
-                .ok()
-                .filter(|m| !m.trim().is_empty())
-                .unwrap_or_else(|| "BAAI/bge-small-en-v1.5".to_string());
             info!("Using Candle (local) BGE-small-en-v1.5 embeddings (384 dims)");
-            let bge = crate::bge_embedder::BGEEmbedder::new()?;
-            Ok(Arc::new(bge))
+            make_bge()
         }
-        "openai" => {
+        "openai" | "" => {
             let key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
-            if is_placeholder(&key) {
-                return Ok(fake("OPENAI_API_KEY missing/placeholder"));
+            if !is_placeholder(&key) && !key.is_empty() {
+                let model = std::env::var("SURR_EMBED_MODEL")
+                    .ok()
+                    .filter(|m| !m.trim().is_empty())
+                    .unwrap_or_else(|| "text-embedding-3-small".to_string());
+                let dims = dim_override.or(Some(1536));
+                info!("Using OpenAI embeddings (model={}, dims={})", model, dims.unwrap());
+                Ok(Arc::new(OpenAIEmbedder::new(key, model, dims)?))
+            } else {
+                info!("OPENAI_API_KEY not set; using Candle BGE-small (384)");
+                make_bge()
             }
-            let model = std::env::var("SURR_EMBED_MODEL")
-                .ok()
-                .filter(|m| !m.trim().is_empty())
-                .unwrap_or_else(|| "text-embedding-3-small".to_string());
-            info!("Using OpenAI embeddings (model={})", model);
-            Ok(Arc::new(OpenAIEmbedder::new(key, model, dim_override)?))
         }
-        "nomic" => {
-            let key = std::env::var("NOMIC_API_KEY").unwrap_or_default();
-            if is_placeholder(&key) {
-                return Ok(fake("NOMIC_API_KEY missing/placeholder")); // intended local dev path
+        _ => {
+            // Unknown provider → try OpenAI if key exists, else Candle
+            let key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
+            if !is_placeholder(&key) && !key.is_empty() {
+                let model = std::env::var("SURR_EMBED_MODEL").ok().filter(|m| !m.trim().is_empty()).unwrap_or_else(|| "text-embedding-3-small".to_string());
+                let dims = dim_override.or(Some(1536));
+                info!("Using OpenAI embeddings (model={}, dims={})", model, dims.unwrap());
+                Ok(Arc::new(OpenAIEmbedder::new(key, model, dims)?))
+            } else {
+                info!("Unknown provider and no OpenAI key; using Candle BGE-small (384)");
+                make_bge()
             }
-            // Nomic client not implemented in this build; use Fake but log info
-            let dims = dim_override.unwrap_or(768);
-            info!(
-                "NOMIC_API_KEY set; Nomic embedder not implemented, using FakeEmbedder (dims={})",
-                dims
-            );
-            Ok(Arc::new(FakeEmbedder::new(dims)))
         }
-        "" => {
-            // No provider configured: default to Fake
-            Ok(fake("SURR_EMBED_PROVIDER unset"))
-        }
-        other => Ok(fake(&format!("Unknown SURR_EMBED_PROVIDER='{}'", other))),
     }
 }

@@ -90,14 +90,16 @@ impl SurrealMindServer {
             }
         })?;
 
-        // Retrieve top thoughts with similarity
+        // Retrieve top thoughts with similarity (filter by embedding dimension first)
         let limit: usize = std::env::var("SURR_DB_LIMIT")
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(1000); // Increased from 500 to ensure more candidates
+        let q_dim = query_embedding.len() as i64;
         let retrieved: Vec<serde_json::Value> = self
             .db
-            .query("SELECT meta::id(id) as id, content, embedding FROM thoughts LIMIT $limit")
+            .query("SELECT meta::id(id) as id, content, embedding FROM thoughts WHERE embedding_dim = $dim LIMIT $limit")
+            .bind(("dim", q_dim))
             .bind(("limit", limit as i64))
             .await?
             .take(0)?;
