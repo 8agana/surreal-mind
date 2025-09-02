@@ -109,7 +109,7 @@ impl SurrealMindServer {
                     "top_k": "integer — max results (1-50; default from env SURR_TOP_K)",
                     "offset": "integer — pagination offset",
                     "sim_thresh": "number — minimum similarity (0.0-1.0; default SURR_SIM_THRESH)",
-                    
+
                     "min_significance": "number — filter by significance",
                     "expand_graph": "boolean — (reserved)",
                     "graph_depth": "integer — (reserved)",

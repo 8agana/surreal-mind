@@ -30,8 +30,12 @@ async fn main() -> Result<()> {
     let embedder = create_embedder().await?;
     let dims = embedder.dimensions();
     let prov = std::env::var("SURR_EMBED_PROVIDER").unwrap_or_else(|_| "openai".to_string());
-    let model = std::env::var("SURR_EMBED_MODEL").unwrap_or_else(|_| "text-embedding-3-small".to_string());
-    println!("✅ Embedder ready (provider={}, model={}, dims={})", prov, model, dims);
+    let model =
+        std::env::var("SURR_EMBED_MODEL").unwrap_or_else(|_| "text-embedding-3-small".to_string());
+    println!(
+        "✅ Embedder ready (provider={}, model={}, dims={})",
+        prov, model, dims
+    );
 
     // DB connection
     let url = std::env::var("SURR_DB_URL").unwrap_or_else(|_| "127.0.0.1:8000".to_string());
@@ -92,7 +96,11 @@ async fn main() -> Result<()> {
                         .map(|s| s.to_string())
                 })
                 .unwrap_or_default();
-            if emb_len == dims && (model == model || model == "text-embedding-3-small" || model == "BAAI/bge-small-en-v1.5" || model == "bge-small-en-v1.5") {
+            if emb_len == dims
+                && (model == "text-embedding-3-small"
+                    || model == "BAAI/bge-small-en-v1.5"
+                    || model == "bge-small-en-v1.5")
+            {
                 skipped_entities += 1;
                 continue;
             }
@@ -149,7 +157,11 @@ async fn main() -> Result<()> {
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            if emb_len == dims && (model == model || model == "text-embedding-3-small" || model == "BAAI/bge-small-en-v1.5" || model == "bge-small-en-v1.5") {
+            if emb_len == dims
+                && (model == "text-embedding-3-small"
+                    || model == "BAAI/bge-small-en-v1.5"
+                    || model == "bge-small-en-v1.5")
+            {
                 skipped_obs += 1;
                 continue;
             }

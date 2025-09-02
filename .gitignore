@@ -13,3 +13,8 @@ AGENTS.md
 /symlinks
 WARP.md
 CLAUDE.md
+
+# SurrealDB backups
+/backups
+*.sql
+*.db.backup
