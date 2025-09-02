@@ -195,7 +195,7 @@ pub fn maintenance_ops_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
         "properties": {
-            "subcommand": {"type": "string", "enum": ["list_removal_candidates", "export_removals", "finalize_removal"], "description": "Maintenance operation to perform"},
+            "subcommand": {"type": "string", "enum": ["list_removal_candidates", "export_removals", "finalize_removal", "health_check_embeddings", "reembed", "reembed_kg"], "description": "Maintenance operation to perform"},
             "dry_run": {"type": "boolean", "default": false, "description": "Simulate operation without making changes"},
             "limit": {"type": ["integer", "number", "string"], "default": 100, "description": "Maximum number of thoughts to process"},
             "format": {"type": "string", "enum": ["parquet"], "default": "parquet", "description": "Export format (only parquet supported)"},

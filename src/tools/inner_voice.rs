@@ -117,7 +117,7 @@ impl SurrealMindServer {
                     .map(|f| f as f32)
                     .collect();
                 if emb.len() == query_embedding.len() {
-                    let sim = self.cosine_similarity(&query_embedding, &emb);
+                    let sim = SurrealMindServer::cosine_similarity(&query_embedding, &emb);
                     if sim >= sim_thresh {
                         let excerpt = content.chars().take(200).collect();
                         scored_sources.push((id.to_string(), sim, excerpt));
@@ -150,7 +150,7 @@ impl SurrealMindServer {
         if save {
             // Get embedding metadata for tracking
             let (provider, model, dim) = self.get_embedding_metadata();
-            
+
             let created_raw: Vec<serde_json::Value> = self
                 .db
                 .query("CREATE thoughts SET content = $synth, created_at = time::now(), embedding = $embedding, injected_memories = [], enriched_content = NONE, injection_scale = 0, significance = 0.5, access_count = 0, last_accessed = NONE, submode = NONE, framework_enhanced = NONE, framework_analysis = NONE, is_summary = true, summary_of = $source_ids, pipeline = 'inner_voice', status = 'active', embedding_provider = $provider, embedding_model = $model, embedding_dim = $dim, embedded_at = time::now() RETURN meta::id(id) as id;")

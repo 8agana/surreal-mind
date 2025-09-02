@@ -91,7 +91,7 @@ impl SurrealMindServer {
             .unwrap_or(500);
 
         let top_k = params.top_k.unwrap_or(top_k_default).clamp(1, 50);
-        let offset = params.offset.unwrap_or(0);
+        let offset = params.offset.unwrap_or(0).max(0);
         let sim_thresh = params
             .sim_thresh
             .unwrap_or(sim_thresh_default)
@@ -109,7 +109,7 @@ impl SurrealMindServer {
 
         // Use meta::id() to get just the record ID without the table prefix
         let sql = format!(
-            "SELECT meta::id(id) as id, content, embedding, significance, submode FROM thoughts LIMIT {}",
+            "SELECT meta::id(id) as id, content, embedding, significance, submode, created_at FROM thoughts LIMIT {}",
             take
         );
 
@@ -126,6 +126,7 @@ impl SurrealMindServer {
             significance: f32,
             #[serde(skip_serializing_if = "Option::is_none")]
             submode: Option<String>,
+            created_at: surrealdb::sql::Datetime,
         }
 
         let rows: Vec<SimpleRow> = response.take(0)?;
@@ -220,8 +221,16 @@ impl SurrealMindServer {
             below_threshold
         );
 
-        // Sort by similarity desc and apply offset/top_k
-        matches.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        // Sort by similarity desc, then by created_at desc for tie-breaker
+        matches.sort_by(|a, b| {
+            let sim_cmp = b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal);
+            if sim_cmp != std::cmp::Ordering::Equal {
+                sim_cmp
+            } else {
+                // Tie-break by created_at desc (newer first)
+                b.1.created_at.cmp(&a.1.created_at)
+            }
+        });
         let total = matches.len();
         let end = (offset + top_k).min(total);
         let sliced = if offset < total {

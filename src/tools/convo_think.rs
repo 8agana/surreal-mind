@@ -68,7 +68,7 @@ impl SurrealMindServer {
 
         // Generate a UUID for the thought
         let thought_id = uuid::Uuid::new_v4().to_string();
-        
+
         // Get embedding metadata for tracking
         let (provider, model, dim) = self.get_embedding_metadata();
 
@@ -109,7 +109,13 @@ impl SurrealMindServer {
 
         // Memory injection (simple cosine similarity over recent thoughts)
         let (mem_count, _enriched) = self
-            .inject_memories(&thought_id, &embedding, injection_scale, Some(&submode))
+            .inject_memories(
+                &thought_id,
+                &embedding,
+                injection_scale,
+                Some(&submode),
+                Some("think_convo"),
+            )
             .await
             .unwrap_or((0, None));
 

@@ -30,7 +30,11 @@ fn test_list_tools_returns_expected_tools() {
         "maintenance_ops",
         "detailed_help",
     ];
-    assert_eq!(expected_tools.len(), 12, "Tool roster should list 12 entries in Phase 1");
+    assert_eq!(
+        expected_tools.len(),
+        12,
+        "Tool roster should list 12 entries in Phase 1"
+    );
 }
 
 #[test]

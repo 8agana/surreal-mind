@@ -60,8 +60,8 @@ pub async fn run_reembed(
     let embedder = embeddings::create_embedder().await?;
     let expected_dim = embedder.dimensions();
     let provider = std::env::var("SURR_EMBED_PROVIDER").unwrap_or_else(|_| "candle".to_string());
-    let model = std::env::var("SURR_EMBED_MODEL")
-        .unwrap_or_else(|_| "BAAI/bge-small-en-v1.5".to_string());
+    let model =
+        std::env::var("SURR_EMBED_MODEL").unwrap_or_else(|_| "BAAI/bge-small-en-v1.5".to_string());
 
     let mut start: usize = 0;
     let mut processed: usize = 0;
