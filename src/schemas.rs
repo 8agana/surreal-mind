@@ -155,7 +155,7 @@ pub fn kg_moderate_schema() -> Arc<Map<String, Value>> {
                     "properties": {
                         "id": {"type": "string"},
                         "kind": {"type": "string", "enum": ["entity", "relationship"]},
-                        "decision": {"type": "string", "enum": ["approve", "reject"]},
+                        "decision": {"type": "string", "enum": ["approve", "reject", "alias"]},
                         "feedback": {"type": "string"},
                         "canonical_id": {"type": "string"}
                     },

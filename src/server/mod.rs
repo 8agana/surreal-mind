@@ -625,9 +625,18 @@ impl SurrealMindServer {
             return Ok((0, None));
         }
         // Thresholds are tunable via env; defaults are conservative but not too strict
-        let t1 = std::env::var("SURR_INJECT_T1").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.60);
-        let t2 = std::env::var("SURR_INJECT_T2").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.40);
-        let t3 = std::env::var("SURR_INJECT_T3").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.25);
+        let t1 = std::env::var("SURR_INJECT_T1")
+            .ok()
+            .and_then(|v| v.parse::<f32>().ok())
+            .unwrap_or(0.60);
+        let t2 = std::env::var("SURR_INJECT_T2")
+            .ok()
+            .and_then(|v| v.parse::<f32>().ok())
+            .unwrap_or(0.40);
+        let t3 = std::env::var("SURR_INJECT_T3")
+            .ok()
+            .and_then(|v| v.parse::<f32>().ok())
+            .unwrap_or(0.25);
         let (limit, mut prox_thresh) = match scale {
             0 => (0usize, 1.0f32),
             1 => (5usize, t1),
@@ -768,9 +777,9 @@ impl SurrealMindServer {
         scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         let mut selected: Vec<(String, f32, String, String)> = scored
             .iter()
-            .cloned()
-            .filter(|(_, s, _, _)| *s >= prox_thresh)
+            .filter(|&(_, s, _, _)| *s >= prox_thresh)
             .take(limit)
+            .cloned()
             .collect();
         if selected.is_empty() && !scored.is_empty() {
             let floor = std::env::var("SURR_INJECT_FLOOR")
