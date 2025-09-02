@@ -1,6 +1,6 @@
 # SurrealMind Think Tools Refactor Proposal
-**Date:** 2025-08-31  
-**Author:** Warp  
+**Date:** 2025-08-31
+**Author:** Warp
 **Project:** LegacyMind / SurrealMind
 
 ## Executive Summary
@@ -89,55 +89,60 @@ think_stuck {
 - Documentation updated
 
 ---
+***Phase 1 Complete by Junie 20250901 1815. Needed a second look when the embedder was not starting up***
+---
 
 ## Phase 2: Optimize Current Functionality
-**Timeline:** 2-3 days  
+**Timeline:** 2–3 days  
 **Risk:** Medium  
-**Dependencies:** Phase 1
+**Dependencies:** Phase 1 (renames live, embedder stable)
 
-### 2.1 Memory Injection Optimization
-- [x] Fix scale check ordering (COMPLETED)
-- [ ] Test injection at all scales (0-3)
-- [ ] Verify KG entity retrieval
-- [ ] Optimize proximity thresholds per tool
+Important constraint
+- Injection must use memories only (KG entities/observations), never raw thoughts. Thought retrieval is OK for search, but “injection” attaches only memory IDs.
 
-### 2.2 Search and Retrieval Tuning
-- [x] Lower similarity thresholds (COMPLETED)
-- [x] Add debug logging (COMPLETED)
-- [ ] Implement database-level vector search if available
-- [ ] Test with various embedding dimensions
-- [ ] Optimize retrieval limits per tool
+Detailed implementation plan
+1) Enforce KG‑only injection
+- Verify `SurrealMindServer::inject_memories` reads from `kg_entities` (optionally `kg_observations`) and writes only IDs into `thoughts.injected_memories` plus `enriched_content` text.
+- Remove or guard any legacy thought‑level injection paths; confirm no direct `thoughts` scanning is used for injection.
+- Test: create a thought, run injection at scales 1–3; assert injected_memories contains only `kg_entities:*` IDs, count matches scale mapping.
 
-### 2.3 Tool-Specific Defaults
-```rust
-impl ThinkDefaults {
-    fn for_tool(tool: ThinkTool) -> Self {
-        match tool {
-            ThinkTool::Convo => Self {
-                injection_scale: 1,
-                sim_threshold: 0.4,
-                retrieval_limit: 500,
-            },
-            ThinkTool::Debug => Self {
-                injection_scale: 4,
-                sim_threshold: 0.2,  // Cast wide net
-                retrieval_limit: 1000,
-            },
-            ThinkTool::Plan => Self {
-                injection_scale: 3,
-                sim_threshold: 0.3,
-                retrieval_limit: 750,
-            },
-            // ... etc
-        }
-    }
-}
-```
+2) Retrieval/search hardening (think_search/search_thoughts)
+- Config→env sync at startup: SURR_SIM_THRESH, SURR_TOP_K, SURR_DB_LIMIT, SURR_KG_CANDIDATES.
+- Skip and log mismatched embedding rows; include diagnostic counts when RUST_LOG=debug.
+- Deterministic sorting (similarity desc; tie-break by created_at desc if available). Clamp offset/top_k.
+- Acceptance: a just‑created unique thought is retrieved (similarity ≥ 0.9) by think_search within one call.
 
-### Deliverables
-- Memory injection working at all scales
-- Search returning relevant results
-- Tool-specific optimizations implemented
+3) Tool‑specific runtime defaults (no behavior drift beyond thresholds)
+- Defaults when params omitted:
+  - think_convo: sim_thresh=0.35, top_k=8, db_limit=500.
+  - think_plan:  sim_thresh=0.30, top_k=10, db_limit=800.
+  - think_debug: sim_thresh=0.20, top_k=12, db_limit=1000.
+  - think_build: sim_thresh=0.45, top_k=6, db_limit=400.
+  - think_stuck: sim_thresh=0.30, top_k=10, db_limit=600.
+- Implement as handler‑level overrides; do not mutate global config.
+
+4) Proximity tuning for memories injection
+- Maintain scale→(limit, prox_thresh): 1→(5,0.8), 2→(10,0.6), 3→(20,0.4).
+- Apply submode delta only if `retrieval.submode_tuning=true`; clamp within [0.0, 0.99].
+
+5) Health checks and remediation
+- Add/keep `maintenance_ops{subcommand:"health_check_embeddings"}` to report expected_dim vs actual for thoughts, kg_entities, kg_observations.
+- Use `reembed` and `reembed_kg` to remediate; ensure provider/model/dim/embedded_at fields updated.
+
+6) Logging & diagnostics
+- DEBUG: log query dims, candidate counts, skipped mismatches, top matches, injection results (count & examples).
+- ERRORs bubble with plain, actionable messages (DB connect, embedder missing).
+
+7) Tests
+- Unit: KG‑only injection, cosine similarity, param coercion for search, per‑tool default selection.
+- Integration (local DB): create→search hit; create→think_convo→injection writes only KG IDs; reembed tools idempotent.
+
+8) Docs & operator checklist
+- README: explicitly state “injection = memories only,” remove any raw‑thought injection language.
+- Checklist: run health_check_embeddings → reembed/reembed_kg if needed → verify.
+
+Out‑of‑scope for Phase 2
+- DB‑level vector index/search; cognitive journey/AI dialog engines.
 
 ---
 
@@ -146,84 +151,75 @@ impl ThinkDefaults {
 **Risk:** Medium  
 **Dependencies:** Phase 2
 
-### 3.1 Journey-Based Progression
-Each tool progresses through phases based on interaction depth:
+Goal
+- Add a deterministic Journey engine that guides think_* tools through phases and strategies without requiring an external LLM. Respect strict guardrails: no hidden tool switches, injection remains memories‑only, and everything is observable, reproducible, and easy to disable.
 
-```rust
-enum ThinkPhase {
-    Initial,    // Quick, surface-level
-    Deeper,     // More analysis
-    Core,       // Fundamental examination
-    Synthesis,  // Integration and resolution
-}
+Design constraints
+- Deterministic: same inputs → same strategy sequence (seed from content + session).
+- Explicit: no silent tool changes; any cross‑tool suggestion is returned as metadata, not auto‑invoked.
+- Safe: injection pipeline unchanged (memories only), search behavior unchanged except for per‑step defaults.
+- Opt‑in: feature‑flag per tool; global kill switch.
 
-struct ThinkJourney {
-    current_phase: ThinkPhase,
-    iterations_in_phase: u32,
-    success_metrics: Vec<f32>,
-}
-```
+Detailed implementation plan
+1) Core types and state
+- Add enums: ThinkTool, ThinkPhase { Initial, Deeper, Core, Synthesis }, Strategy (per tool).
+- Add Journey struct: { phase, iterations, strategy_idx, seed, started_at }.
+- Add SessionState: persisted in DB to survive runs: tables `ci_sessions` (session_id, tool, journey json, created/updated), `ci_turns` (session_id, turn_no, input, output, phase, strategy, metrics).
+- Schema: define tables in server.initialize_schema(); add indexes on session_id, created_at.
 
-### 3.2 Rotating Strategies Per Phase
+2) Strategy registry and rotation
+- Create a static registry mapping (tool, phase) → Vec<Strategy> with weights.
+- Compute a stable sequence via seeded round‑robin: seed = hash(content + session_id + phase); iterate weights deterministically.
+- Expose `next_strategy(tool, phase, seed, iter)` that returns Strategy and justification text.
 
-#### think_debug Journey
-```rust
-Phase::Initial => {
-    strategies: [QuickScan, SymptomGathering, RecentChanges],
-    advance_on: "problem identified",
-    rotate_after: 3 attempts
-}
-Phase::Deeper => {
-    strategies: [FiveWhys, BinarySearch, Isolation],
-    advance_on: "root cause hypothesized",
-    rotate_after: 5 attempts
-}
-Phase::Core => {
-    strategies: [RootCauseAnalysis, SystemsThinking, FirstPrinciples],
-    advance_on: "solution identified",
-    escape_to: think_stuck
-}
-```
+3) Phase progression rules
+- Per tool defaults: max_iters_per_phase (e.g., Initial 3, Deeper 5, Core 5, Synthesis 1).
+- Advance when success predicate holds (tool‑specific), else rotate strategy up to max, then advance or suggest think_stuck.
+- Success predicates examples: debug → “repro or failing locus identified”; plan → “architecture decision produced”. For Phase 3, stub as “non‑empty actionable notes produced”.
 
-#### think_stuck Escalation
-```rust
-impl ThinkStuck {
-    fn escalate(&mut self) -> Response {
-        match self.attempt {
-            1 => self.lateral_thinking(),
-            2 => self.inversion(),
-            3 => self.random_association(),
-            4 => self.dialectical(),
-            5 => self.emergency_signal(), // "Sam, I need help"
-        }
-    }
-}
-```
+4) Orchestration inside handlers (no behavioral drift)
+- Add a thin wrapper in each think_* handler:
+  - Load/create session state (session_id from request or generated).
+  - Pick current strategy using the registry; apply small retrieval default tweaks (e.g., lower sim_thresh for debug) without changing global config.
+  - Execute the usual think flow (store thought, run memories injection) with the selected defaults.
+  - Record a turn in `ci_turns` with phase, strategy, and summary metrics (memories_injected, tokens_estimate, elapsed_ms).
+  - Decide next phase/strategy and return metadata: { phase, strategy, next_suggested_tool? }.
+- Never auto‑invoke another tool; only suggest `think_stuck`/`think_plan` via metadata.
 
-### 3.3 Cross-Tool Flow
-```rust
-// Tools can invoke each other when appropriate
-impl ThinkBuild {
-    fn handle_blockage(&self) -> Result<()> {
-        if self.stuck_iterations > 3 {
-            self.invoke_tool(ThinkTool::Stuck)?;
-        }
-        Ok(())
-    }
-}
-```
+5) API and flags
+- Request args: optional { session_id, force_phase, max_iters, journey_debug }.
+- Env/config:
+  - SURR_JOURNEY_ENABLE_{CONVO,PLAN,DEBUG,BUILD,STUCK} (true/false)
+  - SURR_JOURNEY_KILL_SWITCH (true disables globally)
+  - SURR_JOURNEY_LOG (level for extra logs)
+  - Add to surreal_mind.toml under a new [journey] section with sane defaults (disabled by default).
 
-### Deliverables
-- Journey progression implemented for all think tools
-- Strategy rotation within phases
-- Cross-tool invocation system
-- Success metrics tracking
+6) Metrics, logging, and observability
+- Log at INFO: phase, strategy, iter, memories_injected, result_len.
+- Log at DEBUG: seed, strategy sequence preview, thresholds used.
+- Provide a maintenance subcommand `journey_stats` to summarize sessions/turns per tool.
+
+7) Tests
+- Unit: deterministic rotation (same seed → same order), phase advancement after N iterations, strategy wraparound, metadata formation.
+- Integration (local DB): run a short journey for think_debug (2 phases, 3 turns), confirm state persisted and suggestions appear; verify injection remains memories‑only.
+
+8) Documentation
+- README: Journey overview, flags, how to disable/enable per tool, and how to read returned metadata.
+- Example snippets for think_debug with journey_debug=true showing logs and metadata.
+
+Out‑of‑scope for Phase 3
+- Full DialogEngine (Phase 4), advanced success metrics learned over time, and any LLM‑based reasoning.
+
+Deliverables
+- Deterministic journey engine integrated with think_* (feature‑flagged, off by default).
+- Session persistence (ci_sessions/ci_turns) and maintenance summaries.
+- Clear metadata surfaced to the client; no hidden tool switches; memories‑only injection preserved.
 
 ---
 
 ## Phase 4: Augmented Introspection System
-**Timeline:** 2 weeks  
-**Risk:** High (new system)  
+**Timeline:** 2 weeks
+**Risk:** High (new system)
 **Dependencies:** Phase 3
 
 ### 4.1 DialogEngine Core
@@ -233,19 +229,19 @@ Build a deterministic dialog partner that doesn't need an LLM:
 pub struct DialogEngine {
     // Pattern detection
     pattern_matcher: PatternMatcher,
-    
+
     // Socratic question banks
     question_banks: HashMap<ThinkTool, Vec<String>>,
-    
+
     // Memory context
     memory_retriever: MemoryRetriever,
     recent_thoughts: CircularBuffer<String>,
-    
+
     // State management
     dialog_state: DialogState,
     frustration_level: f32,
     last_strategies: Vec<Strategy>,
-    
+
     // Learning
     effectiveness_tracker: HashMap<String, f32>,
 }
@@ -345,8 +341,8 @@ impl DialogEngine {
 ---
 
 ## Phase 5: Integration and Polish
-**Timeline:** 1 week  
-**Risk:** Low  
+**Timeline:** 1 week
+**Risk:** Low
 **Dependencies:** Phases 1-4
 
 ### 5.1 System Integration

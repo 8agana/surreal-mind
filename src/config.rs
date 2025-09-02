@@ -26,6 +26,15 @@ pub struct SystemConfig {
     pub inject_debounce: u64,
 }
 
+/// Embedding configuration snapshot for use across components
+#[derive(Debug, Clone)]
+pub struct EmbeddingConfig {
+    pub provider: String,
+    pub model: String,
+    pub dimensions: usize,
+    pub retries: u32,
+}
+
 /// Retrieval configuration for search and injection behavior
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RetrievalConfig {
@@ -145,6 +154,16 @@ impl Config {
         Ok(config)
     }
 
+    /// Convenience: snapshot embedding configuration
+    pub fn embedding(&self) -> EmbeddingConfig {
+        EmbeddingConfig {
+            provider: self.system.embedding_provider.clone(),
+            model: self.system.embedding_model.clone(),
+            dimensions: self.system.embedding_dimensions,
+            retries: self.system.embed_retries,
+        }
+    }
+
     /// Get submode configuration by name, with fallback to "build" mode
     pub fn get_submode(&self, mode: &str) -> &SubmodeConfig {
         self.submodes
@@ -175,9 +194,9 @@ impl Default for Config {
 
         Self {
             system: SystemConfig {
-                embedding_provider: "nomic".to_string(),
-                embedding_model: "nomic-embed-text-v1.5".to_string(),
-                embedding_dimensions: 768,
+                embedding_provider: "openai".to_string(),
+                embedding_model: "text-embedding-3-small".to_string(),
+                embedding_dimensions: 1536,
                 embed_retries: 3,
                 database_url: "127.0.0.1:8000".to_string(),
                 database_ns: "surreal_mind".to_string(),

@@ -108,13 +108,18 @@ impl SurrealMindServer {
         let take = limit_default;
 
         // Use meta::id() to get just the record ID without the table prefix
-        let sql = format!(
-            "SELECT meta::id(id) as id, content, embedding, significance, submode, created_at FROM thoughts LIMIT {}",
-            take
-        );
+        // Filter by embedding_dim FIRST to avoid dimension mismatches
+        let q_dim = q_emb.len() as i64;
+        let sql = "SELECT meta::id(id) as id, content, embedding, significance, submode, created_at \
+                   FROM thoughts WHERE embedding_dim = $dim LIMIT $limit";
 
         // Execute and deserialize to simpler struct
-        let mut response = self.db.query(sql).await?;
+        let mut response = self
+            .db
+            .query(sql)
+            .bind(("dim", q_dim))
+            .bind(("limit", take as i64))
+            .await?;
 
         #[derive(Debug, Deserialize)]
         struct SimpleRow {
