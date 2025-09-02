@@ -14,6 +14,8 @@ pub struct ConvoThinkParams {
         deserialize_with = "crate::deserializers::de_option_u8_forgiving"
     )]
     pub injection_scale: Option<u8>,
+    // submode is deprecated for think_convo; accepted but ignored
+    #[serde(default)]
     pub submode: Option<String>,
     #[serde(default, deserialize_with = "crate::deserializers::de_option_tags")]
     pub tags: Option<Vec<String>>,
@@ -61,8 +63,7 @@ impl SurrealMindServer {
         }
         tracing::debug!("Generated embedding with {} dimensions", embedding.len());
 
-        // Defaults
-        let submode = params.submode.unwrap_or_else(|| "sarcastic".to_string());
+        // Defaults (submode ignored for convo_think)
         let injection_scale = params.injection_scale.unwrap_or(1) as i64;
         let significance = params.significance.unwrap_or(0.5_f32) as f64;
 
@@ -85,7 +86,7 @@ impl SurrealMindServer {
                     significance: $significance,
                     access_count: 0,
                     last_accessed: NONE,
-                    submode: $submode,
+                    submode: NONE,
                     framework_enhanced: NONE,
                     framework_analysis: NONE,
                     is_inner_voice: false,
@@ -101,7 +102,7 @@ impl SurrealMindServer {
             .bind(("embedding", embedding.clone()))
             .bind(("injection_scale", injection_scale))
             .bind(("significance", significance))
-            .bind(("submode", submode.clone()))
+            // submode intentionally not stored for think_convo
             .bind(("provider", provider))
             .bind(("model", model))
             .bind(("dim", dim))
@@ -113,7 +114,7 @@ impl SurrealMindServer {
                 &thought_id,
                 &embedding,
                 injection_scale,
-                Some(&submode),
+                None,
                 Some("think_convo"),
             )
             .await
@@ -121,7 +122,8 @@ impl SurrealMindServer {
 
         let result = json!({
             "thought_id": thought_id,
-            "submode_used": submode,
+            "embedding_model": self.get_embedding_metadata().1,
+            "embedding_dim": self.embedder.dimensions(),
             "memories_injected": mem_count
         });
 

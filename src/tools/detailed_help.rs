@@ -36,7 +36,7 @@ impl SurrealMindServer {
                     "tags": "string[] — optional tags",
                     "significance": "number|string (0.0-1.0 or presets) — importance"
                 },
-                "returns": {"thought_id": "string", "memories_injected": "number", "submode_used": "string"}
+                "returns": {"thought_id": "string", "memories_injected": "number", "embedding_model": "string", "embedding_dim": "number"}
             }),
             "think_plan" => json!({
                 "name": "think_plan",
@@ -47,7 +47,7 @@ impl SurrealMindServer {
                     "significance": "number|string (default: 0.7)",
                     "tags": "string[]"
                 },
-                "returns": {"thought_id": "string", "memories_injected": "number", "submode_used": "string"}
+                "returns": {"thought_id": "string", "memories_injected": "number", "embedding_model": "string", "embedding_dim": "number"}
             }),
             "think_debug" => json!({
                 "name": "think_debug",
@@ -58,7 +58,7 @@ impl SurrealMindServer {
                     "significance": "number|string (default: 0.8)",
                     "tags": "string[]"
                 },
-                "returns": {"thought_id": "string", "memories_injected": "number", "submode_used": "string"}
+                "returns": {"thought_id": "string", "memories_injected": "number", "embedding_model": "string", "embedding_dim": "number"}
             }),
             "think_build" => json!({
                 "name": "think_build",
@@ -69,7 +69,7 @@ impl SurrealMindServer {
                     "significance": "number|string (default: 0.6)",
                     "tags": "string[]"
                 },
-                "returns": {"thought_id": "string", "memories_injected": "number", "submode_used": "string"}
+                "returns": {"thought_id": "string", "memories_injected": "number", "embedding_model": "string", "embedding_dim": "number"}
             }),
             "think_stuck" => json!({
                 "name": "think_stuck",
@@ -80,7 +80,7 @@ impl SurrealMindServer {
                     "significance": "number|string (default: 0.9)",
                     "tags": "string[]"
                 },
-                "returns": {"thought_id": "string", "memories_injected": "number", "submode_used": "string"}
+                "returns": {"thought_id": "string", "memories_injected": "number", "embedding_model": "string", "embedding_dim": "number"}
             }),
             // Legacy aliases for help
             "convo_think" => json!({"alias_of": "think_convo"}),
@@ -109,7 +109,7 @@ impl SurrealMindServer {
                     "top_k": "integer — max results (1-50; default from env SURR_TOP_K)",
                     "offset": "integer — pagination offset",
                     "sim_thresh": "number — minimum similarity (0.0-1.0; default SURR_SIM_THRESH)",
-                    "submode": "string — filter by submode",
+                    
                     "min_significance": "number — filter by significance",
                     "expand_graph": "boolean — (reserved)",
                     "graph_depth": "integer — (reserved)",
