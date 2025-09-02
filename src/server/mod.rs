@@ -628,15 +628,15 @@ impl SurrealMindServer {
         let t1 = std::env::var("SURR_INJECT_T1")
             .ok()
             .and_then(|v| v.parse::<f32>().ok())
-            .unwrap_or(0.60);
+            .unwrap_or(0.0);
         let t2 = std::env::var("SURR_INJECT_T2")
             .ok()
             .and_then(|v| v.parse::<f32>().ok())
-            .unwrap_or(0.40);
+            .unwrap_or(0.0);
         let t3 = std::env::var("SURR_INJECT_T3")
             .ok()
             .and_then(|v| v.parse::<f32>().ok())
-            .unwrap_or(0.25);
+            .unwrap_or(0.0);
         let (limit, mut prox_thresh) = match scale {
             0 => (0usize, 1.0f32),
             1 => (5usize, t1),
@@ -667,27 +667,33 @@ impl SurrealMindServer {
 
         // Tool-specific runtime defaults (no behavior drift beyond thresholds)
         if let Some(tool) = tool_name {
-            let (tool_sim_thresh, tool_db_limit) = match tool {
-                "think_convo" => (0.35, 500),
-                "think_plan" => (0.30, 800),
-                "think_debug" => (0.20, 1000),
-                "think_build" => (0.45, 400),
-                "think_stuck" => (0.30, 600),
-                _ => (prox_thresh, retrieve), // No override
+            // Only adjust candidate pool size per tool; do not override thresholds here
+            retrieve = match tool {
+                "think_convo" => 500,
+                "think_plan" => 800,
+                "think_debug" => 1000,
+                "think_build" => 400,
+                "think_stuck" => 600,
+                _ => retrieve,
             };
-            prox_thresh = tool_sim_thresh;
-            retrieve = tool_db_limit;
         }
 
-        // Fetch candidate entities and observations (id, name, embedding, data)
-        let sql = format!(
-            "(SELECT meta::id(id) as id, name, data, embedding FROM kg_entities LIMIT {}) UNION (SELECT meta::id(id) as id, name, data, embedding FROM kg_observations LIMIT {})",
-            retrieve, retrieve
-        );
-        let rows: Vec<serde_json::Value> = self.db.query(sql).await?.take(0)?;
+        // Fetch candidate entities and observations (two statements to avoid UNION pitfalls)
+        let mut q = self
+            .db
+            .query(
+                "SELECT meta::id(id) as id, name, data, embedding FROM kg_entities LIMIT $lim; \
+                 SELECT meta::id(id) as id, name, data, embedding FROM kg_observations LIMIT $lim;",
+            )
+            .bind(("lim", retrieve as i64))
+            .await?;
+        let mut rows: Vec<serde_json::Value> = q.take(0).unwrap_or_default();
+        let mut rows2: Vec<serde_json::Value> = q.take(1).unwrap_or_default();
+        let total_candidates = rows.len() + rows2.len();
+        rows.append(&mut rows2);
         tracing::debug!(
-            "inject_memories: Retrieved {} candidates from KG",
-            rows.len()
+            "inject_memories: Retrieved {} candidates from KG (entities+observations)",
+            total_candidates
         );
 
         // Iterate, compute or reuse embeddings, score by cosine similarity
@@ -785,7 +791,7 @@ impl SurrealMindServer {
             let floor = std::env::var("SURR_INJECT_FLOOR")
                 .ok()
                 .and_then(|v| v.parse::<f32>().ok())
-                .unwrap_or(0.15);
+                .unwrap_or(0.0);
             selected = scored
                 .into_iter()
                 .filter(|(_, s, _, _)| *s >= floor)
