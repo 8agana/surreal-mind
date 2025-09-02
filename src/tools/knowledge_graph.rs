@@ -5,6 +5,7 @@ use crate::server::SurrealMindServer;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde_json::json;
 use std::str::FromStr;
+use strsim;
 
 impl SurrealMindServer {
     /// Handle knowledgegraph_moderate: unified review + decide interface
@@ -67,14 +68,43 @@ impl SurrealMindServer {
                     "SELECT meta::id(id) as id, name, entity_type, data, confidence, status, created_at FROM kg_entity_candidates WHERE status = $status AND confidence >= $minc ORDER BY created_at DESC LIMIT {} START {}",
                     limit, offset
                 );
-                let rows: Vec<serde_json::Value> = self
+                let mut entity_rows: Vec<serde_json::Value> = self
                     .db
                     .query(sql)
                     .bind(("status", status_s.clone()))
                     .bind(("minc", min_conf))
                     .await?
                     .take(0)?;
-                items.extend(rows);
+
+                // Add canonical suggestions for entity candidates
+                for entity in &mut entity_rows {
+                    if let Some(name) = entity.get("name").and_then(|v| v.as_str()) {
+                        if let Some(entity_type) =
+                            entity.get("entity_type").and_then(|v| v.as_str())
+                        {
+                            let suggestions =
+                                self.find_similar_entities(name, entity_type, 3).await?;
+                            if !suggestions.is_empty() {
+                                let suggestions_json = suggestions
+                                    .iter()
+                                    .map(|(id, name, score)| {
+                                        json!({
+                                            "id": id,
+                                            "name": name,
+                                            "similarity": score
+                                        })
+                                    })
+                                    .collect::<Vec<_>>();
+                                entity.as_object_mut().unwrap().insert(
+                                    "canonical_suggestions".to_string(),
+                                    json!({"suggestions": suggestions_json}),
+                                );
+                            }
+                        }
+                    }
+                }
+
+                items.extend(entity_rows);
             }
             if target_s == "relationship" || target_s == "mixed" {
                 let sql = format!(
@@ -318,6 +348,81 @@ impl SurrealMindServer {
                                         ),
                                     });
                                 }
+                            }
+                        }
+                        ("entity", "alias") => {
+                            // Handle entity alias decision
+                            let canonical_id =
+                                canonical_id_opt.ok_or_else(|| SurrealMindError::Validation {
+                                    message: "canonical_id required for alias decision".into(),
+                                })?;
+
+                            // Validate that the canonical entity exists
+                            let canonical_exists: Vec<serde_json::Value> = self
+                                .db
+                                .query("SELECT meta::id(id) as id FROM kg_entities WHERE meta::id(id) = $cid LIMIT 1")
+                                .bind(("cid", canonical_id.clone()))
+                                .await?
+                                .take(0)?;
+
+                            if canonical_exists.is_empty() {
+                                return Err(SurrealMindError::Validation {
+                                    message: format!("Canonical entity {} not found", canonical_id),
+                                });
+                            }
+
+                            // Create the candidate as an alias entity
+                            let row: Option<serde_json::Value> = self
+                                .db
+                                .query("SELECT meta::id(id) as id, name, entity_type, data, confidence FROM type::thing($tb, $id) LIMIT 1")
+                                .bind(("tb", "kg_entity_candidates"))
+                                .bind(("id", id_s.clone()))
+                                .await?
+                                .take(0)?;
+
+                            if let Some(candidate) = row {
+                                let name = candidate
+                                    .get("name")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let etype = candidate
+                                    .get("entity_type")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let data = candidate.get("data").cloned().unwrap_or(json!({}));
+
+                                // Create the alias entity
+                                let created: Vec<serde_json::Value> = self
+                                    .db
+                                    .query("CREATE kg_entities SET created_at = time::now(), name = $name, entity_type = $etype, data = { ...$data, is_alias: true, canonical_id: $canonical_id }, embedding = $embedding RETURN meta::id(id) as id")
+                                    .bind(("name", name))
+                                    .bind(("etype", etype))
+                                    .bind(("data", data))
+                                    .bind(("canonical_id", canonical_id.clone()))
+                                    .bind(("embedding", candidate.get("embedding").cloned().unwrap_or(json!(null))))
+                                    .await?
+                                    .take(0)?;
+
+                                let final_id = created
+                                    .first()
+                                    .and_then(|v| v.get("id"))
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+
+                                // Mark candidate as aliased
+                                let _ = self
+                                    .db
+                                    .query("UPDATE type::thing($tb, $id) SET status = 'aliased', reviewed_at = time::now(), feedback = $fb, promoted_id = $pid RETURN meta::id(id) as id")
+                                    .bind(("tb", "kg_entity_candidates"))
+                                    .bind(("id", id_s.clone()))
+                                    .bind(("fb", feedback_s.clone()))
+                                    .bind(("pid", final_id.clone()))
+                                    .await?;
+
+                                results.push(json!({"id": id_s, "kind": "entity", "decision": "aliased", "promoted_id": final_id}));
                             }
                         }
                         ("relationship", "reject") => {
@@ -1035,5 +1140,68 @@ impl SurrealMindServer {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
         Ok(id)
+    }
+
+    /// Normalize entity name for similarity comparison
+    fn normalize_entity_name(name: &str) -> String {
+        name.to_lowercase()
+            .replace("'s", "")
+            .replace("'", "")
+            .replace("-", " ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// Calculate similarity score between two entity names
+    fn calculate_name_similarity(name1: &str, name2: &str) -> f32 {
+        let norm1 = Self::normalize_entity_name(name1);
+        let norm2 = Self::normalize_entity_name(name2);
+        strsim::jaro_winkler(&norm1, &norm2) as f32
+    }
+
+    /// Find similar entities for canonical suggestions
+    async fn find_similar_entities(
+        &self,
+        name: &str,
+        entity_type: &str,
+        limit: usize,
+    ) -> Result<Vec<(String, String, f32)>> {
+        let normalized = Self::normalize_entity_name(name);
+
+        let query = "
+            SELECT meta::id(id) as id, name
+            FROM kg_entities
+            WHERE entity_type = $entity_type
+            AND (data.is_alias IS NONE OR data.is_alias = false)
+            LIMIT 20
+        ";
+
+        let rows: Vec<serde_json::Value> = self
+            .db
+            .query(query)
+            .bind(("entity_type", entity_type.to_string()))
+            .await?
+            .take(0)?;
+
+        let mut candidates: Vec<(String, String, f32)> = rows
+            .into_iter()
+            .filter_map(|row| {
+                let id = row.get("id")?.as_str()?.to_string();
+                let entity_name = row.get("name")?.as_str()?.to_string();
+                let similarity = Self::calculate_name_similarity(&normalized, &entity_name);
+                if similarity > 0.6 {
+                    // Only include reasonably similar matches
+                    Some((id, entity_name, similarity))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        candidates.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+        candidates.truncate(limit);
+
+        Ok(candidates)
     }
 }
