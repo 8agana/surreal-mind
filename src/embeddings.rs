@@ -188,7 +188,11 @@ pub async fn create_embedder() -> Result<Arc<dyn Embedder>> {
                     .filter(|m| !m.trim().is_empty())
                     .unwrap_or_else(|| "text-embedding-3-small".to_string());
                 let dims = dim_override.or(Some(1536));
-                info!("Using OpenAI embeddings (model={}, dims={})", model, dims.unwrap());
+                info!(
+                    "Using OpenAI embeddings (model={}, dims={})",
+                    model,
+                    dims.unwrap()
+                );
                 Ok(Arc::new(OpenAIEmbedder::new(key, model, dims)?))
             } else {
                 info!("OPENAI_API_KEY not set; using Candle BGE-small (384)");
@@ -199,9 +203,16 @@ pub async fn create_embedder() -> Result<Arc<dyn Embedder>> {
             // Unknown provider → try OpenAI if key exists, else Candle
             let key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
             if !is_placeholder(&key) && !key.is_empty() {
-                let model = std::env::var("SURR_EMBED_MODEL").ok().filter(|m| !m.trim().is_empty()).unwrap_or_else(|| "text-embedding-3-small".to_string());
+                let model = std::env::var("SURR_EMBED_MODEL")
+                    .ok()
+                    .filter(|m| !m.trim().is_empty())
+                    .unwrap_or_else(|| "text-embedding-3-small".to_string());
                 let dims = dim_override.or(Some(1536));
-                info!("Using OpenAI embeddings (model={}, dims={})", model, dims.unwrap());
+                info!(
+                    "Using OpenAI embeddings (model={}, dims={})",
+                    model,
+                    dims.unwrap()
+                );
                 Ok(Arc::new(OpenAIEmbedder::new(key, model, dims)?))
             } else {
                 info!("Unknown provider and no OpenAI key; using Candle BGE-small (384)");

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::Utc;
+// use chrono::Utc;
 use surreal_mind::embeddings::create_embedder;
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::Ws;
@@ -102,7 +102,7 @@ async fn main() -> Result<()> {
                     std::env::var("SURR_EMBED_MODEL")
                         .unwrap_or_else(|_| "text-embedding-3-small".to_string()),
                 );
-        let query = "UPDATE type::thing('thoughts', $id) SET embedding = $embedding, embedding_provider = $provider, embedding_model = $model, embedding_dim = $dims, embedded_at = time::now() RETURN meta::id(id) as id";
+                let query = "UPDATE type::thing('thoughts', $id) SET embedding = $embedding, embedding_provider = $provider, embedding_model = $model, embedding_dim = $dims, embedded_at = time::now() RETURN meta::id(id) as id";
 
                 match db
                     .query(query)
@@ -116,8 +116,10 @@ async fn main() -> Result<()> {
                     Ok(response) => {
                         success_count += 1;
                         if i < 3 {
-                            eprintln!("  ✅ Updated {} with provider={}, model={}, dims={}", 
-                                     thought_id, provider, model, embed_dims);
+                            eprintln!(
+                                "  ✅ Updated {} with provider={}, model={}, dims={}",
+                                thought_id, provider, model, embed_dims
+                            );
                             eprintln!("     Response: {:?}", response);
                         }
                     }
