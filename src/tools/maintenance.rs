@@ -59,10 +59,103 @@ impl SurrealMindServer {
                     .await
             }
             "finalize_removal" => self.handle_finalize_removal(limit, dry_run).await,
+            "health_check_embeddings" => self.handle_health_check_embeddings(dry_run).await,
+            "reembed" => self.handle_reembed(limit, dry_run).await,
+            "reembed_kg" => self.handle_reembed_kg(limit, dry_run).await,
             _ => Err(SurrealMindError::Validation {
                 message: format!("Unknown subcommand: {}", params.subcommand),
             }),
         }
+    }
+
+    async fn handle_health_check_embeddings(&self, _dry_run: bool) -> Result<CallToolResult> {
+        // Determine expected embedding dimension from active embedder
+        let expected = self.embedder.dimensions() as i64;
+
+        // Thoughts summary
+        let thoughts_total: Vec<serde_json::Value> = self
+            .db
+            .query("SELECT count() AS c FROM thoughts GROUP ALL")
+            .await?
+            .take(0)?;
+        let t_total = thoughts_total
+            .first()
+            .and_then(|v| v.get("c"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+
+        let thoughts_ok: Vec<serde_json::Value> = self
+            .db
+            .query("SELECT count() AS c FROM thoughts WHERE array::len(embedding) = $d GROUP ALL")
+            .bind(("d", expected))
+            .await?
+            .take(0)?;
+        let t_ok = thoughts_ok
+            .first()
+            .and_then(|v| v.get("c"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+
+        let thoughts_bad = t_total.saturating_sub(t_ok);
+
+        // KG entities
+        let kge_total: Vec<serde_json::Value> = self
+            .db
+            .query("SELECT count() AS c FROM kg_entities GROUP ALL")
+            .await?
+            .take(0)?;
+        let kge_t = kge_total
+            .first()
+            .and_then(|v| v.get("c"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+
+        let kge_ok: Vec<serde_json::Value> = self
+            .db
+            .query("SELECT count() AS c FROM kg_entities WHERE type::is::array(embedding) AND array::len(embedding) = $d GROUP ALL")
+            .bind(("d", expected))
+            .await?
+            .take(0)?;
+        let kge_o = kge_ok
+            .first()
+            .and_then(|v| v.get("c"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let kge_bad = kge_t.saturating_sub(kge_o);
+
+        // KG observations
+        let kgo_total: Vec<serde_json::Value> = self
+            .db
+            .query("SELECT count() AS c FROM kg_observations GROUP ALL")
+            .await?
+            .take(0)?;
+        let kgo_t = kgo_total
+            .first()
+            .and_then(|v| v.get("c"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+
+        let kgo_ok: Vec<serde_json::Value> = self
+            .db
+            .query("SELECT count() AS c FROM kg_observations WHERE type::is::array(embedding) AND array::len(embedding) = $d GROUP ALL")
+            .bind(("d", expected))
+            .await?
+            .take(0)?;
+        let kgo_o = kgo_ok
+            .first()
+            .and_then(|v| v.get("c"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let kgo_bad = kgo_t.saturating_sub(kgo_o);
+
+        let result = serde_json::json!({
+            "expected_dim": expected,
+            "thoughts": {"total": t_total, "ok": t_ok, "mismatched_or_missing": thoughts_bad},
+            "kg_entities": {"total": kge_t, "ok": kge_o, "mismatched_or_missing": kge_bad},
+            "kg_observations": {"total": kgo_t, "ok": kgo_o, "mismatched_or_missing": kgo_bad}
+        });
+
+        Ok(CallToolResult::structured(result))
     }
 
     async fn handle_list_removal_candidates(
@@ -228,5 +321,48 @@ impl SurrealMindServer {
         });
 
         Ok(CallToolResult::structured(summary))
+    }
+
+    async fn handle_reembed(&self, limit: usize, dry_run: bool) -> Result<CallToolResult> {
+        // Call the reembed function from lib.rs
+        let batch_size = 100; // Default batch size
+        let stats = crate::run_reembed(batch_size, Some(limit), false, dry_run).await?;
+        let result = json!({
+            "expected_dim": stats.expected_dim,
+            "batch_size": stats.batch_size,
+            "processed": stats.processed,
+            "updated": stats.updated,
+            "skipped": stats.skipped,
+            "missing": stats.missing,
+            "mismatched": stats.mismatched,
+            "dry_run": dry_run
+        });
+        Ok(CallToolResult::structured(result))
+    }
+
+    async fn handle_reembed_kg(&self, limit: usize, dry_run: bool) -> Result<CallToolResult> {
+        // Placeholder: Reembed KG entities and observations
+        // For now, simulate by calling the binary or implement inline
+        // Since the binary exists, perhaps use std::process::Command
+        use std::process::Command;
+        let mut cmd = Command::new("cargo");
+        cmd.arg("run").arg("--bin").arg("reembed_kg");
+        if dry_run {
+            cmd.env("DRY_RUN", "true");
+        }
+        cmd.env("LIMIT", limit.to_string());
+        let output = cmd.output().map_err(|e| SurrealMindError::Internal {
+            message: format!("Failed to run reembed_kg: {}", e),
+        })?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let result = json!({
+            "message": "Reembed KG executed",
+            "stdout": stdout,
+            "stderr": stderr,
+            "success": output.status.success(),
+            "dry_run": dry_run
+        });
+        Ok(CallToolResult::structured(result))
     }
 }

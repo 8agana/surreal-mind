@@ -146,6 +146,8 @@ cargo run
 ### MCP Tool: convo_think
 Stores thoughts with bidirectional memory injection and cognitive framework analysis.
 
+**Note:** Memory injection uses KG entities and observations only (no raw thoughts).
+
 Parameters:
 - `content` (required): The thought to store
 - `injection_scale`: Memory injection distance (multiple formats supported)
@@ -215,6 +217,8 @@ Response includes:
  - `user_friendly`: Additive, human-oriented block with summary, readable memory context (percentages + labels), and conversational analysis
 
 ### MCP Tool: tech_think
+
+**Note:** Memory injection uses KG entities and observations only (no raw thoughts).
 Technical reasoning pipeline mirroring `convo_think`, specialized for software workflows.
 
 Parameters:

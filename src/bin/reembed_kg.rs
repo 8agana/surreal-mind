@@ -3,9 +3,9 @@ use chrono::Utc;
 use serde_json::Value;
 use surreal_mind::bge_embedder::BGEEmbedder;
 use surreal_mind::embeddings::Embedder;
+use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::Ws;
 use surrealdb::opt::auth::Root;
-use surrealdb::Surreal;
 
 fn bool_env(name: &str, default: bool) -> bool {
     std::env::var(name)
@@ -18,7 +18,9 @@ async fn main() -> Result<()> {
     let _ = dotenvy::dotenv();
 
     let dry_run = bool_env("DRY_RUN", false);
-    let limit = std::env::var("LIMIT").ok().and_then(|s| s.parse::<usize>().ok());
+    let limit = std::env::var("LIMIT")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok());
 
     println!("🚀 KG re-embed starting (entities + observations)");
     if dry_run {
@@ -37,7 +39,11 @@ async fn main() -> Result<()> {
     let ns = std::env::var("SURR_DB_NS").unwrap_or_else(|_| "surreal_mind".to_string());
     let dbname = std::env::var("SURR_DB_DB").unwrap_or_else(|_| "consciousness".to_string());
     let db = Surreal::new::<Ws>(url).await?;
-    db.signin(Root { username: &user, password: &pass }).await?;
+    db.signin(Root {
+        username: &user,
+        password: &pass,
+    })
+    .await?;
     db.use_ns(ns).use_db(dbname).await?;
 
     let mut updated_entities = 0usize;
@@ -54,19 +60,38 @@ async fn main() -> Result<()> {
         let rows: Vec<Value> = db.query(sql).await?.take(0)?;
         println!("📚 Entities to check: {}", rows.len());
         for (i, r) in rows.iter().enumerate() {
-            if i % 50 == 0 && i > 0 { println!("  Entities progress: {}/{}", i, rows.len()); }
+            if i % 50 == 0 && i > 0 {
+                println!("  Entities progress: {}/{}", i, rows.len());
+            }
             let id = r.get("id").and_then(|v| v.as_str()).unwrap_or("");
             let name = r.get("name").and_then(|v| v.as_str()).unwrap_or("");
             let emb_len = r.get("emb_len").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-            let model = r.get("embedding_model").and_then(|v| v.as_str()).unwrap_or("");
-            let etype = r.get("entity_type").and_then(|v| v.as_str()).map(|s| s.to_string())
-                .or_else(|| r.get("data").and_then(|d| d.get("entity_type")).and_then(|v| v.as_str()).map(|s| s.to_string()))
+            let model = r
+                .get("embedding_model")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let etype = r
+                .get("entity_type")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .or_else(|| {
+                    r.get("data")
+                        .and_then(|d| d.get("entity_type"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                })
                 .unwrap_or_default();
-            if emb_len == dims && (model == "BAAI/bge-small-en-v1.5" || model == "bge-small-en-v1.5") {
+            if emb_len == dims
+                && (model == "BAAI/bge-small-en-v1.5" || model == "bge-small-en-v1.5")
+            {
                 skipped_entities += 1;
                 continue;
             }
-            let text = if etype.is_empty() { name.to_string() } else { format!("{} ({})", name, etype) };
+            let text = if etype.is_empty() {
+                name.to_string()
+            } else {
+                format!("{} ({})", name, etype)
+            };
             let emb = embedder.embed(&text).await?;
             if !dry_run {
                 let ts = Utc::now().to_rfc3339();
@@ -93,12 +118,19 @@ async fn main() -> Result<()> {
         let rows: Vec<Value> = db.query(sql).await?.take(0)?;
         println!("📚 Observations to check: {}", rows.len());
         for (i, r) in rows.iter().enumerate() {
-            if i % 50 == 0 && i > 0 { println!("  Observations progress: {}/{}", i, rows.len()); }
+            if i % 50 == 0 && i > 0 {
+                println!("  Observations progress: {}/{}", i, rows.len());
+            }
             let id = r.get("id").and_then(|v| v.as_str()).unwrap_or("");
             let name = r.get("name").and_then(|v| v.as_str()).unwrap_or("");
             let emb_len = r.get("emb_len").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-            let model = r.get("embedding_model").and_then(|v| v.as_str()).unwrap_or("");
-            if emb_len == dims && (model == "BAAI/bge-small-en-v1.5" || model == "bge-small-en-v1.5") {
+            let model = r
+                .get("embedding_model")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if emb_len == dims
+                && (model == "BAAI/bge-small-en-v1.5" || model == "bge-small-en-v1.5")
+            {
                 skipped_obs += 1;
                 continue;
             }
@@ -130,9 +162,18 @@ async fn main() -> Result<()> {
     }
 
     println!("\n===== KG RE-EMBED SUMMARY =====");
-    println!("Entities: updated={}, skipped={}", updated_entities, skipped_entities);
-    println!("Observations: updated={}, skipped={}", updated_obs, skipped_obs);
-    println!("Provider=model: candle / BAAI/bge-small-en-v1.5 ({} dims)", dims);
+    println!(
+        "Entities: updated={}, skipped={}",
+        updated_entities, skipped_entities
+    );
+    println!(
+        "Observations: updated={}, skipped={}",
+        updated_obs, skipped_obs
+    );
+    println!(
+        "Provider=model: candle / BAAI/bge-small-en-v1.5 ({} dims)",
+        dims
+    );
 
     Ok(())
 }

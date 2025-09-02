@@ -230,7 +230,9 @@ impl ServerHandler for SurrealMindServer {
             },
             Tool {
                 name: "think_debug".into(),
-                description: Some("Problem solving with maximum context (root cause analysis)".into()),
+                description: Some(
+                    "Problem solving with maximum context (root cause analysis)".into(),
+                ),
                 input_schema: tech_think_schema_map.clone(),
                 annotations: None,
                 output_schema: None,
@@ -272,7 +274,9 @@ impl ServerHandler for SurrealMindServer {
             },
             Tool {
                 name: "memories_create".into(),
-                description: Some("Create entities and relationships in personal memory graph".into()),
+                description: Some(
+                    "Create entities and relationships in personal memory graph".into(),
+                ),
                 input_schema: kg_create_schema_map,
                 annotations: None,
                 output_schema: None,
@@ -402,18 +406,27 @@ impl SurrealMindServer {
                 std::env::set_var("SURR_TOP_K", cfg.retrieval.top_k.to_string());
                 std::env::set_var("SURR_DB_LIMIT", cfg.retrieval.db_limit.to_string());
                 std::env::set_var("SURR_KG_CANDIDATES", cfg.retrieval.candidates.to_string());
+                if cfg.retrieval.submode_tuning {
+                    std::env::set_var("SURR_SUBMODE_RETRIEVAL", "true");
+                }
             }
             // DB connection defaults (do not override if user already set env)
             std::env::var("SURR_DB_URL").unwrap_or_else(|_| {
-                unsafe { std::env::set_var("SURR_DB_URL", cfg.system.database_url.clone()); }
+                unsafe {
+                    std::env::set_var("SURR_DB_URL", cfg.system.database_url.clone());
+                }
                 cfg.system.database_url.clone()
             });
             std::env::var("SURR_DB_NS").unwrap_or_else(|_| {
-                unsafe { std::env::set_var("SURR_DB_NS", cfg.system.database_ns.clone()); }
+                unsafe {
+                    std::env::set_var("SURR_DB_NS", cfg.system.database_ns.clone());
+                }
                 cfg.system.database_ns.clone()
             });
             std::env::var("SURR_DB_DB").unwrap_or_else(|_| {
-                unsafe { std::env::set_var("SURR_DB_DB", cfg.system.database_db.clone()); }
+                unsafe {
+                    std::env::set_var("SURR_DB_DB", cfg.system.database_db.clone());
+                }
                 cfg.system.database_db.clone()
             });
         }
@@ -564,17 +577,16 @@ impl SurrealMindServer {
 
     /// Get embedding metadata for tracking model/provider info
     pub fn get_embedding_metadata(&self) -> (String, String, i64) {
-        let provider = std::env::var("SURR_EMBED_PROVIDER")
-            .unwrap_or_else(|_| "unknown".to_string());
-        let model = std::env::var("SURR_EMBED_MODEL")
-            .unwrap_or_else(|_| "unknown".to_string());
+        let provider =
+            std::env::var("SURR_EMBED_PROVIDER").unwrap_or_else(|_| "unknown".to_string());
+        let model = std::env::var("SURR_EMBED_MODEL").unwrap_or_else(|_| "unknown".to_string());
         let dim = self.embedder.dimensions() as i64;
         (provider, model, dim)
     }
 
     /// Calculate cosine similarity between two vectors
     #[allow(dead_code)]
-    pub fn cosine_similarity(&self, a: &[f32], b: &[f32]) -> f32 {
+    pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
         if a.len() != b.len() {
             tracing::warn!(
                 "cosine_similarity dimension mismatch: a={}, b={}",
@@ -604,7 +616,9 @@ impl SurrealMindServer {
         embedding: &[f32],
         injection_scale: i64,
         submode: Option<&str>,
+        tool_name: Option<&str>,
     ) -> crate::error::Result<(usize, Option<String>)> {
+        tracing::debug!("inject_memories: query embedding dims: {}", embedding.len());
         // Orbital mechanics: determine limit and threshold from scale
         let scale = injection_scale.clamp(0, 3) as u8;
         if scale == 0 {
@@ -632,22 +646,40 @@ impl SurrealMindServer {
                 prox_thresh = (prox_thresh + delta).clamp(0.0, 0.99);
             }
         }
-
         // Candidate pool size for KG entities
-        let retrieve = std::env::var("SURR_KG_CANDIDATES")
+        let mut retrieve = std::env::var("SURR_KG_CANDIDATES")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(200);
 
-        // Fetch candidate entities (id, name, embedding, entity_type)
+        // Tool-specific runtime defaults (no behavior drift beyond thresholds)
+        if let Some(tool) = tool_name {
+            let (tool_sim_thresh, tool_db_limit) = match tool {
+                "think_convo" => (0.35, 500),
+                "think_plan" => (0.30, 800),
+                "think_debug" => (0.20, 1000),
+                "think_build" => (0.45, 400),
+                "think_stuck" => (0.30, 600),
+                _ => (prox_thresh, retrieve), // No override
+            };
+            prox_thresh = tool_sim_thresh;
+            retrieve = tool_db_limit;
+        }
+
+        // Fetch candidate entities and observations (id, name, embedding, data)
         let sql = format!(
-            "SELECT meta::id(id) as id, name, data, embedding FROM kg_entities LIMIT {}",
-            retrieve
+            "(SELECT meta::id(id) as id, name, data, embedding FROM kg_entities LIMIT {}) UNION (SELECT meta::id(id) as id, name, data, embedding FROM kg_observations LIMIT {})",
+            retrieve, retrieve
         );
         let rows: Vec<serde_json::Value> = self.db.query(sql).await?.take(0)?;
+        tracing::debug!(
+            "inject_memories: Retrieved {} candidates from KG",
+            rows.len()
+        );
 
         // Iterate, compute or reuse embeddings, score by cosine similarity
         let mut scored: Vec<(String, f32, String, String)> = Vec::new();
+        let mut skipped = 0;
         for r in rows {
             if let Some(id) = r.get("id").and_then(|v| v.as_str()) {
                 // Try to use existing embedding; compute and persist if missing and allowed
@@ -663,55 +695,84 @@ impl SurrealMindServer {
                     }
                 }
                 if emb_opt.is_none() {
-                    // Build text for entity embedding: name + type
+                    // Build text for embedding: name + type or description
                     let name_s = r.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                    let etype = r
-                        .get("data")
-                        .and_then(|d| d.get("entity_type"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    let text = if etype.is_empty() {
-                        name_s.to_string()
-                    } else {
-                        format!("{} ({})", name_s, etype)
-                    };
+                    let mut text = name_s.to_string();
+                    if let Some(d) = r.get("data").and_then(|v| v.as_object()) {
+                        if let Some(etype) = d.get("entity_type").and_then(|v| v.as_str()) {
+                            text = format!("{} ({})", name_s, etype);
+                        } else if let Some(desc) = d.get("description").and_then(|v| v.as_str()) {
+                            text.push_str(" - ");
+                            text.push_str(desc);
+                        }
+                    }
                     let new_emb = self.embedder.embed(&text).await.unwrap_or_default();
                     if new_emb.len() == embedding.len() {
                         emb_opt = Some(new_emb.clone());
+                        // Determine table from id (kg_entities or kg_observations)
+                        let tb = if id.starts_with("kg_entities:") {
+                            "kg_entities"
+                        } else if id.starts_with("kg_observations:") {
+                            "kg_observations"
+                        } else {
+                            "kg_entities" // fallback
+                        };
+                        let inner_id = id
+                            .split(':')
+                            .nth(1)
+                            .unwrap_or(id)
+                            .trim_start_matches('⟨')
+                            .trim_end_matches('⟩');
                         // Persist embedding for future fast retrieval (best-effort)
                         let _ = self
                             .db
                             .query("UPDATE type::thing($tb, $id) SET embedding = $emb RETURN meta::id(id) as id")
-                            .bind(("tb", "kg_entities"))
-                            .bind(("id", id.to_string()))
+                            .bind(("tb", tb))
+                            .bind(("id", inner_id.to_string()))
                             .bind(("emb", new_emb))
                             .await;
                     }
                 }
                 if let Some(emb_e) = emb_opt {
-                    let sim = self.cosine_similarity(embedding, &emb_e);
+                    let sim = Self::cosine_similarity(embedding, &emb_e);
                     if sim >= prox_thresh {
                         let name_s = r
                             .get("name")
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
-                        let etype = r
+                        let etype_or_desc = r
                             .get("data")
-                            .and_then(|d| d.get("entity_type"))
+                            .and_then(|d| d.get("entity_type").or_else(|| d.get("description")))
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
-                        scored.push((id.to_string(), sim, name_s, etype));
+                        scored.push((id.to_string(), sim, name_s, etype_or_desc));
+                    } else {
+                        skipped += 1;
                     }
                 }
             }
         }
+        tracing::debug!(
+            "inject_memories: {} candidates scored, {} skipped",
+            scored.len(),
+            skipped
+        );
 
         // Sort by similarity and take top by orbital limit
         scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         let selected: Vec<(String, f32, String, String)> = scored.into_iter().take(limit).collect();
         let memory_ids: Vec<String> = selected.iter().map(|(id, _, _, _)| id.clone()).collect();
+        tracing::debug!(
+            "inject_memories: Top {} matches: {:?}",
+            selected.len(),
+            selected
+                .iter()
+                .take(3)
+                .map(|(_, sim, name, _)| format!("{:.2} {}", sim, name))
+                .collect::<Vec<_>>()
+        );
 
         // Optional enrichment with names/types
         let enriched = if !selected.is_empty() {
@@ -745,7 +806,59 @@ impl SurrealMindServer {
             .bind(("enr", enriched.clone().unwrap_or_default()));
         // Note: empty string will act like clearing or setting to empty; acceptable for now
         let _: Vec<serde_json::Value> = q.await?.take(0)?;
+        tracing::debug!(
+            "inject_memories: Injected {} memories for thought {}, enriched content length: {}",
+            memory_ids.len(),
+            thought_id,
+            enriched.as_ref().map(|s| s.len()).unwrap_or(0)
+        );
 
         Ok((memory_ids.len(), enriched))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cosine_similarity() {
+        let a = vec![1.0, 2.0, 3.0];
+        let b = vec![4.0, 5.0, 6.0];
+        let sim = SurrealMindServer::cosine_similarity(&a, &b);
+        // Calculate expected: (1*4 + 2*5 + 3*6) / (sqrt(1+4+9) * sqrt(16+25+36)) = 32 / (sqrt(14) * sqrt(77)) ≈ 32 / (3.74 * 8.77) ≈ 32 / 32.84 ≈ 0.974
+        assert!((sim - 0.974).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_tool_specific_defaults() {
+        // Test that defaults are set correctly based on tool_name
+        let mut prox_thresh = 0.5;
+        let retrieve = 200;
+        if let Some(tool) = Some("think_convo") {
+            let (tool_sim_thresh, tool_db_limit) = match tool {
+                "think_convo" => (0.35, 500),
+                "think_plan" => (0.30, 800),
+                "think_debug" => (0.20, 1000),
+                "think_build" => (0.45, 400),
+                "think_stuck" => (0.30, 600),
+                _ => (prox_thresh, retrieve),
+            };
+            prox_thresh = tool_sim_thresh;
+            let _retrieve = tool_db_limit;
+        }
+        assert_eq!(prox_thresh, 0.35);
+    }
+
+    #[test]
+    fn test_param_clamping() {
+        // Test clamping for search params
+        let top_k_default = 5;
+        let params_top_k = Some(100); // Over limit
+        let top_k = params_top_k.unwrap_or(top_k_default).clamp(1, 50);
+        assert_eq!(top_k, 50);
+
+        let offset = Some(-5).unwrap_or(0).max(0);
+        assert_eq!(offset, 0);
     }
 }

@@ -29,27 +29,41 @@ pub struct TechThinkParams {
 impl SurrealMindServer {
     /// Handle the tech_think tool call
     pub async fn handle_tech_think(&self, request: CallToolRequestParam) -> Result<CallToolResult> {
-        self.handle_think_with_profile(request, "plan", 2, 0.6).await
+        self.handle_think_with_profile(request, "plan", 2, 0.6, "think_plan")
+            .await
     }
 
     /// Handle think_plan (Architecture and strategy) — injection_scale: 3, significance: 0.7
     pub async fn handle_think_plan(&self, request: CallToolRequestParam) -> Result<CallToolResult> {
-        self.handle_think_with_profile(request, "plan", 3, 0.7).await
+        self.handle_think_with_profile(request, "plan", 3, 0.7, "think_plan")
+            .await
     }
 
     /// Handle think_debug (Root cause analysis) — injection_scale: 4, significance: 0.8
-    pub async fn handle_think_debug(&self, request: CallToolRequestParam) -> Result<CallToolResult> {
-        self.handle_think_with_profile(request, "debug", 4, 0.8).await
+    pub async fn handle_think_debug(
+        &self,
+        request: CallToolRequestParam,
+    ) -> Result<CallToolResult> {
+        self.handle_think_with_profile(request, "debug", 4, 0.8, "think_debug")
+            .await
     }
 
     /// Handle think_build (Implementation) — injection_scale: 2, significance: 0.6
-    pub async fn handle_think_build(&self, request: CallToolRequestParam) -> Result<CallToolResult> {
-        self.handle_think_with_profile(request, "build", 2, 0.6).await
+    pub async fn handle_think_build(
+        &self,
+        request: CallToolRequestParam,
+    ) -> Result<CallToolResult> {
+        self.handle_think_with_profile(request, "build", 2, 0.6, "think_build")
+            .await
     }
 
     /// Handle think_stuck (Lateral thinking) — injection_scale: 3, significance: 0.9
-    pub async fn handle_think_stuck(&self, request: CallToolRequestParam) -> Result<CallToolResult> {
-        self.handle_think_with_profile(request, "stuck", 3, 0.9).await
+    pub async fn handle_think_stuck(
+        &self,
+        request: CallToolRequestParam,
+    ) -> Result<CallToolResult> {
+        self.handle_think_with_profile(request, "stuck", 3, 0.9, "think_stuck")
+            .await
     }
 
     async fn handle_think_with_profile(
@@ -58,6 +72,7 @@ impl SurrealMindServer {
         forced_submode: &str,
         default_injection_scale: u8,
         default_significance: f32,
+        tool_name: &str,
     ) -> Result<CallToolResult> {
         let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {
             message: "Missing parameters".into(),
@@ -72,12 +87,16 @@ impl SurrealMindServer {
 
         // Compute embedding
         let embedding = self.embedder.embed(&params.content).await.map_err(|e| {
-            SurrealMindError::Embedding { message: e.to_string() }
+            SurrealMindError::Embedding {
+                message: e.to_string(),
+            }
         })?;
 
         if embedding.is_empty() {
             tracing::error!("Generated embedding is empty for content");
-            return Err(SurrealMindError::Embedding { message: "Generated embedding is empty".into() });
+            return Err(SurrealMindError::Embedding {
+                message: "Generated embedding is empty".into(),
+            });
         }
         tracing::debug!("Generated embedding with {} dimensions", embedding.len());
 
@@ -122,7 +141,13 @@ impl SurrealMindServer {
             .await?;
 
         let (mem_count, _enriched) = self
-            .inject_memories(&thought_id, &embedding, injection_scale, Some(&submode))
+            .inject_memories(
+                &thought_id,
+                &embedding,
+                injection_scale,
+                Some(&submode),
+                Some(tool_name),
+            )
             .await
             .unwrap_or((0, None));
 

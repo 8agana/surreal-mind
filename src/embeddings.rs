@@ -148,10 +148,14 @@ impl Embedder for OpenAIEmbedder {
 
 // Deterministic FakeEmbedder for local/testing fallback
 #[derive(Clone)]
-struct FakeEmbedder { dims: usize }
+struct FakeEmbedder {
+    dims: usize,
+}
 
 impl FakeEmbedder {
-    fn new(dims: usize) -> Self { Self { dims } }
+    fn new(dims: usize) -> Self {
+        Self { dims }
+    }
 }
 
 #[async_trait]
@@ -172,7 +176,11 @@ impl Embedder for FakeEmbedder {
             v.push(y);
         }
         // Normalize to unit vector for stable cosine similarity
-        let norm = v.iter().map(|x| (*x as f64) * (*x as f64)).sum::<f64>().sqrt();
+        let norm = v
+            .iter()
+            .map(|x| (*x as f64) * (*x as f64))
+            .sum::<f64>()
+            .sqrt();
         if norm > 0.0 {
             for e in &mut v {
                 *e = (*e as f64 / norm) as f32;
@@ -180,7 +188,9 @@ impl Embedder for FakeEmbedder {
         }
         Ok(v)
     }
-    fn dimensions(&self) -> usize { self.dims }
+    fn dimensions(&self) -> usize {
+        self.dims
+    }
 }
 
 // Factory function to create embedder based on environment
@@ -206,7 +216,10 @@ pub async fn create_embedder() -> Result<Arc<dyn Embedder>> {
 
     let fake = |reason: &str| -> Arc<dyn Embedder> {
         let dims = dim_override.unwrap_or(768);
-        warn!("{}; falling back to deterministic FakeEmbedder (dims={})", reason, dims);
+        warn!(
+            "{}; falling back to deterministic FakeEmbedder (dims={})",
+            reason, dims
+        );
         Arc::new(FakeEmbedder::new(dims))
     };
 
@@ -240,15 +253,16 @@ pub async fn create_embedder() -> Result<Arc<dyn Embedder>> {
             }
             // Nomic client not implemented in this build; use Fake but log info
             let dims = dim_override.unwrap_or(768);
-            info!("NOMIC_API_KEY set; Nomic embedder not implemented, using FakeEmbedder (dims={})", dims);
+            info!(
+                "NOMIC_API_KEY set; Nomic embedder not implemented, using FakeEmbedder (dims={})",
+                dims
+            );
             Ok(Arc::new(FakeEmbedder::new(dims)))
         }
         "" => {
             // No provider configured: default to Fake
             Ok(fake("SURR_EMBED_PROVIDER unset"))
         }
-        other => {
-            Ok(fake(&format!("Unknown SURR_EMBED_PROVIDER='{}'", other)))
-        }
+        other => Ok(fake(&format!("Unknown SURR_EMBED_PROVIDER='{}'", other))),
     }
 }

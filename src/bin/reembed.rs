@@ -1,10 +1,10 @@
 use anyhow::Result;
+use chrono::Utc;
 use surreal_mind::bge_embedder::BGEEmbedder;
 use surreal_mind::embeddings::Embedder;
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::Ws;
 use surrealdb::opt::auth::Root;
-use chrono::Utc;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -62,7 +62,9 @@ async fn main() -> Result<()> {
         let existing_model = thought["embedding_model"].as_str().unwrap_or("");
 
         // Skip if already embedded with BGE-small
-        if existing_emb_len == embed_dims && (existing_model == "BAAI/bge-small-en-v1.5" || existing_model == "bge-small-en-v1.5") {
+        if existing_emb_len == embed_dims
+            && (existing_model == "BAAI/bge-small-en-v1.5" || existing_model == "bge-small-en-v1.5")
+        {
             skip_count += 1;
             continue;
         }
@@ -82,13 +84,14 @@ async fn main() -> Result<()> {
                     thought_id
                 );
 
-                match db.query(&query)
+                match db
+                    .query(&query)
                     .bind(("embedding", new_embedding))
                     .bind(("provider", "candle"))
                     .bind(("model", "BAAI/bge-small-en-v1.5"))
                     .bind(("dims", embed_dims as i64))
                     .bind(("timestamp", timestamp))
-                    .await 
+                    .await
                 {
                     Ok(_) => success_count += 1,
                     Err(e) => {
