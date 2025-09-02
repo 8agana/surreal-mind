@@ -624,11 +624,15 @@ impl SurrealMindServer {
         if scale == 0 {
             return Ok((0, None));
         }
+        // Thresholds are tunable via env; defaults are conservative but not too strict
+        let t1 = std::env::var("SURR_INJECT_T1").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.60);
+        let t2 = std::env::var("SURR_INJECT_T2").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.40);
+        let t3 = std::env::var("SURR_INJECT_T3").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.25);
         let (limit, mut prox_thresh) = match scale {
             0 => (0usize, 1.0f32),
-            1 => (5usize, 0.8f32),  // Mercury
-            2 => (10usize, 0.6f32), // Venus
-            _ => (20usize, 0.4f32), // Mars
+            1 => (5usize, t1),
+            2 => (10usize, t2),
+            _ => (20usize, t3),
         };
         if limit == 0 {
             return Ok((0, None));
@@ -760,9 +764,25 @@ impl SurrealMindServer {
             skipped
         );
 
-        // Sort by similarity and take top by orbital limit
+        // Sort by similarity and apply threshold; if nothing passes, take top by limit with a minimal floor (0.15)
         scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        let selected: Vec<(String, f32, String, String)> = scored.into_iter().take(limit).collect();
+        let mut selected: Vec<(String, f32, String, String)> = scored
+            .iter()
+            .cloned()
+            .filter(|(_, s, _, _)| *s >= prox_thresh)
+            .take(limit)
+            .collect();
+        if selected.is_empty() && !scored.is_empty() {
+            let floor = std::env::var("SURR_INJECT_FLOOR")
+                .ok()
+                .and_then(|v| v.parse::<f32>().ok())
+                .unwrap_or(0.15);
+            selected = scored
+                .into_iter()
+                .filter(|(_, s, _, _)| *s >= floor)
+                .take(limit)
+                .collect();
+        }
         let memory_ids: Vec<String> = selected.iter().map(|(id, _, _, _)| id.clone()).collect();
         tracing::debug!(
             "inject_memories: Top {} matches: {:?}",
