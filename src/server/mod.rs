@@ -80,11 +80,6 @@ pub struct Thought {
     pub framework_enhanced: Option<bool>,
     #[serde(default)]
     pub framework_analysis: Option<serde_json::Value>,
-    #[serde(default)]
-    pub is_inner_voice: Option<bool>,
-    #[serde(default)]
-    pub inner_visibility: Option<String>,
-    #[serde(default)]
     pub embedding_model: Option<String>,
     #[serde(default)]
     pub embedding_provider: Option<String>,
@@ -200,8 +195,6 @@ impl ServerHandler for SurrealMindServer {
 
         let tech_think_schema_map = crate::schemas::tech_think_schema();
 
-        let inner_voice_schema_map = crate::schemas::inner_voice_schema();
-
         let maintenance_ops_schema_map = crate::schemas::maintenance_ops_schema();
 
         let search_thoughts_schema_map = crate::schemas::search_thoughts_schema();
@@ -249,13 +242,6 @@ impl ServerHandler for SurrealMindServer {
                 name: "think_stuck".into(),
                 description: Some("Breaking through blocks (lateral thinking)".into()),
                 input_schema: tech_think_schema_map.clone(),
-                annotations: None,
-                output_schema: None,
-            },
-            Tool {
-                name: "inner_voice".into(),
-                description: Some("Private inner thoughts with visibility controls".into()),
-                input_schema: inner_voice_schema_map,
                 annotations: None,
                 output_schema: None,
             },
@@ -328,7 +314,6 @@ impl ServerHandler for SurrealMindServer {
             "convo_think" => self.handle_convo_think(request).await.map_err(|e| e.into()),
             "tech_think" => self.handle_tech_think(request).await.map_err(|e| e.into()),
             // Intelligence and utility
-            "inner_voice" => self.handle_inner_voice(request).await.map_err(|e| e.into()),
             "maintenance_ops" => self
                 .handle_maintenance_ops(request)
                 .await
@@ -479,11 +464,6 @@ impl SurrealMindServer {
             DEFINE FIELD submode ON TABLE thoughts TYPE option<string>;
             DEFINE FIELD framework_enhanced ON TABLE thoughts TYPE option<bool>;
             DEFINE FIELD framework_analysis ON TABLE thoughts FLEXIBLE TYPE option<object>;
-            DEFINE FIELD is_inner_voice ON TABLE thoughts TYPE option<bool>;
-            DEFINE FIELD inner_visibility ON TABLE thoughts TYPE option<string>;
-            DEFINE FIELD is_summary ON TABLE thoughts TYPE option<bool>;
-            DEFINE FIELD summary_of ON TABLE thoughts TYPE option<array<string>>;
-            DEFINE FIELD pipeline ON TABLE thoughts TYPE option<string>;
             DEFINE FIELD status ON TABLE thoughts TYPE option<string>;
             -- Embedding metadata for future re-embedding
             DEFINE FIELD embedding_model ON TABLE thoughts TYPE option<string>;

@@ -166,7 +166,7 @@ impl HeuristicExtractor {
 
             // Primary proper-noun style: starts uppercase and contains at least one lowercase letter
             // Avoid shouting words like ALLCAPS unless they are known tech terms (handled later)
-            let starts_upper = cleaned.chars().next().map_or(false, |c| c.is_uppercase());
+            let starts_upper = cleaned.chars().next().is_some_and(|c| c.is_uppercase());
             let has_lower = cleaned.chars().any(|c| c.is_lowercase());
             let lower = cleaned.to_lowercase();
             if starts_upper {

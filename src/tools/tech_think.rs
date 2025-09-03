@@ -119,8 +119,6 @@ impl SurrealMindServer {
                     submode: NONE,
                     framework_enhanced: NONE,
                     framework_analysis: NONE,
-                    is_inner_voice: false,
-                    inner_visibility: NONE,
                     embedding_provider: $provider,
                     embedding_model: $model,
                     embedding_dim: $dim,

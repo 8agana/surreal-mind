@@ -258,29 +258,7 @@ Examples:
 }
 ```
 
-### MCP Tool: inner_voice
-Private inner thoughts with visibility controls, similar to convo_think but for internal reasoning.
 
-Parameters:
-- `content` (required): The thought content
-- `injection_scale`: Memory injection distance (same formats as convo_think)
-- `submode`: Conversation style (optional)
-- `tags`: Additional categorization
-- `significance`: Importance weight (same formats as convo_think)
-- `verbose_analysis`: Boolean (default true)
-- `inner_visibility`: "private" (default) | "context_only" — controls when thought is exposed
-
-Example:
-```json
-{
-  "tool": "inner_voice",
-  "arguments": {
-    "content": "This is a private reflection on the user's request",
-    "inner_visibility": "private",
-    "significance": "medium"
-  }
-}
-```
 
 ### MCP Tool: knowledgegraph_create
 Create entities and relationships in the Knowledge Graph (KG) for advanced semantic connections.
@@ -332,7 +310,7 @@ Example:
 Returns deterministic, example-rich documentation for tools and parameters.
 
 Parameters:
-- `tool`: "convo_think" | "tech_think" | "inner_voice" | "search_thoughts" | "knowledgegraph_create" | "knowledgegraph_search" (optional; overview when omitted)
+- `tool`: "convo_think" | "tech_think" | "search_thoughts" | "knowledgegraph_create" | "knowledgegraph_search" (optional; overview when omitted)
 - `format`: "full" (default) | "compact"
 
 Examples:
@@ -348,7 +326,7 @@ This project includes:
 
 ### Main MCP Server Binary
 - `cargo run` or `./target/release/surreal-mind`: Starts the MCP server with stdio transport
-- Handles all 7 tools: convo_think, tech_think, inner_voice, search_thoughts, knowledgegraph_create, knowledgegraph_search, detailed_help
+- Handles all 6 tools: convo_think, tech_think, search_thoughts, knowledgegraph_create, knowledgegraph_search, detailed_help
 
 ### Additional Binaries (src/bin/)
 - `cargo run --bin reembed`: CLI for re-embedding thoughts (fixes dimension mismatches, recomputes embeddings)

@@ -8,8 +8,6 @@ pub struct Config {
     pub retrieval: RetrievalConfig,
     pub orbital_mechanics: OrbitalConfig,
     pub submodes: HashMap<String, SubmodeConfig>,
-    pub nlq: NlqConfig,
-    pub synthesis: SynthesisConfig,
     /// Runtime configuration loaded from environment variables
     #[serde(skip)]
     pub runtime: RuntimeConfig,
@@ -82,40 +80,6 @@ pub struct OrbitalWeights {
     pub recency: f32,
     pub access: f32,
     pub significance: f32,
-}
-
-/// Synthesis provider configuration
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct SynthesisConfig {
-    pub providers: Vec<String>, // e.g., ["gemini_cli:pro", "gemini_cli:flash", "groq"]
-    pub gemini_cli: GeminiCliConfig,
-    pub groq: GroqConfig,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct GeminiCliConfig {
-    pub path: String,            // binary path, e.g., "gemini"
-    pub pro_model: String,       // e.g., "gemini-2.5-pro"
-    pub flash_model: String,     // e.g., "gemini-2.5-flash"
-    pub timeout_ms: u64,         // process timeout
-    pub max_output_bytes: usize, // cap stdout bytes to parse
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct GroqConfig {
-    pub base_url: String, // OpenAI-compatible base, e.g., https://api.groq.com/openai/v1
-    pub model: String,    // model id
-    pub timeout_ms: u64,
-}
-
-/// NLQ configuration for natural language queries
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct NlqConfig {
-    pub timezone: String,     // IANA TZ, e.g., "America/Chicago"
-    pub default_limit: usize, // e.g., 25
-    pub max_limit: usize,     // e.g., 100
-    pub max_keywords: usize,  // cap keyword count for regex
-    pub enable_keyword_filter: bool,
 }
 
 /// Runtime configuration loaded from environment variables
@@ -265,32 +229,6 @@ impl Default for Config {
                 access_weight: 0.3,
             },
             submodes,
-            nlq: NlqConfig {
-                timezone: "America/Chicago".to_string(),
-                default_limit: 25,
-                max_limit: 100,
-                max_keywords: 10,
-                enable_keyword_filter: true,
-            },
-            synthesis: SynthesisConfig {
-                providers: vec![
-                    "gemini_cli:pro".to_string(),
-                    "gemini_cli:flash".to_string(),
-                    "groq".to_string(),
-                ],
-                gemini_cli: GeminiCliConfig {
-                    path: "gemini".to_string(),
-                    pro_model: "gemini-2.5-pro".to_string(),
-                    flash_model: "gemini-2.5-flash".to_string(),
-                    timeout_ms: 20_000,
-                    max_output_bytes: 131_072,
-                },
-                groq: GroqConfig {
-                    base_url: "https://api.groq.com/openai/v1".to_string(),
-                    model: "llama-3.1-70b-versatile".to_string(),
-                    timeout_ms: 20_000,
-                },
-            },
             runtime: RuntimeConfig::default(),
         }
     }
@@ -338,10 +276,10 @@ impl RuntimeConfig {
                 .is_some_and(|v| v == "true" || v == "1"),
             kg_embed_entities: std::env::var("SURR_KG_EMBED_ENTITIES")
                 .ok()
-                .map_or(true, |v| v != "false" && v != "0"),
+                .is_none_or(|v| v != "false" && v != "0"),
             kg_embed_observations: std::env::var("SURR_KG_EMBED_OBSERVATIONS")
                 .ok()
-                .map_or(true, |v| v != "false" && v != "0"),
+                .is_none_or(|v| v != "false" && v != "0"),
             kg_max_neighbors: std::env::var("SURR_KG_MAX_NEIGHBORS")
                 .ok()
                 .and_then(|v| v.parse().ok())
@@ -431,13 +369,6 @@ mod tests {
             },
             submodes,
             runtime: RuntimeConfig::default(),
-            nlq: NlqConfig {
-                timezone: "America/Chicago".to_string(),
-                default_limit: 25,
-                max_limit: 100,
-                max_keywords: 10,
-                enable_keyword_filter: true,
-            },
         };
 
         let mode = config.get_submode("nonexistent");

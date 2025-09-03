@@ -1,13 +1,9 @@
 //! Modular main.rs demonstrating the new architecture
 
 use anyhow::Result;
-use surreal_mind::{
-    server::SurrealMindServer,
-    config::Config,
-    error::SurrealMindError,
-};
 use rmcp::transport::stdio;
-use tracing::{info, Level};
+use surreal_mind::{config::Config, error::SurrealMindError, server::SurrealMindServer};
+use tracing::{Level, info};
 use tracing_subscriber;
 
 #[tokio::main]
@@ -19,17 +15,21 @@ async fn main() -> Result<()> {
     })?;
 
     // Initialize tracing with configurable log level
-    let log_level = config.runtime.log_level.as_deref().unwrap_or("surreal_mind=info,rmcp=info");
+    let log_level = config
+        .runtime
+        .log_level
+        .as_deref()
+        .unwrap_or("surreal_mind=info,rmcp=info");
     tracing_subscriber::fmt()
         .with_env_filter(log_level)
         .with_ansi(false)
         .init();
 
     info!("🚀 Starting Surreal Mind MCP Server with modular architecture");
-    info!("📊 Configuration loaded: embedding={}, db={}:{}",
-          config.system.embedding_provider,
-          config.system.database_url,
-          config.system.database_ns);
+    info!(
+        "📊 Configuration loaded: embedding={}, db={}:{}",
+        config.system.embedding_provider, config.system.database_url, config.system.database_ns
+    );
 
     // Create server using the new modular architecture
     let server = SurrealMindServer::new().await.map_err(|e| {
@@ -38,7 +38,9 @@ async fn main() -> Result<()> {
     })?;
 
     info!("✅ Server initialized successfully");
-    info!("🛠️  Available tools: think_convo, think_plan, think_debug, think_build, think_stuck, inner_voice, think_search, memories_create, memories_search, memories_moderate");
+    info!(
+        "🛠️  Available tools: think_convo, think_plan, think_debug, think_build, think_stuck, think_search, memories_create, memories_search, memories_moderate"
+    );
 
     // Start MCP server with stdio transport
     let service = server.serve(stdio()).await.map_err(|e| {
