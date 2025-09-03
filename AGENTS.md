@@ -1,46 +1,112 @@
-# Repository Guidelines
+# Surreal Mind MCP — Agent Guide
 
-## Project Structure & Module Organization
-- `src/`: Rust sources
-  - `src/main.rs`: MCP server entrypoint (stdio transport, dotenv, logging)
-  - `src/embeddings.rs`: `Embedder` trait and providers (OpenAI/Nomic)
-- `tests/`: Integration tests; unit tests live alongside modules with `#[cfg(test)]`.
-- `.cargo/config.toml`: Cargo aliases (e.g., `cargo lint`, `cargo ci`).
-- `.env.example` → `.env`: Local configuration and secrets (not committed).
+Last updated: 2025-09-03
 
-## Build, Test, and Development Commands
+This file is the working guide for operating and extending the Surreal Mind MCP server. It reflects the current design after the thought/injection refactor and should be used by CLI agents (Codex, CC) and contributors.
+
+— WARP users: `WARP.md` is a symlink to this file.
+
+## Purpose
+Surreal Mind augments agent thinking with persistent memory backed by SurrealDB and a Knowledge Graph (KG). It exposes MCP tools for capturing thoughts, retrieving relevant memories, performing grounded synthesis, and running maintenance operations.
+
+## Current State
+- Embeddings: OpenAI `text-embedding-3-small` at 1536 dims is primary. Candle BGE-small-en-v1.5 (384 dims) is for local dev/fallback only. No Nomic. No fake/deterministic embedders.
+- Consistency: Provider is selected at startup; there is no per-call fallback. Every write stamps `embedding_provider`, `embedding_model`, `embedding_dim`, `embedded_at`.
+- Dimension hygiene: All search/injection paths filter by `embedding_dim` before cosine.
+- Injection: KG-only (entities + observations). Limits by scale: 1→5, 2→10, 3→20. UNION queries were removed; two SELECTs are merged client-side.
+- Submodes: Removed from storage and tool surfaces; any legacy `submode` input is ignored.
+
+## Exposed MCP Tools
+- `think_convo`: Persist a thought with embeddings and run KG-only injection (scale configurable). Returns thought id + optional enriched summary.
+- `think_plan`: Planning-oriented thought capture (same backbone; different candidate pool size).
+- `think_debug`, `think_build`, `think_stuck`: Variants tuned for retrieval pool size only. No behavior drift beyond thresholds.
+- `think_search`: Dimension-safe semantic search over thoughts.
+- `inner_voice`: Retrieval + grounded synthesis, optionally creates a summary thought and (optionally) stages KG entries.
+- `memories_create` (alias: `knowledgegraph_create`): Create KG entities/observations.
+- `memories_search` (alias: `knowledgegraph_search`): Search KG.
+- `memories_moderate` (alias: `knowledgegraph_moderate`): Review/stage KG entries.
+- `maintenance_ops`: Health checks, re-embedding, archival/export, and cleanup.
+
+See `src/schemas.rs`, `src/server/mod.rs`, and `src/tools/*` for exact parameters. `detailed_help` returns live schema/aliases.
+
+## Embeddings Strategy
+- Primary: `SURR_EMBED_PROVIDER=openai`, `SURR_EMBED_MODEL=text-embedding-3-small`, `SURR_EMBED_DIM=1536` (implicit for this model).
+- Dev/Fallback: `SURR_EMBED_PROVIDER=candle` uses local BGE-small-en-v1.5 (384 dims). Only for development; do not mix dims in the same DB.
+- Selection: Startup picks one provider based on env and keys; no per-call fallback. If `OPENAI_API_KEY` is unset, Candle is used.
+- Guardrails:
+  - Always filter by `embedding_dim` before cosine.
+  - Never write embeddings without stamping provider/model/dim/embedded_at.
+  - Single provider per runtime; re-embed when switching providers/models.
+
+## Memory Injection (KG-only)
+- Scale limits: 1→5, 2→10, 3→20 results.
+- Thresholds (env tunables):
+  - `SURR_INJECT_T1`, `SURR_INJECT_T2`, `SURR_INJECT_T3` control cosine thresholds for scales 1–3.
+  - `SURR_INJECT_FLOOR` acts as a minimal floor if nothing passes the scale threshold.
+- Recommended production values after validation: `T1=0.6`, `T2=0.4`, `T3=0.25`, `FLOOR=0.15`.
+- Candidate pools by tool (defaults):
+  - `think_convo=500`, `think_plan=800`, `think_debug=1000`, `think_build=400`, `think_stuck=600`.
+- Implementation notes:
+  - Two SELECTs against `kg_entities` and `kg_observations`; results are merged in code (no UNION).
+  - Missing KG embeddings are computed on the fly and persisted best-effort if dimensions match.
+
+## Health Checks and Re-embed SOPs
+- Health check: `maintenance_ops { subcommand: "health_check_embeddings" }` → reports `expected_dim` and per-table mismatches across `thoughts`, `kg_entities`, `kg_observations`.
+- Re-embed thoughts (to current dims):
+  1) `export OPENAI_API_KEY=...` and `export SURR_EMBED_PROVIDER=openai`
+  2) `cargo run --bin reembed`
+  3) Verify: `SELECT array::len(embedding), count() FROM thoughts GROUP BY array::len(embedding);`
+- Re-embed KG: `cargo run --bin reembed_kg` (observes active provider; persists dims and metadata).
+
+## Configuration
+- Env-first; `surreal_mind.toml` mirrors defaults. Key env vars:
+  - Embeddings: `OPENAI_API_KEY`, `SURR_EMBED_PROVIDER` (`openai`|`candle`), `SURR_EMBED_MODEL`, `SURR_EMBED_DIM`.
+  - DB: `SURR_DB_URL`, `SURR_DB_NS`, `SURR_DB_DB`, `SURR_DB_USER`, `SURR_DB_PASS`.
+  - Retrieval: `SURR_KG_CANDIDATES`, `SURR_INJECT_T1/T2/T3`, `SURR_INJECT_FLOOR`.
+  - Runtime/logging: `RUST_LOG`, `MCP_NO_LOG`, `SURR_TOOL_TIMEOUT_MS`.
+  - Maintenance: `SURR_RETENTION_DAYS` for archival.
+
+## Build & Run
+- Prereqs: Rust toolchain, SurrealDB reachable via WebSocket, `.env` from `.env.example`.
 - Build: `cargo build` (release: `cargo build --release`).
-- Run (loads `.env`): `cargo run`.
-- Run with logs: `RUST_LOG=surreal_mind=debug,rmcp=info cargo run`.
-- Format: `make fmt` (runs `cargo fmt --all`).
-- Lint: `make lint` (Clippy with `-D warnings`).
-- CI bundle: `make ci` (check, fmt --check, clippy, tests).
-- Tests: `cargo test --all` | single: `cargo test test_list_tools_returns_convo_think`.
-- With logs: `RUST_LOG=debug cargo test -- --nocapture`.
+- Run MCP (stdio): `cargo run`.
+- Logs: `RUST_LOG=surreal_mind=debug,rmcp=info cargo run`.
+- Binary (release): `target/release/surreal-mind`.
 
-## Coding Style & Naming Conventions
-- Rustfmt as source of truth; run `make fmt` before pushing.
-- Clippy clean: no warnings allowed.
-- Naming: modules/files `snake_case`; functions/vars `snake_case`; types/traits `PascalCase`; constants `SCREAMING_SNAKE_CASE`.
-- Keep functions small; return `anyhow::Result` on main paths; prefer `thiserror`/`McpError` for protocol errors.
+## Testing
+- Unit tests live near modules; integration tests under `tests/`.
+- Avoid external network; mock embeddings/DB where possible.
+- Run: `cargo test` (with logs: `RUST_LOG=debug cargo test -- --nocapture`).
 
-## Testing Guidelines
-- Unit tests close to code; integration tests in `tests/`.
-- No external network in tests; mock embeddings and DB interactions.
-- Name tests `test_*` and keep them deterministic.
+## Operating Principles
+- Truth-first diagnostics: verify embedding dims and candidate counts before tuning.
+- Minimal blast radius: stage changes behind env flags; defaults remain safe.
+- No mixed dims: pick one provider/model per runtime and re-embed on switch.
+- KG-only injection: thoughts are never injected as raw context; only KG entities/observations are.
+- Avoid SurrealQL UNION for combined queries; prefer separate SELECTs.
 
-## Commit & Pull Request Guidelines
-- Commits: imperative mood, concise subject (≤72 chars), useful body; reference issues (e.g., `Closes #123`).
-- PRs: clear description, motivation, and testing steps; link issues; include logs/screenshots if relevant.
-- Requirements: `make ci` passes; update docs when behavior or interfaces change.
+## Quick Start (Post-Restart)
+1) `maintenance_ops { "subcommand": "health_check_embeddings" }` → expect `mismatched_or_missing = 0` across tables.
+2) Spot-check injection: call `think_convo` with `injection_scale=1/2/3` → expect 5/10/20 injected memories.
+3) Confirm logs show `provider=openai`, `model=text-embedding-3-small`, `dims=1536`.
 
-## Security & Configuration Tips
-- Copy `.env.example` to `.env` before running.
-- Key vars: `OPENAI_API_KEY` or `SURR_EMBED_PROVIDER=nomic` with `NOMIC_API_KEY`; SurrealDB: `SURR_DB_URL`, `SURR_DB_NS`, `SURR_DB_DB`, `SURR_DB_USER`, `SURR_DB_PASS`; tuning: `SURR_DB_LIMIT`, `SURR_SIM_THRESH`, `SURR_TOP_K`.
-- Do not commit secrets; rotate keys if exposed.
+## Roadmap (next focus)
+- Inner Voice “Natural” mode MVP:
+  - `when` (natural language) → date_range filter before cosine.
+  - Grounded synthesis with `{ answer, sources[] }` and refusal when not grounded.
+  - Save summary thought with `is_summary=true`, `summary_of=[ids]`; optional KG staging behind a flag.
+- Restore injection thresholds to recommended values after validation.
+- Light cleanup: confirm DB indexes, drop dead imports, update docs as code stabilizes.
 
-## Architecture Overview
-- Rust MCP server persisting “thoughts” to SurrealDB with an in-memory LRU cache for fast retrieval.
-- Embeddings via OpenAI or Nomic.
-- Exposed tools: `convo_think`, `tech_think`, `search_thoughts`, `detailed_help`.
+## Safety & Guardrails
+- Do not reintroduce fake/deterministic or Nomic embedders.
+- Do not silently change defaults or leak secrets in logs.
+- Do not compare embeddings of different dimensions.
+
+## Reference Paths
+- Binary: `target/release/surreal-mind`
+- Build roots:
+  - Repo: `/Users/samuelatagana/Projects/LegacyMind/surreal-mind`
+  - Local models (BGE): `models/bge-small-en-v1.5`
+- Key sources: `src/main.rs`, `src/server/mod.rs`, `src/embeddings.rs`, `src/tools/*`, `src/schemas.rs`, `src/config.rs`
 

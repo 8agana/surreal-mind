@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Main configuration structure loaded from surreal_mind.toml and environment variables
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
     pub system: SystemConfig,
     pub retrieval: RetrievalConfig,
@@ -14,7 +14,7 @@ pub struct Config {
 }
 
 /// System-level configuration for embeddings, database, and behavior
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SystemConfig {
     pub embedding_provider: String,
     pub embedding_model: String,
@@ -36,7 +36,7 @@ pub struct EmbeddingConfig {
 }
 
 /// Retrieval configuration for search and injection behavior
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RetrievalConfig {
     pub max_injection_scale: u8,
     pub default_injection_scale: u8,
@@ -46,10 +46,14 @@ pub struct RetrievalConfig {
     pub db_limit: usize,
     pub candidates: usize,
     pub submode_tuning: bool,
+    pub t1: f32,
+    pub t2: f32,
+    pub t3: f32,
+    pub floor: f32,
 }
 
 /// Orbital mechanics for knowledge graph entity drifting and weighting
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OrbitalConfig {
     pub decay_rate: f32,
     pub access_boost: f32,
@@ -59,7 +63,7 @@ pub struct OrbitalConfig {
 }
 
 /// Configuration for individual submodes (thinking styles)
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SubmodeConfig {
     pub injection_scale: u8,
     pub significance: f32,
@@ -71,7 +75,7 @@ pub struct SubmodeConfig {
 }
 
 /// Weights for orbital mechanics calculations
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OrbitalWeights {
     pub recency: f32,
     pub access: f32,
@@ -212,6 +216,10 @@ impl Default for Config {
                 db_limit: 500,
                 candidates: 200,
                 submode_tuning: false,
+                t1: 0.6,
+                t2: 0.4,
+                t3: 0.25,
+                floor: 0.15,
             },
             orbital_mechanics: OrbitalConfig {
                 decay_rate: 0.1,
@@ -351,6 +359,10 @@ mod tests {
                 db_limit: 100,
                 candidates: 20,
                 submode_tuning: true,
+                t1: 0.6,
+                t2: 0.4,
+                t3: 0.25,
+                floor: 0.15,
             },
             orbital_mechanics: OrbitalConfig {
                 decay_rate: 0.1,

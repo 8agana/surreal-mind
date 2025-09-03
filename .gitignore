@@ -18,3 +18,7 @@ CLAUDE.md
 /backups
 *.sql
 *.db.backup
+
+.junie
+*.fix
+fixes/

@@ -16,6 +16,12 @@ fn bool_env(name: &str, default: bool) -> bool {
 async fn main() -> Result<()> {
     let _ = dotenvy::dotenv();
 
+    // Load configuration
+    let config = surreal_mind::config::Config::load().map_err(|e| {
+        eprintln!("Failed to load configuration: {}", e);
+        e
+    })?;
+
     let dry_run = bool_env("DRY_RUN", false);
     let limit = std::env::var("LIMIT")
         .ok()
@@ -27,29 +33,28 @@ async fn main() -> Result<()> {
     }
 
     // Embedder (same policy as core): OpenAI primary (1536) if key; else Candle BGE (384)
-    let embedder = create_embedder().await?;
+    let embedder = create_embedder(&config).await?;
     let dims = embedder.dimensions();
-    let prov = std::env::var("SURR_EMBED_PROVIDER").unwrap_or_else(|_| "openai".to_string());
-    let model =
-        std::env::var("SURR_EMBED_MODEL").unwrap_or_else(|_| "text-embedding-3-small".to_string());
+    let prov = config.system.embedding_provider.clone();
+    let model = config.system.embedding_model.clone();
     println!(
         "✅ Embedder ready (provider={}, model={}, dims={})",
         prov, model, dims
     );
 
     // DB connection
-    let url = std::env::var("SURR_DB_URL").unwrap_or_else(|_| "127.0.0.1:8000".to_string());
-    let user = std::env::var("SURR_DB_USER").unwrap_or_else(|_| "root".to_string());
-    let pass = std::env::var("SURR_DB_PASS").unwrap_or_else(|_| "root".to_string());
-    let ns = std::env::var("SURR_DB_NS").unwrap_or_else(|_| "surreal_mind".to_string());
-    let dbname = std::env::var("SURR_DB_DB").unwrap_or_else(|_| "consciousness".to_string());
-    let db = Surreal::new::<Ws>(url).await?;
+    let url = config.system.database_url.clone();
+    let user = config.runtime.database_user.clone();
+    let pass = config.runtime.database_pass.clone();
+    let ns = config.system.database_ns.clone();
+    let dbname = config.system.database_db.clone();
+    let db = Surreal::new::<Ws>(&url).await?;
     db.signin(Root {
         username: &user,
         password: &pass,
     })
     .await?;
-    db.use_ns(ns).use_db(dbname).await?;
+    db.use_ns(&ns).use_db(&dbname).await?;
 
     let mut updated_entities = 0usize;
     let mut skipped_entities = 0usize;

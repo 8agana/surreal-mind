@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
     );
 
     // Create server using the new modular architecture
-    let server = SurrealMindServer::new().await.map_err(|e| {
+    let server = SurrealMindServer::new(&config).await.map_err(|e| {
         eprintln!("Failed to create server: {}", e);
         e
     })?;

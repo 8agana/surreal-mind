@@ -48,3 +48,7 @@ USE NS surreal_mind; USE DB consciousness; SELECT embedding_dim, count() FROM th
 USE NS surreal_mind; USE DB consciousness; UPDATE type::thing('thoughts', '004640a9-2486-499c-8115-e1ef0741eb99') SET embedding_dim = 1536, embedding_model = 'text-embedding-3-small', embedding_provider = 'openai' RETURN meta::id(id) as id;
 USE NS surreal_mind; USE DB consciousness; SELECT meta::id(id) as id, embedding_dim, embedding_model FROM thoughts WHERE id = thoughts:⟨004640a9-2486-499c-8115-e1ef0741eb99⟩;
 USE NS surreal_mind; USE DB consciousness; SELECT embedding_dim, count() FROM thoughts GROUP BY embedding_dim;
+SELECT COUNT() as total, COUNT(embedding) as with_embedding FROM kg_entities GROUP ALL;
+SELECT id, name, array::len(embedding) as embed_dim FROM kg_entities WHERE embedding != NONE LIMIT 5;
+SELECT id, name, array::len(embedding) as embed_dim, data FROM kg_entities WHERE id = 'kg_entities:7y4siy38zv6gabl0n2gn';
+SELECT id, name, array::len(embedding) as embed_dim, data FROM kg_entities WHERE name ~ 'Sam';

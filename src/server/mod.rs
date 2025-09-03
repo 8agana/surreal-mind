@@ -156,6 +156,7 @@ pub struct SurrealMindServer {
     pub db: Arc<Surreal<Client>>,
     pub thoughts: Arc<RwLock<LruCache<String, Thought>>>, // Bounded in-memory cache (LRU)
     pub embedder: Arc<dyn Embedder>,
+    pub config: Arc<crate::config::Config>, // Retain config to avoid future env reads
 }
 
 impl ServerHandler for SurrealMindServer {
@@ -383,55 +384,12 @@ impl ServerHandler for SurrealMindServer {
 
 impl SurrealMindServer {
     /// Create a new SurrealMind server instance
-    pub async fn new() -> Result<Self> {
+    pub async fn new(config: &crate::config::Config) -> Result<Self> {
         info!("Connecting to SurrealDB service via WebSocket");
 
-        // Load typed configuration and export critical embedding settings to env
-        // so downstream components (embedder factory, metadata helpers) read consistent values.
-        if let Ok(cfg) = crate::config::Config::load() {
-            // Set environment variables for downstream components (unsafe due to global process state)
-            unsafe {
-                std::env::set_var("SURR_EMBED_PROVIDER", cfg.system.embedding_provider.clone());
-                std::env::set_var("SURR_EMBED_MODEL", cfg.system.embedding_model.clone());
-                std::env::set_var(
-                    "SURR_EMBED_DIM",
-                    cfg.system.embedding_dimensions.to_string(),
-                );
-                std::env::set_var("SURR_EMBED_RETRIES", cfg.system.embed_retries.to_string());
-                // Retrieval defaults for tools that read env directly
-                std::env::set_var(
-                    "SURR_SIM_THRESH",
-                    cfg.retrieval.similarity_threshold.to_string(),
-                );
-                std::env::set_var("SURR_TOP_K", cfg.retrieval.top_k.to_string());
-                std::env::set_var("SURR_DB_LIMIT", cfg.retrieval.db_limit.to_string());
-                std::env::set_var("SURR_KG_CANDIDATES", cfg.retrieval.candidates.to_string());
-                if cfg.retrieval.submode_tuning {
-                    std::env::set_var("SURR_SUBMODE_RETRIEVAL", "true");
-                }
-            }
-            // DB connection defaults (do not override if user already set env)
-            std::env::var("SURR_DB_URL").unwrap_or_else(|_| {
-                unsafe {
-                    std::env::set_var("SURR_DB_URL", cfg.system.database_url.clone());
-                }
-                cfg.system.database_url.clone()
-            });
-            std::env::var("SURR_DB_NS").unwrap_or_else(|_| {
-                unsafe {
-                    std::env::set_var("SURR_DB_NS", cfg.system.database_ns.clone());
-                }
-                cfg.system.database_ns.clone()
-            });
-            std::env::var("SURR_DB_DB").unwrap_or_else(|_| {
-                unsafe {
-                    std::env::set_var("SURR_DB_DB", cfg.system.database_db.clone());
-                }
-                cfg.system.database_db.clone()
-            });
-        }
+        // Use the provided configuration directly instead of setting global env vars.
+        // Embedder factory will read from the environment, but we keep the existing behaviour.
 
-        let url = std::env::var("SURR_DB_URL").unwrap_or_else(|_| "127.0.0.1:8000".to_string());
         // Normalize URL for SurrealDB Ws engine (expects host:port, no scheme)
         fn normalize_ws_url(s: &str) -> String {
             s.strip_prefix("ws://")
@@ -441,11 +399,13 @@ impl SurrealMindServer {
                 .unwrap_or(s)
                 .to_string()
         }
-        let url = normalize_ws_url(&url);
-        let user = std::env::var("SURR_DB_USER").unwrap_or_else(|_| "root".to_string());
-        let pass = std::env::var("SURR_DB_PASS").unwrap_or_else(|_| "root".to_string());
-        let ns = std::env::var("SURR_DB_NS").unwrap_or_else(|_| "surreal_mind".to_string());
-        let dbname = std::env::var("SURR_DB_DB").unwrap_or_else(|_| "consciousness".to_string());
+
+        // DB connection values from config
+        let url = normalize_ws_url(&config.system.database_url);
+        let user = &config.runtime.database_user;
+        let pass = &config.runtime.database_pass;
+        let ns = &config.system.database_ns;
+        let dbname = &config.system.database_db;
 
         // Connect to the running SurrealDB service
         let db = Surreal::new::<surrealdb::engine::remote::ws::Ws>(url)
@@ -454,8 +414,8 @@ impl SurrealMindServer {
 
         // Authenticate
         db.signin(surrealdb::opt::auth::Root {
-            username: &user,
-            password: &pass,
+            username: user,
+            password: pass,
         })
         .await
         .context("Failed to authenticate with SurrealDB")?;
@@ -467,7 +427,7 @@ impl SurrealMindServer {
             .context("Failed to select namespace and database")?;
 
         // Initialize embedder
-        let embedder = crate::embeddings::create_embedder()
+        let embedder = crate::embeddings::create_embedder(config)
             .await
             .context("Failed to create embedder")?;
         info!(
@@ -487,6 +447,7 @@ impl SurrealMindServer {
             db: Arc::new(db),
             thoughts: Arc::new(RwLock::new(thoughts_cache)),
             embedder,
+            config: Arc::new(config.clone()),
         };
 
         server
@@ -577,9 +538,8 @@ impl SurrealMindServer {
 
     /// Get embedding metadata for tracking model/provider info
     pub fn get_embedding_metadata(&self) -> (String, String, i64) {
-        let provider =
-            std::env::var("SURR_EMBED_PROVIDER").unwrap_or_else(|_| "unknown".to_string());
-        let model = std::env::var("SURR_EMBED_MODEL").unwrap_or_else(|_| "unknown".to_string());
+        let provider = self.config.system.embedding_provider.clone();
+        let model = self.config.system.embedding_model.clone();
         let dim = self.embedder.dimensions() as i64;
         (provider, model, dim)
     }
@@ -624,19 +584,34 @@ impl SurrealMindServer {
         if scale == 0 {
             return Ok((0, None));
         }
-        // Thresholds are tunable via env; defaults are conservative but not too strict
+        // Thresholds from config.retrieval.t1, with optional env override and warn
         let t1 = std::env::var("SURR_INJECT_T1")
             .ok()
             .and_then(|v| v.parse::<f32>().ok())
-            .unwrap_or(0.0);
+            .unwrap_or_else(|| {
+                if std::env::var("SURR_INJECT_T1").is_ok() {
+                    tracing::warn!("Using env override SURR_INJECT_T1");
+                }
+                self.config.retrieval.t1
+            });
         let t2 = std::env::var("SURR_INJECT_T2")
             .ok()
             .and_then(|v| v.parse::<f32>().ok())
-            .unwrap_or(0.0);
+            .unwrap_or_else(|| {
+                if std::env::var("SURR_INJECT_T2").is_ok() {
+                    tracing::warn!("Using env override SURR_INJECT_T2");
+                }
+                self.config.retrieval.t2
+            });
         let t3 = std::env::var("SURR_INJECT_T3")
             .ok()
             .and_then(|v| v.parse::<f32>().ok())
-            .unwrap_or(0.0);
+            .unwrap_or_else(|| {
+                if std::env::var("SURR_INJECT_T3").is_ok() {
+                    tracing::warn!("Using env override SURR_INJECT_T3");
+                }
+                self.config.retrieval.t3
+            });
         let (limit, mut prox_thresh) = match scale {
             0 => (0usize, 1.0f32),
             1 => (5usize, t1),
@@ -648,8 +623,14 @@ impl SurrealMindServer {
         }
 
         // Optional: submode-aware retrieval tweaks
-        // Guarded behind SURR_SUBMODE_RETRIEVAL=true to keep default behavior stable
-        if std::env::var("SURR_SUBMODE_RETRIEVAL").ok().as_deref() == Some("true") {
+        // Use config flag, with optional env override and warn
+        if std::env::var("SURR_SUBMODE_RETRIEVAL").ok().as_deref() == Some("true")
+            || (std::env::var("SURR_SUBMODE_RETRIEVAL").is_err()
+                && self.config.retrieval.submode_tuning)
+        {
+            if std::env::var("SURR_SUBMODE_RETRIEVAL").is_ok() {
+                tracing::warn!("Using env override SURR_SUBMODE_RETRIEVAL");
+            }
             if let Some(sm) = submode {
                 // Use lightweight profile deltas to adjust similarity threshold
                 use crate::cognitive::profile::{Submode, profile_for};
@@ -659,11 +640,16 @@ impl SurrealMindServer {
                 prox_thresh = (prox_thresh + delta).clamp(0.0, 0.99);
             }
         }
-        // Candidate pool size for KG entities
+        // Candidate pool size from config, with optional env override and warn
         let mut retrieve = std::env::var("SURR_KG_CANDIDATES")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(200);
+            .unwrap_or_else(|| {
+                if std::env::var("SURR_KG_CANDIDATES").is_ok() {
+                    tracing::warn!("Using env override SURR_KG_CANDIDATES");
+                }
+                self.config.retrieval.candidates
+            });
 
         // Tool-specific runtime defaults (no behavior drift beyond thresholds)
         if let Some(tool) = tool_name {
@@ -791,7 +777,12 @@ impl SurrealMindServer {
             let floor = std::env::var("SURR_INJECT_FLOOR")
                 .ok()
                 .and_then(|v| v.parse::<f32>().ok())
-                .unwrap_or(0.0);
+                .unwrap_or_else(|| {
+                    if std::env::var("SURR_INJECT_FLOOR").is_ok() {
+                        tracing::warn!("Using env override SURR_INJECT_FLOOR");
+                    }
+                    self.config.retrieval.floor
+                });
             selected = scored
                 .into_iter()
                 .filter(|(_, s, _, _)| *s >= floor)

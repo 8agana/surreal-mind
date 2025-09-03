@@ -12,23 +12,31 @@ async fn main() -> Result<()> {
         eprintln!("Warning: Could not load .env file: {}", e);
     }
 
+    // Load configuration
+    let config = surreal_mind::config::Config::load().map_err(|e| {
+        eprintln!("Failed to load configuration: {}", e);
+        e
+    })?;
+
     println!("🚀 Starting thought re-embedding process...");
     // Prefer OpenAI 1536; fallback to local BGE if unavailable
-    let embedder = create_embedder().await?;
+    let embedder = create_embedder(&config).await?;
     let embed_dims = embedder.dimensions();
     println!(
         "✅ Embedder initialized (expected primary dims = {}), provider/model from env",
         embed_dims
     );
 
-    // Connect to SurrealDB
-    let db = Surreal::new::<Ws>("127.0.0.1:8000").await?;
+    // Connect to SurrealDB using config
+    let db = Surreal::new::<Ws>(&config.system.database_url).await?;
     db.signin(Root {
-        username: "root",
-        password: "root",
+        username: &config.runtime.database_user,
+        password: &config.runtime.database_pass,
     })
     .await?;
-    db.use_ns("surreal_mind").use_db("consciousness").await?;
+    db.use_ns(&config.system.database_ns)
+        .use_db(&config.system.database_db)
+        .await?;
 
     // Show current distribution by provider/model/dimension
     println!("\n📊 Current embedding distribution (before re-embed):");
