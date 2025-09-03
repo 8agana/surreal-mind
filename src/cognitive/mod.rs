@@ -137,11 +137,7 @@ impl CognitiveEngine {
             loop {
                 let mut progressed = false;
                 for (fw, v, _w) in items_by_fw.iter() {
-                    let _cap = alloc
-                        .iter()
-                        .find(|(n, _)| n == fw)
-                        .map(|p| p.1)
-                        .unwrap_or(0);
+                    let _cap = alloc.iter().find(|(n, _)| n == fw).map_or(0, |p| p.1);
                     let idx_ref = per_fw_indices.entry(fw).or_insert(0);
                     while *idx_ref < v.len()
                         && out.len() < total

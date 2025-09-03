@@ -846,7 +846,7 @@ impl SurrealMindServer {
             "inject_memories: Injected {} memories for thought {}, enriched content length: {}",
             memory_ids.len(),
             thought_id,
-            enriched.as_ref().map(|s| s.len()).unwrap_or(0)
+            enriched.as_ref().map_or(0, |s| s.len())
         );
 
         Ok((memory_ids.len(), enriched))

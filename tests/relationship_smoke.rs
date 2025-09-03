@@ -1,5 +1,5 @@
 use rmcp::model::CallToolRequestParam;
-use surreal_mind::server::SurrealMindServer;
+use surreal_mind::{config::Config, server::SurrealMindServer};
 
 #[tokio::test]
 async fn relationship_flow_smoke() {
@@ -9,7 +9,8 @@ async fn relationship_flow_smoke() {
         return;
     }
 
-    let server = SurrealMindServer::new().await.expect("server init");
+    let config = Config::load().expect("config load");
+    let server = SurrealMindServer::new(&config).await.expect("server init");
 
     // Create two entities
     let mut a_args = serde_json::Map::new();

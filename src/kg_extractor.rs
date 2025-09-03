@@ -166,7 +166,7 @@ impl HeuristicExtractor {
 
             // Primary proper-noun style: starts uppercase and contains at least one lowercase letter
             // Avoid shouting words like ALLCAPS unless they are known tech terms (handled later)
-            let starts_upper = cleaned.chars().next().unwrap().is_uppercase();
+            let starts_upper = cleaned.chars().next().map_or(false, |c| c.is_uppercase());
             let has_lower = cleaned.chars().any(|c| c.is_lowercase());
             let lower = cleaned.to_lowercase();
             if starts_upper {
@@ -350,7 +350,9 @@ impl HeuristicExtractor {
         for (pattern, rel_type) in relation_patterns.iter() {
             if text_lower.contains(pattern.trim()) {
                 // Find entities within a reasonable context window around the pattern
-                let pattern_pos = text_lower.find(pattern.trim()).unwrap();
+                let Some(pattern_pos) = text_lower.find(pattern.trim()) else {
+                    continue;
+                };
                 let window_start = pattern_pos.saturating_sub(50);
                 let window_end = (pattern_pos + pattern.len() + 50).min(text.len());
 
