@@ -7,5 +7,3 @@ pub mod knowledge_graph;
 pub mod maintenance;
 pub mod search_thoughts;
 pub mod tech_think;
-
-pub mod nlq;

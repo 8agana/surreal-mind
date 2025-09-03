@@ -43,7 +43,10 @@ pub fn inner_voice_schema() -> Arc<Map<String, Value>> {
             "max_nodes": {"type": ["integer", "number", "string"], "default": 30},
             "max_edges": {"type": ["integer", "number", "string"], "default": 60},
             "save": {"type": "boolean", "default": true},
-            "auto_mark_removal": {"type": "boolean", "default": false}
+            "auto_mark_removal": {"type": "boolean", "default": false},
+            "when": {"type": "string", "description": "Temporal filter (e.g., 'yesterday', 'last week', 'this month')"},
+            "limit": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 100},
+            "order": {"type": "string", "enum": ["created_at_desc", "created_at_asc"], "default": "created_at_desc"}
         },
         "required": ["content"]
     });
@@ -199,20 +202,6 @@ pub fn maintenance_ops_schema() -> Arc<Map<String, Value>> {
             "output_dir": {"type": "string", "default": "./archive", "description": "Directory for export files"}
         },
         "required": ["subcommand"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn nlq_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "query": {"type": "string"},
-            "when": {"type": "string"},
-            "limit": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 100},
-            "order": {"type": "string", "enum": ["created_at_desc", "created_at_asc"]}
-        },
-        "required": ["query"]
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }

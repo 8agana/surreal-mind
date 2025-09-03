@@ -9,6 +9,7 @@ pub struct Config {
     pub orbital_mechanics: OrbitalConfig,
     pub submodes: HashMap<String, SubmodeConfig>,
     pub nlq: NlqConfig,
+    pub synthesis: SynthesisConfig,
     /// Runtime configuration loaded from environment variables
     #[serde(skip)]
     pub runtime: RuntimeConfig,
@@ -81,6 +82,30 @@ pub struct OrbitalWeights {
     pub recency: f32,
     pub access: f32,
     pub significance: f32,
+}
+
+/// Synthesis provider configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SynthesisConfig {
+    pub providers: Vec<String>, // e.g., ["gemini_cli:pro", "gemini_cli:flash", "groq"]
+    pub gemini_cli: GeminiCliConfig,
+    pub groq: GroqConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GeminiCliConfig {
+    pub path: String,            // binary path, e.g., "gemini"
+    pub pro_model: String,       // e.g., "gemini-2.5-pro"
+    pub flash_model: String,     // e.g., "gemini-2.5-flash"
+    pub timeout_ms: u64,         // process timeout
+    pub max_output_bytes: usize, // cap stdout bytes to parse
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GroqConfig {
+    pub base_url: String, // OpenAI-compatible base, e.g., https://api.groq.com/openai/v1
+    pub model: String,    // model id
+    pub timeout_ms: u64,
 }
 
 /// NLQ configuration for natural language queries
@@ -246,6 +271,25 @@ impl Default for Config {
                 max_limit: 100,
                 max_keywords: 10,
                 enable_keyword_filter: true,
+            },
+            synthesis: SynthesisConfig {
+                providers: vec![
+                    "gemini_cli:pro".to_string(),
+                    "gemini_cli:flash".to_string(),
+                    "groq".to_string(),
+                ],
+                gemini_cli: GeminiCliConfig {
+                    path: "gemini".to_string(),
+                    pro_model: "gemini-2.5-pro".to_string(),
+                    flash_model: "gemini-2.5-flash".to_string(),
+                    timeout_ms: 20_000,
+                    max_output_bytes: 131_072,
+                },
+                groq: GroqConfig {
+                    base_url: "https://api.groq.com/openai/v1".to_string(),
+                    model: "llama-3.1-70b-versatile".to_string(),
+                    timeout_ms: 20_000,
+                },
             },
             runtime: RuntimeConfig::default(),
         }
