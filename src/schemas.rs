@@ -202,3 +202,17 @@ pub fn maintenance_ops_schema() -> Arc<Map<String, Value>> {
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
+
+pub fn nlq_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+            "when": {"type": "string"},
+            "limit": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 100},
+            "order": {"type": "string", "enum": ["created_at_desc", "created_at_asc"]}
+        },
+        "required": ["query"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}

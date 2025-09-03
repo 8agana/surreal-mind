@@ -22,3 +22,5 @@ CLAUDE.md
 .junie
 *.fix
 fixes/
+
+models/bge-small-en-v1.5/

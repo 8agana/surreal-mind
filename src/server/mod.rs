@@ -214,6 +214,8 @@ impl ServerHandler for SurrealMindServer {
 
         let detailed_help_schema_map = crate::schemas::detailed_help_schema();
 
+        let nlq_schema_map = crate::schemas::nlq_schema();
+
         let tools = vec![
             Tool {
                 name: "think_convo".into(),
@@ -303,6 +305,13 @@ impl ServerHandler for SurrealMindServer {
                 annotations: None,
                 output_schema: None,
             },
+            Tool {
+                name: "nlq".into(),
+                description: Some("Natural language query over thoughts".into()),
+                input_schema: nlq_schema_map,
+                annotations: None,
+                output_schema: None,
+            },
         ];
 
         Ok(ListToolsResult {
@@ -373,6 +382,7 @@ impl ServerHandler for SurrealMindServer {
                 .handle_detailed_help(request)
                 .await
                 .map_err(|e| e.into()),
+            "nlq" => self.handle_nlq(request).await.map_err(|e| e.into()),
             _ => Err(McpError {
                 code: rmcp::model::ErrorCode::METHOD_NOT_FOUND,
                 message: format!("Unknown tool: {}", request.name).into(),
