@@ -2,7 +2,6 @@
 
 pub mod convo_think;
 pub mod detailed_help;
-pub mod inner_voice;
 pub mod knowledge_graph;
 pub mod maintenance;
 pub mod search_thoughts;

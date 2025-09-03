@@ -85,22 +85,7 @@ impl SurrealMindServer {
             // Legacy aliases for help
             "convo_think" => json!({"alias_of": "think_convo"}),
             "tech_think" => json!({"alias_of": "think_plan"}),
-            "inner_voice" => json!({
-                "name": "inner_voice",
-                "description": "RAG query tool: retrieves relevant thoughts, synthesizes answer from sources, optionally stages KG candidates from retrieved thoughts; saves summary thought by default.",
-                "arguments": {
-                    "content": "string (required) — query text",
-                    "top_k": "integer|string (1-50, default: 5) — max thoughts to retrieve",
-                    "sim_thresh": "number (0.0-1.0, default: 0.5) — similarity threshold",
-                    "stage_kg": "boolean (default: false) — stage candidates from retrieved thoughts",
-                    "confidence_min": "number (0.0-1.0, default: 0.6) — staging threshold",
-                    "max_nodes": "integer|string (default: 30) — max entities to stage",
-                    "max_edges": "integer|string (default: 60) — max relationships to stage",
-                    "save": "boolean (default: true) — persist synthesized summary thought",
-                    "auto_mark_removal": "boolean (default: false) — set sources to status='removal' after staging"
-                },
-                "returns": {"synthesized_answer": "string", "saved_thought_id": "string?", "sources": "array", "staged": "object", "marked_for_removal": "number"}
-            }),
+
             "think_search" => json!({
                 "name": "think_search",
                 "description": "Semantic search over stored thoughts; computes similarity client-side.",

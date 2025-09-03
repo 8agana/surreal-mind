@@ -22,7 +22,6 @@ fn test_list_tools_returns_expected_tools() {
         "think_debug",
         "think_build",
         "think_stuck",
-        "inner_voice",
         "think_search",
         "memories_create",
         "memories_search",
@@ -32,8 +31,8 @@ fn test_list_tools_returns_expected_tools() {
     ];
     assert_eq!(
         expected_tools.len(),
-        12,
-        "Tool roster should list 12 entries in Phase 1"
+        11,
+        "Tool roster should list 11 entries in Phase 1"
     );
 }
 

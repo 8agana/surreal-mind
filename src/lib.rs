@@ -9,7 +9,6 @@ pub mod schemas;
 pub mod serializers;
 pub mod server;
 pub mod tools;
-pub mod synthesis;
 
 use anyhow::Result;
 use reqwest::Client;

@@ -31,28 +31,6 @@ pub fn tech_think_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
-pub fn inner_voice_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "content": {"type": "string"},
-            "top_k": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 50},
-            "sim_thresh": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-            "stage_kg": {"type": "boolean", "default": false},
-            "confidence_min": {"type": ["number", "string"], "minimum": 0.0, "maximum": 1.0, "default": 0.6},
-            "max_nodes": {"type": ["integer", "number", "string"], "default": 30},
-            "max_edges": {"type": ["integer", "number", "string"], "default": 60},
-            "save": {"type": "boolean", "default": true},
-            "auto_mark_removal": {"type": "boolean", "default": false},
-            "when": {"type": "string", "description": "Temporal filter (e.g., 'yesterday', 'last week', 'this month')"},
-            "limit": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 100},
-            "order": {"type": "string", "enum": ["created_at_desc", "created_at_asc"], "default": "created_at_desc"}
-        },
-        "required": ["content"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
 pub fn search_thoughts_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
@@ -178,7 +156,7 @@ pub fn detailed_help_schema() -> Arc<Map<String, Value>> {
             "tool": {"type": "string", "enum": [
                 // New tool names
                 "think_convo", "think_plan", "think_debug", "think_build", "think_stuck",
-                "inner_voice", "think_search",
+                "think_search",
                 "memories_create", "memories_search", "memories_moderate",
                 "maintenance_ops",
                 // Legacy aliases (supported for compatibility in help)

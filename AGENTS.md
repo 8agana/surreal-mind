@@ -7,7 +7,7 @@ This file is the working guide for operating and extending the Surreal Mind MCP 
 — WARP users: `WARP.md` is a symlink to this file.
 
 ## Purpose
-Surreal Mind augments agent thinking with persistent memory backed by SurrealDB and a Knowledge Graph (KG). It exposes MCP tools for capturing thoughts, retrieving relevant memories, performing grounded synthesis, and running maintenance operations.
+Surreal Mind augments agent thinking with persistent memory backed by SurrealDB and a Knowledge Graph (KG). It exposes MCP tools for capturing thoughts, retrieving relevant memories, and running maintenance operations.
 
 ## Current State
 - Embeddings: OpenAI `text-embedding-3-small` at 1536 dims is primary. Candle BGE-small-en-v1.5 (384 dims) is for local dev/fallback only. No Nomic. No fake/deterministic embedders.
@@ -21,7 +21,6 @@ Surreal Mind augments agent thinking with persistent memory backed by SurrealDB 
 - `think_plan`: Planning-oriented thought capture (same backbone; different candidate pool size).
 - `think_debug`, `think_build`, `think_stuck`: Variants tuned for retrieval pool size only. No behavior drift beyond thresholds.
 - `think_search`: Dimension-safe semantic search over thoughts.
-- `inner_voice`: Unified RAG + NLQ tool. Standard mode: retrieval + grounded synthesis with optional summary storage and KG staging. NLQ mode (when `when`, `limit`, or `order` params provided): SQL prefiltered temporal queries with cosine ranking for natural language queries over thoughts.
 - `memories_create` (alias: `knowledgegraph_create`): Create KG entities/observations.
 - `memories_search` (alias: `knowledgegraph_search`): Search KG.
 - `memories_moderate` (alias: `knowledgegraph_moderate`): Review/stage KG entries.
@@ -66,33 +65,7 @@ See `src/schemas.rs`, `src/server/mod.rs`, and `src/tools/*` for exact parameter
   - Runtime/logging: `RUST_LOG`, `MCP_NO_LOG`, `SURR_TOOL_TIMEOUT_MS`.
   - Maintenance: `SURR_RETENTION_DAYS` for archival.
 
-## Synthesis Providers
-- Default chain: Gemini CLI Pro → Gemini CLI Flash → Groq (HTTP). Configure in `surreal_mind.toml` under `[synthesis]`.
-- Gemini CLI: requires the `gemini` binary available on PATH and authenticated. Models: `gemini-2.5-pro` (primary), `gemini-2.5-flash` (fallback).
-- Groq fallback: uses an OpenAI-compatible endpoint. Auth reads `GROQ_API_KEY`, or falls back to `OPENAI_API_KEY` if present.
 
-Example (surreal_mind.toml)
-
-```
-[synthesis]
-providers = ["gemini_cli:pro", "gemini_cli:flash", "groq"]
-
-[synthesis.gemini_cli]
-path = "gemini"
-pro_model = "gemini-2.5-pro"
-flash_model = "gemini-2.5-flash"
-timeout_ms = 20000
-max_output_bytes = 131072
-
-[synthesis.groq]
-base_url = "https://api.groq.com/openai/v1"
-model = "llama-3.1-70b-versatile"
-timeout_ms = 20000
-```
-
-Notes
-- Content-level refusals do not trigger fallback; only infra/format errors do.
-- inner_voice builds a grounded prompt and enforces a strict JSON contract `{ answer, sources[] }`.
 
 ## Build & Run
 - Prereqs: Rust toolchain, SurrealDB reachable via WebSocket, `.env` from `.env.example`.
@@ -119,10 +92,7 @@ Notes
 3) Confirm logs show `provider=openai`, `model=text-embedding-3-small`, `dims=1536`.
 
 ## Roadmap (next focus)
-- Inner Voice “Natural” mode MVP:
-  - `when` (natural language) → date_range filter before cosine.
-  - Grounded synthesis with `{ answer, sources[] }` and refusal when not grounded.
-  - Save summary thought with `is_summary=true`, `summary_of=[ids]`; optional KG staging behind a flag.
+
 - Restore injection thresholds to recommended values after validation.
 - Light cleanup: confirm DB indexes, drop dead imports, update docs as code stabilizes.
 
