@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
     let embedder = create_embedder(&config).await?;
     let embed_dims = embedder.dimensions();
     println!(
-        "✅ Embedder initialized (expected primary dims = {}), provider/model from env",
+        "✅ Embedder initialized (expected primary dims = {}), provider/model from config",
         embed_dims
     );
 
@@ -93,9 +93,8 @@ async fn main() -> Result<()> {
         let existing_emb_len = thought["emb_len"].as_u64().unwrap_or(0) as usize;
         let existing_model = thought["embedding_model"].as_str().unwrap_or("");
 
-        // Skip if already embedded with the current embedder's dimensions AND model matches env model
-        let target_model = std::env::var("SURR_EMBED_MODEL")
-            .unwrap_or_else(|_| "text-embedding-3-small".to_string());
+        // Skip if already embedded with the current embedder's dimensions AND model matches config model
+        let target_model = config.system.embedding_model.clone();
         if existing_emb_len == embed_dims && existing_model == target_model {
             skip_count += 1;
             continue;
@@ -106,9 +105,8 @@ async fn main() -> Result<()> {
             Ok(new_embedding) => {
                 // Update thought with new embedding and metadata
                 let (provider, model) = (
-                    std::env::var("SURR_EMBED_PROVIDER").unwrap_or_else(|_| "openai".to_string()),
-                    std::env::var("SURR_EMBED_MODEL")
-                        .unwrap_or_else(|_| "text-embedding-3-small".to_string()),
+                    config.system.embedding_provider.clone(),
+                    config.system.embedding_model.clone(),
                 );
                 let query = "UPDATE type::thing('thoughts', $id) SET embedding = $embedding, embedding_provider = $provider, embedding_model = $model, embedding_dim = $dims, embedded_at = time::now() RETURN meta::id(id) as id";
 
