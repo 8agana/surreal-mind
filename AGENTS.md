@@ -74,6 +74,64 @@ See `src/schemas.rs`, `src/server/mod.rs`, and `src/tools/*` for exact parameter
 - Logs: `RUST_LOG=surreal_mind=debug,rmcp=info cargo run`.
 - Binary (release): `target/release/surreal-mind`.
 
+## Warp Code Integration (Profiles and Flow)
+Warp Code provides an in-terminal "prompt → diff → review → apply" loop. If the profile picker is not available yet on your account, use the shortcuts below to emulate profiles.
+
+Recommended profiles for this repo
+- Build (Rust MCP): Implement features with guardrails and standards.
+- Debug (Root cause): Investigate first; propose minimal, reversible fixes.
+- Docs/Release: Keep docs/config/tests aligned with behavior.
+
+Guardrails enforced
+- Env-first configuration; do not introduce Docker.
+- No fake/deterministic embedders; respect provider/model/dim stamps.
+- Never compare embeddings across mismatched dimensions.
+- Injection is KG-only; respect scale limits and thresholds.
+- Rust standards: cargo fmt, clippy (treat warnings as errors), cargo check, cargo test before calling work "done".
+
+Shortcuts (profile emulation)
+Use these as slash-style prompts to seed agent behavior until native profile UI is visible:
+
+```yaml path=null start=null
+shortcuts:
+  - name: /build
+    description: Implement features with Rust MCP guardrails
+    prompt: |
+      Act as a Build profile for a Rust MCP project.
+      Requirements:
+      - Propose diffs; do not apply until I accept.
+      - Enforce: cargo fmt, clippy (warnings as errors), cargo check, cargo test.
+      - Env-first configuration; no Docker; no fake/deterministic embeddings.
+      - Maintain embedding_dim hygiene and provider/model/dim stamps.
+      - Suggest a branch name and concise commit message; do not commit without asking.
+      Context focus: src/tools/, src/server/mod.rs, src/schemas.rs, src/config.rs, tests/
+
+  - name: /debug
+    description: Investigate failures and propose minimal fixes
+    prompt: |
+      Act as a Debug profile (root cause first, minimal reversible changes).
+      Requirements:
+      - Read-first; do not apply changes without confirmation.
+      - Prefer logs/repro and minimal blast radius fixes; gate behind flags.
+      - Highlight risky edits and tradeoffs.
+      Priority files: src/embeddings.rs, src/server/, src/tools/, tests/
+
+  - name: /docs
+    description: Update docs/config/tests after code changes
+    prompt: |
+      Act as a Docs/Release profile.
+      Requirements:
+      - Propose diffs to README/WARP.md/config docs/tests when schemas or behavior change.
+      - Document env vars; avoid Docker instructions.
+      - Keep Quick Start and SOPs accurate.
+```
+
+Using profiles in practice
+1) Start with /build, /debug, or /docs.
+2) Describe the task and constraints (e.g., "env-first; update schemas/tests; fix clippy warnings").
+3) Review the proposed diffs; request tweaks until correct; then accept to apply.
+4) Verify in terminal: run fmt, clippy, check, test; iterate if issues are found.
+
 ## Testing
 - Unit tests live near modules; integration tests under `tests/`.
 - Avoid external network; mock embeddings/DB where possible.
