@@ -86,46 +86,82 @@ impl SurrealMindServer {
         };
 
         let dim = self.embedder.dimensions() as i64;
-        let limit = params
+        let final_limit = params
             .limit
             .unwrap_or(self.config.nlq.default_limit)
             .clamp(1, self.config.nlq.max_limit);
+        // Use larger candidate pool for ranking, then truncate to final_limit
+        let sql_limit = std::cmp::min(
+            self.config.retrieval.candidates,
+            self.config.retrieval.db_limit,
+        );
 
         // Build SQL
         let sql = format!(
-            "SELECT meta::id(id) as id, content, created_at \
+            "SELECT meta::id(id) as id, content, embedding, created_at \
              FROM thoughts \
              WHERE array::len(embedding) = $dim \
                AND created_at >= $from AND created_at < $to \
-               AND content ~ $keyword_regex \
+               {} \
                AND (is_summary IS NONE OR is_summary != true) \
                AND (pipeline IS NONE OR pipeline != 'inner_voice') \
              {} \
              LIMIT $limit",
+            if self.config.nlq.enable_keyword_filter {
+                "AND content ~ $keyword_regex"
+            } else {
+                ""
+            },
             order_clause
         );
 
         tracing::debug!("NLQ query: {}", sql);
 
-        let rows: Vec<Value> = self
+        let mut query = self
             .db
             .query(&sql)
             .bind(("dim", dim))
             .bind(("from", from))
-            .bind(("to", to))
-            .bind(("keyword_regex", keyword_regex))
-            .bind(("limit", limit))
-            .await?
-            .take(0)?;
+            .bind(("to", to));
+        if self.config.nlq.enable_keyword_filter {
+            query = query.bind(("keyword_regex", keyword_regex));
+        }
+        let rows: Vec<Value> = query.bind(("limit", sql_limit as i64)).await?.take(0)?;
 
-        // Build sources (no mismatches since we filter by dim)
-        let sources: Vec<_> = rows
+        // Stage B: Compute similarity against NLQ query
+        let query_embedding = self.embedder.embed(&params.query).await?;
+        let mut scored_sources: Vec<_> = rows
             .iter()
-            .map(|row| {
+            .filter_map(|row| {
+                let embedding: Vec<f32> = row["embedding"]
+                    .as_array()?
+                    .iter()
+                    .filter_map(|v| v.as_f64())
+                    .map(|v| v as f32)
+                    .collect();
+                if embedding.len() != query_embedding.len() {
+                    return None;
+                }
+                let score = crate::server::SurrealMindServer::cosine_similarity(
+                    &query_embedding,
+                    &embedding,
+                );
+                Some((score, row))
+            })
+            .collect();
+
+        // Sort by score descending and take final limit
+        scored_sources.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        scored_sources.truncate(final_limit);
+
+        // Build sources with actual scores
+        let sources: Vec<_> = scored_sources
+            .iter()
+            .map(|(score, row)| {
                 json!({
                     "id": row["id"],
                     "created_at": row["created_at"],
-                    "score": 0.0 // for now, no score since no similarity
+                    "score": score
                 })
             })
             .collect();
@@ -134,11 +170,46 @@ impl SurrealMindServer {
             // Refuse if ungrounded
             String::from("I'm sorry, I couldn't find any relevant thoughts for that query.")
         } else {
-            format!(
-                "Based on {} retrieved thoughts, here are the relevant sources.",
-                sources.len()
-            )
+            // Grounded synthesis: Extract snippets from top sources
+            let top_sources = scored_sources.iter().take(3).collect::<Vec<_>>();
+            let snippets: Vec<String> = top_sources
+                .iter()
+                .filter_map(|(_, row)| {
+                    let content = row["content"].as_str()?;
+                    let excerpt = if content.len() <= 50 {
+                        format!("\"{}\"", content)
+                    } else {
+                        format!("\"{}...\"", &content[..50])
+                    };
+                    Some(excerpt)
+                })
+                .collect();
+            if snippets.is_empty() {
+                format!(
+                    "Found {} relevant thoughts, but couldn't extract content.",
+                    sources.len()
+                )
+            } else {
+                format!(
+                    "Based on relevant thoughts, here are key insights: {}",
+                    snippets.join("; ")
+                )
+            }
         };
+
+        // Debug metrics
+        tracing::debug!(
+            "NLQ metrics: window_from={}, window_to={}, final_limit={}, sql_limit={}, keywords_count={}, candidates_scanned={}, candidates_after_sql={}, sim_evaluated={}, returned={}",
+            from,
+            to,
+            final_limit,
+            sql_limit,
+            entities.len(),
+            sql_limit,
+            rows.len(),
+            scored_sources.len(),
+            sources.len()
+        );
 
         Ok(CallToolResult::structured(json!({
             "answer": answer,
