@@ -40,28 +40,30 @@ pub async fn run_reembed(
     missing_only: bool,
     dry_run: bool,
 ) -> Result<ReembedStats> {
+    // Load configuration
+    let config = crate::config::Config::load()?;
+
     // HTTP SQL client
-    let host = std::env::var("SURR_DB_URL").unwrap_or_else(|_| "127.0.0.1:8000".to_string());
+    let host = config.system.database_url.clone();
     let http_base = if host.starts_with("http") {
         host
     } else {
         format!("http://{}", host)
     };
     let sql_url = format!("{}/sql", http_base.trim_end_matches('/'));
-    let user = std::env::var("SURR_DB_USER").unwrap_or_else(|_| "root".to_string());
-    let pass = std::env::var("SURR_DB_PASS").unwrap_or_else(|_| "root".to_string());
-    let ns = std::env::var("SURR_DB_NS").unwrap_or_else(|_| "surreal_mind".to_string());
-    let dbname = std::env::var("SURR_DB_DB").unwrap_or_else(|_| "consciousness".to_string());
+    let user = config.runtime.database_user.clone();
+    let pass = config.runtime.database_pass.clone();
+    let ns = config.system.database_ns.clone();
+    let dbname = config.system.database_db.clone();
     let http = Client::builder()
         .timeout(std::time::Duration::from_secs(20))
         .build()?;
 
     // Embedder
-    let embedder = embeddings::create_embedder().await?;
+    let embedder = embeddings::create_embedder(&config).await?;
     let expected_dim = embedder.dimensions();
-    let provider = std::env::var("SURR_EMBED_PROVIDER").unwrap_or_else(|_| "candle".to_string());
-    let model =
-        std::env::var("SURR_EMBED_MODEL").unwrap_or_else(|_| "BAAI/bge-small-en-v1.5".to_string());
+    let provider = config.system.embedding_provider.clone();
+    let model = config.system.embedding_model.clone();
 
     let mut start: usize = 0;
     let mut processed: usize = 0;

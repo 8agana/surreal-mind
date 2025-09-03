@@ -16,6 +16,7 @@ pub struct OpenAIEmbedder {
     api_key: String,
     model: String,
     dims: usize,
+    retries: u32,
 }
 
 #[derive(Serialize)]
@@ -37,7 +38,7 @@ struct OpenAIResponse {
 }
 
 impl OpenAIEmbedder {
-    pub fn new(api_key: String, model: String, dims: Option<usize>) -> Result<Self> {
+    pub fn new(api_key: String, model: String, dims: Option<usize>, retries: u32) -> Result<Self> {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(20))
             .build()
@@ -55,6 +56,7 @@ impl OpenAIEmbedder {
             api_key,
             model,
             dims,
+            retries,
         })
     }
 }
@@ -80,11 +82,7 @@ impl Embedder for OpenAIEmbedder {
 
         // Retry with simple exponential backoff
         let mut last_err: Option<anyhow::Error> = None;
-        let attempts = std::env::var("SURR_EMBED_RETRIES")
-            .ok()
-            .and_then(|s| s.parse::<u32>().ok())
-            .filter(|&n| n > 0 && n <= 5)
-            .unwrap_or(3);
+        let attempts = self.retries;
         for i in 0..attempts {
             let send_res = self
                 .client
@@ -148,17 +146,15 @@ impl Embedder for OpenAIEmbedder {
 
 // No per-call fallback wrapper. Selection happens at startup to avoid mixed dims.
 
-// Factory function to create embedder based on environment
-pub async fn create_embedder() -> Result<Arc<dyn Embedder>> {
+// Factory function to create embedder based on configuration
+pub async fn create_embedder(config: &crate::config::Config) -> Result<Arc<dyn Embedder>> {
     // Load .env file if it exists
     let _ = dotenvy::dotenv();
 
     // Configuration: prefer OpenAI when key present; else Candle
-    let provider = std::env::var("SURR_EMBED_PROVIDER").unwrap_or_else(|_| "openai".to_string());
+    let provider = &config.system.embedding_provider;
     // Allow explicit dimension override for custom models
-    let dim_override = std::env::var("SURR_EMBED_DIM")
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok());
+    let dim_override = Some(config.system.embedding_dimensions);
 
     // Helpers
     let is_placeholder = |s: &str| {
@@ -181,19 +177,21 @@ pub async fn create_embedder() -> Result<Arc<dyn Embedder>> {
             make_bge()
         }
         "openai" | "" => {
-            let key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
+            let key = config.runtime.openai_api_key.clone().unwrap_or_default();
             if !is_placeholder(&key) && !key.is_empty() {
-                let model = std::env::var("SURR_EMBED_MODEL")
-                    .ok()
-                    .filter(|m| !m.trim().is_empty())
-                    .unwrap_or_else(|| "text-embedding-3-small".to_string());
+                let model = config.system.embedding_model.clone();
                 let dims = dim_override.or(Some(1536));
                 info!(
                     "Using OpenAI embeddings (model={}, dims={})",
                     model,
                     dims.unwrap()
                 );
-                Ok(Arc::new(OpenAIEmbedder::new(key, model, dims)?))
+                Ok(Arc::new(OpenAIEmbedder::new(
+                    key,
+                    model,
+                    dims,
+                    config.system.embed_retries,
+                )?))
             } else {
                 info!("OPENAI_API_KEY not set; using Candle BGE-small (384)");
                 make_bge()
@@ -201,19 +199,21 @@ pub async fn create_embedder() -> Result<Arc<dyn Embedder>> {
         }
         _ => {
             // Unknown provider → try OpenAI if key exists, else Candle
-            let key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
+            let key = config.runtime.openai_api_key.clone().unwrap_or_default();
             if !is_placeholder(&key) && !key.is_empty() {
-                let model = std::env::var("SURR_EMBED_MODEL")
-                    .ok()
-                    .filter(|m| !m.trim().is_empty())
-                    .unwrap_or_else(|| "text-embedding-3-small".to_string());
+                let model = config.system.embedding_model.clone();
                 let dims = dim_override.or(Some(1536));
                 info!(
                     "Using OpenAI embeddings (model={}, dims={})",
                     model,
                     dims.unwrap()
                 );
-                Ok(Arc::new(OpenAIEmbedder::new(key, model, dims)?))
+                Ok(Arc::new(OpenAIEmbedder::new(
+                    key,
+                    model,
+                    dims,
+                    config.system.embed_retries,
+                )?))
             } else {
                 info!("Unknown provider and no OpenAI key; using Candle BGE-small (384)");
                 make_bge()
