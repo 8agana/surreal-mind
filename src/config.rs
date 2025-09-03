@@ -8,6 +8,7 @@ pub struct Config {
     pub retrieval: RetrievalConfig,
     pub orbital_mechanics: OrbitalConfig,
     pub submodes: HashMap<String, SubmodeConfig>,
+    pub nlq: NlqConfig,
     /// Runtime configuration loaded from environment variables
     #[serde(skip)]
     pub runtime: RuntimeConfig,
@@ -80,6 +81,16 @@ pub struct OrbitalWeights {
     pub recency: f32,
     pub access: f32,
     pub significance: f32,
+}
+
+/// NLQ configuration for natural language queries
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct NlqConfig {
+    pub timezone: String,     // IANA TZ, e.g., "America/Chicago"
+    pub default_limit: usize, // e.g., 25
+    pub max_limit: usize,     // e.g., 100
+    pub max_keywords: usize,  // cap keyword count for regex
+    pub enable_keyword_filter: bool,
 }
 
 /// Runtime configuration loaded from environment variables
@@ -229,6 +240,13 @@ impl Default for Config {
                 access_weight: 0.3,
             },
             submodes,
+            nlq: NlqConfig {
+                timezone: "America/Chicago".to_string(),
+                default_limit: 25,
+                max_limit: 100,
+                max_keywords: 10,
+                enable_keyword_filter: true,
+            },
             runtime: RuntimeConfig::default(),
         }
     }
