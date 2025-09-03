@@ -266,8 +266,7 @@ impl RuntimeConfig {
                 .unwrap_or(15_000),
             mcp_no_log: std::env::var("MCP_NO_LOG")
                 .ok()
-                .map(|v| v == "true" || v == "1")
-                .unwrap_or(false),
+                .is_some_and(|v| v == "true" || v == "1"),
             log_level: std::env::var("RUST_LOG")
                 .unwrap_or_else(|_| "surreal_mind=info,rmcp=info".to_string()),
             cache_max: std::env::var("SURR_CACHE_MAX")
@@ -292,16 +291,13 @@ impl RuntimeConfig {
                 .unwrap_or(500),
             embed_strict: std::env::var("SURR_EMBED_STRICT")
                 .ok()
-                .map(|v| v == "true" || v == "1")
-                .unwrap_or(false),
+                .is_some_and(|v| v == "true" || v == "1"),
             kg_embed_entities: std::env::var("SURR_KG_EMBED_ENTITIES")
                 .ok()
-                .map(|v| v != "false" && v != "0")
-                .unwrap_or(true),
+                .map_or(true, |v| v != "false" && v != "0"),
             kg_embed_observations: std::env::var("SURR_KG_EMBED_OBSERVATIONS")
                 .ok()
-                .map(|v| v != "false" && v != "0")
-                .unwrap_or(true),
+                .map_or(true, |v| v != "false" && v != "0"),
             kg_max_neighbors: std::env::var("SURR_KG_MAX_NEIGHBORS")
                 .ok()
                 .and_then(|v| v.parse().ok())
@@ -391,6 +387,13 @@ mod tests {
             },
             submodes,
             runtime: RuntimeConfig::default(),
+            nlq: NlqConfig {
+                timezone: "America/Chicago".to_string(),
+                default_limit: 25,
+                max_limit: 100,
+                max_keywords: 10,
+                enable_keyword_filter: true,
+            },
         };
 
         let mode = config.get_submode("nonexistent");

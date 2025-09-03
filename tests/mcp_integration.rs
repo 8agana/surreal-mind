@@ -3,14 +3,15 @@
 use rmcp::model::{CallToolRequestParam, PaginatedRequestParam};
 use rmcp::service::RequestContext;
 use rmcp::service::RoleServer;
-use surreal_mind::*;
+use surreal_mind::{config::Config, *};
 
 #[tokio::test]
 async fn test_tools_list_has_convo_think_when_enabled() {
     if std::env::var("RUN_DB_TESTS").is_err() {
         return;
     }
-    let server = SurrealMindServer::new().await.expect("server init");
+    let config = Config::load().expect("config load");
+    let server = SurrealMindServer::new(&config).await.expect("server init");
     let res = server
         .list_tools(
             Some(PaginatedRequestParam::default()),
@@ -27,7 +28,8 @@ async fn test_call_tool_invalid_params_rejected_when_enabled() {
     if std::env::var("RUN_DB_TESTS").is_err() {
         return;
     }
-    let server = SurrealMindServer::new().await.expect("server init");
+    let config = Config::load().expect("config load");
+    let server = SurrealMindServer::new(&config).await.expect("server init");
 
     // invalid injection_scale
     let mut obj = serde_json::Map::new();
