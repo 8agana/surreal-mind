@@ -172,7 +172,7 @@ impl HeuristicExtractor {
             if starts_upper {
                 // Skip common stopwords/time words when capitalized at sentence start
                 if stopwords.contains(lower.as_str()) {
-                    continue;
+                    // redundant continue; next iteration happens naturally
                 }
                 if cleaned.ends_with("ed") || cleaned.ends_with("ing") {
                     continue;

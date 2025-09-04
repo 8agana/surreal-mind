@@ -106,8 +106,14 @@ async fn main() -> Result<()> {
                 })
                 .unwrap_or_default();
             // Hygiene counts
-            if emb_len == 0 { missing_entities += 1; }
-            if emb_len != dims || !(model == "text-embedding-3-small" || model == "BAAI/bge-small-en-v1.5" || model == "bge-small-en-v1.5") {
+            if emb_len == 0 {
+                missing_entities += 1;
+            }
+            if emb_len != dims
+                || !(model == "text-embedding-3-small"
+                    || model == "BAAI/bge-small-en-v1.5"
+                    || model == "bge-small-en-v1.5")
+            {
                 mismatched_entities += 1;
             }
 
@@ -173,8 +179,14 @@ async fn main() -> Result<()> {
                 .unwrap_or("")
                 .to_string();
             // Hygiene counts
-            if emb_len == 0 { missing_obs += 1; }
-            if emb_len != dims || !(model == "text-embedding-3-small" || model == "BAAI/bge-small-en-v1.5" || model == "bge-small-en-v1.5") {
+            if emb_len == 0 {
+                missing_obs += 1;
+            }
+            if emb_len != dims
+                || !(model == "text-embedding-3-small"
+                    || model == "BAAI/bge-small-en-v1.5"
+                    || model == "bge-small-en-v1.5")
+            {
                 mismatched_obs += 1;
             }
 

@@ -28,6 +28,17 @@ Surreal Mind augments agent thinking with persistent memory backed by SurrealDB 
 
 See `src/schemas.rs`, `src/server/mod.rs`, and `src/tools/*` for exact parameters. `detailed_help` returns live schema/aliases.
 
+### Prompt Registry (AI-driven, discoverability-only)
+- Purpose: Expose stable, named prompt metadata (id, one-liner, purpose, inputs, constraints) for inspection and docs — no runtime auto-switching.
+- Surfaces via the existing `detailed_help` tool:
+  - Roster: `{ "tool": "detailed_help", "arguments": { "prompts": true } }`
+  - Full entry: `{ "tool": "detailed_help", "arguments": { "prompt_id": "think-search-v2", "format": "full" } }`
+- Metadata: `id`, `version`, `checksum`, `one_liner`, `purpose`, `inputs{}`, `constraints{}` (MCP_NO_LOG, no mixed dims, KG-only injection, etc.), `lineage{ parent_id?, created_at, created_by, change_rationale? }`.
+- Optional P3.5 metrics and critiques:
+  - `prompt_invocations`: usage tracking (success/refusal/error rates, latency, tokens).
+  - Critiques: stored as thoughts with `critique_data.prompt_id` linkage; use to generate evolution suggestions.
+- Guardrails: MCP_NO_LOG respected; registry does not change tool behavior; operator action required for updates.
+
 ## Embeddings Strategy
 - Primary: `SURR_EMBED_PROVIDER=openai`, `SURR_EMBED_MODEL=text-embedding-3-small`, `SURR_EMBED_DIM=1536` (implicit for this model).
 - Dev/Fallback: `SURR_EMBED_PROVIDER=candle` uses local BGE-small-en-v1.5 (384 dims). Only for development; do not mix dims in the same DB.
@@ -151,8 +162,21 @@ Using profiles in practice
 
 ## Roadmap (next focus)
 
+### Completed
+- **[2025-09-04] First AI-driven Feature**: Self-aware prompt registry with transparency, lineage, and critique capabilities.
+  - Transparent prompt metadata via detailed_help
+  - Git-style lineage with parent/child relationships
+  - Critique storage as linked thoughts
+  - MCP_NO_LOG and dimension guardrails
+  - Optional invocation metrics
+
+### Next
 - Restore injection thresholds to recommended values after validation.
 - Light cleanup: confirm DB indexes, drop dead imports, update docs as code stabilizes.
+- Potential prompt registry extensions:
+  - Critiques and evolution suggestions for core tools
+  - Usage stats collection for popular patterns
+  - Cross-reference support between prompts and thoughts
 
 ## Safety & Guardrails
 - Do not reintroduce fake/deterministic or Nomic embedders.

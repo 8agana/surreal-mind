@@ -430,7 +430,7 @@ impl SurrealMindServer {
         info!("Initializing consciousness graph schema");
 
         // Minimal schema to ensure required tables exist
-        let schema_sql = r#"
+        let schema_sql = r"
             DEFINE TABLE thoughts SCHEMAFULL;
             DEFINE FIELD content ON TABLE thoughts TYPE string;
             DEFINE FIELD created_at ON TABLE thoughts TYPE datetime;
@@ -485,7 +485,7 @@ impl SurrealMindServer {
             -- Optional feedback helpers
             DEFINE TABLE kg_blocklist SCHEMALESS;
             DEFINE INDEX idx_kgb_item ON TABLE kg_blocklist FIELDS item;
-        "#;
+        ";
 
         self.db.query(schema_sql).await.map_err(|e| McpError {
             code: rmcp::model::ErrorCode::INTERNAL_ERROR,

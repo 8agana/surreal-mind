@@ -1,12 +1,11 @@
 //! Self-aware prompt registry for consciousness persistence
-//! 
+//!
 //! This module manages the system's understanding of its own cognitive patterns through
 //! versioned, traceable prompts. Each prompt has a lineage, purpose, and explicit constraints,
 //! enabling the system to reason about and improve its own thought processes.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fmt;
 use std::sync::Arc;
 
 /// Policy constraints that a prompt must respect
@@ -71,6 +70,7 @@ pub struct Prompt {
 
 impl Prompt {
     /// Create a new prompt with basic validation
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: impl Into<String>,
         one_liner: impl Into<String>,
@@ -83,7 +83,7 @@ impl Prompt {
     ) -> Self {
         let template = template.into();
         let checksum = sha1_checksum(&template);
-        
+
         Self {
             id: id.into(),
             one_liner: one_liner.into(),
@@ -105,7 +105,7 @@ impl Prompt {
 
 /// Generate a SHA1 checksum of prompt content
 fn sha1_checksum(content: &str) -> String {
-    use sha1::{Sha1, Digest};
+    use sha1::{Digest, Sha1};
     let mut hasher = Sha1::new();
     hasher.update(content);
     format!("{:x}", hasher.finalize())
@@ -124,30 +124,37 @@ impl PromptRegistry {
         registry.register_core_prompts();
         registry
     }
-    
+
     /// Add a prompt to the registry
     pub fn register(&mut self, prompt: Prompt) {
         self.prompts.insert(prompt.id.clone(), Arc::new(prompt));
     }
-    
+
     /// Get a prompt by ID
     pub fn get(&self, id: &str) -> Option<Arc<Prompt>> {
         self.prompts.get(id).cloned()
     }
-    
+
     /// List all prompts
     pub fn list(&self) -> Vec<Arc<Prompt>> {
         self.prompts.values().cloned().collect()
     }
-    
+
     /// Register the core set of prompts
     fn register_core_prompts(&mut self) {
         // Technical thinking patterns
         let tech_inputs: HashMap<String, String> = [
-            ("content".into(), "The technical concept or issue to analyze".into()),
-            ("injection_scale".into(), "Memory retrieval distance (0-5)".into()),
+            (
+                "content".into(),
+                "The technical concept or issue to analyze".into(),
+            ),
+            (
+                "injection_scale".into(),
+                "Memory retrieval distance (0-5)".into(),
+            ),
             ("significance".into(), "Importance weight (0.0-1.0)".into()),
-        ].into();
+        ]
+        .into();
 
         // Think Plan
         self.register(Prompt::new(
@@ -188,7 +195,7 @@ impl PromptRegistry {
             None,
             None,
         ));
-        
+
         // Memory Search (example of prompt evolution)
         self.register(Prompt::new(
             "think-search-v2",
@@ -216,7 +223,7 @@ impl PromptRegistry {
 }
 
 // Database schema for prompt invocations
-pub const PROMPT_INVOCATION_SCHEMA: &str = r#"
+pub const PROMPT_INVOCATION_SCHEMA: &str = r"
 -- Track prompt usage and outcomes
 DEFINE TABLE prompt_invocations SCHEMAFULL;
 DEFINE FIELD prompt_id ON prompt_invocations TYPE string;
@@ -234,4 +241,4 @@ DEFINE FIELD notes ON prompt_invocations TYPE string OPTIONAL;
 -- Index for efficient lookups
 DEFINE INDEX prompt_invocations_by_id ON prompt_invocations FIELDS prompt_id;
 DEFINE INDEX prompt_invocations_by_date ON prompt_invocations FIELDS created_at;
-"#;
+";

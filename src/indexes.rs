@@ -1,5 +1,5 @@
 //! Index definitions and validation for SurrealDB tables
-//! 
+//!
 //! This module defines the expected indexes for each table and provides
 //! utilities for validating index health.
 
@@ -19,11 +19,17 @@ impl IndexType {
     /// Convert the index into its SurrealDB definition string
     pub fn to_definition(&self) -> String {
         match self {
-            IndexType::Single(field) => format!("DEFINE INDEX idx_{} ON TABLE {} FIELDS {}", field, "{table}", field),
+            IndexType::Single(field) => format!(
+                "DEFINE INDEX idx_{} ON TABLE {} FIELDS {}",
+                field, "{table}", field
+            ),
             IndexType::Composite(fields) => {
                 let field_list = fields.join(", ");
                 let name = fields.join("_");
-                format!("DEFINE INDEX idx_{} ON TABLE {} FIELDS {}", name, "{table}", field_list)
+                format!(
+                    "DEFINE INDEX idx_{} ON TABLE {} FIELDS {}",
+                    name, "{table}", field_list
+                )
             }
         }
     }
@@ -85,9 +91,7 @@ pub fn get_expected_indexes() -> Vec<TableIndexes> {
         // Extended set (additional indexed tables)
         TableIndexes {
             table: "recalls".into(),
-            required: vec![
-                IndexType::Single("created_at".into()),
-            ],
+            required: vec![IndexType::Single("created_at".into())],
             optional: vec![],
         },
         TableIndexes {
@@ -115,9 +119,7 @@ pub fn get_expected_indexes() -> Vec<TableIndexes> {
         },
         TableIndexes {
             table: "kg_blocklist".into(),
-            required: vec![
-                IndexType::Single("item".into()),
-            ],
+            required: vec![IndexType::Single("item".into())],
             optional: vec![],
         },
     ]

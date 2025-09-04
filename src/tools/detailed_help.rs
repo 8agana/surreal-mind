@@ -20,18 +20,24 @@ impl SurrealMindServer {
             .and_then(|v| v.as_str())
             .unwrap_or("full");
         // Prompt registry view
-        if args.get("prompts").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if args
+            .get("prompts")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             let reg = crate::prompts::PromptRegistry::new();
             let list = reg
                 .list()
                 .into_iter()
-                .map(|p| json!({
-                    "id": p.id,
-                    "one_liner": p.one_liner,
-                    "version": p.version,
-                    "checksum": p.lineage.checksum,
-                    "inputs": p.inputs,
-                }))
+                .map(|p| {
+                    json!({
+                        "id": p.id,
+                        "one_liner": p.one_liner,
+                        "version": p.version,
+                        "checksum": p.lineage.checksum,
+                        "inputs": p.inputs,
+                    })
+                })
                 .collect::<Vec<_>>();
             return Ok(CallToolResult::structured(json!({ "prompts": list })));
         }

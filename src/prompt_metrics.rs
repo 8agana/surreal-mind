@@ -1,5 +1,5 @@
 //! Prompt invocation tracking and metrics
-//! 
+//!
 //! This module handles recording and analyzing prompt usage patterns, helping the
 //! system understand how its cognitive frameworks are performing and evolving.
 
@@ -46,6 +46,7 @@ pub struct PromptInvocation {
 
 impl PromptInvocation {
     /// Create a new invocation record
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         prompt: &Prompt,
         tool: impl Into<String>,
@@ -100,14 +101,16 @@ impl crate::server::SurrealMindServer {
             .create("prompt_invocations")
             .content(invocation)
             .await?
-            .take().ok_or_else(|| crate::error::SurrealMindError::Internal {
+            .take()
+            .ok_or_else(|| crate::error::SurrealMindError::Internal {
                 message: "Failed to get prompt invocation from response".into(),
             })?;
-        
-        Ok(created.id
+
+        created
+            .id
             .ok_or_else(|| crate::error::SurrealMindError::Internal {
                 message: "Failed to create prompt invocation record".into(),
-            })?)
+            })
     }
 
     /// Get metrics for a specific prompt
@@ -129,13 +132,15 @@ impl crate::server::SurrealMindServer {
                 WHERE prompt_id = $id
                 GROUP ALL",
             )
-.bind(("id", prompt_id.to_string()))
+            .bind(("id", prompt_id.to_string()))
             .await?
             .take(0)?;
 
-        let stats = stats.first().ok_or_else(|| crate::error::SurrealMindError::Internal {
-            message: "No stats returned for prompt".into(),
-        })?;
+        let stats = stats
+            .first()
+            .ok_or_else(|| crate::error::SurrealMindError::Internal {
+                message: "No stats returned for prompt".into(),
+            })?;
 
         // Get common errors
         let errors: Vec<serde_json::Value> = self
@@ -151,7 +156,7 @@ impl crate::server::SurrealMindServer {
                 ORDER BY count DESC
                 LIMIT 5",
             )
-.bind(("id", prompt_id.to_string()))
+            .bind(("id", prompt_id.to_string()))
             .await?
             .take(0)?;
 
@@ -179,9 +184,7 @@ impl crate::server::SurrealMindServer {
             avg_latency_ms: stats["avg_latency"].as_f64().unwrap_or(0.0) as f32,
             avg_tokens_in: stats["avg_tokens_in"].as_f64().unwrap_or(0.0) as f32,
             avg_tokens_out: stats["avg_tokens_out"].as_f64().unwrap_or(0.0) as f32,
-            avg_coverage: stats["avg_coverage"]
-                .as_f64()
-                .map(|v| v as f32),
+            avg_coverage: stats["avg_coverage"].as_f64().map(|v| v as f32),
             common_errors: errors
                 .into_iter()
                 .filter_map(|e| {
@@ -196,14 +199,16 @@ impl crate::server::SurrealMindServer {
 }
 
 /// Initialize prompt_invocations table
-pub async fn init_prompt_metrics(db: &surrealdb::Surreal<surrealdb::engine::remote::ws::Client>) -> Result<()> {
+pub async fn init_prompt_metrics(
+    db: &surrealdb::Surreal<surrealdb::engine::remote::ws::Client>,
+) -> Result<()> {
     use crate::prompts::PROMPT_INVOCATION_SCHEMA;
-    
-    db.query(PROMPT_INVOCATION_SCHEMA)
-        .await
-        .map_err(|e| crate::error::SurrealMindError::Database {
+
+    db.query(PROMPT_INVOCATION_SCHEMA).await.map_err(|e| {
+        crate::error::SurrealMindError::Database {
             message: format!("Failed to initialize prompt metrics: {}", e),
-        })?;
-    
+        }
+    })?;
+
     Ok(())
 }
