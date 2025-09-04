@@ -34,7 +34,7 @@ impl SurrealMindServer {
             // Get current indexes for table
             let info: Vec<TableInfo> = self.db
                 .query("INFO FOR TABLE $table")
-                .bind(("table", &table_def.table))
+                .bind(("table", table_def.table.clone()))
                 .await?
                 .take(0)?;
 
