@@ -20,7 +20,7 @@
   "id": 2,
   "method": "tools/call",
   "params": {
-    "name": "search_thoughts",
+    "name": "think_search",
     "arguments": {
       "content": "artificial intelligence",
       "top_k": 5,

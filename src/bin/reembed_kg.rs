@@ -58,8 +58,12 @@ async fn main() -> Result<()> {
 
     let mut updated_entities = 0usize;
     let mut skipped_entities = 0usize;
+    let mut mismatched_entities = 0usize;
+    let mut missing_entities = 0usize;
     let mut updated_obs = 0usize;
     let mut skipped_obs = 0usize;
+    let mut mismatched_obs = 0usize;
+    let mut missing_obs = 0usize;
 
     // Entities
     {
@@ -101,6 +105,12 @@ async fn main() -> Result<()> {
                         .map(|s| s.to_string())
                 })
                 .unwrap_or_default();
+            // Hygiene counts
+            if emb_len == 0 { missing_entities += 1; }
+            if emb_len != dims || !(model == "text-embedding-3-small" || model == "BAAI/bge-small-en-v1.5" || model == "bge-small-en-v1.5") {
+                mismatched_entities += 1;
+            }
+
             if emb_len == dims
                 && (model == "text-embedding-3-small"
                     || model == "BAAI/bge-small-en-v1.5"
@@ -162,6 +172,12 @@ async fn main() -> Result<()> {
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
+            // Hygiene counts
+            if emb_len == 0 { missing_obs += 1; }
+            if emb_len != dims || !(model == "text-embedding-3-small" || model == "BAAI/bge-small-en-v1.5" || model == "bge-small-en-v1.5") {
+                mismatched_obs += 1;
+            }
+
             if emb_len == dims
                 && (model == "text-embedding-3-small"
                     || model == "BAAI/bge-small-en-v1.5"
@@ -201,12 +217,12 @@ async fn main() -> Result<()> {
 
     println!("\n===== KG RE-EMBED SUMMARY =====");
     println!(
-        "Entities: updated={}, skipped={}",
-        updated_entities, skipped_entities
+        "Entities: updated={}, skipped={}, mismatched={}, missing={}",
+        updated_entities, skipped_entities, mismatched_entities, missing_entities
     );
     println!(
-        "Observations: updated={}, skipped={}",
-        updated_obs, skipped_obs
+        "Observations: updated={}, skipped={}, mismatched={}, missing={}",
+        updated_obs, skipped_obs, mismatched_obs, missing_obs
     );
     println!("Provider/model: {} / {} ({} dims)", prov, model, dims);
 

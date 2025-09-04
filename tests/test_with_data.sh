@@ -39,7 +39,7 @@ echo "3. Testing search with broader terms..."
 {
     echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'
     echo '{"jsonrpc":"2.0","method":"notifications/initialized"}'
-    echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"search_thoughts","arguments":{"content":"neural networks deep learning","top_k":5,"sim_thresh":0.2}}}'
+    echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"think_search","arguments":{"content":"neural networks deep learning","top_k":5,"sim_thresh":0.2}}}'
     sleep 2
 } | cargo run --bin surreal-mind 2>/dev/null | grep -E '"total"|"results"|"error"'
 
@@ -48,7 +48,7 @@ echo "4. Testing search with very low threshold..."
 {
     echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'
     echo '{"jsonrpc":"2.0","method":"notifications/initialized"}'
-    echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"search_thoughts","arguments":{"content":"technology algorithms","top_k":5,"sim_thresh":0.1}}}'
+    echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"think_search","arguments":{"content":"technology algorithms","top_k":5,"sim_thresh":0.1}}}'
     sleep 2
 } | cargo run --bin surreal-mind 2>/dev/null | grep -E '"total"|"results"|"error"'
 

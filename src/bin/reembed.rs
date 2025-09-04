@@ -73,6 +73,8 @@ async fn main() -> Result<()> {
     let mut success_count = 0;
     let mut skip_count = 0;
     let mut error_count = 0;
+    let mut mismatched_count = 0;
+    let mut missing_count = 0;
 
     println!("\n🔄 Re-embedding thoughts with configured embedder (OpenAI→BGE fallback)...");
     for i in 0..thoughts.len() {
@@ -92,6 +94,13 @@ async fn main() -> Result<()> {
         let content = thought["content"].as_str().unwrap_or("").to_string();
         let existing_emb_len = thought["emb_len"].as_u64().unwrap_or(0) as usize;
         let existing_model = thought["embedding_model"].as_str().unwrap_or("");
+
+        // Hygiene counts
+        if existing_emb_len == 0 {
+            missing_count += 1;
+        } else if existing_emb_len != embed_dims || existing_model != config.system.embedding_model {
+            mismatched_count += 1;
+        }
 
         // Skip if already embedded with the current embedder's dimensions AND model matches config model
         let target_model = config.system.embedding_model.clone();
@@ -151,6 +160,8 @@ async fn main() -> Result<()> {
         embed_dims, skip_count
     );
     println!("❌ Errors: {} thoughts", error_count);
+    println!("🧪 Mismatched dims/model: {}", mismatched_count);
+    println!("∅ Missing embeddings: {}", missing_count);
     println!("🎯 Target embedding dimensions: {}", embed_dims);
     println!("{}", "=".repeat(50));
 

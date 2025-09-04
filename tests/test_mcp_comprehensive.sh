@@ -62,45 +62,45 @@ run_test "Initialize Protocol" \
 # Test 2: List Tools
 run_test "List Tools" \
 '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
-'"name":"convo_think"'
+'"name":"think_convo"'
 
-# Test 3: Basic convo_think tool call
-run_test "Basic convo_think (no injection)" \
-'{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"convo_think","arguments":{"content":"This is a test thought for verification.","injection_scale":0}}}' \
+# Test 3: Basic think_convo tool call
+run_test "Basic think_convo (no injection)" \
+'{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"think_convo","arguments":{"content":"This is a test thought for verification.","injection_scale":0}}}' \
 '"thought_id"'
 
-# Test 4: convo_think with memory injection
-run_test "convo_think with memory injection" \
-'{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"convo_think","arguments":{"content":"Another test thought with memory injection enabled.","injection_scale":3}}}' \
+# Test 4: think_convo with memory injection
+run_test "think_convo with memory injection" \
+'{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"think_convo","arguments":{"content":"Another test thought with memory injection enabled.","injection_scale":3}}}' \
 '"memories_injected"'
 
-# Test 5: convo_think with high significance
-run_test "convo_think with high significance" \
-'{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"convo_think","arguments":{"content":"Very important thought that should be highly ranked.","injection_scale":1,"significance":0.9}}}' \
+# Test 5: think_convo with high significance
+run_test "think_convo with high significance" \
+'{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"think_convo","arguments":{"content":"Very important thought that should be highly ranked.","injection_scale":1,"significance":0.9}}}' \
 '"enriched_content"'
 
-# Test 6: convo_think with tags and submode
-run_test "convo_think with tags and submode" \
-'{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"convo_think","arguments":{"content":"Philosophical thought about consciousness.","injection_scale":5,"submode":"philosophical","tags":["philosophy","consciousness","ai"]}}}' \
+# Test 6: think_convo with tags and submode
+run_test "think_convo with tags and submode" \
+'{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"think_convo","arguments":{"content":"Philosophical thought about consciousness.","injection_scale":5,"submode":"philosophical","tags":["philosophy","consciousness","ai"]}}}' \
 '"orbital_proximities"'
 
 # Test 7: Multiple rapid thoughts (testing memory injection)
 run_test "Rapid thought sequence 1" \
-'{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"convo_think","arguments":{"content":"First thought in a sequence about machine learning.","injection_scale":2}}}' \
+'{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"think_convo","arguments":{"content":"First thought in a sequence about machine learning.","injection_scale":2}}}' \
 '"thought_id"'
 
 run_test "Rapid thought sequence 2" \
-'{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"convo_think","arguments":{"content":"Second thought continuing the machine learning discussion.","injection_scale":3}}}' \
+'{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"think_convo","arguments":{"content":"Second thought continuing the machine learning discussion.","injection_scale":3}}}' \
 '"memories_injected"'
 
 # Test 8: Edge case - empty content (should fail gracefully)
 run_test "Empty content handling" \
-'{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"convo_think","arguments":{"content":"","injection_scale":1}}}' \
+'{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"think_convo","arguments":{"content":"","injection_scale":1}}}' \
 '"error"\|"thought_id"'
 
 # Test 9: Edge case - invalid injection_scale
 run_test "Invalid injection_scale handling" \
-'{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"convo_think","arguments":{"content":"Test with invalid scale","injection_scale":10}}}' \
+'{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"think_convo","arguments":{"content":"Test with invalid scale","injection_scale":10}}}' \
 '"error"\|"thought_id"'
 
 # Test 10: Resources list (should be empty)

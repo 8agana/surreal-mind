@@ -8,10 +8,10 @@ reference/
 claude_desktop_config.json
 mcp-server-*.log
 mcp.log
-AGENTS.md
-/docs
-/symlinks
-WARP.md
+
+
+
+
 CLAUDE.md
 
 # SurrealDB backups
@@ -22,5 +22,7 @@ CLAUDE.md
 .junie
 *.fix
 fixes/
+/archive
+.DS_Store
 
 models/bge-small-en-v1.5/

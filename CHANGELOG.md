@@ -58,7 +58,7 @@ All notable changes to this project will be documented in this file.
   - Detailed logging of retry attempts and failures
 - Retry logic applied to:
   - Schema initialization (`initialize_schema`)
-  - Thought creation (`convo_think`, `tech_think`, `inner_voice`)
+  - Thought creation (`think_convo`, `think_plan`, `inner_voice`)
   - All database query operations
 
 ### Fixed

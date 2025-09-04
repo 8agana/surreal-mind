@@ -1,9 +1,9 @@
 #![cfg(feature = "db_integration")]
 
+use rmcp::ServerHandler;
 use rmcp::model::{CallToolRequestParam, PaginatedRequestParam};
 use rmcp::service::RequestContext;
-use rmcp::service::RoleServer;
-use surreal_mind::{config::Config, *};
+use surreal_mind::{config::Config, server::SurrealMindServer};
 
 #[tokio::test]
 async fn test_tools_list_has_think_convo_when_enabled() {
@@ -15,7 +15,7 @@ async fn test_tools_list_has_think_convo_when_enabled() {
     let res = server
         .list_tools(
             Some(PaginatedRequestParam::default()),
-            RequestContext::<RoleServer>::default(),
+            RequestContext::with_id("test".into()),
         )
         .await
         .expect("list_tools");
@@ -42,11 +42,10 @@ async fn test_call_tool_invalid_params_rejected_when_enabled() {
     let req = CallToolRequestParam {
         name: "think_convo".into(),
         arguments: Some(obj),
-        ..Default::default()
     };
 
     let err = server
-        .call_tool(req, RequestContext::<RoleServer>::default())
+        .call_tool(req, RequestContext::with_id("test".into()))
         .await
         .expect_err("should error on invalid params");
 
