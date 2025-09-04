@@ -22,6 +22,11 @@ default_injection_scale = 1
 kg_only = true  # New: only pull from KG, not thoughts
 similarity_threshold = 0.5
 top_k = 5
+# Thresholds for memory injection scales and floor (required)
+t1 = 0.6
+t2 = 0.4
+t3 = 0.25
+floor = 0.15
 # Performance and limits
 db_limit = 100  # For SURR_DB_LIMIT
 candidates = 20  # For SURR_RETRIEVE_CANDIDATES

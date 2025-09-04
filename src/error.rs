@@ -34,6 +34,21 @@ pub enum SurrealMindError {
 
     #[error("Internal error: {message}")]
     Internal { message: String },
+
+    #[error("Feature disabled: {message}")]
+    FeatureDisabled { message: String },
+
+    #[error("Embedder unavailable: {message}")]
+    EmbedderUnavailable { message: String },
+
+    #[error("Invalid parameters: {message}")]
+    InvalidParams { message: String },
+
+    #[error("Database error: {message}")]
+    DbError { message: String },
+
+    #[error("Internal error: {message}")]
+    InternalError { message: String },
 }
 
 impl From<anyhow::Error> for SurrealMindError {
@@ -125,6 +140,26 @@ impl From<SurrealMindError> for rmcp::ErrorData {
                 format!("Validation error: {}", err),
             ),
             SurrealMindError::Internal { .. } => (
+                rmcp::model::ErrorCode::INTERNAL_ERROR,
+                format!("Internal error: {}", err),
+            ),
+            SurrealMindError::FeatureDisabled { .. } => (
+                rmcp::model::ErrorCode::INVALID_PARAMS,
+                format!("Feature disabled: {}", err),
+            ),
+            SurrealMindError::EmbedderUnavailable { .. } => (
+                rmcp::model::ErrorCode::INTERNAL_ERROR,
+                format!("Embedder unavailable: {}", err),
+            ),
+            SurrealMindError::InvalidParams { .. } => (
+                rmcp::model::ErrorCode::INVALID_PARAMS,
+                format!("Invalid parameters: {}", err),
+            ),
+            SurrealMindError::DbError { .. } => (
+                rmcp::model::ErrorCode::INTERNAL_ERROR,
+                format!("Database error: {}", err),
+            ),
+            SurrealMindError::InternalError { .. } => (
                 rmcp::model::ErrorCode::INTERNAL_ERROR,
                 format!("Internal error: {}", err),
             ),

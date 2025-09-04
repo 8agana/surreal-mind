@@ -119,6 +119,9 @@ impl SurrealMindServer {
                     submode: NONE,
                     framework_enhanced: NONE,
                     framework_analysis: NONE,
+                    origin: 'tool',
+                    tags: $tags,
+                    is_private: false,
                     embedding_provider: $provider,
                     embedding_model: $model,
                     embedding_dim: $dim,
@@ -130,6 +133,7 @@ impl SurrealMindServer {
             .bind(("embedding", embedding.clone()))
             .bind(("injection_scale", injection_scale))
             .bind(("significance", significance))
+            .bind(("tags", params.tags.unwrap_or_default()))
             // no submode binding
             .bind(("provider", provider))
             .bind(("model", model))
