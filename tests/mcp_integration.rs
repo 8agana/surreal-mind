@@ -6,7 +6,7 @@ use rmcp::service::RoleServer;
 use surreal_mind::{config::Config, *};
 
 #[tokio::test]
-async fn test_tools_list_has_convo_think_when_enabled() {
+async fn test_tools_list_has_think_convo_when_enabled() {
     if std::env::var("RUN_DB_TESTS").is_err() {
         return;
     }
@@ -20,7 +20,7 @@ async fn test_tools_list_has_convo_think_when_enabled() {
         .await
         .expect("list_tools");
     let names: Vec<_> = res.tools.iter().map(|t| t.name.to_string()).collect();
-    assert!(names.contains(&"convo_think".to_string()));
+    assert!(names.contains(&"think_convo".to_string()));
 }
 
 #[tokio::test]
@@ -40,7 +40,7 @@ async fn test_call_tool_invalid_params_rejected_when_enabled() {
     ); // invalid
 
     let req = CallToolRequestParam {
-        name: "convo_think".into(),
+        name: "think_convo".into(),
         arguments: Some(obj),
         ..Default::default()
     };

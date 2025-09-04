@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Test script for search_thoughts functionality
-# This script tests the search_thoughts tool with various parameters
+# Test script for think_search functionality
+# This script tests the think_search tool with various parameters
 
 set -e
 
-echo "=== Testing search_thoughts Tool ==="
+echo "=== Testing think_search Tool ==="
 echo ""
 
 # Colors for output
@@ -35,7 +35,7 @@ run_search_test() {
     "id": $TEST_COUNT,
     "method": "tools/call",
     "params": {
-        "name": "search_thoughts",
+        "name": "think_search",
         "arguments": {
             "content": "$search_query",
             $additional_params
@@ -74,7 +74,7 @@ if [[ ! -f "./target/debug/surreal-mind" ]]; then
     cargo build
 fi
 
-echo "Testing search_thoughts functionality..."
+echo "Testing think_search functionality..."
 echo ""
 
 # Test 1: Basic search

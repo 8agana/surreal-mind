@@ -310,9 +310,6 @@ impl ServerHandler for SurrealMindServer {
             "think_debug" => self.handle_think_debug(request).await.map_err(|e| e.into()),
             "think_build" => self.handle_think_build(request).await.map_err(|e| e.into()),
             "think_stuck" => self.handle_think_stuck(request).await.map_err(|e| e.into()),
-            // Back-compat aliases
-            "convo_think" => self.handle_convo_think(request).await.map_err(|e| e.into()),
-            "tech_think" => self.handle_tech_think(request).await.map_err(|e| e.into()),
             // Intelligence and utility
             "maintenance_ops" => self
                 .handle_maintenance_ops(request)
@@ -320,10 +317,6 @@ impl ServerHandler for SurrealMindServer {
                 .map_err(|e| e.into()),
             // Search rename
             "think_search" => self
-                .handle_search_thoughts(request)
-                .await
-                .map_err(|e| e.into()),
-            "search_thoughts" => self
                 .handle_search_thoughts(request)
                 .await
                 .map_err(|e| e.into()),
@@ -337,19 +330,6 @@ impl ServerHandler for SurrealMindServer {
                 .await
                 .map_err(|e| e.into()),
             "memories_moderate" => self
-                .handle_knowledgegraph_moderate(request)
-                .await
-                .map_err(|e| e.into()),
-            // Back-compat for KG
-            "knowledgegraph_create" => self
-                .handle_knowledgegraph_create(request)
-                .await
-                .map_err(|e| e.into()),
-            "knowledgegraph_search" => self
-                .handle_knowledgegraph_search(request)
-                .await
-                .map_err(|e| e.into()),
-            "knowledgegraph_moderate" => self
                 .handle_knowledgegraph_moderate(request)
                 .await
                 .map_err(|e| e.into()),
@@ -841,18 +821,17 @@ mod tests {
         // Test that defaults are set correctly based on tool_name
         let mut prox_thresh = 0.5;
         let retrieve = 200;
-        if let Some(tool) = Some("think_convo") {
-            let (tool_sim_thresh, tool_db_limit) = match tool {
-                "think_convo" => (0.35, 500),
-                "think_plan" => (0.30, 800),
-                "think_debug" => (0.20, 1000),
-                "think_build" => (0.45, 400),
-                "think_stuck" => (0.30, 600),
-                _ => (prox_thresh, retrieve),
-            };
-            prox_thresh = tool_sim_thresh;
-            let _retrieve = tool_db_limit;
-        }
+        let tool = "think_convo";
+        let (tool_sim_thresh, tool_db_limit) = match tool {
+            "think_convo" => (0.35, 500),
+            "think_plan" => (0.30, 800),
+            "think_debug" => (0.20, 1000),
+            "think_build" => (0.45, 400),
+            "think_stuck" => (0.30, 600),
+            _ => (prox_thresh, retrieve),
+        };
+        prox_thresh = tool_sim_thresh;
+        let _retrieve = tool_db_limit;
         assert_eq!(prox_thresh, 0.35);
     }
 
@@ -864,7 +843,7 @@ mod tests {
         let top_k = params_top_k.unwrap_or(top_k_default).clamp(1, 50);
         assert_eq!(top_k, 50);
 
-        let offset = Some(-5).unwrap_or(0).max(0);
+        let offset = (-5).max(0);
         assert_eq!(offset, 0);
     }
 }

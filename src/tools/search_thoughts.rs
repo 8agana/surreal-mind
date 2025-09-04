@@ -133,8 +133,8 @@ impl SurrealMindServer {
 
         let rows: Vec<SimpleRow> = response.take(0)?;
 
-        tracing::debug!(
-            "search_thoughts: Retrieved {} thoughts, query embedding dims: {}",
+        tracing::info!(
+            "think_search: Retrieved {} thoughts, query embedding dims: {}",
             rows.len(),
             q_emb.len()
         );
@@ -163,30 +163,32 @@ impl SurrealMindServer {
         let mut skipped_mismatched = 0;
         let mut below_threshold = 0;
 
+        let deep_embed_debug = std::env::var("SURR_DEEP_EMBED_DEBUG")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
         for row in rows.into_iter() {
             if row.embedding.len() == q_emb.len() {
                 let sim = cosine(&q_emb, &row.embedding);
 
-                // DEEP DEBUG: Log first few dimensions of embeddings for debugging
-                tracing::debug!(
-                    "EMBEDDING DEBUG: id={}, sim={:.6}, query_first_5=[{:.6}, {:.6}, {:.6}, {:.6}, {:.6}], stored_first_5=[{:.6}, {:.6}, {:.6}, {:.6}, {:.6}]",
-                    row.id,
-                    sim,
-                    q_emb.first().unwrap_or(&0.0),
-                    q_emb.get(1).unwrap_or(&0.0),
-                    q_emb.get(2).unwrap_or(&0.0),
-                    q_emb.get(3).unwrap_or(&0.0),
-                    q_emb.get(4).unwrap_or(&0.0),
-                    row.embedding.first().unwrap_or(&0.0),
-                    row.embedding.get(1).unwrap_or(&0.0),
-                    row.embedding.get(2).unwrap_or(&0.0),
-                    row.embedding.get(3).unwrap_or(&0.0),
-                    row.embedding.get(4).unwrap_or(&0.0)
-                );
+                if deep_embed_debug {
+                    tracing::trace!(
+                        "EMBEDDING DEBUG: id={}, sim={:.6}, query_first_5=[{:.6}, {:.6}, {:.6}, {:.6}, {:.6}], stored_first_5=[{:.6}, {:.6}, {:.6}, {:.6}, {:.6}]",
+                        row.id,
+                        sim,
+                        q_emb.first().unwrap_or(&0.0),
+                        q_emb.get(1).unwrap_or(&0.0),
+                        q_emb.get(2).unwrap_or(&0.0),
+                        q_emb.get(3).unwrap_or(&0.0),
+                        q_emb.get(4).unwrap_or(&0.0),
+                        row.embedding.first().unwrap_or(&0.0),
+                        row.embedding.get(1).unwrap_or(&0.0),
+                        row.embedding.get(2).unwrap_or(&0.0),
+                        row.embedding.get(3).unwrap_or(&0.0),
+                        row.embedding.get(4).unwrap_or(&0.0)
+                    );
 
-                // Debug logging for high similarity scores
-                if sim >= 0.3 {
-                    tracing::info!(
+                    // Potential match preview when deep debug enabled
+                    tracing::trace!(
                         "Found potential match: sim={:.4}, id={}, content_preview={}...",
                         sim,
                         row.id,
@@ -216,8 +218,8 @@ impl SurrealMindServer {
                 skipped_mismatched
             );
         }
-        tracing::debug!(
-            "search_thoughts: {} matches above threshold {}, {} below threshold",
+        tracing::info!(
+            "think_search: {} matches above threshold {}, {} below threshold",
             matches.len(),
             sim_thresh,
             below_threshold
