@@ -1,14 +1,13 @@
 //! Prompt critique storage and analysis
-//! 
+//!
 //! This module enables the system to store and analyze feedback about its own prompts,
 //! treating critiques as first-class thoughts that can inform prompt evolution.
 
 use crate::error::Result;
 use crate::prompts::Prompt;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 
 /// A critique of a prompt's effectiveness
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,7 +85,10 @@ impl PromptCritique {
     }
 
     /// Store the critique as a thought with proper linkage
-    pub async fn store_as_thought(&self, server: &crate::server::SurrealMindServer) -> Result<String> {
+    pub async fn store_as_thought(
+        &self,
+        server: &crate::server::SurrealMindServer,
+    ) -> Result<String> {
         // Create a thought with critique metadata
         let thought_content = format!(
             "Prompt Critique: {}\n\nType: {}\nPriority: {:?}\nStatus: {:?}\n\nContent:\n{}\n\n{}",
@@ -113,17 +115,20 @@ impl PromptCritique {
                     prompt_ref = type::thing('prompts', $prompt_id)
                 RETURN meta::id(id)",
             )
-.bind(("content", thought_content))
+            .bind(("content", thought_content))
             .bind(("critique_type", self.critique_type.to_string()))
-            .bind(("critique", json!({
-                "prompt_id": self.prompt_id,
-                "version": self.version,
-                "type": self.critique_type.to_string(),
-                "priority": self.priority,
-                "status": self.status,
-                "impact_areas": self.impact_areas
-            })))
-.bind(("prompt_id", self.prompt_id.clone()))
+            .bind((
+                "critique",
+                json!({
+                    "prompt_id": self.prompt_id,
+                    "version": self.version,
+                    "type": self.critique_type.to_string(),
+                    "priority": self.priority,
+                    "status": self.status,
+                    "impact_areas": self.impact_areas
+                }),
+            ))
+            .bind(("prompt_id", self.prompt_id.clone()))
             .await?
             .take(0)?;
 
@@ -174,12 +179,12 @@ impl crate::server::SurrealMindServer {
     /// Get prompt evolution suggestions based on critiques
     pub async fn get_prompt_evolution_suggestions(&self, prompt_id: &str) -> Result<Vec<String>> {
         let critiques = self.get_prompt_critiques(prompt_id).await?;
-        
+
         // Group by type and filter for actionable items
         let mut improvements = Vec::new();
         let mut bugs = Vec::new();
         let mut clarifications = Vec::new();
-        
+
         for c in critiques {
             if c.status == CritiqueStatus::Open || c.status == CritiqueStatus::UnderReview {
                 match c.critique_type {
@@ -190,36 +195,45 @@ impl crate::server::SurrealMindServer {
                 }
             }
         }
-        
+
         let mut suggestions = Vec::new();
-        
+
         // Critical bugs first
-        for bug in bugs.iter().filter(|c| matches!(c.priority, CritiquePriority::Critical)) {
+        for bug in bugs
+            .iter()
+            .filter(|c| matches!(c.priority, CritiquePriority::Critical))
+        {
             suggestions.push(format!("🔴 Critical Bug: {}", bug.content));
             if let Some(fix) = &bug.suggested_changes {
                 suggestions.push(format!("   Fix: {}", fix));
             }
         }
-        
+
         // High priority improvements
-        for imp in improvements.iter().filter(|c| matches!(c.priority, CritiquePriority::High)) {
+        for imp in improvements
+            .iter()
+            .filter(|c| matches!(c.priority, CritiquePriority::High))
+        {
             suggestions.push(format!("⭐ High Priority: {}", imp.content));
             if let Some(changes) = &imp.suggested_changes {
                 suggestions.push(format!("   Changes: {}", changes));
             }
         }
-        
+
         // Needed clarifications
-        for clar in clarifications.iter().filter(|c| matches!(c.priority, CritiquePriority::High)) {
+        for clar in clarifications
+            .iter()
+            .filter(|c| matches!(c.priority, CritiquePriority::High))
+        {
             suggestions.push(format!("📝 Needs Clarification: {}", clar.content));
         }
-        
+
         Ok(suggestions)
     }
 }
 
 /// Create prompt critique schema
-pub const PROMPT_CRITIQUE_SCHEMA: &str = r#"
+pub const PROMPT_CRITIQUE_SCHEMA: &str = r"
 -- Add critique metadata to thoughts table
 DEFINE FIELD critique_data ON thoughts TYPE object {
     prompt_id: string,
@@ -234,4 +248,4 @@ DEFINE FIELD prompt_ref ON thoughts TYPE record<prompts> OPTIONAL;
 
 -- Index for finding critiques
 DEFINE INDEX thoughts_critiques ON thoughts FIELDS critique_data.prompt_id;
-"#;
+";

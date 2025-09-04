@@ -98,7 +98,8 @@ async fn main() -> Result<()> {
         // Hygiene counts
         if existing_emb_len == 0 {
             missing_count += 1;
-        } else if existing_emb_len != embed_dims || existing_model != config.system.embedding_model {
+        } else if existing_emb_len != embed_dims || existing_model != config.system.embedding_model
+        {
             mismatched_count += 1;
         }
 

@@ -1,7 +1,7 @@
 //! maintenance_ops tool handler for archival and cleanup operations
 
 use crate::error::{Result, SurrealMindError};
-use crate::indexes::{get_expected_indexes, IndexHealth, TableInfo};
+use crate::indexes::{IndexHealth, TableInfo, get_expected_indexes};
 use crate::server::SurrealMindServer;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde_json::json;
@@ -32,7 +32,8 @@ impl SurrealMindServer {
 
         for table_def in get_expected_indexes() {
             // Get current indexes for table
-            let info: Vec<TableInfo> = self.db
+            let info: Vec<TableInfo> = self
+                .db
                 .query("INFO FOR TABLE $table")
                 .bind(("table", table_def.table.clone()))
                 .await?
@@ -43,27 +44,39 @@ impl SurrealMindServer {
             })?;
 
             // Get expected index names (both required and optional)
-            let mut expected = table_def.required.iter()
+            let mut expected = table_def
+                .required
+                .iter()
                 .map(|idx| idx.to_definition().replace("{table}", &table_def.table))
                 .collect::<Vec<_>>();
-            let optional = table_def.optional.iter()
+            let optional = table_def
+                .optional
+                .iter()
                 .map(|idx| idx.to_definition().replace("{table}", &table_def.table))
                 .collect::<Vec<_>>();
             expected.extend(optional);
 
             // Get present indexes
-            let present = table_info.indexes.iter()
+            let present = table_info
+                .indexes
+                .iter()
                 .map(|(name, info)| {
                     let fields = info.fields.join(", ");
-                    format!("DEFINE INDEX {} ON TABLE {} FIELDS {}", name, table_def.table, fields)
+                    format!(
+                        "DEFINE INDEX {} ON TABLE {} FIELDS {}",
+                        name, table_def.table, fields
+                    )
                 })
                 .collect::<Vec<_>>();
 
             // Calculate missing (required only)
-            let required_defs = table_def.required.iter()
+            let required_defs = table_def
+                .required
+                .iter()
                 .map(|idx| idx.to_definition().replace("{table}", &table_def.table))
                 .collect::<Vec<_>>();
-            let missing = required_defs.iter()
+            let missing = required_defs
+                .iter()
                 .filter(|req| !present.contains(req))
                 .cloned()
                 .collect::<Vec<_>>();
@@ -116,17 +129,17 @@ impl SurrealMindServer {
             output_dir
         );
 
-    match params.subcommand.as_str() {
-        "list_removal_candidates" => self.handle_list_removal_candidates(limit, dry_run).await,
-        "export_removals" => {
-            self.handle_export_removals(limit, &format, &output_dir, dry_run)
-                .await
-        }
-        "finalize_removal" => self.handle_finalize_removal(limit, dry_run).await,
-        "health_check_embeddings" => self.handle_health_check_embeddings(dry_run).await,
-        "health_check_indexes" => self.handle_health_check_indexes(dry_run).await,
-        "reembed" => self.handle_reembed(limit, dry_run).await,
-        "reembed_kg" => self.handle_reembed_kg(limit, dry_run).await,
+        match params.subcommand.as_str() {
+            "list_removal_candidates" => self.handle_list_removal_candidates(limit, dry_run).await,
+            "export_removals" => {
+                self.handle_export_removals(limit, &format, &output_dir, dry_run)
+                    .await
+            }
+            "finalize_removal" => self.handle_finalize_removal(limit, dry_run).await,
+            "health_check_embeddings" => self.handle_health_check_embeddings(dry_run).await,
+            "health_check_indexes" => self.handle_health_check_indexes(dry_run).await,
+            "reembed" => self.handle_reembed(limit, dry_run).await,
+            "reembed_kg" => self.handle_reembed_kg(limit, dry_run).await,
             _ => Err(SurrealMindError::Validation {
                 message: format!("Unknown subcommand: {}", params.subcommand),
             }),

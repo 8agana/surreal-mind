@@ -339,6 +339,35 @@ This project includes:
 
 Use `cargo build --release` to build all binaries to `./target/release/`.
 
+## Prompt Registry (Self-aware prompts)
+
+SurrealMind includes a self-aware Prompt Registry that documents the system's cognitive patterns as first-class, versioned entities.
+This enables prompt transparency, lineage, and analysis without changing runtime behavior automatically.
+
+- What it provides:
+  - Stable prompt IDs, versions, and checksums (lineage awareness)
+  - One-liner, purpose, inputs, and explicit constraints (e.g., MCP_NO_LOG, no mixed dims, KG-only injection)
+  - Optional usage metrics and critique storage for iterative improvement
+- What it does NOT do:
+  - Automatically switch prompts at runtime. Registry is discoverability + analysis; changes require explicit action.
+
+How to inspect prompts via the existing help tool:
+
+- List all prompts
+```json
+{"tool":"detailed_help","arguments":{"prompts":true}}
+```
+
+- Get a specific prompt by id (compact or full)
+```json
+{"tool":"detailed_help","arguments":{"prompt_id":"think-search-v2","format":"compact"}}
+{"tool":"detailed_help","arguments":{"prompt_id":"think-search-v2","format":"full"}}
+```
+
+Metrics (optional) and critiques:
+- Prompt invocations can be recorded to analyze success/refusal/error rates and latency/tokens.
+- Prompt critiques are stored as first-class thoughts linked to a prompt id to enable an improvement loop.
+
 ## Architecture
 
 ### Orbital Mechanics
