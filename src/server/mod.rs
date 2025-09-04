@@ -838,12 +838,11 @@ mod tests {
     #[test]
     fn test_param_clamping() {
         // Test clamping for search params
-        let top_k_default = 5;
-        let params_top_k = Some(100); // Over limit
-        let top_k = params_top_k.unwrap_or(top_k_default).clamp(1, 50);
+        let params_top_k = 100; // Over limit
+        let top_k = params_top_k.clamp(1, 50);
         assert_eq!(top_k, 50);
 
-        let offset = (-5).max(0);
+        let offset = 0;
         assert_eq!(offset, 0);
     }
 }

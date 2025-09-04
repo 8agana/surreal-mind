@@ -2,7 +2,6 @@
 //! Unit tests for KG extraction functionality
 
 use surreal_mind::*;
-use tokio;
 
 /// Unit tests for the HeuristicExtractor
 #[tokio::test]

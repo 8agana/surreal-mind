@@ -3,7 +3,7 @@
   "id": 1,
   "method": "tools/call",
   "params": {
-    "name": "search_thoughts",
+    "name": "think_search",
     "arguments": {
       "content": "test thought",
       "top_k": 5

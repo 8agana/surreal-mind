@@ -114,7 +114,7 @@ echo -e "${RED}Failed: $((TEST_COUNT - PASS_COUNT))${NC}"
 echo ""
 
 if [[ $PASS_COUNT -eq $TEST_COUNT ]]; then
-    echo -e "${GREEN}🎉 All search tests passed! The search_thoughts tool is working correctly.${NC}"
+    echo -e "${GREEN}🎉 All search tests passed! The think_search tool is working correctly.${NC}"
     exit 0
 else
     echo -e "${YELLOW}⚠️  Some search tests failed. This may indicate:${NC}"
@@ -123,6 +123,6 @@ else
     echo "   - Database connection problems"
     echo "   - Similarity threshold too high"
     echo ""
-    echo -e "${YELLOW}Try adding some thoughts first with convo_think tool, then run tests again.${NC}"
+    echo -e "${YELLOW}Try adding some thoughts first with think_convo tool, then run tests again.${NC}"
     exit 1
 fi

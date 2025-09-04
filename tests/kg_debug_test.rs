@@ -1,11 +1,6 @@
 //! Debug test for KG relationship creation issues
 //! This test helps identify why relationships are extracted but not created in DB
 
-use serde_json::json;
-use std::env;
-use surreal_mind::*;
-use tokio;
-
 /// Debug test for relationship creation flow
 #[tokio::test]
 async fn debug_kg_relationship_creation() {
@@ -102,7 +97,6 @@ async fn debug_kg_relationship_creation() {
         // Check if matching would succeed
         let would_succeed = source_match_case.is_some() && target_match_case.is_some();
         println!("    Would relationship creation succeed: {}", would_succeed);
-        println!("");
     }
 
     // Test confidence filtering

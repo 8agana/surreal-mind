@@ -5,7 +5,7 @@ A Model Context Protocol (MCP) server implementing bidirectional consciousness p
 ## Features
 - **Bidirectional Memory Injection**: Thoughts automatically pull relevant memories during storage
 - **Orbital Mechanics**: Memory relevance based on age, access patterns, and significance
-- **Semantic Understanding**: OpenAI embeddings for true semantic similarity
+- **Semantic Understanding**: OpenAI text-embedding-3-small (1536 dims) for semantic similarity
 - **Graph Persistence**: SurrealDB service for consciousness graph storage
 - **Injection Scales**: 0-5 (Sun to Pluto) controlling memory retrieval distance
 - **Submodes**: Conversational (sarcastic, philosophical, empathetic, problem_solving) and Technical (plan, build, debug) influence retrieval and enrichment
@@ -26,7 +26,7 @@ A Model Context Protocol (MCP) server implementing bidirectional consciousness p
    ```
    OPENAI_API_KEY=sk-...
    ```
-   Optional: `SURR_EMBED_MODEL=text-embedding-3-small` (default), or switch provider with `SURR_EMBED_PROVIDER=nomic` and set `NOMIC_API_KEY`.
+Optional: `SURR_EMBED_MODEL=text-embedding-3-small` (default). Provider policy: OpenAI (primary) or Candle/BGE-small-en-v1.5 for local development when no OpenAI key. No fake/deterministic or Nomic providers.
 
 ### Build
 ```bash
@@ -47,6 +47,8 @@ surreal start --user root --pass root --bind 127.0.0.1:8000 file:/path/to/data.d
 
 Note: The server connects via WebSocket only. Embedded in-process DB is not currently supported.
 
+See [DATABASE.md](DATABASE.md) for detailed schema, indexes, and maintenance operations.
+
 ## Production Deployment
 - Defaults in this repo are for local development (127.0.0.1, http/ws without TLS). Do not use these defaults over a network.
 - Use secure transports in production:
@@ -56,7 +58,7 @@ Note: The server connects via WebSocket only. Embedded in-process DB is not curr
 - Recommended environment hardening:
   - `export SURR_ENFORCE_TLS=1` (advisory knob; when enabled, prefer/require https/wss URLs and fail fast on plain http/ws in future versions)
   - Restrict exposure of the SurrealDB service to trusted networks only.
-- Logging: Consider setting `MCP_NO_LOG=true` in environments where stderr must remain JSON-only for MCP clients. Use `RUST_LOG=surreal_mind=info,rmcp=info` or quieter.
+- Logging: Consider setting `MCP_NO_LOG=true` in environments where stderr must remain JSON-only for MCP clients. Use `RUST_LOG=surreal_mind=info,rmcp=info` or quieter. When `MCP_NO_LOG=1`, logging is disabled in stdio MCP mode.
 
 Configure the server via environment variables:
 ```bash
@@ -143,7 +145,7 @@ cargo run
 ./target/release/surreal-mind
 ```
 
-### MCP Tool: convo_think
+### MCP Tool: think_convo
 Stores thoughts with bidirectional memory injection and cognitive framework analysis.
 
 **Note:** Memory injection uses KG entities and observations only (no raw thoughts).
@@ -174,7 +176,7 @@ Example calls:
 ```json
 // Using named presets
 {
-  "tool": "convo_think",
+  "tool": "think_convo",
   "arguments": {
     "content": "Building persistence frameworks requires careful architecture",
     "injection_scale": "HIGH",
@@ -185,7 +187,7 @@ Example calls:
 
 // Using integer scale for significance
 {
-  "tool": "convo_think",
+  "tool": "think_convo",
   "arguments": {
     "content": "Critical bug found in memory injection",
     "injection_scale": "MAXIMUM",
@@ -196,7 +198,7 @@ Example calls:
 
 // Using numeric values (backward compatible)
 {
-  "tool": "convo_think",
+  "tool": "think_convo",
   "arguments": {
     "content": "Testing new framework enhancements",
     "injection_scale": 3,
@@ -216,16 +218,16 @@ Response includes:
 - `memory_summary`: Description of injection results
  - `user_friendly`: Additive, human-oriented block with summary, readable memory context (percentages + labels), and conversational analysis
 
-### MCP Tool: tech_think
+### MCP Tool: think_plan
 
 **Note:** Memory injection uses KG entities and observations only (no raw thoughts).
-Technical reasoning pipeline mirroring `convo_think`, specialized for software workflows.
+Technical reasoning pipeline mirroring `think_convo`, specialized for software workflows.
 
 Parameters:
 - `content` (required)
-- `injection_scale`: same presets and numeric formats as `convo_think`
+- `injection_scale`: same presets and numeric formats as `think_convo`
 - `submode`: Technical mode — `plan` (default) | `build` | `debug`
-- `significance`: same formats as `convo_think`
+- `significance`: same formats as `think_convo`
 - `verbose_analysis`: boolean (default true)
 - `tags`: optional
 
@@ -237,7 +239,7 @@ Defaults by submode (if `injection_scale` omitted):
 Examples:
 ```json
 {
-  "tool": "tech_think",
+  "tool": "think_plan",
   "arguments": {
     "content": "Design module A with clear interfaces",
     "submode": "plan",
@@ -247,7 +249,7 @@ Examples:
 }
 
 {
-  "tool": "tech_think",
+  "tool": "think_plan",
   "arguments": {
     "content": "Fix panic in parser when input is empty",
     "submode": "debug",
@@ -260,7 +262,7 @@ Examples:
 
 
 
-### MCP Tool: knowledgegraph_create
+### MCP Tool: memories_create
 Create entities and relationships in the Knowledge Graph (KG) for advanced semantic connections.
 
 Parameters:
@@ -273,7 +275,7 @@ Parameters:
 Example:
 ```json
 {
-  "tool": "knowledgegraph_create",
+  "tool": "memories_create",
   "arguments": {
     "kind": "entity",
     "data": {
@@ -286,7 +288,7 @@ Example:
 }
 ```
 
-### MCP Tool: knowledgegraph_search
+### MCP Tool: memories_search
 Search entities/relationships in the Knowledge Graph with semantic matching.
 
 Parameters:
@@ -297,7 +299,7 @@ Parameters:
 Example:
 ```json
 {
-  "tool": "knowledgegraph_search",
+  "tool": "memories_search",
   "arguments": {
     "query": {"name": "consciousness"},
     "target": "entity",
@@ -310,23 +312,23 @@ Example:
 Returns deterministic, example-rich documentation for tools and parameters.
 
 Parameters:
-- `tool`: "convo_think" | "tech_think" | "search_thoughts" | "knowledgegraph_create" | "knowledgegraph_search" (optional; overview when omitted)
+- `tool`: "think_convo" | "think_plan" | "think_search" | "memories_create" | "memories_search" (optional; overview when omitted)
 - `format`: "full" (default) | "compact"
 
 Examples:
 ```json
-{"tool":"detailed_help","arguments":{"tool":"tech_think","format":"full"}}
+{"tool":"detailed_help","arguments":{"tool":"think_plan","format":"full"}}
 {"tool":"detailed_help","arguments":{"format":"compact"}}
 ```
 
-### MCP Tool: search_thoughts
+### MCP Tool: think_search
 ## Available Tools and Binaries
 
 This project includes:
 
 ### Main MCP Server Binary
 - `cargo run` or `./target/release/surreal-mind`: Starts the MCP server with stdio transport
-- Handles all 6 tools: convo_think, tech_think, search_thoughts, knowledgegraph_create, knowledgegraph_search, detailed_help
+- Handles all 6 tools: think_convo, think_plan, think_search, memories_create, memories_search, detailed_help
 
 ### Additional Binaries (src/bin/)
 - `cargo run --bin reembed`: CLI for re-embedding thoughts (fixes dimension mismatches, recomputes embeddings)
@@ -367,10 +369,10 @@ When `SURR_SUBMODE_RETRIEVAL=true`, weights adjust based on submode profile.
 - `flavor`: Content flavor (contrarian, abstract, emotional, solution, neutral)
 
 ### Embeddings
-- OpenAI: `text-embedding-3-small` (1536 dims) by default; set `OPENAI_API_KEY`.
-- Nomic: Optional alternative via `NOMIC_API_KEY` and `SURR_EMBED_PROVIDER=nomic` (768 dims).
-- Config: `SURR_EMBED_PROVIDER` (`openai|nomic|local`), `SURR_EMBED_MODEL`, `SURR_EMBED_DIM`.
-- Future: Local provider reserved via `SURR_EMBED_PROVIDER=local` (not yet implemented).
+- Primary: OpenAI `text-embedding-3-small` (1536 dims) — set `OPENAI_API_KEY`.
+- Dev/Fallback: Candle with BGE-small-en-v1.5 (384 dims) when `SURR_EMBED_PROVIDER=candle` and no OpenAI key.
+- Config: `SURR_EMBED_PROVIDER` (`openai|candle`), `SURR_EMBED_MODEL`, `SURR_EMBED_DIM`.
+- Guardrails: single provider per runtime; never mix embedding dimensions; re-embed when switching providers/models.
 
 ## Development
 
@@ -388,7 +390,7 @@ cargo test
 
 ## License
 Part of the LegacyMind project
-### MCP Tool: search_thoughts
+### MCP Tool: think_search
 Semantic search over stored thoughts with cache-first retrieval and optional graph expansion via recalls.
 
 Parameters:
@@ -441,7 +443,7 @@ Reads DB/env from `.env`:
 Example:
 ```json
 {
-  "tool": "search_thoughts",
+  "tool": "think_search",
   "arguments": {
     "content": "debug parser issue",
     "top_k": 10,

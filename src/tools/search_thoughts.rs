@@ -133,7 +133,7 @@ impl SurrealMindServer {
 
         let rows: Vec<SimpleRow> = response.take(0)?;
 
-        tracing::info!(
+        tracing::trace!(
             "think_search: Retrieved {} thoughts, query embedding dims: {}",
             rows.len(),
             q_emb.len()
@@ -170,30 +170,9 @@ impl SurrealMindServer {
             if row.embedding.len() == q_emb.len() {
                 let sim = cosine(&q_emb, &row.embedding);
 
+                // SURR_DEEP_EMBED_DEBUG=1 for fine-grained embedding details
                 if deep_embed_debug {
-                    tracing::trace!(
-                        "EMBEDDING DEBUG: id={}, sim={:.6}, query_first_5=[{:.6}, {:.6}, {:.6}, {:.6}, {:.6}], stored_first_5=[{:.6}, {:.6}, {:.6}, {:.6}, {:.6}]",
-                        row.id,
-                        sim,
-                        q_emb.first().unwrap_or(&0.0),
-                        q_emb.get(1).unwrap_or(&0.0),
-                        q_emb.get(2).unwrap_or(&0.0),
-                        q_emb.get(3).unwrap_or(&0.0),
-                        q_emb.get(4).unwrap_or(&0.0),
-                        row.embedding.first().unwrap_or(&0.0),
-                        row.embedding.get(1).unwrap_or(&0.0),
-                        row.embedding.get(2).unwrap_or(&0.0),
-                        row.embedding.get(3).unwrap_or(&0.0),
-                        row.embedding.get(4).unwrap_or(&0.0)
-                    );
-
-                    // Potential match preview when deep debug enabled
-                    tracing::trace!(
-                        "Found potential match: sim={:.4}, id={}, content_preview={}...",
-                        sim,
-                        row.id,
-                        &row.content.chars().take(50).collect::<String>()
-                    );
+                    tracing::trace!("EMBEDDING DEBUG: id={}, sim={:.6}", row.id, sim);
                 }
 
                 if sim >= sim_thresh {
@@ -203,7 +182,7 @@ impl SurrealMindServer {
                 }
             } else {
                 skipped_mismatched += 1;
-                tracing::warn!(
+                tracing::debug!(
                     "Dimension mismatch: query={}, thought={}, id={}",
                     q_emb.len(),
                     row.embedding.len(),
@@ -213,13 +192,13 @@ impl SurrealMindServer {
         }
 
         if skipped_mismatched > 0 {
-            tracing::warn!(
+            tracing::debug!(
                 "Skipped {} thoughts with mismatched embedding dimensions",
                 skipped_mismatched
             );
         }
         tracing::info!(
-            "think_search: {} matches above threshold {}, {} below threshold",
+            "search: found {} matches (sim_thresh={:.3}, below_thresh={})",
             matches.len(),
             sim_thresh,
             below_threshold

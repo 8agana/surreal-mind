@@ -39,13 +39,13 @@ echo "=== Test 2: List Tools ==="
 
 echo ""
 echo "=== Test 3: Call Tool ==="
-# Test 3: Call the convo_think tool
+# Test 3: Call the think_convo tool
 (
     echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test-client","version":"1.0.0"}}}'
     sleep 0.5
     echo '{"jsonrpc":"2.0","method":"notifications/initialized"}'
     sleep 0.5
-    echo '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"convo_think","arguments":{"content":"This is a test thought for MCP validation"}}}'
+    echo '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"think_convo","arguments":{"content":"This is a test thought for MCP validation"}}}'
     sleep 3
     echo '{"jsonrpc":"2.0","id":999,"method":"exit"}'
 ) | RUST_LOG=debug cargo run 2>&1 | grep -A 20 -B 5 '"result"'

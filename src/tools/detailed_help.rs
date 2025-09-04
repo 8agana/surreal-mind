@@ -11,19 +11,33 @@ impl SurrealMindServer {
         &self,
         request: CallToolRequestParam,
     ) -> Result<CallToolResult> {
-        let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {
-            message: "Missing parameters".into(),
-        })?;
+        let args = request.arguments.unwrap_or_default();
 
-        let tool = args.get("tool").and_then(|v| v.as_str()).ok_or_else(|| {
-            SurrealMindError::Validation {
-                message: "'tool' parameter is required".into(),
-            }
-        })?;
+        // Overview mode: when no 'tool' param provided, return a compact roster
+        let maybe_tool = args.get("tool").and_then(|v| v.as_str());
         let format = args
             .get("format")
             .and_then(|v| v.as_str())
             .unwrap_or("full");
+
+        if maybe_tool.is_none() {
+            // Canonical tools roster
+            let overview = json!([
+                {"name": "think_convo", "one_liner": "Store a conversational thought with optional memory injection", "key_params": ["content", "injection_scale", "significance", "tags"]},
+                {"name": "think_plan", "one_liner": "Architecture/strategy thinking (high context)", "key_params": ["content", "injection_scale", "significance", "tags"]},
+                {"name": "think_debug", "one_liner": "Root-cause analysis (maximum context)", "key_params": ["content", "injection_scale", "significance", "tags"]},
+                {"name": "think_build", "one_liner": "Implementation-focused thinking (focused context)", "key_params": ["content", "injection_scale", "significance", "tags"]},
+                {"name": "think_stuck", "one_liner": "Lateral thinking to unblock progress", "key_params": ["content", "injection_scale", "significance", "tags"]},
+                {"name": "think_search", "one_liner": "Semantic search over thoughts with optional graph expansion", "key_params": ["content", "top_k", "sim_thresh", "offset"]},
+                {"name": "memories_create", "one_liner": "Create entities/relationships/observations in the KG", "key_params": ["kind", "data", "confidence", "source_thought_id"]},
+                {"name": "memories_search", "one_liner": "Search the Knowledge Graph", "key_params": ["target", "query", "top_k"]},
+                {"name": "memories_moderate", "one_liner": "Review/decide on KG candidates", "key_params": ["action", "target", "status", "items", "dry_run"]},
+                {"name": "maintenance_ops", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]}
+            ]);
+            return Ok(CallToolResult::structured(overview));
+        }
+
+        let tool = maybe_tool.unwrap();
 
         let help = match tool {
             // New think tools
@@ -133,7 +147,7 @@ impl SurrealMindServer {
                 },
                 "returns": {"review": {"items": "array"}, "results": "array"}
             }),
-            // Legacy aliases for KG help
+            // Legacy aliases for KG help (kept as pointers only)
             "knowledgegraph_create" => json!({"alias_of": "memories_create"}),
             "knowledgegraph_search" => json!({"alias_of": "memories_search"}),
             "knowledgegraph_moderate" => json!({"alias_of": "memories_moderate"}),
