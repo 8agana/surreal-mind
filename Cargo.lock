@@ -4636,6 +4636,7 @@ dependencies = [
  "rmcp",
  "serde",
  "serde_json",
+ "sha1",
  "strsim",
  "surrealdb",
  "thiserror 1.0.69",
