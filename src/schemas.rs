@@ -180,3 +180,57 @@ pub fn maintenance_ops_schema() -> Arc<Map<String, Value>> {
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
+
+/// Output structs for inner_voice.retrieve
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Snippet {
+    pub id: String,
+    pub table: String,
+    pub source_type: String,
+    pub origin: String,
+    pub trust_tier: String,
+    pub created_at: String,
+    pub text: String,
+    pub score: f32,
+    pub content_hash: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub span_start: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub span_end: Option<usize>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Diagnostics {
+    pub provider: String,
+    pub model: String,
+    pub dim: usize,
+    pub k_req: usize,
+    pub k_ret: usize,
+    pub kg_candidates: usize,
+    pub thought_candidates: usize,
+    pub floor_used: f32,
+    pub latency_ms: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RetrieveOut {
+    pub snippets: Vec<Snippet>,
+    pub diagnostics: Diagnostics,
+}
+
+pub fn inner_voice_retrieve_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+            "top_k": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
+            "floor": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "mix": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.6},
+            "include_private": {"type": "boolean", "default": false},
+            "include_tags": {"type": "array", "items": {"type": "string"}},
+            "exclude_tags": {"type": "array", "items": {"type": "string"}}
+        },
+        "required": ["query"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}

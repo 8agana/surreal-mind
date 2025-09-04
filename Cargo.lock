@@ -4622,6 +4622,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "blake3",
  "candle-core",
  "candle-nn",
  "candle-transformers",
@@ -4646,6 +4647,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
+ "unicode-normalization",
  "uuid",
 ]
 

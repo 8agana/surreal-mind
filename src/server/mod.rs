@@ -207,7 +207,9 @@ impl ServerHandler for SurrealMindServer {
 
         let detailed_help_schema_map = crate::schemas::detailed_help_schema();
 
-        let tools = vec![
+        let inner_voice_retrieve_schema_map = crate::schemas::inner_voice_retrieve_schema();
+
+        let mut tools = vec![
             Tool {
                 name: "think_convo".into(),
                 description: Some("Store conversational thoughts with memory injection".into()),
@@ -291,6 +293,18 @@ impl ServerHandler for SurrealMindServer {
             },
         ];
 
+        // Always list the tool (visibility), enforce gating inside the handler if disabled
+        tools.push(Tool {
+            name: "inner_voice.retrieve".into(),
+            description: Some(
+                "Retrieve structured snippets from thoughts and KG for external synthesis"
+                    .into(),
+            ),
+            input_schema: inner_voice_retrieve_schema_map,
+            annotations: None,
+            output_schema: None,
+        });
+
         Ok(ListToolsResult {
             tools,
             ..Default::default()
@@ -331,6 +345,11 @@ impl ServerHandler for SurrealMindServer {
                 .map_err(|e| e.into()),
             "memories_moderate" => self
                 .handle_knowledgegraph_moderate(request)
+                .await
+                .map_err(|e| e.into()),
+            // Inner voice retrieval
+            "inner_voice.retrieve" => self
+                .handle_inner_voice_retrieve(request)
                 .await
                 .map_err(|e| e.into()),
             // Help
@@ -445,6 +464,10 @@ impl SurrealMindServer {
             DEFINE FIELD framework_enhanced ON TABLE thoughts TYPE option<bool>;
             DEFINE FIELD framework_analysis ON TABLE thoughts FLEXIBLE TYPE option<object>;
             DEFINE FIELD status ON TABLE thoughts TYPE option<string>;
+            -- Origin and privacy fields for retrieval
+            DEFINE FIELD origin ON TABLE thoughts TYPE option<string>;
+            DEFINE FIELD tags ON TABLE thoughts TYPE option<array<string>>;
+            DEFINE FIELD is_private ON TABLE thoughts TYPE option<bool>;
             -- Embedding metadata for future re-embedding
             DEFINE FIELD embedding_model ON TABLE thoughts TYPE option<string>;
             DEFINE FIELD embedding_provider ON TABLE thoughts TYPE option<string>;
