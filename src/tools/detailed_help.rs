@@ -82,9 +82,6 @@ impl SurrealMindServer {
                 },
                 "returns": {"thought_id": "string", "memories_injected": "number", "embedding_model": "string", "embedding_dim": "number"}
             }),
-            // Legacy aliases for help
-            "convo_think" => json!({"alias_of": "think_convo"}),
-            "tech_think" => json!({"alias_of": "think_plan"}),
 
             "think_search" => json!({
                 "name": "think_search",
@@ -104,8 +101,6 @@ impl SurrealMindServer {
                 },
                 "returns": {"total": "number", "offset": "number", "top_k": "number", "results": "array"}
             }),
-            // Legacy alias
-            "search_thoughts" => json!({"alias_of": "think_search"}),
             "memories_create" => json!({
                 "name": "memories_create",
                 "description": "Create personal memory entities or relationships; returns created id.",
