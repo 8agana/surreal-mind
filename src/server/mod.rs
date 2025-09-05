@@ -297,8 +297,7 @@ impl ServerHandler for SurrealMindServer {
         tools.push(Tool {
             name: "inner_voice".into(),
             description: Some(
-                "Retrieve structured snippets from thoughts and KG for external synthesis"
-                    .into(),
+                "Retrieve structured snippets from thoughts and KG for external synthesis".into(),
             ),
             input_schema: inner_voice_schema_map,
             annotations: None,
