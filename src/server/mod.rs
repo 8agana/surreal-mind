@@ -207,7 +207,7 @@ impl ServerHandler for SurrealMindServer {
 
         let detailed_help_schema_map = crate::schemas::detailed_help_schema();
 
-        let inner_voice_retrieve_schema_map = crate::schemas::inner_voice_retrieve_schema();
+        let inner_voice_schema_map = crate::schemas::inner_voice_schema();
 
         let mut tools = vec![
             Tool {
@@ -295,12 +295,12 @@ impl ServerHandler for SurrealMindServer {
 
         // Always list the tool (visibility), enforce gating inside the handler if disabled
         tools.push(Tool {
-            name: "inner_voice.retrieve".into(),
+            name: "inner_voice".into(),
             description: Some(
                 "Retrieve structured snippets from thoughts and KG for external synthesis"
                     .into(),
             ),
-            input_schema: inner_voice_retrieve_schema_map,
+            input_schema: inner_voice_schema_map,
             annotations: None,
             output_schema: None,
         });
@@ -348,6 +348,12 @@ impl ServerHandler for SurrealMindServer {
                 .await
                 .map_err(|e| e.into()),
             // Inner voice retrieval
+            // New canonical name
+            "inner_voice" => self
+                .handle_inner_voice_retrieve(request)
+                .await
+                .map_err(|e| e.into()),
+            // Backward-compatible alias
             "inner_voice.retrieve" => self
                 .handle_inner_voice_retrieve(request)
                 .await

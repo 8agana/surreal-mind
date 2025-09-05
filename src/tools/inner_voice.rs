@@ -1,7 +1,7 @@
-//! inner_voice.retrieve tool handler for retrieval-only semantic search
+//! inner_voice tool handler for retrieval-only semantic search
 
 use crate::error::{Result, SurrealMindError};
-use crate::schemas::{Diagnostics, RetrieveOut, Snippet};
+use crate::schemas::Snippet;
 use crate::server::SurrealMindServer;
 use blake3::Hasher;
 use once_cell::sync::Lazy;
@@ -12,8 +12,9 @@ use serde_json::json;
 use std::collections::HashSet;
 use std::time::Instant;
 use unicode_normalization::UnicodeNormalization;
+use reqwest::Client;
 
-/// Parameters for the inner_voice.retrieve tool
+/// Parameters for the inner_voice tool
 #[derive(Debug, serde::Deserialize)]
 pub struct InnerVoiceRetrieveParams {
     pub query: String,
@@ -53,7 +54,7 @@ pub struct Candidate {
 static SENTENCE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"[.!?]["”"']?\s"#).unwrap());
 
 impl SurrealMindServer {
-    /// Handle the inner_voice.retrieve tool call
+    /// Handle the inner_voice tool call
     pub async fn handle_inner_voice_retrieve(
         &self,
         request: CallToolRequestParam,
@@ -73,7 +74,7 @@ impl SurrealMindServer {
         // Gate check
         if !self.config.runtime.inner_voice.enable {
             return Err(SurrealMindError::FeatureDisabled {
-                message: "inner_voice.retrieve is disabled (SURR_ENABLE_INNER_VOICE!=1)".into(),
+                message: "inner_voice is disabled (SURR_ENABLE_INNER_VOICE=0 or SURR_DISABLE_INNER_VOICE=1)".into(),
             });
         }
 
@@ -163,44 +164,103 @@ impl SurrealMindServer {
         // Take top_k
         selected.truncate(top_k);
 
-        // Build snippets
+        // Build snippets (internal only)
         let snippets: Vec<Snippet> = selected
-            .into_iter()
+            .iter()
             .map(|c| Snippet {
-                id: c.id,
-                table: c.table,
-                source_type: c.source_type,
-                origin: c.origin,
-                trust_tier: c.trust_tier,
-                created_at: c.created_at,
-                text: c.text,
+                id: c.id.clone(),
+                table: c.table.clone(),
+                source_type: c.source_type.clone(),
+                origin: c.origin.clone(),
+                trust_tier: c.trust_tier.clone(),
+                created_at: c.created_at.clone(),
+                text: c.text.clone(),
                 score: c.score,
-                content_hash: c.content_hash,
+                content_hash: c.content_hash.clone(),
                 span_start: None,
                 span_end: None,
             })
             .collect();
 
-        let latency_ms = start_time.elapsed().as_millis() as u64;
+        // Synthesize with Grok (required behavior). If missing key, produce a gentle self-question.
+        let base = std::env::var("GROK_BASE_URL").unwrap_or_else(|_| "https://api.x.ai/v1".to_string());
+        let model = std::env::var("GROK_MODEL").unwrap_or_else(|_| "grok-code-fast-1".to_string());
+        let grok_key = std::env::var("GROK_API_KEY").unwrap_or_default();
+        let messages = build_synthesis_messages(&params.query, &snippets);
+        let mut synthesized = String::new();
+        if !grok_key.is_empty() && !snippets.is_empty() {
+            if let Ok(ans) = call_grok(&base, &model, &grok_key, &messages).await {
+                synthesized = ans;
+            }
+        }
+        if synthesized.trim().is_empty() {
+            // Fallback: ask a clarifying question rather than erroring
+            synthesized = format!(
+                "I may need more context to answer precisely. What specific aspect of ‘{}’ should I focus on?",
+                params.query.trim()
+            );
+        }
 
-        let diagnostics = Diagnostics {
-            provider: self.config.system.embedding_provider.clone(),
-            model: self.config.system.embedding_model.clone(),
-            dim: self.config.system.embedding_dimensions,
-            k_req: top_k,
-            k_ret: snippets.len(),
-            kg_candidates: k_hits.len(),
-            thought_candidates: t_hits.len(),
-            floor_used,
-            latency_ms,
-        };
+        // Minimal citations line from internal selections
+        let mut ids: Vec<String> = Vec::new();
+        for c in &selected {
+            let prefix = match c.table.as_str() {
+                "thoughts" => "thoughts:",
+                "kg_entities" => "kge:",
+                "kg_observations" => "kgo:",
+                other => if other.len() > 3 { &other[0..3] } else { other },
+            };
+            ids.push(format!("{}{}", prefix, c.id));
+        }
+        ids.truncate(6); // keep short
+        if !ids.is_empty() {
+            synthesized.push_str("\n\nSources: ");
+            synthesized.push_str(&ids.join(", "));
+        }
 
-        let result = RetrieveOut {
-            snippets,
-            diagnostics,
-        };
+        // Embed synthesized content and save as a new thought (origin = inner_voice), injection disabled
+        let embedding = self.embedder.embed(&synthesized).await.map_err(|e| {
+            SurrealMindError::Embedding { message: e.to_string() }
+        })?;
+        let thought_id = uuid::Uuid::new_v4().to_string();
+        let (provider, model_name, dim) = self.get_embedding_metadata();
+        self.db
+            .query(
+                "CREATE type::thing('thoughts', $id) CONTENT {
+                    content: $content,
+                    created_at: time::now(),
+                    embedding: $embedding,
+                    injected_memories: [],
+                    enriched_content: NONE,
+                    injection_scale: 0,
+                    significance: 0.5,
+                    access_count: 0,
+                    last_accessed: NONE,
+                    submode: NONE,
+                    framework_enhanced: NONE,
+                    framework_analysis: NONE,
+                    origin: 'inner_voice',
+                    embedding_provider: $provider,
+                    embedding_model: $model,
+                    embedding_dim: $dim,
+                    embedded_at: time::now()
+                } RETURN NONE;",
+            )
+            .bind(("id", thought_id.clone()))
+            .bind(("content", synthesized.clone()))
+            .bind(("embedding", embedding))
+            .bind(("provider", provider))
+            .bind(("model", model_name.clone()))
+            .bind(("dim", dim))
+            .await?;
 
-        Ok(CallToolResult::structured(json!(result)))
+        let result = json!({
+            "thought_id": thought_id,
+            "embedding_model": model_name,
+            "embedding_dim": self.embedder.dimensions()
+        });
+
+        Ok(CallToolResult::structured(result))
     }
 
     async fn fetch_thought_candidates(
@@ -210,7 +270,7 @@ impl SurrealMindServer {
         q_dim: i64,
         include_private: bool,
     ) -> Result<Vec<Candidate>> {
-        let mut sql = "SELECT id, content, embedding, created_at, origin ?? 'human' AS origin, tags ?? [] AS tags, is_private ?? false AS is_private FROM thoughts WHERE embedding_dim = $dim".to_string();
+        let mut sql = "SELECT meta::id(id) AS id, content, embedding, created_at, origin ?? 'human' AS origin, tags ?? [] AS tags, is_private ?? false AS is_private FROM thoughts WHERE embedding_dim = $dim".to_string();
 
         if !include_private {
             sql.push_str(" AND is_private != true");
@@ -286,7 +346,7 @@ impl SurrealMindServer {
         cap: usize,
         q_dim: i64,
     ) -> Result<Vec<Candidate>> {
-        let sql = "SELECT id, name ?? 'unknown' AS content, embedding, created_at FROM kg_entities WHERE embedding IS NOT NULL AND embedding_dim = $dim LIMIT $limit";
+        let sql = "SELECT meta::id(id) AS id, name ?? 'unknown' AS content, embedding, created_at FROM kg_entities WHERE embedding IS NOT NULL AND embedding_dim = $dim LIMIT $limit";
 
         let mut response = self
             .db
@@ -331,7 +391,7 @@ impl SurrealMindServer {
         cap: usize,
         q_dim: i64,
     ) -> Result<Vec<Candidate>> {
-        let sql = "SELECT id, content ?? 'unknown' AS content, embedding, created_at FROM kg_observations WHERE embedding IS NOT NULL AND embedding_dim = $dim LIMIT $limit";
+        let sql = "SELECT meta::id(id) AS id, content ?? 'unknown' AS content, embedding, created_at FROM kg_observations WHERE embedding IS NOT NULL AND embedding_dim = $dim LIMIT $limit";
 
         let mut response = self
             .db
@@ -389,6 +449,62 @@ fn cosine(a: &[f32], b: &[f32]) -> f32 {
     } else {
         dot / (na.sqrt() * nb.sqrt())
     }
+}
+
+/// Build synthesis messages for Grok using provided snippets
+fn build_synthesis_messages(query: &str, snippets: &[Snippet]) -> serde_json::Value {
+    let mut lines = Vec::new();
+    let max_snips = usize::min(8, snippets.len());
+    for (i, sn) in snippets.iter().take(max_snips).enumerate() {
+        let mut text = sn.text.clone();
+        if text.len() > 800 {
+            text.truncate(800);
+        }
+        let meta = format!("[{}] {}:{} score={:.3}", i + 1, sn.table, sn.id, sn.score);
+        lines.push(format!("{}\n{}", meta, text));
+    }
+
+    let system = "You are a careful, grounded synthesizer. Only use the provided snippets. Cite sources inline like [1], [2]. Prefer concise answers (<= 4 sentences). If insufficient evidence, say so.";
+    let user = format!(
+        "Query: {}\n\nSnippets:\n{}\n\nTask: Provide a concise, grounded answer with inline [n] citations.",
+        query,
+        lines.join("\n\n")
+    );
+
+    serde_json::json!([
+        {"role": "system", "content": system},
+        {"role": "user", "content": user}
+    ])
+}
+
+/// Call Grok chat/completions
+async fn call_grok(base: &str, model: &str, api_key: &str, messages: &serde_json::Value) -> Result<String> {
+    let url = format!("{}/chat/completions", base.trim_end_matches('/'));
+    let body = serde_json::json!({
+        "model": model,
+        "messages": messages,
+        "temperature": 0.2,
+        "max_tokens": 400
+    });
+    let client = Client::new();
+    let resp = client
+        .post(url)
+        .bearer_auth(api_key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| SurrealMindError::Internal { message: e.to_string() })?;
+    let val: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| SurrealMindError::Internal { message: e.to_string() })?;
+    if let Some(choice) = val.get("choices").and_then(|c| c.get(0)) {
+        if let Some(content) = choice.get("message").and_then(|m| m.get("content")).and_then(|c| c.as_str()) {
+            return Ok(content.trim().to_string());
+        }
+    }
+    // Fallback: return the raw JSON if format unexpected
+    Ok(val.to_string())
 }
 
 /// Apply adaptive floor

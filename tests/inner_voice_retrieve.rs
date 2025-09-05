@@ -1,4 +1,4 @@
-//! Unit tests for inner_voice.retrieve tool
+//! Unit tests for inner_voice tool
 
 use surreal_mind::tools::inner_voice::{
     Candidate, allocate_slots, apply_adaptive_floor, cap_text, compute_trust_tier, hash_content,

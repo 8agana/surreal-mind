@@ -158,7 +158,8 @@ pub fn detailed_help_schema() -> Arc<Map<String, Value>> {
                 "think_convo", "think_plan", "think_debug", "think_build", "think_stuck",
                 "think_search",
                 "memories_create", "memories_search", "memories_moderate",
-                "maintenance_ops"
+                "maintenance_ops",
+                "inner_voice"
             ]},
             "format": {"type": "string", "enum": ["compact", "full"], "default": "full"}
         }
@@ -216,9 +217,15 @@ pub struct Diagnostics {
 pub struct RetrieveOut {
     pub snippets: Vec<Snippet>,
     pub diagnostics: Diagnostics,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub answer: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub synth_provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub synth_model: Option<String>,
 }
 
-pub fn inner_voice_retrieve_schema() -> Arc<Map<String, Value>> {
+pub fn inner_voice_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
         "properties": {
