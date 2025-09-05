@@ -31,6 +31,8 @@ pub struct InnerVoiceRetrieveParams {
     pub include_tags: Vec<String>,
     #[serde(default)]
     pub exclude_tags: Vec<String>,
+    #[serde(default)]
+    pub auto_extract_to_kg: Option<bool>,
 }
 
 /// Planner response from Grok
@@ -376,10 +378,28 @@ impl SurrealMindServer {
             .bind(("dim", dim))
             .await?;
 
+        // Optional auto-extraction to KG candidates using Grok JSON extraction
+        let auto_extract = params
+            .auto_extract_to_kg
+            .unwrap_or(self.config.runtime.inner_voice.auto_extract_default);
+        let mut extracted_entities = 0usize;
+        let mut extracted_rels = 0usize;
+        if auto_extract && !grok_key.is_empty() {
+            if let Ok((ec, rc)) = self
+                .auto_extract_candidates_from_text(&base, &model, &grok_key, &synthesized, &thought_id)
+                .await
+            {
+                extracted_entities = ec;
+                extracted_rels = rc;
+            }
+        }
+
         let result = json!({
             "thought_id": thought_id,
             "embedding_model": model_name,
-            "embedding_dim": self.embedder.dimensions()
+            "embedding_dim": self.embedder.dimensions(),
+            "auto_extract": auto_extract,
+            "extracted": {"entities": extracted_entities, "relationships": extracted_rels}
         });
 
         Ok(CallToolResult::structured(result))
@@ -602,6 +622,122 @@ impl SurrealMindServer {
 
         Ok(candidates)
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct ExtractOut {
+    #[serde(default)]
+    entities: Vec<ExtractEntity>,
+    #[serde(default)]
+    relationships: Vec<ExtractRel>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ExtractEntity {
+    name: String,
+    #[serde(default)]
+    entity_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ExtractRel {
+    source_name: String,
+    target_name: String,
+    #[serde(default)]
+    rel_type: Option<String>,
+    #[serde(default)]
+    confidence: Option<f32>,
+}
+
+impl SurrealMindServer {
+    /// Use Grok to extract candidate entities/relationships and stage them into *_candidates tables
+    pub async fn auto_extract_candidates_from_text(
+        &self,
+        base: &str,
+        model: &str,
+        api_key: &str,
+        text: &str,
+        thought_id: &str,
+    ) -> Result<(usize, usize)> {
+        let messages = build_extraction_messages(text);
+        let out = call_grok(base, model, api_key, &messages).await?;
+        // Parse JSON; Grok may return markdown fences; strip if present
+        let cleaned = out
+            .trim()
+            .trim_start_matches("```json")
+            .trim_end_matches("```")
+            .trim()
+            .to_string();
+        let parsed: ExtractOut = serde_json::from_str(&cleaned).unwrap_or(ExtractOut { entities: vec![], relationships: vec![] });
+
+        let mut ecount = 0usize;
+        for e in parsed.entities {
+            let name = e.name.trim().to_string();
+            if name.is_empty() { continue; }
+            let etype = e.entity_type.clone().unwrap_or_default();
+            // Dedup by existing pending with same name+etype
+            let found: Vec<serde_json::Value> = self
+                .db
+                .query("SELECT meta::id(id) as id FROM kg_entity_candidates WHERE name = $n AND entity_type = $t AND status = 'pending' LIMIT 1")
+                .bind(("n", name.clone()))
+                .bind(("t", etype.clone()))
+                .await?
+                .take(0)?;
+            if found.is_empty() {
+                let _ : Vec<serde_json::Value> = self
+                    .db
+                    .query("CREATE kg_entity_candidates SET created_at = time::now(), name = $n, entity_type = $t, confidence = 0.6, status = 'pending', data = { staged_by_thought: $th, origin: 'inner_voice' } RETURN meta::id(id) as id")
+                    .bind(("n", name))
+                    .bind(("t", etype))
+                    .bind(("th", thought_id.to_string()))
+                    .await?
+                    .take(0)?;
+                ecount += 1;
+            }
+        }
+
+        let mut rcount = 0usize;
+        for r in parsed.relationships {
+            let src = r.source_name.trim().to_string();
+            let dst = r.target_name.trim().to_string();
+            if src.is_empty() || dst.is_empty() { continue; }
+            let kind = r.rel_type.clone().unwrap_or_else(|| "related_to".to_string());
+            let conf = r.confidence.unwrap_or(0.6_f32);
+            // Dedup by same names+rel_type and status pending
+            let found: Vec<serde_json::Value> = self
+                .db
+                .query("SELECT meta::id(id) as id FROM kg_edge_candidates WHERE source_name = $s AND target_name = $t AND rel_type = $k AND status = 'pending' LIMIT 1")
+                .bind(("s", src.clone()))
+                .bind(("t", dst.clone()))
+                .bind(("k", kind.clone()))
+                .await?
+                .take(0)?;
+            if found.is_empty() {
+                let _ : Vec<serde_json::Value> = self
+                    .db
+                    .query("CREATE kg_edge_candidates SET created_at = time::now(), source_name = $s, target_name = $t, rel_type = $k, confidence = $c, status = 'pending', data = { staged_by_thought: $th, origin: 'inner_voice' } RETURN meta::id(id) as id")
+                    .bind(("s", src))
+                    .bind(("t", dst))
+                    .bind(("k", kind))
+                    .bind(("c", conf))
+                    .bind(("th", thought_id.to_string()))
+                    .await?
+                    .take(0)?;
+                rcount += 1;
+            }
+        }
+
+        Ok((ecount, rcount))
+    }
+}
+
+fn build_extraction_messages(text: &str) -> serde_json::Value {
+    json!({
+        "messages": [
+            {"role": "system", "content": "You extract entities and relationships from text and return only JSON exactly matching the schema. No extra commentary."},
+            {"role": "user", "content": format!("Extract from the following text. Return JSON: {{\n  \"entities\": [{{\"name\": string, \"entity_type\"?: string}}],\n  \"relationships\": [{{\"source_name\": string, \"target_name\": string, \"rel_type\"?: string, \"confidence\"?: number}}]\n}}\n\nTEXT:\n{}", text) }
+        ]
+    })
 }
 
 /// Compute cosine similarity

@@ -92,6 +92,7 @@ pub struct InnerVoiceConfig {
     pub max_candidates_per_source: usize,
     pub include_private_default: bool,
     pub plan: bool,
+    pub auto_extract_default: bool,
 }
 
 impl Default for InnerVoiceConfig {
@@ -105,6 +106,7 @@ impl Default for InnerVoiceConfig {
             max_candidates_per_source: 150,
             include_private_default: false,
             plan: false,
+            auto_extract_default: false,
         }
     }
 }
@@ -168,6 +170,10 @@ impl InnerVoiceConfig {
 
         if let Ok(plan) = std::env::var("SURR_IV_PLAN") {
             config.plan = plan == "1" || plan.to_lowercase() == "true";
+        }
+
+        if let Ok(ae) = std::env::var("SURR_IV_AUTO_EXTRACT_KG") {
+            config.auto_extract_default = ae == "1" || ae.to_lowercase() == "true";
         }
 
         config

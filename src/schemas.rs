@@ -282,7 +282,8 @@ pub fn inner_voice_schema() -> Arc<Map<String, Value>> {
             "mix": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.6},
             "include_private": {"type": "boolean", "default": false},
             "include_tags": {"type": "array", "items": {"type": "string"}},
-            "exclude_tags": {"type": "array", "items": {"type": "string"}}
+            "exclude_tags": {"type": "array", "items": {"type": "string"}},
+            "auto_extract_to_kg": {"type": "boolean", "default": false}
         },
         "required": ["query"]
     });
