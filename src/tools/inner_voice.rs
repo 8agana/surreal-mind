@@ -196,7 +196,6 @@ impl SurrealMindServer {
         let cap = (3 * top_k).min(cfg.max_candidates_per_source);
         let thought_candidates = self
             .fetch_thought_candidates(
-                &params,
                 cap,
                 q_dim,
                 include_private,
@@ -385,10 +384,8 @@ impl SurrealMindServer {
 
         Ok(CallToolResult::structured(result))
     }
-
     async fn fetch_thought_candidates(
         &self,
-        _params: &InnerVoiceRetrieveParams,
         cap: usize,
         q_dim: i64,
         include_private: bool,
