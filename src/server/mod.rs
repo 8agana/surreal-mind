@@ -74,12 +74,6 @@ pub struct Thought {
     pub significance: f32,
     pub access_count: u32,
     pub last_accessed: Option<surrealdb::sql::Datetime>,
-    #[serde(default)]
-    pub submode: Option<String>,
-    #[serde(default)]
-    pub framework_enhanced: Option<bool>,
-    #[serde(default)]
-    pub framework_analysis: Option<serde_json::Value>,
     pub embedding_model: Option<String>,
     #[serde(default)]
     pub embedding_provider: Option<String>,
@@ -127,8 +121,6 @@ pub struct SearchThoughtsParams {
     pub offset: Option<usize>,
     #[serde(default)]
     pub sim_thresh: Option<f32>,
-    #[serde(default)]
-    pub submode: Option<String>,
     #[serde(default)]
     pub min_significance: Option<f32>,
     #[serde(default)]
@@ -191,10 +183,7 @@ impl ServerHandler for SurrealMindServer {
 
         use rmcp::model::Tool;
 
-        let convo_think_schema_map = crate::schemas::convo_think_schema();
-
-        let tech_think_schema_map = crate::schemas::tech_think_schema();
-
+        let think_schema_map = crate::schemas::convo_think_schema();
         let maintenance_ops_schema_map = crate::schemas::maintenance_ops_schema();
 
         let search_thoughts_schema_map = crate::schemas::search_thoughts_schema();
@@ -213,14 +202,14 @@ impl ServerHandler for SurrealMindServer {
             Tool {
                 name: "think_convo".into(),
                 description: Some("Store conversational thoughts with memory injection".into()),
-                input_schema: convo_think_schema_map,
+                input_schema: think_schema_map.clone(),
                 annotations: None,
                 output_schema: None,
             },
             Tool {
                 name: "think_plan".into(),
                 description: Some("Architecture and strategy thinking (high context)".into()),
-                input_schema: tech_think_schema_map.clone(),
+                input_schema: think_schema_map.clone(),
                 annotations: None,
                 output_schema: None,
             },
@@ -229,21 +218,21 @@ impl ServerHandler for SurrealMindServer {
                 description: Some(
                     "Problem solving with maximum context (root cause analysis)".into(),
                 ),
-                input_schema: tech_think_schema_map.clone(),
+                input_schema: think_schema_map.clone(),
                 annotations: None,
                 output_schema: None,
             },
             Tool {
                 name: "think_build".into(),
                 description: Some("Implementation thinking (focused context)".into()),
-                input_schema: tech_think_schema_map.clone(),
+                input_schema: think_schema_map.clone(),
                 annotations: None,
                 output_schema: None,
             },
             Tool {
                 name: "think_stuck".into(),
                 description: Some("Breaking through blocks (lateral thinking)".into()),
-                input_schema: tech_think_schema_map.clone(),
+                input_schema: think_schema_map.clone(),
                 annotations: None,
                 output_schema: None,
             },
@@ -465,9 +454,6 @@ impl SurrealMindServer {
             DEFINE FIELD significance ON TABLE thoughts TYPE float;
             DEFINE FIELD access_count ON TABLE thoughts TYPE int;
             DEFINE FIELD last_accessed ON TABLE thoughts TYPE option<datetime>;
-            DEFINE FIELD submode ON TABLE thoughts TYPE option<string>;
-            DEFINE FIELD framework_enhanced ON TABLE thoughts TYPE option<bool>;
-            DEFINE FIELD framework_analysis ON TABLE thoughts FLEXIBLE TYPE option<object>;
             DEFINE FIELD status ON TABLE thoughts TYPE option<string>;
             -- Origin and privacy fields for retrieval
             DEFINE FIELD origin ON TABLE thoughts TYPE option<string>;
@@ -478,6 +464,7 @@ impl SurrealMindServer {
             DEFINE FIELD embedding_provider ON TABLE thoughts TYPE option<string>;
             DEFINE FIELD embedding_dim ON TABLE thoughts TYPE option<int>;
             DEFINE FIELD embedded_at ON TABLE thoughts TYPE option<datetime>;
+            DEFINE INDEX thoughts_embedding_idx ON TABLE thoughts FIELDS embedding HNSW;
             DEFINE INDEX thoughts_status_idx ON TABLE thoughts FIELDS status;
             DEFINE INDEX idx_thoughts_created ON TABLE thoughts FIELDS created_at;
             DEFINE INDEX idx_thoughts_embedding_model ON TABLE thoughts FIELDS embedding_model;
@@ -532,38 +519,12 @@ impl SurrealMindServer {
         (provider, model, dim)
     }
 
-    /// Calculate cosine similarity between two vectors
-    #[allow(dead_code)]
-    pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-        if a.len() != b.len() {
-            tracing::warn!(
-                "cosine_similarity dimension mismatch: a={}, b={}",
-                a.len(),
-                b.len()
-            );
-            return 0.0;
-        }
-        if a.is_empty() {
-            return 0.0;
-        }
-        let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-        let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-        let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-
-        if norm_a == 0.0 || norm_b == 0.0 {
-            0.0
-        } else {
-            dot / (norm_a * norm_b)
-        }
-    }
-
     /// Perform KG-only memory injection: find similar KG entities and attach their IDs.
     pub async fn inject_memories(
         &self,
         thought_id: &str,
         embedding: &[f32],
         injection_scale: i64,
-        submode: Option<&str>,
         tool_name: Option<&str>,
     ) -> crate::error::Result<(usize, Option<String>)> {
         tracing::debug!("inject_memories: query embedding dims: {}", embedding.len());
@@ -610,24 +571,6 @@ impl SurrealMindServer {
             return Ok((0, None));
         }
 
-        // Optional: submode-aware retrieval tweaks
-        // Use config flag, with optional env override and warn
-        if std::env::var("SURR_SUBMODE_RETRIEVAL").ok().as_deref() == Some("true")
-            || (std::env::var("SURR_SUBMODE_RETRIEVAL").is_err()
-                && self.config.retrieval.submode_tuning)
-        {
-            if std::env::var("SURR_SUBMODE_RETRIEVAL").is_ok() {
-                tracing::warn!("Using env override SURR_SUBMODE_RETRIEVAL");
-            }
-            if let Some(sm) = submode {
-                // Use lightweight profile deltas to adjust similarity threshold
-                use crate::cognitive::profile::{Submode, profile_for};
-                let profile = profile_for(Submode::from_str(sm));
-                let delta = profile.injection.threshold_delta;
-                // Clamp within [0.0, 0.99]
-                prox_thresh = (prox_thresh + delta).clamp(0.0, 0.99);
-            }
-        }
         // Candidate pool size from config, with optional env override and warn
         let mut retrieve = std::env::var("SURR_KG_CANDIDATES")
             .ok()

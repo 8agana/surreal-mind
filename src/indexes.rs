@@ -13,6 +13,8 @@ pub enum IndexType {
     Single(String),
     /// Multi-field composite index
     Composite(Vec<String>),
+    /// Vector index
+    Vector(String, String), // field, type (e.g., HNSW)
 }
 
 impl IndexType {
@@ -31,6 +33,10 @@ impl IndexType {
                     name, "{table}", field_list
                 )
             }
+            IndexType::Vector(field, ty) => format!(
+                "DEFINE INDEX idx_{} ON TABLE {} FIELDS {} {}",
+                field, "{table}", field, ty
+            ),
         }
     }
 }
@@ -56,11 +62,10 @@ pub fn get_expected_indexes() -> Vec<TableIndexes> {
                 IndexType::Single("created_at".into()),
                 IndexType::Single("status".into()),
                 IndexType::Single("embedding_model".into()),
-            ],
-            optional: vec![
-                // Performance index for think_search filtering
                 IndexType::Single("embedding_dim".into()),
+                IndexType::Vector("embedding".into(), "HNSW".into()),
             ],
+            optional: vec![],
         },
         TableIndexes {
             table: "kg_entities".into(),

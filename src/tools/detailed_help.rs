@@ -62,77 +62,26 @@ impl SurrealMindServer {
         let tool = maybe_tool.unwrap();
 
         let help = match tool {
-            // New think tools
-            "think_convo" => json!({
-                "name": "think_convo",
-                "description": "Store conversational thoughts with optional memory injection.",
+            "think_convo" | "think_plan" | "think_debug" | "think_build" | "think_stuck" => json!({
+                "name": "think_*",
+                "description": "Stores a thought with memory injection. Different tool names provide different default injection levels.",
                 "arguments": {
                     "content": "string (required) — the thought text",
-                    "injection_scale": "integer|string (0-5 or presets) — memory injection level",
+                    "injection_scale": "integer|string (0-5 or presets) — memory injection level (overrides tool default)",
                     "tags": "string[] — optional tags",
-                    "significance": "number|string (0.0-1.0 or presets) — importance"
+                    "significance": "number|string (0.0-1.0 or presets) — importance (overrides tool default)"
                 },
                 "returns": {"thought_id": "string", "memories_injected": "number", "embedding_model": "string", "embedding_dim": "number"}
             }),
-            "think_plan" => json!({
-                "name": "think_plan",
-                "description": "Architecture and strategy thinking (systems_thinking). High context injection.",
-                "arguments": {
-                    "content": "string (required)",
-                    "injection_scale": "integer|string (default: 3)",
-                    "significance": "number|string (default: 0.7)",
-                    "tags": "string[]"
-                },
-                "returns": {"thought_id": "string", "memories_injected": "number", "embedding_model": "string", "embedding_dim": "number"}
-            }),
-            "think_debug" => json!({
-                "name": "think_debug",
-                "description": "Problem solving (root_cause_analysis). Maximum context injection.",
-                "arguments": {
-                    "content": "string (required)",
-                    "injection_scale": "integer|string (default: 4)",
-                    "significance": "number|string (default: 0.8)",
-                    "tags": "string[]"
-                },
-                "returns": {"thought_id": "string", "memories_injected": "number", "embedding_model": "string", "embedding_dim": "number"}
-            }),
-            "think_build" => json!({
-                "name": "think_build",
-                "description": "Implementation thinking (incremental). Focused context injection.",
-                "arguments": {
-                    "content": "string (required)",
-                    "injection_scale": "integer|string (default: 2)",
-                    "significance": "number|string (default: 0.6)",
-                    "tags": "string[]"
-                },
-                "returns": {"thought_id": "string", "memories_injected": "number", "embedding_model": "string", "embedding_dim": "number"}
-            }),
-            "think_stuck" => json!({
-                "name": "think_stuck",
-                "description": "Breaking through blocks (lateral_thinking). Varied context injection.",
-                "arguments": {
-                    "content": "string (required)",
-                    "injection_scale": "integer|string (default: 3)",
-                    "significance": "number|string (default: 0.9)",
-                    "tags": "string[]"
-                },
-                "returns": {"thought_id": "string", "memories_injected": "number", "embedding_model": "string", "embedding_dim": "number"}
-            }),
-
             "think_search" => json!({
                 "name": "think_search",
-                "description": "Semantic search over stored thoughts; computes similarity client-side.",
+                "description": "Semantic search over stored thoughts.",
                 "arguments": {
                     "content": "string (required) — query text",
                     "top_k": "integer — max results (1-50; default from env SURR_TOP_K)",
                     "offset": "integer — pagination offset",
                     "sim_thresh": "number — minimum similarity (0.0-1.0; default SURR_SIM_THRESH)",
-
                     "min_significance": "number — filter by significance",
-                    "expand_graph": "boolean — (reserved)",
-                    "graph_depth": "integer — (reserved)",
-                    "graph_boost": "number — (reserved)",
-                    "min_edge_strength": "number — (reserved)",
                     "sort_by": "string — 'score'|'similarity'|'recency'|'significance'"
                 },
                 "returns": {"total": "number", "offset": "number", "top_k": "number", "results": "array"}
@@ -163,21 +112,16 @@ impl SurrealMindServer {
                     "min_conf": "number — minimum confidence filter",
                     "limit": "integer — page size",
                     "offset": "integer — page offset",
-                    "cursor": "string — (reserved)",
                     "items": "array — decisions: [{id, kind, decision, feedback?, canonical_id?}]",
                     "dry_run": "boolean — simulate decisions without writes"
                 },
                 "returns": {"review": {"items": "array"}, "results": "array"}
             }),
-            // Legacy aliases for KG help (kept as pointers only)
-            "knowledgegraph_create" => json!({"alias_of": "memories_create"}),
-            "knowledgegraph_search" => json!({"alias_of": "memories_search"}),
-            "knowledgegraph_moderate" => json!({"alias_of": "memories_moderate"}),
             "maintenance_ops" => json!({
                 "name": "maintenance_ops",
-                "description": "Maintenance operations for archival and cleanup of thoughts.",
+                "description": "Maintenance operations for archival, health checks, and cleanup.",
                 "arguments": {
-                    "subcommand": "string (required) — 'list_removal_candidates'|'export_removals'|'finalize_removal'",
+                    "subcommand": "string (required) — 'list_removal_candidates', 'export_removals', 'finalize_removal', 'health_check_embeddings', 'health_check_indexes', 'reembed', 'reembed_kg'",
                     "dry_run": "boolean (default: false) — simulate operation without changes",
                     "limit": "integer|string (default: 100) — max items to process",
                     "format": "string (default: 'parquet') — export format",

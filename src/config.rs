@@ -6,8 +6,6 @@ use std::collections::HashMap;
 pub struct Config {
     pub system: SystemConfig,
     pub retrieval: RetrievalConfig,
-    pub orbital_mechanics: OrbitalConfig,
-    pub submodes: HashMap<String, SubmodeConfig>,
     /// Runtime configuration loaded from environment variables
     #[serde(skip)]
     pub runtime: RuntimeConfig,
@@ -45,41 +43,10 @@ pub struct RetrievalConfig {
     pub top_k: usize,
     pub db_limit: usize,
     pub candidates: usize,
-    pub submode_tuning: bool,
     pub t1: f32,
     pub t2: f32,
     pub t3: f32,
     pub floor: f32,
-}
-
-/// Orbital mechanics for knowledge graph entity drifting and weighting
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct OrbitalConfig {
-    pub decay_rate: f32,
-    pub access_boost: f32,
-    pub significance_weight: f32,
-    pub recency_weight: f32,
-    pub access_weight: f32,
-}
-
-/// Configuration for individual submodes (thinking styles)
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct SubmodeConfig {
-    pub injection_scale: u8,
-    pub significance: f32,
-    pub kg_traverse_depth: u8,
-    pub frameworks: HashMap<String, f32>,
-    pub orbital_weights: OrbitalWeights,
-    pub auto_extract: bool,
-    pub edge_boosts: HashMap<String, f32>,
-}
-
-/// Weights for orbital mechanics calculations
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct OrbitalWeights {
-    pub recency: f32,
-    pub access: f32,
-    pub significance: f32,
 }
 
 /// Configuration for inner_voice.retrieve tool
@@ -199,7 +166,6 @@ pub struct RuntimeConfig {
     pub database_user: String,
     pub database_pass: String,
     pub openai_api_key: Option<String>,
-    pub nomic_api_key: Option<String>,
     pub tool_timeout_ms: u64,
     pub mcp_no_log: bool,
     pub log_level: String,
@@ -299,34 +265,11 @@ impl Config {
         }
     }
 
-    /// Get submode configuration by name, with fallback to "build" mode
-    pub fn get_submode(&self, mode: &str) -> &SubmodeConfig {
-        self.submodes
-            .get(mode)
-            .unwrap_or_else(|| self.submodes.get("build").unwrap())
     }
 }
 
 impl Default for Config {
     fn default() -> Self {
-        let mut submodes = HashMap::new();
-        submodes.insert(
-            "build".to_string(),
-            SubmodeConfig {
-                injection_scale: 2,
-                significance: 0.5,
-                kg_traverse_depth: 1,
-                frameworks: HashMap::new(),
-                orbital_weights: OrbitalWeights {
-                    recency: 0.4,
-                    access: 0.3,
-                    significance: 0.3,
-                },
-                auto_extract: true,
-                edge_boosts: HashMap::new(),
-            },
-        );
-
         Self {
             system: SystemConfig {
                 embedding_provider: "openai".to_string(),
@@ -346,20 +289,11 @@ impl Default for Config {
                 top_k: 10,
                 db_limit: 500,
                 candidates: 200,
-                submode_tuning: false,
                 t1: 0.6,
                 t2: 0.4,
                 t3: 0.25,
                 floor: 0.15,
             },
-            orbital_mechanics: OrbitalConfig {
-                decay_rate: 0.1,
-                access_boost: 0.2,
-                significance_weight: 0.3,
-                recency_weight: 0.4,
-                access_weight: 0.3,
-            },
-            submodes,
             runtime: RuntimeConfig::default(),
         }
     }
@@ -372,7 +306,6 @@ impl RuntimeConfig {
             database_user: std::env::var("SURR_DB_USER").unwrap_or_else(|_| "root".to_string()),
             database_pass: std::env::var("SURR_DB_PASS").unwrap_or_else(|_| "root".to_string()),
             openai_api_key: std::env::var("OPENAI_API_KEY").ok(),
-            nomic_api_key: std::env::var("NOMIC_API_KEY").ok(),
             tool_timeout_ms: std::env::var("SURR_TOOL_TIMEOUT_MS")
                 .ok()
                 .and_then(|v| v.parse().ok())

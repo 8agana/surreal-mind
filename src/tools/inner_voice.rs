@@ -217,7 +217,7 @@ impl SurrealMindServer {
 
         for cand in thought_candidates {
             if cand.embedding.len() == q_emb.len() {
-                let score = cosine(&q_emb, &cand.embedding);
+                let score = crate::utils::cosine_similarity(&q_emb, &cand.embedding);
                 if score >= floor {
                     let mut c = cand;
                     c.score = score;
@@ -228,7 +228,7 @@ impl SurrealMindServer {
 
         for cand in kg_entity_candidates.into_iter().chain(kg_obs_candidates) {
             if cand.embedding.len() == q_emb.len() {
-                let mut score = cosine(&q_emb, &cand.embedding);
+                let mut score = crate::utils::cosine_similarity(&q_emb, &cand.embedding);
                 if score >= floor {
                     // Apply entity_hints boost (advisory only)
                     if cfg.plan {
@@ -416,30 +416,20 @@ impl SurrealMindServer {
         }
 
         if !include_tags.is_empty() {
-            sql.push_str(" AND (");
-            for (i, _) in include_tags.iter().enumerate() {
-                if i > 0 {
-                    sql.push_str(" OR ");
-                }
-                sql.push_str(&format!("$tag{} IN tags", i));
-            }
-            sql.push(')');
+            sql.push_str(" AND array::any($include_tags, |$tag| $tag IN tags)");
         }
-
         if !exclude_tags.is_empty() {
-            for (i, _) in exclude_tags.iter().enumerate() {
-                sql.push_str(&format!(" AND $etag{} NOT IN tags", i));
-            }
+            sql.push_str(" AND array::none($exclude_tags, |$tag| $tag IN tags)");
         }
 
         sql.push_str(" LIMIT $limit");
 
-        // Bind tags
-        for (i, tag) in include_tags.iter().enumerate() {
-            query = query.bind((format!("tag{}", i), tag.clone()));
+        // Bind tags as arrays
+        if !include_tags.is_empty() {
+            query = query.bind(("include_tags", include_tags));
         }
-        for (i, tag) in exclude_tags.iter().enumerate() {
-            query = query.bind((format!("etag{}", i), tag.clone()));
+        if !exclude_tags.is_empty() {
+            query = query.bind(("exclude_tags", exclude_tags));
         }
 
         let mut response = query.bind(("limit", cap as i64)).await?;
@@ -601,26 +591,6 @@ impl SurrealMindServer {
             .collect();
 
         Ok(candidates)
-    }
-}
-
-/// Compute cosine similarity
-fn cosine(a: &[f32], b: &[f32]) -> f32 {
-    if a.is_empty() || b.is_empty() || a.len() != b.len() {
-        return 0.0;
-    }
-    let mut dot = 0.0;
-    let mut na = 0.0;
-    let mut nb = 0.0;
-    for i in 0..a.len() {
-        dot += a[i] * b[i];
-        na += a[i] * a[i];
-        nb += b[i] * b[i];
-    }
-    if na == 0.0 || nb == 0.0 {
-        0.0
-    } else {
-        dot / (na.sqrt() * nb.sqrt())
     }
 }
 

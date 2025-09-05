@@ -19,9 +19,6 @@ struct SearchRow {
     #[serde(default)]
     access_count: u32,
     last_accessed: Option<surrealdb::sql::Datetime>,
-    // submode removed from public API; retain only to tolerate legacy rows
-    #[serde(skip_serializing_if = "Option::is_none")]
-    submode: Option<String>,
 }
 
 /// Parameters for the search_thoughts tool
@@ -103,132 +100,54 @@ impl SurrealMindServer {
             }
         })?;
 
-        // Fetch only the fields we need for search, extracting id as string
-        let take = limit_default;
-
-        // Use meta::id() to get just the record ID without the table prefix
-        // Filter by embedding_dim FIRST to avoid dimension mismatches
+        // Let the database perform the vector search
         let q_dim = q_emb.len() as i64;
-        let sql = "SELECT meta::id(id) as id, content, embedding, significance, created_at \
-                   FROM thoughts WHERE embedding_dim = $dim LIMIT $limit";
+        let sql = "SELECT \
+                        meta::id(id) as id, \
+                        content, \
+                        significance, \
+                        vector::similarity::cosine(embedding, $q_emb) AS similarity \
+                   FROM thoughts \
+                   WHERE embedding_dim = $dim AND vector::similarity::cosine(embedding, $q_emb) > $sim_thresh \
+                   ORDER BY similarity DESC \
+                   LIMIT $limit START $start";
 
         // Execute and deserialize to simpler struct
         let mut response = self
             .db
             .query(sql)
+            .bind(("q_emb", q_emb))
             .bind(("dim", q_dim))
-            .bind(("limit", take as i64))
+            .bind(("sim_thresh", sim_thresh))
+            .bind(("limit", top_k as i64))
+            .bind(("start", offset as i64))
             .await?;
 
         #[derive(Debug, Deserialize)]
-        struct SimpleRow {
-            // Now id will be a plain string from meta::id()
+        struct SearchResultRow {
             id: String,
             content: String,
-            embedding: Vec<f32>,
             #[serde(default)]
             significance: f32,
-            created_at: surrealdb::sql::Datetime,
+            similarity: f32,
         }
 
-        let rows: Vec<SimpleRow> = response.take(0)?;
+        let results: Vec<SearchResultRow> = response.take(0)?;
+        let total = results.len();
 
-        tracing::trace!(
-            "think_search: Retrieved {} thoughts, query embedding dims: {}",
-            rows.len(),
-            q_emb.len()
-        );
-
-        // Compute cosine similarity locally
-        fn cosine(a: &[f32], b: &[f32]) -> f32 {
-            if a.is_empty() || b.is_empty() || a.len() != b.len() {
-                return 0.0;
-            }
-            let mut dot = 0.0f32;
-            let mut na = 0.0f32;
-            let mut nb = 0.0f32;
-            for i in 0..a.len() {
-                dot += a[i] * b[i];
-                na += a[i] * a[i];
-                nb += b[i] * b[i];
-            }
-            if na == 0.0 || nb == 0.0 {
-                0.0
-            } else {
-                dot / (na.sqrt() * nb.sqrt())
-            }
-        }
-
-        let mut matches: Vec<(f32, SimpleRow)> = Vec::new();
-        let mut skipped_mismatched = 0;
-        let mut below_threshold = 0;
-
-        let deep_embed_debug = std::env::var("SURR_DEEP_EMBED_DEBUG")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
-        for row in rows.into_iter() {
-            if row.embedding.len() == q_emb.len() {
-                let sim = cosine(&q_emb, &row.embedding);
-
-                // SURR_DEEP_EMBED_DEBUG=1 for fine-grained embedding details
-                if deep_embed_debug {
-                    tracing::trace!("EMBEDDING DEBUG: id={}, sim={:.6}", row.id, sim);
-                }
-
-                if sim >= sim_thresh {
-                    matches.push((sim, row));
-                } else {
-                    below_threshold += 1;
-                }
-            } else {
-                skipped_mismatched += 1;
-                tracing::debug!(
-                    "Dimension mismatch: query={}, thought={}, id={}",
-                    q_emb.len(),
-                    row.embedding.len(),
-                    row.id
-                );
-            }
-        }
-
-        if skipped_mismatched > 0 {
-            tracing::debug!(
-                "Skipped {} thoughts with mismatched embedding dimensions",
-                skipped_mismatched
-            );
-        }
         tracing::info!(
-            "search: found {} matches (sim_thresh={:.3}, below_thresh={})",
-            matches.len(),
+            "search: found {} matches (sim_thresh={:.3})",
+            results.len(),
             sim_thresh,
-            below_threshold
         );
 
-        // Sort by similarity desc, then by created_at desc for tie-breaker
-        matches.sort_by(|a, b| {
-            let sim_cmp = b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal);
-            if sim_cmp != std::cmp::Ordering::Equal {
-                sim_cmp
-            } else {
-                // Tie-break by created_at desc (newer first)
-                b.1.created_at.cmp(&a.1.created_at)
-            }
-        });
-        let total = matches.len();
-        let end = (offset + top_k).min(total);
-        let sliced = if offset < total {
-            &matches[offset..end]
-        } else {
-            &[]
-        };
-
-        let results: Vec<serde_json::Value> = sliced
-            .iter()
-            .map(|(sim, row)| {
+        let results: Vec<serde_json::Value> = results
+            .into_iter()
+            .map(|row| {
                 json!({
                     "id": row.id,
                     "content": row.content,
-                    "similarity": sim,
+                    "similarity": row.similarity,
                     "significance": row.significance
                 })
             })

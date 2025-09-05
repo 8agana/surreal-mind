@@ -16,21 +16,6 @@ pub fn convo_think_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
-pub fn tech_think_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "content": {"type": "string"},
-            "injection_scale": {"type": ["integer", "string"]},
-            "tags": {"type": "array", "items": {"type": "string"}},
-            "significance": {"type": ["number", "string"]},
-            "verbose_analysis": {"type": "boolean"}
-        },
-        "required": ["content"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
 pub fn search_thoughts_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
@@ -40,10 +25,6 @@ pub fn search_thoughts_schema() -> Arc<Map<String, Value>> {
             "offset": {"type": ["integer", "number", "string"], "minimum": 0},
             "sim_thresh": {"type": "number", "minimum": 0.0, "maximum": 1.0},
             "min_significance": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-            "expand_graph": {"type": "boolean"},
-            "graph_depth": {"type": ["integer", "number", "string"], "minimum": 0, "maximum": 3},
-            "graph_boost": {"type": "number"},
-            "min_edge_strength": {"type": "number"},
             "sort_by": {"type": "string", "enum": ["score", "similarity", "recency", "significance"], "default": "score"}
         },
         "required": ["content"]
@@ -74,45 +55,6 @@ pub fn kg_search_schema() -> Arc<Map<String, Value>> {
             "target": {"type": "string", "enum": ["entity", "relationship", "observation", "mixed"], "default": "mixed"},
             "top_k": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 50}
         }
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn kg_review_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "target": {"type": "string", "enum": ["entity", "relationship", "mixed"], "default": "mixed"},
-            "status": {"type": "string", "enum": ["pending", "approved", "rejected", "auto_approved"], "default": "pending"},
-            "min_conf": {"type": ["number", "string"], "minimum": 0.0, "maximum": 1.0},
-            "limit": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 200, "default": 50},
-            "offset": {"type": ["integer", "number", "string"], "minimum": 0, "default": 0},
-            "query": {"type": "object"}
-        }
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn kg_decide_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "items": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "id": {"type": "string"},
-                        "kind": {"type": "string", "enum": ["entity", "relationship"]},
-                        "decision": {"type": "string", "enum": ["approve", "reject"]},
-                        "feedback": {"type": "string"},
-                        "canonical_id": {"type": "string"}
-                    },
-                    "required": ["id", "kind", "decision"]
-                }
-            }
-        },
-        "required": ["items"]
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
@@ -171,7 +113,7 @@ pub fn maintenance_ops_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
         "properties": {
-            "subcommand": {"type": "string", "enum": ["list_removal_candidates", "export_removals", "finalize_removal", "health_check_embeddings", "reembed", "reembed_kg"], "description": "Maintenance operation to perform"},
+            "subcommand": {"type": "string", "enum": ["list_removal_candidates", "export_removals", "finalize_removal", "health_check_embeddings", "health_check_indexes", "reembed", "reembed_kg"], "description": "Maintenance operation to perform"},
             "dry_run": {"type": "boolean", "default": false, "description": "Simulate operation without making changes"},
             "limit": {"type": ["integer", "number", "string"], "default": 100, "description": "Maximum number of thoughts to process"},
             "format": {"type": "string", "enum": ["parquet"], "default": "parquet", "description": "Export format (only parquet supported)"},
