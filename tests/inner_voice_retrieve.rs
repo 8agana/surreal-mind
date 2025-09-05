@@ -1,8 +1,9 @@
 //! Unit tests for inner_voice tool
 
+use serde_json;
 use surreal_mind::tools::inner_voice::{
-    Candidate, allocate_slots, apply_adaptive_floor, cap_text, compute_trust_tier, hash_content,
-    select_and_dedupe,
+    Candidate, DateRange, PlannerResponse, allocate_slots, apply_adaptive_floor, cap_text,
+    compute_trust_tier, hash_content, select_and_dedupe,
 };
 
 #[cfg(test)]
@@ -147,6 +148,147 @@ mod tests {
 
         let selected = select_and_dedupe(t_hits, k_hits, 1, 1);
         assert_eq!(selected.len(), 1); // Should dedupe by hash
+    }
+
+    #[test]
+    fn test_planner_json_parsing_valid() {
+        let json = r#"{
+            "rewritten_query": "What changed in the project?",
+            "date_range": {
+                "from": "2025-01-01",
+                "to": "2025-01-31"
+            },
+            "recency_days": null,
+            "include_tags": ["important"],
+            "exclude_tags": ["private"],
+            "entity_hints": ["project", "changes"],
+            "top_k": 15,
+            "mix": 0.7,
+            "floor": 0.3
+        }"#;
+
+        let planner: PlannerResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(planner.rewritten_query, "What changed in the project?");
+        assert_eq!(planner.date_range.as_ref().unwrap().from, "2025-01-01");
+        assert_eq!(planner.date_range.as_ref().unwrap().to, "2025-01-31");
+        assert!(planner.recency_days.is_none());
+        assert_eq!(planner.include_tags, vec!["important"]);
+        assert_eq!(planner.exclude_tags, vec!["private"]);
+        assert_eq!(planner.entity_hints, vec!["project", "changes"]);
+        assert_eq!(planner.top_k, Some(15));
+        assert_eq!(planner.mix, Some(0.7));
+        assert_eq!(planner.floor, Some(0.3));
+    }
+
+    #[test]
+    fn test_planner_json_parsing_missing_required() {
+        let json = r#"{
+            "date_range": {
+                "from": "2025-01-01",
+                "to": "2025-01-31"
+            }
+        }"#;
+
+        let result: Result<PlannerResponse, _> = serde_json::from_str(json);
+        assert!(result.is_err()); // Should fail due to missing rewritten_query
+    }
+
+    #[test]
+    fn test_planner_json_parsing_empty_rewritten_query() {
+        let json = r#"{
+            "rewritten_query": "",
+            "date_range": {
+                "from": "2025-01-01",
+                "to": "2025-01-31"
+            }
+        }"#;
+
+        let planner: PlannerResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(planner.rewritten_query, ""); // Parses but should be rejected in validation
+    }
+
+    #[test]
+    fn test_planner_json_parsing_bad_types() {
+        let json = r#"{
+            "rewritten_query": "test query",
+            "recency_days": "not_a_number",
+            "top_k": "also_not_a_number"
+        }"#;
+
+        let result: Result<PlannerResponse, _> = serde_json::from_str(json);
+        assert!(result.is_err()); // Should fail due to type mismatches
+    }
+
+    #[test]
+    fn test_planner_json_parsing_minimal_valid() {
+        let json = r#"{
+            "rewritten_query": "test query"
+        }"#;
+
+        let planner: PlannerResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(planner.rewritten_query, "test query");
+        assert!(planner.date_range.is_none());
+        assert!(planner.recency_days.is_none());
+        assert!(planner.include_tags.is_empty());
+        assert!(planner.exclude_tags.is_empty());
+        assert!(planner.entity_hints.is_empty());
+        assert!(planner.top_k.is_none());
+        assert!(planner.mix.is_none());
+        assert!(planner.floor.is_none());
+    }
+
+    #[test]
+    fn test_planner_parameter_clamping() {
+        // Test top_k clamping
+        let mut top_k = 100; // Above max
+        top_k = top_k.clamp(1, 50);
+        assert_eq!(top_k, 50);
+
+        let mut top_k = 0; // Below min
+        top_k = top_k.clamp(1, 50);
+        assert_eq!(top_k, 1);
+
+        let mut top_k = 25; // Within range
+        top_k = top_k.clamp(1, 50);
+        assert_eq!(top_k, 25);
+
+        // Test mix clamping
+        let mut mix: f32 = 1.5; // Above max
+        mix = mix.clamp(0.0, 1.0);
+        assert_eq!(mix, 1.0);
+
+        let mut mix: f32 = -0.1; // Below min
+        mix = mix.clamp(0.0, 1.0);
+        assert_eq!(mix, 0.0);
+
+        let mut mix: f32 = 0.6; // Within range
+        mix = mix.clamp(0.0, 1.0);
+        assert_eq!(mix, 0.6);
+
+        // Test floor clamping
+        let mut floor: f32 = 1.2; // Above max
+        floor = floor.clamp(0.0, 1.0);
+        assert_eq!(floor, 1.0);
+
+        let mut floor: f32 = -0.05; // Below min
+        floor = floor.clamp(0.0, 1.0);
+        assert_eq!(floor, 0.0);
+
+        let mut floor: f32 = 0.25; // Within range
+        floor = floor.clamp(0.0, 1.0);
+        assert_eq!(floor, 0.25);
+    }
+
+    #[test]
+    fn test_date_range_parsing() {
+        let json = r#"{
+            "from": "2025-08-01",
+            "to": "2025-08-31"
+        }"#;
+
+        let date_range: DateRange = serde_json::from_str(json).unwrap();
+        assert_eq!(date_range.from, "2025-08-01");
+        assert_eq!(date_range.to, "2025-08-31");
     }
 
     fn create_candidate(id: &str, score: f32) -> Candidate {

@@ -4,15 +4,16 @@ use crate::error::{Result, SurrealMindError};
 use crate::schemas::Snippet;
 use crate::server::SurrealMindServer;
 use blake3::Hasher;
+use chrono::Utc;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use reqwest::Client;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::HashSet;
 use std::time::Instant;
 use unicode_normalization::UnicodeNormalization;
-use reqwest::Client;
 
 /// Parameters for the inner_voice tool
 #[derive(Debug, serde::Deserialize)]
@@ -30,6 +31,35 @@ pub struct InnerVoiceRetrieveParams {
     pub include_tags: Vec<String>,
     #[serde(default)]
     pub exclude_tags: Vec<String>,
+}
+
+/// Planner response from Grok
+#[derive(Debug, Clone, Deserialize)]
+pub struct PlannerResponse {
+    pub rewritten_query: String,
+    #[serde(default)]
+    pub date_range: Option<DateRange>,
+    #[serde(default)]
+    pub recency_days: Option<u32>,
+    #[serde(default)]
+    pub include_tags: Vec<String>,
+    #[serde(default)]
+    pub exclude_tags: Vec<String>,
+    #[serde(default)]
+    pub entity_hints: Vec<String>,
+    #[serde(default)]
+    pub top_k: Option<usize>,
+    #[serde(default)]
+    pub mix: Option<f32>,
+    #[serde(default)]
+    pub floor: Option<f32>,
+}
+
+/// Date range for temporal filtering
+#[derive(Debug, Clone, Deserialize)]
+pub struct DateRange {
+    pub from: String,
+    pub to: String,
 }
 
 /// Internal struct for candidate items
@@ -85,19 +115,77 @@ impl SurrealMindServer {
             });
         }
 
-        let start_time = Instant::now();
+        let _start_time = Instant::now();
 
         // Config
         let cfg = &self.config.runtime.inner_voice;
-        let top_k = params.top_k.unwrap_or(cfg.topk_default).clamp(1, 50);
-        let floor = params.floor.unwrap_or(cfg.min_floor).clamp(0.0, 1.0);
-        let mix = params.mix.unwrap_or(cfg.mix).clamp(0.0, 1.0);
+        let mut top_k = params.top_k.unwrap_or(cfg.topk_default).clamp(1, 50);
+        let mut floor = params.floor.unwrap_or(cfg.min_floor).clamp(0.0, 1.0);
+        let mut mix = params.mix.unwrap_or(cfg.mix).clamp(0.0, 1.0);
         let include_private = params
             .include_private
             .unwrap_or(cfg.include_private_default);
 
+        // Planner stage (if enabled)
+        let mut effective_query = params.query.clone();
+        let mut include_tags = params.include_tags.clone();
+        let mut exclude_tags = params.exclude_tags.clone();
+        let mut date_filter = None;
+        let mut planner_response = None;
+        if cfg.plan {
+            let base = std::env::var("GROK_BASE_URL")
+                .unwrap_or_else(|_| "https://api.x.ai/v1".to_string());
+            let grok_key = std::env::var("GROK_API_KEY").unwrap_or_default();
+            if !grok_key.is_empty() {
+                match call_planner_grok(&base, &grok_key, &params.query).await {
+                    Ok(planner) => {
+                        planner_response = Some(planner.clone());
+                        // Use rewritten query
+                        effective_query = planner.rewritten_query;
+
+                        // Apply planner overrides
+                        if let Some(p_top_k) = planner.top_k {
+                            top_k = p_top_k.clamp(1, 50);
+                        }
+                        if let Some(p_mix) = planner.mix {
+                            mix = p_mix.clamp(0.0, 1.0);
+                        }
+                        if let Some(p_floor) = planner.floor {
+                            floor = p_floor.clamp(0.0, 1.0);
+                        }
+
+                        // Tags
+                        if !planner.include_tags.is_empty() {
+                            include_tags.extend(planner.include_tags);
+                        }
+                        if !planner.exclude_tags.is_empty() {
+                            exclude_tags.extend(planner.exclude_tags);
+                        }
+
+                        // Date filter
+                        if let Some(date_range) = planner.date_range {
+                            date_filter = Some(date_range);
+                        } else if let Some(days) = planner.recency_days {
+                            if days > 0 {
+                                let now = Utc::now();
+                                let from = now - chrono::Duration::days(days as i64);
+                                date_filter = Some(DateRange {
+                                    from: from.format("%Y-%m-%d").to_string(),
+                                    to: now.format("%Y-%m-%d").to_string(),
+                                });
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        // Fallback to single-pass: use original query
+                        effective_query = params.query.clone();
+                    }
+                }
+            }
+        }
+
         // Embed query
-        let q_emb = self.embedder.embed(&params.query).await.map_err(|e| {
+        let q_emb = self.embedder.embed(&effective_query).await.map_err(|e| {
             SurrealMindError::EmbedderUnavailable {
                 message: e.to_string(),
             }
@@ -107,11 +195,21 @@ impl SurrealMindServer {
         // Fetch candidates
         let cap = (3 * top_k).min(cfg.max_candidates_per_source);
         let thought_candidates = self
-            .fetch_thought_candidates(&params, cap, q_dim, include_private)
+            .fetch_thought_candidates(
+                &params,
+                cap,
+                q_dim,
+                include_private,
+                &date_filter,
+                &include_tags,
+                &exclude_tags,
+            )
             .await?;
-        let kg_entity_candidates = self.fetch_kg_entity_candidates(&params, cap, q_dim).await?;
+        let kg_entity_candidates = self
+            .fetch_kg_entity_candidates(&params, cap, q_dim, &date_filter)
+            .await?;
         let kg_obs_candidates = self
-            .fetch_kg_observation_candidates(&params, cap, q_dim)
+            .fetch_kg_observation_candidates(&params, cap, q_dim, &date_filter)
             .await?;
 
         // Compute similarities
@@ -131,8 +229,22 @@ impl SurrealMindServer {
 
         for cand in kg_entity_candidates.into_iter().chain(kg_obs_candidates) {
             if cand.embedding.len() == q_emb.len() {
-                let score = cosine(&q_emb, &cand.embedding);
+                let mut score = cosine(&q_emb, &cand.embedding);
                 if score >= floor {
+                    // Apply entity_hints boost (advisory only)
+                    if cfg.plan {
+                        if let Some(planner) = &planner_response {
+                            if !planner.entity_hints.is_empty() {
+                                let name_lower = cand.text.to_lowercase();
+                                for hint in &planner.entity_hints {
+                                    if name_lower.contains(&hint.to_lowercase()) {
+                                        score += 0.05; // Small boost
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
                     let mut c = cand;
                     c.score = score;
                     kg_hits.push(c);
@@ -141,7 +253,7 @@ impl SurrealMindServer {
         }
 
         // Adaptive floor if needed
-        let (t_hits, k_hits, floor_used) =
+        let (t_hits, k_hits, _floor_used) =
             apply_adaptive_floor(&thought_hits, &kg_hits, floor, cfg.min_floor, top_k);
 
         // Allocate slots
@@ -183,7 +295,8 @@ impl SurrealMindServer {
             .collect();
 
         // Synthesize with Grok (required behavior). If missing key, produce a gentle self-question.
-        let base = std::env::var("GROK_BASE_URL").unwrap_or_else(|_| "https://api.x.ai/v1".to_string());
+        let base =
+            std::env::var("GROK_BASE_URL").unwrap_or_else(|_| "https://api.x.ai/v1".to_string());
         let model = std::env::var("GROK_MODEL").unwrap_or_else(|_| "grok-code-fast-1".to_string());
         let grok_key = std::env::var("GROK_API_KEY").unwrap_or_default();
         let messages = build_synthesis_messages(&params.query, &snippets);
@@ -208,7 +321,13 @@ impl SurrealMindServer {
                 "thoughts" => "thoughts:",
                 "kg_entities" => "kge:",
                 "kg_observations" => "kgo:",
-                other => if other.len() > 3 { &other[0..3] } else { other },
+                other => {
+                    if other.len() > 3 {
+                        &other[0..3]
+                    } else {
+                        other
+                    }
+                }
             };
             ids.push(format!("{}{}", prefix, c.id));
         }
@@ -219,9 +338,13 @@ impl SurrealMindServer {
         }
 
         // Embed synthesized content and save as a new thought (origin = inner_voice), injection disabled
-        let embedding = self.embedder.embed(&synthesized).await.map_err(|e| {
-            SurrealMindError::Embedding { message: e.to_string() }
-        })?;
+        let embedding =
+            self.embedder
+                .embed(&synthesized)
+                .await
+                .map_err(|e| SurrealMindError::Embedding {
+                    message: e.to_string(),
+                })?;
         let thought_id = uuid::Uuid::new_v4().to_string();
         let (provider, model_name, dim) = self.get_embedding_metadata();
         self.db
@@ -265,10 +388,13 @@ impl SurrealMindServer {
 
     async fn fetch_thought_candidates(
         &self,
-        params: &InnerVoiceRetrieveParams,
+        _params: &InnerVoiceRetrieveParams,
         cap: usize,
         q_dim: i64,
         include_private: bool,
+        date_filter: &Option<DateRange>,
+        include_tags: &[String],
+        exclude_tags: &[String],
     ) -> Result<Vec<Candidate>> {
         let mut sql = "SELECT meta::id(id) AS id, content, embedding, created_at, origin ?? 'human' AS origin, tags ?? [] AS tags, is_private ?? false AS is_private FROM thoughts WHERE embedding_dim = $dim".to_string();
 
@@ -276,11 +402,25 @@ impl SurrealMindServer {
             sql.push_str(" AND is_private != true");
         }
 
+        // Date filter
+        if let Some(_date_range) = date_filter {
+            sql.push_str(" AND created_at >= $from_date AND created_at <= $to_date");
+        }
+
         let mut query = self.db.query(&sql).bind(("dim", q_dim));
 
-        if !params.include_tags.is_empty() {
+        // Date bindings
+        if let Some(date_range) = date_filter {
+            let from_datetime = format!("{}T00:00:00Z", date_range.from);
+            let to_datetime = format!("{}T23:59:59Z", date_range.to);
+            query = query
+                .bind(("from_date", from_datetime))
+                .bind(("to_date", to_datetime));
+        }
+
+        if !include_tags.is_empty() {
             sql.push_str(" AND (");
-            for (i, _) in params.include_tags.iter().enumerate() {
+            for (i, _) in include_tags.iter().enumerate() {
                 if i > 0 {
                     sql.push_str(" OR ");
                 }
@@ -289,8 +429,8 @@ impl SurrealMindServer {
             sql.push(')');
         }
 
-        if !params.exclude_tags.is_empty() {
-            for (i, _) in params.exclude_tags.iter().enumerate() {
+        if !exclude_tags.is_empty() {
+            for (i, _) in exclude_tags.iter().enumerate() {
                 sql.push_str(&format!(" AND $etag{} NOT IN tags", i));
             }
         }
@@ -298,10 +438,10 @@ impl SurrealMindServer {
         sql.push_str(" LIMIT $limit");
 
         // Bind tags
-        for (i, tag) in params.include_tags.iter().enumerate() {
+        for (i, tag) in include_tags.iter().enumerate() {
             query = query.bind((format!("tag{}", i), tag.clone()));
         }
-        for (i, tag) in params.exclude_tags.iter().enumerate() {
+        for (i, tag) in exclude_tags.iter().enumerate() {
             query = query.bind((format!("etag{}", i), tag.clone()));
         }
 
@@ -345,15 +485,33 @@ impl SurrealMindServer {
         _params: &InnerVoiceRetrieveParams,
         cap: usize,
         q_dim: i64,
+        date_filter: &Option<DateRange>,
     ) -> Result<Vec<Candidate>> {
-        let sql = "SELECT meta::id(id) AS id, name ?? 'unknown' AS content, embedding, created_at FROM kg_entities WHERE embedding IS NOT NULL AND embedding_dim = $dim LIMIT $limit";
+        let mut sql = "SELECT meta::id(id) AS id, name ?? 'unknown' AS content, embedding, created_at FROM kg_entities WHERE embedding IS NOT NULL AND embedding_dim = $dim".to_string();
 
-        let mut response = self
+        // Date filter
+        if date_filter.is_some() {
+            sql.push_str(" AND created_at >= $from_date AND created_at <= $to_date");
+        }
+
+        sql.push_str(" LIMIT $limit");
+
+        let mut query = self
             .db
-            .query(sql)
+            .query(&sql)
             .bind(("dim", q_dim))
-            .bind(("limit", cap as i64))
-            .await?;
+            .bind(("limit", cap as i64));
+
+        // Date bindings
+        if let Some(date_range) = date_filter {
+            let from_datetime = format!("{}T00:00:00Z", date_range.from);
+            let to_datetime = format!("{}T23:59:59Z", date_range.to);
+            query = query
+                .bind(("from_date", from_datetime))
+                .bind(("to_date", to_datetime));
+        }
+
+        let mut response = query.await?;
 
         #[derive(Deserialize)]
         struct KgEntityRow {
@@ -390,15 +548,33 @@ impl SurrealMindServer {
         _params: &InnerVoiceRetrieveParams,
         cap: usize,
         q_dim: i64,
+        date_filter: &Option<DateRange>,
     ) -> Result<Vec<Candidate>> {
-        let sql = "SELECT meta::id(id) AS id, content ?? 'unknown' AS content, embedding, created_at FROM kg_observations WHERE embedding IS NOT NULL AND embedding_dim = $dim LIMIT $limit";
+        let mut sql = "SELECT meta::id(id) AS id, content ?? 'unknown' AS content, embedding, created_at FROM kg_observations WHERE embedding IS NOT NULL AND embedding_dim = $dim".to_string();
 
-        let mut response = self
+        // Date filter
+        if date_filter.is_some() {
+            sql.push_str(" AND created_at >= $from_date AND created_at <= $to_date");
+        }
+
+        sql.push_str(" LIMIT $limit");
+
+        let mut query = self
             .db
-            .query(sql)
+            .query(&sql)
             .bind(("dim", q_dim))
-            .bind(("limit", cap as i64))
-            .await?;
+            .bind(("limit", cap as i64));
+
+        // Date bindings
+        if let Some(date_range) = date_filter {
+            let from_datetime = format!("{}T00:00:00Z", date_range.from);
+            let to_datetime = format!("{}T23:59:59Z", date_range.to);
+            query = query
+                .bind(("from_date", from_datetime))
+                .bind(("to_date", to_datetime));
+        }
+
+        let mut response = query.await?;
 
         #[derive(Deserialize)]
         struct KgObsRow {
@@ -477,8 +653,89 @@ fn build_synthesis_messages(query: &str, snippets: &[Snippet]) -> serde_json::Va
     ])
 }
 
+/// Call Grok for planner constraints
+async fn call_planner_grok(base: &str, api_key: &str, query: &str) -> Result<PlannerResponse> {
+    let system_prompt = "You are a query planner. Convert the user's request into explicit retrieval constraints. Output strict JSON matching the provided schema. Use concrete ISO-8601 dates. Do not include any text outside JSON.";
+    let schema_reminder = r#"{
+  "rewritten_query": "string",              // required, non-empty
+  "date_range": {                           // optional; concrete ISO-8601 dates
+      "from": "YYYY-MM-DD",
+      "to": "YYYY-MM-DD"
+  },
+  "recency_days": 7,                        // optional; integer > 0
+  "include_tags": ["string", ...],          // optional
+  "exclude_tags": ["string", ...],          // optional
+  "entity_hints": ["string", ...],          // optional; advisory only
+  "top_k": 10,                              // optional; 1..50
+  "mix": 0.6,                               // optional; 0.0..1.0 (kg share)
+  "floor": 0.25                             // optional; 0.0..1.0
+}"#;
+    let user_prompt = format!("Query: {}\n\nSchema: {}", query, schema_reminder);
+
+    let messages = json!([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]);
+
+    let url = format!("{}/chat/completions", base.trim_end_matches('/'));
+    let body = json!({
+        "model": "grok-code-fast-1",
+        "messages": messages,
+        "temperature": 0.2,
+        "max_tokens": 200
+    });
+    let client = Client::new();
+    let resp = client
+        .post(url)
+        .bearer_auth(api_key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| SurrealMindError::Internal {
+            message: e.to_string(),
+        })?;
+    let val: serde_json::Value = resp.json().await.map_err(|e| SurrealMindError::Internal {
+        message: e.to_string(),
+    })?;
+
+    if let Some(choice) = val.get("choices").and_then(|c| c.get(0)) {
+        if let Some(content) = choice
+            .get("message")
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_str())
+        {
+            let trimmed = content.trim();
+            // Try to parse as JSON
+            match serde_json::from_str::<PlannerResponse>(trimmed) {
+                Ok(planner) => {
+                    // Validate required field
+                    if planner.rewritten_query.trim().is_empty() {
+                        return Err(SurrealMindError::Internal {
+                            message: "Planner returned empty rewritten_query".into(),
+                        });
+                    }
+                    return Ok(planner);
+                }
+                Err(e) => {
+                    return Err(SurrealMindError::Internal {
+                        message: format!("Failed to parse planner JSON: {}", e),
+                    });
+                }
+            }
+        }
+    }
+    Err(SurrealMindError::Internal {
+        message: "No valid response from planner".into(),
+    })
+}
+
 /// Call Grok chat/completions
-async fn call_grok(base: &str, model: &str, api_key: &str, messages: &serde_json::Value) -> Result<String> {
+async fn call_grok(
+    base: &str,
+    model: &str,
+    api_key: &str,
+    messages: &serde_json::Value,
+) -> Result<String> {
     let url = format!("{}/chat/completions", base.trim_end_matches('/'));
     let body = serde_json::json!({
         "model": model,
@@ -493,13 +750,18 @@ async fn call_grok(base: &str, model: &str, api_key: &str, messages: &serde_json
         .json(&body)
         .send()
         .await
-        .map_err(|e| SurrealMindError::Internal { message: e.to_string() })?;
-    let val: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| SurrealMindError::Internal { message: e.to_string() })?;
+        .map_err(|e| SurrealMindError::Internal {
+            message: e.to_string(),
+        })?;
+    let val: serde_json::Value = resp.json().await.map_err(|e| SurrealMindError::Internal {
+        message: e.to_string(),
+    })?;
     if let Some(choice) = val.get("choices").and_then(|c| c.get(0)) {
-        if let Some(content) = choice.get("message").and_then(|m| m.get("content")).and_then(|c| c.as_str()) {
+        if let Some(content) = choice
+            .get("message")
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_str())
+        {
             return Ok(content.trim().to_string());
         }
     }

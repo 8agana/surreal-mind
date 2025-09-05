@@ -91,6 +91,7 @@ pub struct InnerVoiceConfig {
     pub min_floor: f32,
     pub max_candidates_per_source: usize,
     pub include_private_default: bool,
+    pub plan: bool,
 }
 
 impl Default for InnerVoiceConfig {
@@ -103,6 +104,7 @@ impl Default for InnerVoiceConfig {
             min_floor: 0.15,
             max_candidates_per_source: 150,
             include_private_default: false,
+            plan: false,
         }
     }
 }
@@ -162,6 +164,10 @@ impl InnerVoiceConfig {
         if let Ok(include_private) = std::env::var("SURR_INNER_VOICE_INCLUDE_PRIVATE_DEFAULT") {
             config.include_private_default =
                 include_private == "1" || include_private.to_lowercase() == "true";
+        }
+
+        if let Ok(plan) = std::env::var("SURR_IV_PLAN") {
+            config.plan = plan == "1" || plan.to_lowercase() == "true";
         }
 
         config
