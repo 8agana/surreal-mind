@@ -156,13 +156,44 @@ pub fn detailed_help_schema() -> Arc<Map<String, Value>> {
             "tool": {"type": "string", "enum": [
                 // Canonical tool names only
                 "think_convo", "think_plan", "think_debug", "think_build", "think_stuck",
-                "think_search",
-                "memories_create", "memories_search", "memories_moderate",
+                "memories_create", "memories_moderate",
+                "legacymind_search", "photography_search",
                 "maintenance_ops",
                 "inner_voice"
             ]},
             "format": {"type": "string", "enum": ["compact", "full"], "default": "full"}
         }
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn photography_memories_schema() -> Arc<Map<String, Value>> {
+    // Unified schema that can express create/search/moderate operations
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "mode": {"type": "string", "enum": ["create", "search", "moderate"], "default": "search"},
+            // create-like
+            "kind": {"type": "string", "enum": ["entity", "relationship", "observation"]},
+            "data": {"type": "object"},
+            "upsert": {"type": "boolean"},
+            "source_thought_id": {"type": "string"},
+            "confidence": {"type": ["number", "string"]},
+            // search-like
+            "query": {"type": "object"},
+            "target": {"type": "string", "enum": ["entity", "relationship", "observation", "mixed"]},
+            "top_k": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 50},
+            // moderate-like
+            "action": {"type": "string", "enum": ["review", "decide", "review_and_decide"]},
+            "status": {"type": "string", "enum": ["pending", "approved", "rejected", "auto_approved"]},
+            "min_conf": {"type": ["number", "string"], "minimum": 0.0, "maximum": 1.0},
+            "limit": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 200},
+            "offset": {"type": ["integer", "number", "string"], "minimum": 0},
+            "cursor": {"type": "string"},
+            "items": {"type": "array"},
+            "dry_run": {"type": "boolean"}
+        },
+        "required": ["mode"]
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
@@ -178,6 +209,22 @@ pub fn maintenance_ops_schema() -> Arc<Map<String, Value>> {
             "output_dir": {"type": "string", "default": "./archive", "description": "Directory for export files"}
         },
         "required": ["subcommand"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn unified_search_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "query": {"type": "object"},
+            "target": {"type": "string", "enum": ["entity", "relationship", "observation", "mixed"], "default": "mixed"},
+            "include_thoughts": {"type": "boolean", "default": false},
+            "thoughts_content": {"type": "string"},
+            "top_k_memories": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 50, "default": 10},
+            "top_k_thoughts": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 50, "default": 5},
+            "sim_thresh": {"type": "number", "minimum": 0.0, "maximum": 1.0}
+        }
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
@@ -241,3 +288,5 @@ pub fn inner_voice_schema() -> Arc<Map<String, Value>> {
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
+
+// (photography_search_schema removed in favor of two explicit tools)

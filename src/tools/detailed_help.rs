@@ -50,10 +50,10 @@ impl SurrealMindServer {
                 {"name": "think_debug", "one_liner": "Root cause analysis (maximum context)", "key_params": ["content", "injection_scale", "significance", "tags"]},
                 {"name": "think_build", "one_liner": "Implementation-focused thinking (focused context)", "key_params": ["content", "injection_scale", "significance", "tags"]},
                 {"name": "think_stuck", "one_liner": "Lateral thinking to unblock progress", "key_params": ["content", "injection_scale", "significance", "tags"]},
-                {"name": "think_search", "one_liner": "Semantic search over thoughts with optional graph expansion", "key_params": ["content", "top_k", "sim_thresh", "offset"]},
                 {"name": "memories_create", "one_liner": "Create entities/relationships/observations in the KG", "key_params": ["kind", "data", "confidence", "source_thought_id"]},
-                {"name": "memories_search", "one_liner": "Search the Knowledge Graph", "key_params": ["target", "query", "top_k"]},
                 {"name": "memories_moderate", "one_liner": "Review/decide on KG candidates", "key_params": ["action", "target", "status", "items", "dry_run"]},
+                {"name": "legacymind_search", "one_liner": "Unified LM search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]},
+                {"name": "photography_search", "one_liner": "Unified Photography search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]},
                 {"name": "maintenance_ops", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]}
             ]);
             return Ok(CallToolResult::structured(overview));
@@ -118,24 +118,19 @@ impl SurrealMindServer {
                 },
                 "returns": {"thought_id": "string", "memories_injected": "number", "embedding_model": "string", "embedding_dim": "number"}
             }),
-
-            "think_search" => json!({
-                "name": "think_search",
-                "description": "Semantic search over stored thoughts; computes similarity client-side.",
+            "legacymind_search" => json!({
+                "name": "legacymind_search",
+                "description": "Unified search in LegacyMind: searches memories by default and, when include_thoughts=true, also searches thoughts.",
                 "arguments": {
-                    "content": "string (required) — query text",
-                    "top_k": "integer — max results (1-50; default from env SURR_TOP_K)",
-                    "offset": "integer — pagination offset",
-                    "sim_thresh": "number — minimum similarity (0.0-1.0; default SURR_SIM_THRESH)",
-
-                    "min_significance": "number — filter by significance",
-                    "expand_graph": "boolean — (reserved)",
-                    "graph_depth": "integer — (reserved)",
-                    "graph_boost": "number — (reserved)",
-                    "min_edge_strength": "number — (reserved)",
-                    "sort_by": "string — 'score'|'similarity'|'recency'|'significance'"
+                    "query": "object — used for memories search (e.g., {name})",
+                    "target": "'entity'|'relationship'|'observation'|'mixed' (default 'mixed')",
+                    "include_thoughts": "boolean (default false) — also search thoughts",
+                    "thoughts_content": "string — optional explicit query text for thoughts",
+                    "top_k_memories": "integer (1-50; default 10)",
+                    "top_k_thoughts": "integer (1-50; default 5)",
+                    "sim_thresh": "number (0.0-1.0) — similarity floor for thoughts"
                 },
-                "returns": {"total": "number", "offset": "number", "top_k": "number", "results": "array"}
+                "returns": {"memories": {"items": "array"}, "thoughts": {"total": "number", "results": "array"}}
             }),
             "memories_create" => json!({
                 "name": "memories_create",
@@ -147,11 +142,19 @@ impl SurrealMindServer {
                 },
                 "returns": {"created": true, "id": "string", "kind": "string"}
             }),
-            "memories_search" => json!({
-                "name": "memories_search",
-                "description": "Search personal memory entities/relationships; returns items.",
-                "arguments": {"target": "'entity'|'relationship'|'mixed'", "query": "object — {name?}", "top_k": "integer"},
-                "returns": {"items": "array"}
+            "photography_search" => json!({
+                "name": "photography_search",
+                "description": "Unified search in Photography (ns=photography, db=work): memories by default + optional thoughts when include_thoughts=true.",
+                "arguments": {
+                    "query": "object — used for memories (e.g., {name})",
+                    "target": "'entity'|'relationship'|'observation'|'mixed' (default 'mixed')",
+                    "include_thoughts": "boolean (default false)",
+                    "thoughts_content": "string — optional explicit query text for thoughts",
+                    "top_k_memories": "integer (1-50; default 10)",
+                    "top_k_thoughts": "integer (1-50; default 5)",
+                    "sim_thresh": "number (0.0-1.0) — similarity floor for thoughts"
+                },
+                "returns": {"memories": {"items": "array"}, "thoughts": {"total": "number", "results": "array"}}
             }),
             "memories_moderate" => json!({
                 "name": "memories_moderate",

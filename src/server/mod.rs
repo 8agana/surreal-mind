@@ -149,6 +149,8 @@ pub struct SearchThoughtsParams {
 #[derive(Clone)]
 pub struct SurrealMindServer {
     pub db: Arc<Surreal<Client>>,
+    /// Optional secondary database handle for photography namespace/db
+    pub db_photo: Option<Arc<Surreal<Client>>>,
     pub thoughts: Arc<RwLock<LruCache<String, Thought>>>, // Bounded in-memory cache (LRU)
     pub embedder: Arc<dyn Embedder>,
     pub config: Arc<crate::config::Config>, // Retain config to avoid future env reads
@@ -196,24 +198,16 @@ impl ServerHandler for SurrealMindServer {
         let tech_think_schema_map = crate::schemas::tech_think_schema();
 
         let maintenance_ops_schema_map = crate::schemas::maintenance_ops_schema();
-
-        let search_thoughts_schema_map = crate::schemas::search_thoughts_schema();
-
         let kg_create_schema_map = crate::schemas::kg_create_schema();
-
-        let kg_search_schema_map = crate::schemas::kg_search_schema();
-
         let kg_moderate_schema_map = crate::schemas::kg_moderate_schema();
-
         let detailed_help_schema_map = crate::schemas::detailed_help_schema();
-
         let inner_voice_schema_map = crate::schemas::inner_voice_schema();
 
         let mut tools = vec![
             Tool {
                 name: "think_convo".into(),
                 description: Some("Store conversational thoughts with memory injection".into()),
-                input_schema: convo_think_schema_map,
+                input_schema: convo_think_schema_map.clone(),
                 annotations: None,
                 output_schema: None,
             },
@@ -254,13 +248,7 @@ impl ServerHandler for SurrealMindServer {
                 annotations: None,
                 output_schema: None,
             },
-            Tool {
-                name: "think_search".into(),
-                description: Some("Search thoughts with similarity and graph expansion".into()),
-                input_schema: search_thoughts_schema_map,
-                annotations: None,
-                output_schema: None,
-            },
+            // (legacy think_search removed — use legacymind_search)
             Tool {
                 name: "memories_create".into(),
                 description: Some(
@@ -270,13 +258,7 @@ impl ServerHandler for SurrealMindServer {
                 annotations: None,
                 output_schema: None,
             },
-            Tool {
-                name: "memories_search".into(),
-                description: Some("Search entities/relationships in personal memory graph".into()),
-                input_schema: kg_search_schema_map,
-                annotations: None,
-                output_schema: None,
-            },
+            // (legacy memories_search removed — use legacymind_search or photography_search)
             Tool {
                 name: "memories_moderate".into(),
                 description: Some("Review and/or decide on memory graph candidates".into()),
@@ -304,6 +286,39 @@ impl ServerHandler for SurrealMindServer {
             output_schema: None,
         });
 
+        // Photography tools (always visible; handlers handle connection)
+        let photo_mem_schema = crate::schemas::photography_memories_schema();
+        let unified_schema = crate::schemas::unified_search_schema();
+        tools.push(Tool {
+            name: "photography_think".into(),
+            description: Some("Store photography thoughts with memory injection (isolated repo)".into()),
+            input_schema: convo_think_schema_map.clone(),
+            annotations: None,
+            output_schema: None,
+        });
+        tools.push(Tool {
+            name: "photography_memories".into(),
+            description: Some("Create/search/moderate photography knowledge graph (isolated repo)".into()),
+            input_schema: photo_mem_schema,
+            annotations: None,
+            output_schema: None,
+        });
+        tools.push(Tool {
+            name: "legacymind_search".into(),
+            description: Some("Unified LegacyMind search: memories (default) + optional thoughts".into()),
+            input_schema: unified_schema.clone(),
+            annotations: None,
+            output_schema: None,
+        });
+        tools.push(Tool {
+            name: "photography_search".into(),
+            description: Some("Unified photography search: memories (default) + optional thoughts".into()),
+            input_schema: unified_schema,
+            annotations: None,
+            output_schema: None,
+        });
+        // (removed) photography_thoughts_search and photography_memories_search in favor of unified photography_search
+
         Ok(ListToolsResult {
             tools,
             ..Default::default()
@@ -328,18 +343,9 @@ impl ServerHandler for SurrealMindServer {
                 .handle_maintenance_ops(request)
                 .await
                 .map_err(|e| e.into()),
-            // Search rename
-            "think_search" => self
-                .handle_search_thoughts(request)
-                .await
-                .map_err(|e| e.into()),
-            // Memory tools (rename of knowledgegraph_*)
+            // Memory tools
             "memories_create" => self
                 .handle_knowledgegraph_create(request)
-                .await
-                .map_err(|e| e.into()),
-            "memories_search" => self
-                .handle_knowledgegraph_search(request)
                 .await
                 .map_err(|e| e.into()),
             "memories_moderate" => self
@@ -362,6 +368,24 @@ impl ServerHandler for SurrealMindServer {
                 .handle_detailed_help(request)
                 .await
                 .map_err(|e| e.into()),
+            // Photography (feature-gated)
+            "photography_think" => self
+                .handle_photography_think(request)
+                .await
+                .map_err(|e| e.into()),
+            "photography_memories" => self
+                .handle_photography_memories(request)
+                .await
+                .map_err(|e| e.into()),
+            "legacymind_search" => self
+                .handle_unified_search(request)
+                .await
+                .map_err(|e| e.into()),
+            "photography_search" => self
+                .handle_photography_unified_search(request)
+                .await
+                .map_err(|e| e.into()),
+            // (removed) photography_thoughts_search and photography_memories_search
             _ => Err(McpError {
                 code: rmcp::model::ErrorCode::METHOD_NOT_FOUND,
                 message: format!("Unknown tool: {}", request.name).into(),
@@ -397,7 +421,7 @@ impl SurrealMindServer {
         let dbname = &config.system.database_db;
 
         // Connect to the running SurrealDB service
-        let db = Surreal::new::<surrealdb::engine::remote::ws::Ws>(url)
+        let db = Surreal::new::<surrealdb::engine::remote::ws::Ws>(&url)
             .await
             .context("Failed to connect to SurrealDB service")?;
 
@@ -432,8 +456,61 @@ impl SurrealMindServer {
             .unwrap_or(5000);
         let thoughts_cache = LruCache::new(NonZeroUsize::new(cache_max).unwrap());
 
+        // Optionally connect a photography database handle
+        let db_photo: Option<Arc<Surreal<Client>>> = if config.runtime.photo_enable {
+            // Determine photo connection params (fallback to primary where not provided)
+            let p_url = config
+                .runtime
+                .photo_url
+                .as_ref()
+                .map(|s| normalize_ws_url(s))
+                .unwrap_or_else(|| url.clone());
+            let p_user = config
+                .runtime
+                .photo_user
+                .as_ref()
+                .unwrap_or(user)
+                .to_string();
+            let p_pass = config
+                .runtime
+                .photo_pass
+                .as_ref()
+                .unwrap_or(pass)
+                .to_string();
+            let p_ns = config
+                .runtime
+                .photo_ns
+                .as_ref()
+                .unwrap_or(ns)
+                .to_string();
+            let p_db = config
+                .runtime
+                .photo_db
+                .as_ref()
+                .unwrap_or(dbname)
+                .to_string();
+
+            let dbp = Surreal::new::<surrealdb::engine::remote::ws::Ws>(&p_url)
+                .await
+                .context("Failed to connect to SurrealDB (photography)")?;
+            dbp.signin(surrealdb::opt::auth::Root {
+                username: &p_user,
+                password: &p_pass,
+            })
+            .await
+            .context("Failed to authenticate with SurrealDB (photography)")?;
+            dbp.use_ns(&p_ns)
+                .use_db(&p_db)
+                .await
+                .context("Failed to select photography NS/DB")?;
+            Some(Arc::new(dbp))
+        } else {
+            None
+        };
+
         let server = Self {
             db: Arc::new(db),
+            db_photo,
             thoughts: Arc::new(RwLock::new(thoughts_cache)),
             embedder,
             config: Arc::new(config.clone()),
@@ -446,6 +523,17 @@ impl SurrealMindServer {
                 message: e.message.to_string(),
             })?;
 
+        // Initialize schema in photography DB if present
+        if let Some(photo_db) = &server.db_photo {
+            let photo_server = server.clone_with_db(photo_db.clone());
+            photo_server
+                .initialize_schema()
+                .await
+                .map_err(|e| SurrealMindError::Mcp {
+                    message: format!("(photography) {}", e.message),
+                })?;
+        }
+
         Ok(server)
     }
 
@@ -454,7 +542,10 @@ impl SurrealMindServer {
         info!("Initializing consciousness graph schema");
 
         // Minimal schema to ensure required tables exist
-        let schema_sql = r"
+        // Note: SurrealDB 2.x requires vector index definitions to include DIMENSION.
+        // We derive the active embedding dimension from the embedder to avoid drift.
+        let dim = self.embedder.dimensions();
+        let schema_sql = format!(r#"
             DEFINE TABLE thoughts SCHEMAFULL;
             DEFINE FIELD content ON TABLE thoughts TYPE string;
             DEFINE FIELD created_at ON TABLE thoughts TYPE datetime;
@@ -478,6 +569,7 @@ impl SurrealMindServer {
             DEFINE FIELD embedding_provider ON TABLE thoughts TYPE option<string>;
             DEFINE FIELD embedding_dim ON TABLE thoughts TYPE option<int>;
             DEFINE FIELD embedded_at ON TABLE thoughts TYPE option<datetime>;
+            DEFINE INDEX thoughts_embedding_idx ON TABLE thoughts FIELDS embedding HNSW DIMENSION {dim};
             DEFINE INDEX thoughts_status_idx ON TABLE thoughts FIELDS status;
             DEFINE INDEX idx_thoughts_created ON TABLE thoughts FIELDS created_at;
             DEFINE INDEX idx_thoughts_embedding_model ON TABLE thoughts FIELDS embedding_model;
@@ -513,7 +605,7 @@ impl SurrealMindServer {
             -- Optional feedback helpers
             DEFINE TABLE kg_blocklist SCHEMALESS;
             DEFINE INDEX idx_kgb_item ON TABLE kg_blocklist FIELDS item;
-        ";
+        "#);
 
         self.db.query(schema_sql).await.map_err(|e| McpError {
             code: rmcp::model::ErrorCode::INTERNAL_ERROR,
@@ -522,6 +614,77 @@ impl SurrealMindServer {
         })?;
 
         Ok(())
+    }
+
+    /// Clone this server but swap the DB handle
+    pub fn clone_with_db(&self, db: Arc<Surreal<Client>>) -> Self {
+        Self {
+            db,
+            db_photo: self.db_photo.clone(),
+            thoughts: self.thoughts.clone(),
+            embedder: self.embedder.clone(),
+            config: self.config.clone(),
+        }
+    }
+
+    /// Connect to the photography database using runtime env or sensible defaults.
+    /// Defaults: same URL/user/pass as primary; NS="photography", DB="work".
+    pub async fn connect_photo_db(&self) -> crate::error::Result<Arc<Surreal<Client>>> {
+        fn normalize_ws_url(s: &str) -> String {
+            s.strip_prefix("ws://")
+                .or_else(|| s.strip_prefix("wss://"))
+                .or_else(|| s.strip_prefix("http://"))
+                .or_else(|| s.strip_prefix("https://"))
+                .unwrap_or(s)
+                .to_string()
+        }
+
+        let p_url = self
+            .config
+            .runtime
+            .photo_url
+            .clone()
+            .unwrap_or_else(|| self.config.system.database_url.clone());
+        let p_user = self
+            .config
+            .runtime
+            .photo_user
+            .clone()
+            .unwrap_or_else(|| self.config.runtime.database_user.clone());
+        let p_pass = self
+            .config
+            .runtime
+            .photo_pass
+            .clone()
+            .unwrap_or_else(|| self.config.runtime.database_pass.clone());
+        let p_ns = self
+            .config
+            .runtime
+            .photo_ns
+            .clone()
+            .unwrap_or_else(|| "photography".to_string());
+        let p_db = self
+            .config
+            .runtime
+            .photo_db
+            .clone()
+            .unwrap_or_else(|| "work".to_string());
+
+        let url = normalize_ws_url(&p_url);
+        let dbp = Surreal::new::<surrealdb::engine::remote::ws::Ws>(&url)
+            .await
+            .map_err(|e| SurrealMindError::Mcp { message: format!("photography connect failed: {}", e) })?;
+        dbp.signin(surrealdb::opt::auth::Root {
+            username: &p_user,
+            password: &p_pass,
+        })
+        .await
+        .map_err(|e| SurrealMindError::Mcp { message: format!("photography auth failed: {}", e) })?;
+        dbp.use_ns(&p_ns)
+            .use_db(&p_db)
+            .await
+            .map_err(|e| SurrealMindError::Mcp { message: format!("photography NS/DB select failed: {}", e) })?;
+        Ok(Arc::new(dbp))
     }
 
     /// Get embedding metadata for tracking model/provider info
@@ -648,6 +811,7 @@ impl SurrealMindServer {
                 "think_debug" => 1000,
                 "think_build" => 400,
                 "think_stuck" => 600,
+                "photography_think" => 500,
                 _ => retrieve,
             };
         }
