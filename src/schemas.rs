@@ -7,6 +7,7 @@ pub fn convo_think_schema() -> Arc<Map<String, Value>> {
         "properties": {
             "content": {"type": "string"},
             "injection_scale": {"type": ["integer", "string"]},
+            "submode": {"type": "string", "enum": ["sarcastic", "philosophical", "empathetic", "problem_solving", "plan", "build", "debug"]},
             "tags": {"type": "array", "items": {"type": "string"}},
             "significance": {"type": ["number", "string"]},
             "verbose_analysis": {"type": "boolean"}

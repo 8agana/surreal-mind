@@ -4,7 +4,7 @@ use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde_json::json;
-use std::str::FromStr;
+// use std::str::FromStr; // no longer needed
 use strsim;
 
 impl SurrealMindServer {
@@ -867,34 +867,7 @@ impl SurrealMindServer {
         Ok(CallToolResult::structured(json!({"results": results})))
     }
 
-    /// Helper: resolve an entity ref to its bare meta id string (no Thing types used in Rust).
-    /// Accepts full Thing strings, bare IDs, or names.
-    async fn resolve_entity_id_str(&self, entity: &str) -> Result<Option<String>> {
-        // Full Thing? parse and return the inner id as string
-        if let Ok(thing) = surrealdb::sql::Thing::from_str(entity) {
-            if !thing.tb.is_empty() {
-                return Ok(Some(thing.id.to_string()));
-            }
-        }
-        // Try match by exact meta id or constructed thing, else by name
-        let mut q = self
-            .db
-            .query(
-                "SELECT meta::id(id) as id FROM kg_entities \
-                 WHERE meta::id(id) = $id OR id = type::thing('kg_entities', $id) OR name = $name \
-                 LIMIT 1",
-            )
-            .bind(("id", entity.to_string()))
-            .bind(("name", entity.to_string()))
-            .await?;
-        let rows: Vec<serde_json::Value> = q.take(0)?;
-        let id = rows
-            .first()
-            .and_then(|v| v.get("id"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        Ok(id)
-    }
+    // Note: resolve_entity_id_str is defined once in kg_create.rs and reused here.
 
     /// Normalize entity name for similarity comparison
     fn normalize_entity_name(name: &str) -> String {

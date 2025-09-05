@@ -7,8 +7,8 @@ use serde_json::json;
 
 /// Parameters for all `think_*` tools.
 #[derive(Debug, serde::Deserialize)]
-pub struct ThinkParams {
-    pub content: String,
+    pub struct ThinkParams {
+        pub content: String,
     #[serde(
         default,
         deserialize_with = "crate::deserializers::de_option_u8_forgiving"
@@ -20,10 +20,12 @@ pub struct ThinkParams {
         default,
         deserialize_with = "crate::deserializers::de_option_f32_forgiving"
     )]
-    pub significance: Option<f32>,
-    #[serde(default)]
-    pub verbose_analysis: Option<bool>,
-}
+        pub significance: Option<f32>,
+        #[serde(default)]
+        pub verbose_analysis: Option<bool>,
+        #[serde(default)]
+        pub submode: Option<String>,
+    }
 
 impl SurrealMindServer {
     /// Generic handler for all `think_*` tools.
@@ -98,7 +100,7 @@ impl SurrealMindServer {
             .bind(("embedding", embedding.clone()))
             .bind(("injection_scale", injection_scale))
             .bind(("significance", significance))
-            .bind(("origin", origin))
+            .bind(("origin", origin.to_string()))
             .bind(("tags", params.tags.unwrap_or_default()))
             .bind(("provider", provider))
             .bind(("model", model))

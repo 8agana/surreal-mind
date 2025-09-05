@@ -424,12 +424,14 @@ impl SurrealMindServer {
 
         sql.push_str(" LIMIT $limit");
 
-        // Bind tags as arrays
+        // Bind tags as arrays (owned values required for 'static lifetime)
         if !include_tags.is_empty() {
-            query = query.bind(("include_tags", include_tags));
+            let include_owned: Vec<String> = include_tags.to_vec();
+            query = query.bind(("include_tags", include_owned));
         }
         if !exclude_tags.is_empty() {
-            query = query.bind(("exclude_tags", exclude_tags));
+            let exclude_owned: Vec<String> = exclude_tags.to_vec();
+            query = query.bind(("exclude_tags", exclude_owned));
         }
 
         let mut response = query.bind(("limit", cap as i64)).await?;

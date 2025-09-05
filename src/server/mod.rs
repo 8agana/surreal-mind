@@ -561,7 +561,7 @@ impl SurrealMindServer {
                 }
                 self.config.retrieval.t3
             });
-        let (limit, mut prox_thresh) = match scale {
+        let (limit, prox_thresh) = match scale {
             0 => (0usize, 1.0f32),
             1 => (5usize, t1),
             2 => (10usize, t2),
@@ -670,7 +670,7 @@ impl SurrealMindServer {
                     }
                 }
                 if let Some(emb_e) = emb_opt {
-                    let sim = Self::cosine_similarity(embedding, &emb_e);
+                    let sim = crate::utils::cosine_similarity(embedding, &emb_e);
                     if sim >= prox_thresh {
                         let name_s = r
                             .get("name")
@@ -734,9 +734,6 @@ impl SurrealMindServer {
         // Optional enrichment with names/types
         let enriched = if !selected.is_empty() {
             let mut s = String::new();
-            if let Some(sm) = submode {
-                s.push_str(&format!("Submode: {}\n", sm));
-            }
             s.push_str("Nearby entities:\n");
             for (i, (_id, sim, name, etype)) in selected.iter().take(5).enumerate() {
                 if etype.is_empty() {
@@ -782,7 +779,7 @@ mod tests {
     fn test_cosine_similarity() {
         let a = vec![1.0, 2.0, 3.0];
         let b = vec![4.0, 5.0, 6.0];
-        let sim = SurrealMindServer::cosine_similarity(&a, &b);
+        let sim = crate::utils::cosine_similarity(&a, &b);
         // Calculate expected: (1*4 + 2*5 + 3*6) / (sqrt(1+4+9) * sqrt(16+25+36)) = 32 / (sqrt(14) * sqrt(77)) ≈ 32 / (3.74 * 8.77) ≈ 32 / 32.84 ≈ 0.974
         assert!((sim - 0.974).abs() < 0.01);
     }

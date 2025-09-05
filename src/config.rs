@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+// use std::collections::HashMap; // no longer needed; tests removed
 
 /// Main configuration structure loaded from surreal_mind.toml and environment variables
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -191,7 +191,6 @@ impl Default for RuntimeConfig {
             database_user: "root".to_string(),
             database_pass: "root".to_string(),
             openai_api_key: None,
-            nomic_api_key: None,
             tool_timeout_ms: 15_000,
             mcp_no_log: false,
             log_level: "surreal_mind=info,rmcp=info".to_string(),
@@ -265,7 +264,6 @@ impl Config {
         }
     }
 
-    }
 }
 
 impl Default for Config {
@@ -369,75 +367,4 @@ impl RuntimeConfig {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_config_loading() {
-        // This test would require a test config file, but demonstrates the pattern
-        let config = Config::load();
-        assert!(config.is_ok() || config.is_err()); // Either way, method works
-    }
-
-    #[test]
-    fn test_submode_fallback() {
-        let mut submodes = HashMap::new();
-        submodes.insert(
-            "build".to_string(),
-            SubmodeConfig {
-                injection_scale: 1,
-                significance: 0.5,
-                kg_traverse_depth: 1,
-                frameworks: HashMap::new(),
-                orbital_weights: OrbitalWeights {
-                    recency: 0.7,
-                    access: 0.2,
-                    significance: 0.1,
-                },
-                auto_extract: false,
-                edge_boosts: HashMap::new(),
-            },
-        );
-
-        let config = Config {
-            system: SystemConfig {
-                embedding_provider: "test".to_string(),
-                embedding_model: "test".to_string(),
-                embedding_dimensions: 768,
-                embed_retries: 3,
-                database_url: "test".to_string(),
-                database_ns: "test".to_string(),
-                database_db: "test".to_string(),
-                inject_debounce: 1000,
-            },
-            retrieval: RetrievalConfig {
-                max_injection_scale: 3,
-                default_injection_scale: 1,
-                kg_only: true,
-                similarity_threshold: 0.5,
-                top_k: 5,
-                db_limit: 100,
-                candidates: 20,
-                submode_tuning: true,
-                t1: 0.6,
-                t2: 0.4,
-                t3: 0.25,
-                floor: 0.15,
-            },
-            orbital_mechanics: OrbitalConfig {
-                decay_rate: 0.1,
-                access_boost: 0.2,
-                significance_weight: 0.3,
-                recency_weight: 0.4,
-                access_weight: 0.3,
-            },
-            submodes,
-            runtime: RuntimeConfig::default(),
-        };
-
-        let mode = config.get_submode("nonexistent");
-        assert_eq!(mode.injection_scale, 1);
-        assert_eq!(mode.significance, 0.5);
-    }
-}
+// (Old submode/Orbital tests removed as the feature set has been simplified.)

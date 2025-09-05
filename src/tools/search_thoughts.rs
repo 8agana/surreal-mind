@@ -80,7 +80,7 @@ impl SurrealMindServer {
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(0.3); // Lowered from 0.5 for better retrieval
-        let limit_default: usize = std::env::var("SURR_DB_LIMIT")
+        let _limit_default: usize = std::env::var("SURR_DB_LIMIT")
             .ok()
             .and_then(|v| v.parse().ok())
             .filter(|&n| n > 0)
