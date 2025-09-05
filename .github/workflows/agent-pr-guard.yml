@@ -1,0 +1,53 @@
+name: Agent PR Guard
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  guard-and-ci:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute changed files
+        id: diff
+        run: |
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          head_sha="${{ github.event.pull_request.head.sha }}"
+          git diff --name-only "$base_sha" "$head_sha" > changed_files.txt
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          cat changed_files.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Block forbidden path changes from non-members
+        if: ${{ github.event.pull_request.author_association != 'MEMBER' && github.event.pull_request.author_association != 'OWNER' }}
+        run: |
+          set -euo pipefail
+          # Forbid workflow or sensitive file changes from non-members
+          forbidden_patterns='^\.github/workflows/|^LICENSE$|^infra/|^scripts/deploy/'
+          if grep -E "$forbidden_patterns" changed_files.txt; then
+            echo "Forbidden file changes detected from non-member." >&2
+            exit 1
+          fi
+          echo "No forbidden path changes detected."
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --workspace --locked
+
