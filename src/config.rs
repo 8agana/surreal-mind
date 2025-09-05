@@ -217,6 +217,13 @@ pub struct RuntimeConfig {
     pub kg_timeout_ms: u64,
     pub kg_candidates: usize,
     pub inner_voice: InnerVoiceConfig,
+    // Photography repo support (env-driven)
+    pub photo_enable: bool,
+    pub photo_url: Option<String>,
+    pub photo_ns: Option<String>,
+    pub photo_db: Option<String>,
+    pub photo_user: Option<String>,
+    pub photo_pass: Option<String>,
 }
 
 impl Default for RuntimeConfig {
@@ -243,6 +250,12 @@ impl Default for RuntimeConfig {
             kg_timeout_ms: 5000,
             kg_candidates: 200,
             inner_voice: InnerVoiceConfig::default(),
+            photo_enable: false,
+            photo_url: None,
+            photo_ns: None,
+            photo_db: None,
+            photo_user: None,
+            photo_pass: None,
         }
     }
 }
@@ -368,7 +381,7 @@ impl Default for Config {
 impl RuntimeConfig {
     /// Load runtime configuration from environment variables
     pub fn load_from_env() -> Self {
-        Self {
+        let mut cfg = Self {
             database_user: std::env::var("SURR_DB_USER").unwrap_or_else(|_| "root".to_string()),
             database_pass: std::env::var("SURR_DB_PASS").unwrap_or_else(|_| "root".to_string()),
             openai_api_key: std::env::var("OPENAI_API_KEY").ok(),
@@ -432,7 +445,25 @@ impl RuntimeConfig {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(200),
             inner_voice: InnerVoiceConfig::load_from_env(),
+            photo_enable: false,
+            photo_url: None,
+            photo_ns: None,
+            photo_db: None,
+            photo_user: None,
+            photo_pass: None,
+        };
+
+        // Photography repo envs
+        if let Ok(enable) = std::env::var("SURR_ENABLE_PHOTOGRAPHY") {
+            cfg.photo_enable = enable == "1" || enable.to_lowercase() == "true";
         }
+        cfg.photo_url = std::env::var("SURR_PHOTO_URL").ok();
+        cfg.photo_ns = std::env::var("SURR_PHOTO_NS").ok();
+        cfg.photo_db = std::env::var("SURR_PHOTO_DB").ok();
+        cfg.photo_user = std::env::var("SURR_PHOTO_USER").ok();
+        cfg.photo_pass = std::env::var("SURR_PHOTO_PASS").ok();
+
+        cfg
     }
 }
 
