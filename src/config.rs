@@ -106,7 +106,7 @@ impl Default for InnerVoiceConfig {
             max_candidates_per_source: 150,
             include_private_default: false,
             plan: false,
-            auto_extract_default: false,
+            auto_extract_default: true,
         }
     }
 }
