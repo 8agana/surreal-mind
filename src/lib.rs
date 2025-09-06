@@ -4,6 +4,7 @@ pub mod config;
 pub mod deserializers;
 pub mod embeddings;
 pub mod error;
+pub mod frameworks;
 pub mod indexes;
 pub mod kg_extractor;
 pub mod prompt_critiques;
