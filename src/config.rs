@@ -50,6 +50,7 @@ pub struct RetrievalConfig {
     pub t2: f32,
     pub t3: f32,
     pub floor: f32,
+    pub kg_moderation_threshold: f32,
 }
 
 /// Orbital mechanics for knowledge graph entity drifting and weighting
@@ -302,6 +303,44 @@ impl Config {
         // Load runtime configuration from environment variables
         config.runtime = RuntimeConfig::load_from_env();
 
+        // Validate configuration
+        
+        // Validate database URL format
+        if !config.system.database_url.starts_with("ws://") 
+            && !config.system.database_url.starts_with("wss://") 
+            && !config.system.database_url.starts_with("http://") 
+            && !config.system.database_url.starts_with("https://") {
+            tracing::warn!(
+                "Database URL '{}' doesn't start with ws://, wss://, http://, or https://", 
+                config.system.database_url
+            );
+        }
+        
+        // Validate and clamp embed_retries
+        if config.system.embed_retries == 0 {
+            config.system.embed_retries = 1;
+        } else if config.system.embed_retries > 10 {
+            tracing::warn!("embed_retries {} exceeds max 10, clamping to 10", config.system.embed_retries);
+            config.system.embed_retries = 10;
+        }
+        
+        // Validate provider/dimension coherence
+        if config.system.embedding_provider == "openai" {
+            if config.system.embedding_model == "text-embedding-3-small" && config.system.embedding_dimensions != 1536 {
+                if std::env::var("SURR_EMBED_STRICT").ok().as_deref() == Some("true") {
+                    return Err(anyhow::anyhow!(
+                        "OpenAI text-embedding-3-small requires 1536 dimensions, got {}",
+                        config.system.embedding_dimensions
+                    ));
+                } else {
+                    tracing::warn!(
+                        "OpenAI text-embedding-3-small should use 1536 dimensions, got {}",
+                        config.system.embedding_dimensions
+                    );
+                }
+            }
+        }
+
         // Validate inner_voice config
         config.runtime.inner_voice.validate()?;
 
@@ -370,6 +409,7 @@ impl Default for Config {
                 t2: 0.4,
                 t3: 0.25,
                 floor: 0.15,
+                kg_moderation_threshold: 0.6,
             },
             orbital_mechanics: OrbitalConfig {
                 decay_rate: 0.1,
@@ -528,6 +568,7 @@ mod tests {
                 t2: 0.4,
                 t3: 0.25,
                 floor: 0.15,
+                kg_moderation_threshold: 0.6,
             },
             orbital_mechanics: OrbitalConfig {
                 decay_rate: 0.1,

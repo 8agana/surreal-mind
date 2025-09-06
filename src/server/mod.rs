@@ -462,7 +462,9 @@ impl SurrealMindServer {
             .and_then(|v| v.parse::<usize>().ok())
             .filter(|&v| v > 0)
             .unwrap_or(5000);
-        let thoughts_cache = LruCache::new(NonZeroUsize::new(cache_max).unwrap());
+        let thoughts_cache = LruCache::new(
+            NonZeroUsize::new(cache_max).unwrap_or_else(|| NonZeroUsize::new(1).unwrap())
+        );
 
         // Optionally connect a photography database handle
         let db_photo: Option<Arc<Surreal<Client>>> = if config.runtime.photo_enable {
@@ -810,12 +812,17 @@ impl SurrealMindServer {
         }
 
         // Fetch candidate entities and observations (two statements to avoid UNION pitfalls)
+        // Filter by embedding_dim to avoid dimension mismatches at the DB level
+        let q_dim = embedding.len() as i64;
         let mut q = self
             .db
             .query(
-                "SELECT meta::id(id) as id, name, data, embedding FROM kg_entities LIMIT $lim; \
-                 SELECT meta::id(id) as id, name, data, embedding FROM kg_observations LIMIT $lim;",
+                "SELECT meta::id(id) as id, name, data, embedding FROM kg_entities \
+                 WHERE embedding_dim = $dim AND embedding IS NOT NULL LIMIT $lim; \
+                 SELECT meta::id(id) as id, name, data, embedding FROM kg_observations \
+                 WHERE embedding_dim = $dim AND embedding IS NOT NULL LIMIT $lim;",
             )
+            .bind(("dim", q_dim))
             .bind(("lim", retrieve as i64))
             .await?;
         let mut rows: Vec<serde_json::Value> = q.take(0).unwrap_or_default();
