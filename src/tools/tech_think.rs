@@ -87,7 +87,10 @@ impl SurrealMindServer {
         // Validate content size
         if params.content.len() > MAX_CONTENT_SIZE {
             return Err(SurrealMindError::Validation {
-                message: format!("Content exceeds maximum size of {}KB", MAX_CONTENT_SIZE / 1024),
+                message: format!(
+                    "Content exceeds maximum size of {}KB",
+                    MAX_CONTENT_SIZE / 1024
+                ),
             });
         }
 

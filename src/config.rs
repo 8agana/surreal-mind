@@ -304,41 +304,49 @@ impl Config {
         config.runtime = RuntimeConfig::load_from_env();
 
         // Validate configuration
-        
+
         // Validate database URL format
-        if !config.system.database_url.starts_with("ws://") 
-            && !config.system.database_url.starts_with("wss://") 
-            && !config.system.database_url.starts_with("http://") 
-            && !config.system.database_url.starts_with("https://") {
+        if !config.system.database_url.starts_with("ws://")
+            && !config.system.database_url.starts_with("wss://")
+            && !config.system.database_url.starts_with("http://")
+            && !config.system.database_url.starts_with("https://")
+        {
             tracing::warn!(
-                "Database URL '{}' doesn't start with ws://, wss://, http://, or https://", 
+                "Database URL '{}' doesn't start with ws://, wss://, http://, or https://",
                 config.system.database_url
             );
         }
-        
+
         // Validate and clamp embed_retries
         if config.system.embed_retries == 0 {
             config.system.embed_retries = 1;
         } else if config.system.embed_retries > 10 {
-            tracing::warn!("embed_retries {} exceeds max 10, clamping to 10", config.system.embed_retries);
+            tracing::warn!(
+                "embed_retries {} exceeds max 10, clamping to 10",
+                config.system.embed_retries
+            );
             config.system.embed_retries = 10;
         }
-        
+
         // Validate provider/dimension coherence
-        if config.system.embedding_provider == "openai" {
-            if config.system.embedding_model == "text-embedding-3-small" && config.system.embedding_dimensions != 1536 {
-                if std::env::var("SURR_EMBED_STRICT").ok().as_deref() == Some("true") {
-                    return Err(anyhow::anyhow!(
-                        "OpenAI text-embedding-3-small requires 1536 dimensions, got {}",
-                        config.system.embedding_dimensions
-                    ));
-                } else {
-                    tracing::warn!(
-                        "OpenAI text-embedding-3-small should use 1536 dimensions, got {}",
-                        config.system.embedding_dimensions
-                    );
-                }
-            }
+        if config.system.embedding_provider == "openai"
+            && config.system.embedding_model == "text-embedding-3-small"
+            && config.system.embedding_dimensions != 1536
+            && std::env::var("SURR_EMBED_STRICT").ok().as_deref() == Some("true")
+        {
+            return Err(anyhow::anyhow!(
+                "OpenAI text-embedding-3-small requires 1536 dimensions, got {}",
+                config.system.embedding_dimensions
+            ));
+        }
+        if config.system.embedding_provider == "openai"
+            && config.system.embedding_model == "text-embedding-3-small"
+            && config.system.embedding_dimensions != 1536
+        {
+            tracing::warn!(
+                "OpenAI text-embedding-3-small should use 1536 dimensions, got {}",
+                config.system.embedding_dimensions
+            );
         }
 
         // Validate inner_voice config

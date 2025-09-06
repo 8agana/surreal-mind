@@ -463,7 +463,7 @@ impl SurrealMindServer {
             .filter(|&v| v > 0)
             .unwrap_or(5000);
         let thoughts_cache = LruCache::new(
-            NonZeroUsize::new(cache_max).unwrap_or_else(|| NonZeroUsize::new(1).unwrap())
+            NonZeroUsize::new(cache_max).unwrap_or_else(|| NonZeroUsize::new(1).unwrap()),
         );
 
         // Optionally connect a photography database handle
