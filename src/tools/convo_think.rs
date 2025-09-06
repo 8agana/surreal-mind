@@ -47,8 +47,10 @@ impl SurrealMindServer {
 
         // Redact content at info level to avoid logging full user text
         tracing::info!("convo_think called (content_len={})", params.content.len());
-        let dbg_preview: String = params.content.chars().take(200).collect();
-        tracing::debug!("convo_think content (first 200 chars): {}", dbg_preview);
+        if std::env::var("SURR_THINK_DEEP_LOG").unwrap_or("0".to_string()) == "1" {
+            let dbg_preview: String = params.content.chars().take(200).collect();
+            tracing::debug!("convo_think content (first 200 chars): {}", dbg_preview);
+        }
 
         // Compute embedding
         let embedding = self.embedder.embed(&params.content).await.map_err(|e| {
