@@ -8,7 +8,7 @@ A Model Context Protocol (MCP) server implementing bidirectional consciousness p
 - **Semantic Understanding**: OpenAI text-embedding-3-small (1536 dims) for semantic similarity
 - **Graph Persistence**: SurrealDB service for consciousness graph storage
 - **Injection Scales**: 0-5 (Sun to Pluto) controlling memory retrieval distance
-- **Submodes**: Conversational (sarcastic, philosophical, empathetic, problem_solving) and Technical (plan, build, debug) influence retrieval and enrichment
+- **Memory Injection**: KG-only retrieval with orbital mechanics (no thought-to-thought injection)
 
 ## Setup
 
@@ -51,7 +51,7 @@ See [DATABASE.md](DATABASE.md) for detailed schema, indexes, and maintenance ope
 
 ## Updates (2025‑09‑06)
 
-- Unified search tools: `legacymind_search` and `photography_search` replace legacy `think_search`/`memories_search`. Defaults to memories; set `include_thoughts=true` to also search thoughts.
+- Unified search tools: `legacymind_search` and `photography_search` replace legacy tools. Defaults to memories; set `include_thoughts=true` to also search thoughts.
 - Photography tools: `photography_think`, `photography_memories`, `photography_search` are always visible and auto‑connect to `ns=photography`, `db=work`. `photography_think` uses 500 KG candidates.
 - inner_voice: Persists a synthesized thought and, by default, auto‑extracts KG candidates (pending) with `data.staged_by_thought` for moderation via `memories_moderate`. Disable via `SURR_IV_AUTO_EXTRACT_KG=0`.
 - think_convo frameworks (local, deterministic): runs a fast “convo/1” enhancement to produce `{summary, takeaways[], prompts[], next_step, tags[]}`; strict JSON; 600ms timeout; seeded determinism; tags merged via whitelist.
@@ -76,7 +76,6 @@ See [DATABASE.md](DATABASE.md) for detailed schema, indexes, and maintenance ope
   - HTTP SQL (fallback): the server derives an HTTP base from SURR_DB_URL for the REST /sql endpoint. Ensure it is https:// when used remotely.
 - Credentials: SURR_DB_USER and SURR_DB_PASS are sent via HTTP Basic Auth for the REST SQL fallback. Always use TLS (https/wss) to protect credentials in transit.
 - Recommended environment hardening:
-  - `export SURR_ENFORCE_TLS=1` (advisory knob; when enabled, prefer/require https/wss URLs and fail fast on plain http/ws in future versions)
   - Restrict exposure of the SurrealDB service to trusted networks only.
 - Logging: Consider setting `MCP_NO_LOG=true` in environments where stderr must remain JSON-only for MCP clients. Use `RUST_LOG=surreal_mind=info,rmcp=info` or quieter. When `MCP_NO_LOG=1`, logging is disabled in stdio MCP mode.
 
@@ -95,8 +94,6 @@ export SURR_SIM_THRESH=0.5  # Similarity threshold (0.0-1.0)
 export SURR_TOP_K=5         # Max memories to inject
 
 # Feature Flags
-export SURR_SUBMODE_RETRIEVAL=false  # Enable submode-aware retrieval (default: OFF)
-export SURR_SUBMODE_DEFAULT=sarcastic  # Default submode when not specified
 ```
 
 ## Advanced Configuration
@@ -141,18 +138,14 @@ export SURR_DB_SERIAL=true  # Forces sequential DB access to prevent deadlocks
 ```
 This adds a small performance cost but ensures stability when the SurrealDB WebSocket connection experiences concurrent query issues.
 
-### Example: Submode-Aware Retrieval
-When `SURR_SUBMODE_RETRIEVAL=true`, memory retrieval is tuned based on the active submode:
-
-```bash
-export SURR_SUBMODE_RETRIEVAL=true
-```
-
-This adjusts similarity thresholds and orbital mechanics weights per submode profile:
-- **Sarcastic**: Favors contradictory and recent memories
-- **Philosophical**: Emphasizes abstract concepts and significance  
-- **Empathetic**: Balances emotional relevance with recency
-- **Problem-Solving**: Prioritizes solution-oriented and high-access memories
+### Example: Memory Injection Scales
+Memory retrieval adjusts based on injection scale (0-5):
+- **Scale 0 (Sun)**: No injection - pure thought storage
+- **Scale 1 (Mercury)**: 5 entities, 0.8 proximity threshold
+- **Scale 2 (Venus)**: 10 entities, 0.6 proximity threshold  
+- **Scale 3 (Mars)**: 20 entities, 0.4 proximity threshold
+- **Scale 4 (Jupiter)**: 30 entities, 0.3 proximity threshold
+- **Scale 5 (Pluto)**: 50 entities, 0.2 proximity threshold
 
 Server will read these automatically at startup.
 
@@ -188,7 +181,6 @@ Parameters:
     - `"high"` = 0.9
   - Integer scale: 2-10 (mapped to 0.2-1.0, note: 1 not supported to avoid ambiguity)
   - Float: 0.0-1.0 (direct value)
-- `submode`: Conversation style (sarcastic [default], philosophical, empathetic, problem_solving)
 - `tags`: Additional categorization
  - `verbose_analysis`: boolean (default true) — when false, caps to top 2 insights, 1 question, 1 next step
 
@@ -201,7 +193,6 @@ Example calls:
     "content": "Building persistence frameworks requires careful architecture",
     "injection_scale": "HIGH",
     "significance": "high",
-    "submode": "philosophical"
   }
 }
 
@@ -212,7 +203,6 @@ Example calls:
     "content": "Critical bug found in memory injection",
     "injection_scale": "MAXIMUM",
     "significance": 9,
-    "submode": "problem_solving"
   }
 }
 
@@ -223,7 +213,6 @@ Example calls:
     "content": "Testing new framework enhancements",
     "injection_scale": 3,
     "significance": 0.8,
-    "submode": "sarcastic"
   }
 }
 ```
@@ -309,22 +298,24 @@ Example:
 }
 ```
 
-### MCP Tool: memories_search
-Search entities/relationships in the Knowledge Graph with semantic matching.
+### MCP Tool: memories_create
+Create entities, relationships, and observations in the knowledge graph.
 
 Parameters:
-- `query` (required): Object with search criteria (e.g., {"name": "AI", "type": "concept"})
-- `target`: "entity" (default) | "relationship" | "observation" | "mixed"
-- `top_k`: Integer 1-50 (optional)
+- `kind`: "entity" | "relationship" | "observation"
+- `data`: Object with entity/relationship/observation data
+- `upsert`: Boolean (default true)
+- `source_thought_id`: String (optional)
+- `confidence`: Number 0-1 (optional)
 
 Example:
 ```json
 {
-  "tool": "memories_search",
+  "tool": "memories_create",
   "arguments": {
-    "query": {"name": "consciousness"},
-    "target": "entity",
-    "top_k": 10
+    "kind": "entity",
+    "data": {"name": "consciousness", "entity_type": "concept"},
+    "confidence": 0.9
   }
 }
 ```
@@ -333,7 +324,7 @@ Example:
 Returns deterministic, example-rich documentation for tools and parameters.
 
 Parameters:
-- `tool`: "think_convo" | "think_plan" | "think_search" | "memories_create" | "memories_search" (optional; overview when omitted)
+- `tool`: "think_convo" | "think_plan" | "memories_create" | "legacymind_search" | "photography_search" (optional; overview when omitted)
 - `format`: "full" (default) | "compact"
 
 Examples:
@@ -342,14 +333,14 @@ Examples:
 {"tool":"detailed_help","arguments":{"format":"compact"}}
 ```
 
-### MCP Tool: think_search
+### MCP Tool: legacymind_search (replaces think_search)
 ## Available Tools and Binaries
 
 This project includes:
 
 ### Main MCP Server Binary
 - `cargo run` or `./target/release/surreal-mind`: Starts the MCP server with stdio transport
-- Handles all 6 tools: think_convo, think_plan, think_search, memories_create, memories_search, detailed_help
+- Handles all tools: think_convo, think_plan, think_debug, think_build, think_stuck, memories_create, memories_moderate, detailed_help, inner_voice, legacymind_search, photography_search
 
 ### Additional Binaries (src/bin/)
 - `cargo run --bin reembed`: CLI for re-embedding thoughts (fixes dimension mismatches, recomputes embeddings)
@@ -440,7 +431,7 @@ cargo test
 
 ## License
 Part of the LegacyMind project
-### MCP Tool: think_search
+### MCP Tool: legacymind_search (replaces think_search)
 Semantic search over stored thoughts with cache-first retrieval and optional graph expansion via recalls.
 
 Parameters:

@@ -8,6 +8,9 @@ use serde_json::json;
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
+/// Maximum content size in bytes (100KB)
+const MAX_CONTENT_SIZE: usize = 100 * 1024;
+
 /// Parameters for the convo_think tool
 #[derive(Debug, serde::Deserialize)]
 pub struct ConvoThinkParams {
@@ -44,6 +47,13 @@ impl SurrealMindServer {
             .map_err(|e| SurrealMindError::Serialization {
                 message: format!("Invalid parameters: {}", e),
             })?;
+
+        // Validate content size
+        if params.content.len() > MAX_CONTENT_SIZE {
+            return Err(SurrealMindError::Validation {
+                message: format!("Content exceeds maximum size of {}KB", MAX_CONTENT_SIZE / 1024),
+            });
+        }
 
         // Redact content at info level to avoid logging full user text
         tracing::info!("convo_think called (content_len={})", params.content.len());
