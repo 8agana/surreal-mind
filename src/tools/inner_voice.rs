@@ -386,7 +386,13 @@ impl SurrealMindServer {
         let mut extracted_rels = 0usize;
         if auto_extract && !grok_key.is_empty() {
             if let Ok((ec, rc)) = self
-                .auto_extract_candidates_from_text(&base, &model, &grok_key, &synthesized, &thought_id)
+                .auto_extract_candidates_from_text(
+                    &base,
+                    &model,
+                    &grok_key,
+                    &synthesized,
+                    &thought_id,
+                )
                 .await
             {
                 extracted_entities = ec;
@@ -668,12 +674,17 @@ impl SurrealMindServer {
             .trim_end_matches("```")
             .trim()
             .to_string();
-        let parsed: ExtractOut = serde_json::from_str(&cleaned).unwrap_or(ExtractOut { entities: vec![], relationships: vec![] });
+        let parsed: ExtractOut = serde_json::from_str(&cleaned).unwrap_or(ExtractOut {
+            entities: vec![],
+            relationships: vec![],
+        });
 
         let mut ecount = 0usize;
         for e in parsed.entities {
             let name = e.name.trim().to_string();
-            if name.is_empty() { continue; }
+            if name.is_empty() {
+                continue;
+            }
             let etype = e.entity_type.clone().unwrap_or_default();
             // Dedup by existing pending with same name+etype
             let found: Vec<serde_json::Value> = self
@@ -700,8 +711,13 @@ impl SurrealMindServer {
         for r in parsed.relationships {
             let src = r.source_name.trim().to_string();
             let dst = r.target_name.trim().to_string();
-            if src.is_empty() || dst.is_empty() { continue; }
-            let kind = r.rel_type.clone().unwrap_or_else(|| "related_to".to_string());
+            if src.is_empty() || dst.is_empty() {
+                continue;
+            }
+            let kind = r
+                .rel_type
+                .clone()
+                .unwrap_or_else(|| "related_to".to_string());
             let conf = r.confidence.unwrap_or(0.6_f32);
             // Dedup by same names+rel_type and status pending
             let found: Vec<serde_json::Value> = self

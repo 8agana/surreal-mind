@@ -16,9 +16,15 @@ pub struct UnifiedSearchParams {
     pub include_thoughts: Option<bool>,
     #[serde(default)]
     pub thoughts_content: Option<String>,
-    #[serde(default, deserialize_with = "crate::deserializers::de_option_usize_forgiving")]
+    #[serde(
+        default,
+        deserialize_with = "crate::deserializers::de_option_usize_forgiving"
+    )]
     pub top_k_memories: Option<usize>,
-    #[serde(default, deserialize_with = "crate::deserializers::de_option_usize_forgiving")]
+    #[serde(
+        default,
+        deserialize_with = "crate::deserializers::de_option_usize_forgiving"
+    )]
     pub top_k_thoughts: Option<usize>,
     #[serde(default)]
     pub sim_thresh: Option<f32>,
@@ -75,9 +81,15 @@ pub async fn unified_search_inner(
     let mut items: Vec<serde_json::Value> = Vec::new();
     if target == "entity" || target == "mixed" {
         let sql = if let Some(ref _nl) = name_like {
-            format!("SELECT meta::id(id) as id, name, data, created_at FROM kg_entities WHERE name ~ $name LIMIT {}", top_k_mem)
+            format!(
+                "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities WHERE name ~ $name LIMIT {}",
+                top_k_mem
+            )
         } else {
-            format!("SELECT meta::id(id) as id, name, data, created_at FROM kg_entities LIMIT {}", top_k_mem)
+            format!(
+                "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities LIMIT {}",
+                top_k_mem
+            )
         };
         let mut q = server.db.query(sql);
         if let Some(ref nl) = name_like {
@@ -100,9 +112,15 @@ pub async fn unified_search_inner(
     }
     if target == "observation" || target == "mixed" {
         let sql = if let Some(ref _nl) = name_like {
-            format!("SELECT meta::id(id) as id, name, data, created_at FROM kg_observations WHERE name ~ $name LIMIT {}", top_k_mem)
+            format!(
+                "SELECT meta::id(id) as id, name, data, created_at FROM kg_observations WHERE name ~ $name LIMIT {}",
+                top_k_mem
+            )
         } else {
-            format!("SELECT meta::id(id) as id, name, data, created_at FROM kg_observations LIMIT {}", top_k_mem)
+            format!(
+                "SELECT meta::id(id) as id, name, data, created_at FROM kg_observations LIMIT {}",
+                top_k_mem
+            )
         };
         let mut q = server.db.query(sql);
         if let Some(ref nl) = name_like {
@@ -125,11 +143,14 @@ pub async fn unified_search_inner(
             }
         }
         if !content.is_empty() {
-            let q_emb = server
-                .embedder
-                .embed(&content)
-                .await
-                .map_err(|e| SurrealMindError::Embedding { message: e.to_string() })?;
+            let q_emb =
+                server
+                    .embedder
+                    .embed(&content)
+                    .await
+                    .map_err(|e| SurrealMindError::Embedding {
+                        message: e.to_string(),
+                    })?;
             let q_dim = q_emb.len() as i64;
             let sql = "SELECT meta::id(id) as id, content, significance, vector::similarity::cosine(embedding, $q) AS similarity \
                        FROM thoughts WHERE embedding_dim = $dim AND vector::similarity::cosine(embedding, $q) > $sim \
@@ -143,17 +164,31 @@ pub async fn unified_search_inner(
                 .bind(("k", top_k_th as i64))
                 .await?;
             #[derive(Debug, Deserialize)]
-            struct Row { id: String, content: String, #[serde(default)] significance: f32, similarity: f32 }
+            struct Row {
+                id: String,
+                content: String,
+                #[serde(default)]
+                significance: f32,
+                similarity: f32,
+            }
             let rows: Vec<Row> = resp.take(0)?;
             let results: Vec<ThoughtOut> = rows
                 .into_iter()
-                .map(|r| ThoughtOut { id: r.id, content: r.content, similarity: r.similarity, significance: Some(r.significance) })
+                .map(|r| ThoughtOut {
+                    id: r.id,
+                    content: r.content,
+                    similarity: r.similarity,
+                    significance: Some(r.significance),
+                })
                 .collect();
-            out.insert("thoughts".into(), json!({
-                "total": results.len(),
-                "top_k": top_k_th,
-                "results": results
-            }));
+            out.insert(
+                "thoughts".into(),
+                json!({
+                    "total": results.len(),
+                    "top_k": top_k_th,
+                    "results": results
+                }),
+            );
         }
     }
 

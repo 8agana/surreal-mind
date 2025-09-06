@@ -291,28 +291,36 @@ impl ServerHandler for SurrealMindServer {
         let unified_schema = crate::schemas::unified_search_schema();
         tools.push(Tool {
             name: "photography_think".into(),
-            description: Some("Store photography thoughts with memory injection (isolated repo)".into()),
+            description: Some(
+                "Store photography thoughts with memory injection (isolated repo)".into(),
+            ),
             input_schema: convo_think_schema_map.clone(),
             annotations: None,
             output_schema: None,
         });
         tools.push(Tool {
             name: "photography_memories".into(),
-            description: Some("Create/search/moderate photography knowledge graph (isolated repo)".into()),
+            description: Some(
+                "Create/search/moderate photography knowledge graph (isolated repo)".into(),
+            ),
             input_schema: photo_mem_schema,
             annotations: None,
             output_schema: None,
         });
         tools.push(Tool {
             name: "legacymind_search".into(),
-            description: Some("Unified LegacyMind search: memories (default) + optional thoughts".into()),
+            description: Some(
+                "Unified LegacyMind search: memories (default) + optional thoughts".into(),
+            ),
             input_schema: unified_schema.clone(),
             annotations: None,
             output_schema: None,
         });
         tools.push(Tool {
             name: "photography_search".into(),
-            description: Some("Unified photography search: memories (default) + optional thoughts".into()),
+            description: Some(
+                "Unified photography search: memories (default) + optional thoughts".into(),
+            ),
             input_schema: unified_schema,
             annotations: None,
             output_schema: None,
@@ -477,12 +485,7 @@ impl SurrealMindServer {
                 .as_ref()
                 .unwrap_or(pass)
                 .to_string();
-            let p_ns = config
-                .runtime
-                .photo_ns
-                .as_ref()
-                .unwrap_or(ns)
-                .to_string();
+            let p_ns = config.runtime.photo_ns.as_ref().unwrap_or(ns).to_string();
             let p_db = config
                 .runtime
                 .photo_db
@@ -545,7 +548,8 @@ impl SurrealMindServer {
         // Note: SurrealDB 2.x requires vector index definitions to include DIMENSION.
         // We derive the active embedding dimension from the embedder to avoid drift.
         let dim = self.embedder.dimensions();
-        let schema_sql = format!(r#"
+        let schema_sql = format!(
+            r#"
             DEFINE TABLE thoughts SCHEMAFULL;
             DEFINE FIELD content ON TABLE thoughts TYPE string;
             DEFINE FIELD created_at ON TABLE thoughts TYPE datetime;
@@ -605,7 +609,8 @@ impl SurrealMindServer {
             -- Optional feedback helpers
             DEFINE TABLE kg_blocklist SCHEMALESS;
             DEFINE INDEX idx_kgb_item ON TABLE kg_blocklist FIELDS item;
-        "#);
+        "#
+        );
 
         self.db.query(schema_sql).await.map_err(|e| McpError {
             code: rmcp::model::ErrorCode::INTERNAL_ERROR,
@@ -673,17 +678,23 @@ impl SurrealMindServer {
         let url = normalize_ws_url(&p_url);
         let dbp = Surreal::new::<surrealdb::engine::remote::ws::Ws>(&url)
             .await
-            .map_err(|e| SurrealMindError::Mcp { message: format!("photography connect failed: {}", e) })?;
+            .map_err(|e| SurrealMindError::Mcp {
+                message: format!("photography connect failed: {}", e),
+            })?;
         dbp.signin(surrealdb::opt::auth::Root {
             username: &p_user,
             password: &p_pass,
         })
         .await
-        .map_err(|e| SurrealMindError::Mcp { message: format!("photography auth failed: {}", e) })?;
+        .map_err(|e| SurrealMindError::Mcp {
+            message: format!("photography auth failed: {}", e),
+        })?;
         dbp.use_ns(&p_ns)
             .use_db(&p_db)
             .await
-            .map_err(|e| SurrealMindError::Mcp { message: format!("photography NS/DB select failed: {}", e) })?;
+            .map_err(|e| SurrealMindError::Mcp {
+                message: format!("photography NS/DB select failed: {}", e),
+            })?;
         Ok(Arc::new(dbp))
     }
 
