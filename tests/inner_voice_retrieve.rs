@@ -1,6 +1,5 @@
 //! Unit tests for inner_voice tool
 
-use serde_json;
 use surreal_mind::tools::inner_voice::{
     Candidate, DateRange, PlannerResponse, allocate_slots, apply_adaptive_floor, cap_text,
     compute_trust_tier, hash_content, select_and_dedupe,
@@ -43,7 +42,7 @@ mod tests {
             trust_tier: "".to_string(),
         };
 
-        let query_emb = vec![0.1, 0.2, 0.3]; // 3 dims
+        let query_emb = [0.1, 0.2, 0.3]; // 3 dims
 
         // Only matching dim should have score computed
         assert!(candidate_matching.embedding.len() == query_emb.len());
@@ -73,8 +72,8 @@ mod tests {
     fn test_privacy_tags_filters() {
         // Test would require mocking DB queries, but we can test the logic indirectly
         // through the SQL building in fetch_thought_candidates
-        let include_tags = vec!["important".to_string()];
-        let exclude_tags = vec!["private".to_string()];
+        let include_tags = ["important".to_string()];
+        let exclude_tags = ["private".to_string()];
 
         // This would be tested in integration tests with actual DB
         assert!(!include_tags.is_empty());
