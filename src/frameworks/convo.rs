@@ -407,4 +407,21 @@ mod tests {
                 .all(|t| opts.tag_whitelist.contains(t))
         );
     }
+
+    #[test]
+    fn test_strict_limits_drop() {
+        let opts = ConvoOpts {
+            strict_json: true,
+            tag_whitelist: vec!["plan".into()],
+            timeout_ms: 200,
+        };
+        let data = ConvoData {
+            summary: "x".repeat(141),                            // over 140
+            takeaways: vec!["a".into(), "b".into(), "c".into()], // >2
+            prompts: vec!["p1".into()],
+            next_step: "step".into(),
+            tags: vec![],
+        };
+        assert!(super::validate(&data, opts.strict_json).is_err());
+    }
 }
