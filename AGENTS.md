@@ -1,6 +1,6 @@
 # Surreal Mind MCP — Agent Guide
 
-Last updated: 2025-09-03
+Last updated: 2025-09-06
 
 This file is the working guide for operating and extending the Surreal Mind MCP server. It reflects the current design after the thought/injection refactor and should be used by CLI agents (Codex, CC) and contributors.
 
@@ -17,16 +17,36 @@ Surreal Mind augments agent thinking with persistent memory backed by SurrealDB 
 - Submodes: Removed from storage and tool surfaces; any legacy `submode` input is ignored.
 
 ## Exposed MCP Tools
-- `think_convo`: Persist a thought with embeddings and run KG-only injection (scale configurable). Returns thought id + optional enriched summary.
-- `think_plan`: Planning-oriented thought capture (same backbone; different candidate pool size).
-- `think_debug`, `think_build`, `think_stuck`: Variants tuned for retrieval pool size only. No behavior drift beyond thresholds.
-- `think_search`: Dimension-safe semantic search over thoughts.
+- `think_convo`: Persist a thought with embeddings and run KG-only injection (scale configurable). Runs a local, deterministic “frameworks” pass (convo/1) post‑create, pre‑injection. Returns thought id and framework_enhanced flag.
+- `think_plan`, `think_debug`, `think_build`, `think_stuck`: Variants tuned for retrieval pool size only (no behavior drift beyond thresholds).
+- `legacymind_search`: Unified LM repo search — memories by default; include_thoughts=true also searches thoughts.
+- `photography_think`, `photography_memories`, `photography_search`: Tools scoped to Photography repo (ns=photography, db=work). photography_think injection candidate pool=500.
 - `memories_create` (alias: `knowledgegraph_create`): Create KG entities/observations.
-- `memories_search` (alias: `knowledgegraph_search`): Search KG.
 - `memories_moderate` (alias: `knowledgegraph_moderate`): Review/stage KG entries.
 - `maintenance_ops`: Health checks, re-embedding, archival/export, and cleanup.
+- `inner_voice`: Retrieval + synthesis with optional auto‑extraction to staged KG candidates (default ON). Thought persisted with compact Sources line.
 
-See `src/schemas.rs`, `src/server/mod.rs`, and `src/tools/*` for exact parameters. `detailed_help` returns live schema/aliases.
+Notes
+- Tools are always listed (no env flag required for visibility). Any gating is enforced inside handlers.
+- See `src/schemas.rs`, `src/server/mod.rs`, and `src/tools/*` for exact parameters. `detailed_help` returns live schema/aliases.
+
+### Frameworks (think_convo)
+- Versioned envelope: `framework_version: "convo/1"`, `methodology: (socratic|first_principles|mirroring|lateral|constraints)`.
+- Data: `{ summary, takeaways[], prompts[], next_step, tags[] }` — all length‑bounded; strict JSON validation.
+- Determinism: seeded template selection via blake3(content_norm) → u64.
+- Timeout: `SURR_THINK_ENHANCE_TIMEOUT_MS` (default 600ms) enforced; fail‑open.
+- Tag policy: merged into thought.tags via `SURR_THINK_TAG_WHITELIST` (default `plan,debug,dx,photography,idea`).
+- Env lexicons (comma‑sep): `SURR_THINK_LEXICON_DECIDE`, `SURR_THINK_LEXICON_VENT`, `SURR_THINK_LEXICON_CAUSAL`, `SURR_THINK_LEXICON_POS`, `SURR_THINK_LEXICON_NEG`.
+- Logging: 200‑char preview gated behind `SURR_THINK_DEEP_LOG=1`.
+
+### Inner Voice (auto‑extraction)
+- Param: `auto_extract_to_kg` (boolean). Default ON via `SURR_IV_AUTO_EXTRACT_KG=1`.
+- Creates pending candidates in `kg_entity_candidates`/`kg_edge_candidates` with `data.staged_by_thought=<thought_id>`, `origin='inner_voice'`.
+- Moderate via `memories_moderate`.
+
+### Photography Isolation
+- Auto‑connects to `ns=photography`, `db=work` (URL/user/pass inherited unless overridden by `SURR_PHOTO_*`).
+- No cross‑pollination with the default repo by default.
 
 ### Prompt Registry (AI-driven, discoverability-only)
 - Purpose: Expose stable, named prompt metadata (id, one-liner, purpose, inputs, constraints) for inspection and docs — no runtime auto-switching.
@@ -62,9 +82,9 @@ See `src/schemas.rs`, `src/server/mod.rs`, and `src/tools/*` for exact parameter
 
 ## Health Checks and Re-embed SOPs
 - Health check: `maintenance_ops { subcommand: "health_check_embeddings" }` → reports `expected_dim` and per-table mismatches across `thoughts`, `kg_entities`, `kg_observations`.
-- Re-embed thoughts (to current dims):
+- Re-embed thoughts (to current dims) — resilient HTTP parsing & stable ids:
   1) `export OPENAI_API_KEY=...` and `export SURR_EMBED_PROVIDER=openai`
-  2) `cargo run --bin reembed`
+  2) `cargo run --bin reembed` (HTTP client UA: `surreal-mind/<ver> (component=reembed; ns=<ns>; db=<db>[; commit=<sha>])`)
   3) Verify: `SELECT array::len(embedding), count() FROM thoughts GROUP BY array::len(embedding);`
 - Re-embed KG: `cargo run --bin reembed_kg` (observes active provider; persists dims and metadata).
 
@@ -154,6 +174,7 @@ Using profiles in practice
 - No mixed dims: pick one provider/model per runtime and re-embed on switch.
 - KG-only injection: thoughts are never injected as raw context; only KG entities/observations are.
 - Avoid SurrealQL UNION for combined queries; prefer separate SELECTs.
+- No flag‑gating for tool visibility; defaults should work after rebuild without toggles.
 
 ## Quick Start (Post-Restart)
 1) `maintenance_ops { "subcommand": "health_check_embeddings" }` → expect `mismatched_or_missing = 0` across tables.

@@ -49,6 +49,26 @@ Note: The server connects via WebSocket only. Embedded in-process DB is not curr
 
 See [DATABASE.md](DATABASE.md) for detailed schema, indexes, and maintenance operations.
 
+## Updates (2025‑09‑06)
+
+- Unified search tools: `legacymind_search` and `photography_search` replace legacy `think_search`/`memories_search`. Defaults to memories; set `include_thoughts=true` to also search thoughts.
+- Photography tools: `photography_think`, `photography_memories`, `photography_search` are always visible and auto‑connect to `ns=photography`, `db=work`. `photography_think` uses 500 KG candidates.
+- inner_voice: Persists a synthesized thought and, by default, auto‑extracts KG candidates (pending) with `data.staged_by_thought` for moderation via `memories_moderate`. Disable via `SURR_IV_AUTO_EXTRACT_KG=0`.
+- think_convo frameworks (local, deterministic): runs a fast “convo/1” enhancement to produce `{summary, takeaways[], prompts[], next_step, tags[]}`; strict JSON; 600ms timeout; seeded determinism; tags merged via whitelist.
+- Observability & robustness: HTTP re‑embed parsing is resilient; ids normalized via `meta::id(id)`; reqwest clients use descriptive User‑Agent strings (optionally append `; commit=<sha>` when `SURR_COMMIT_HASH` is set).
+
+### Env quick‑ref (new)
+
+- Frameworks (think_convo):
+  - `SURR_THINK_ENHANCE=1` (default ON for think_convo)
+  - `SURR_THINK_ENHANCE_TIMEOUT_MS=600`
+  - `SURR_THINK_STRICT_JSON=1`
+  - `SURR_THINK_TAG_WHITELIST=plan,debug,dx,photography,idea`
+  - `SURR_THINK_LEXICON_DECIDE`, `SURR_THINK_LEXICON_VENT`, `SURR_THINK_LEXICON_CAUSAL`, `SURR_THINK_LEXICON_POS`, `SURR_THINK_LEXICON_NEG`
+  - `SURR_THINK_DEEP_LOG=1` (gates 200‑char debug preview)
+- inner_voice: `SURR_IV_AUTO_EXTRACT_KG=1` (default ON)
+- UA traceability (optional): `SURR_COMMIT_HASH=<shortsha>`
+
 ## Production Deployment
 - Defaults in this repo are for local development (127.0.0.1, http/ws without TLS). Do not use these defaults over a network.
 - Use secure transports in production:
@@ -146,9 +166,9 @@ cargo run
 ```
 
 ### MCP Tool: think_convo
-Stores thoughts with bidirectional memory injection and cognitive framework analysis.
+Stores thoughts with KG‑only memory injection and runs a local, deterministic framework enhancement (convo/1) before injection.
 
-**Note:** Memory injection uses KG entities and observations only (no raw thoughts).
+**Note:** Memory injection uses KG entities and observations only (no raw thoughts). Framework enhancement is local‑only; no API calls.
 
 Parameters:
 - `content` (required): The thought to store
@@ -213,7 +233,8 @@ Response includes:
 - `memories_injected`: Count of related memories found
 - `enriched_content`: Content enhanced with memory context
 - `submode_used`: Applied submode (validated/defaulted)
-- `framework_analysis`: Cognitive framework insights, questions, next steps
+- `framework_enhanced`: boolean
+- `framework_analysis`: { framework_version: "convo/1", methodology, data{summary,takeaways,prompts,next_step,tags[]} }
 - `orbital_proximities`: Memory relevance proximities
 - `memory_summary`: Description of injection results
  - `user_friendly`: Additive, human-oriented block with summary, readable memory context (percentages + labels), and conversational analysis
