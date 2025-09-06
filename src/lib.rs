@@ -60,14 +60,18 @@ pub async fn run_reembed(
     let pass = config.runtime.database_pass.clone();
     let ns = config.system.database_ns.clone();
     let dbname = config.system.database_db.clone();
+    let mut ua = format!(
+        "surreal-mind/{} (component=reembed; ns={}; db={})",
+        env!("CARGO_PKG_VERSION"),
+        ns,
+        dbname
+    );
+    if let Ok(commit) = std::env::var("SURR_COMMIT_HASH") {
+        ua.push_str(&format!("; commit={}", &commit[..7.min(commit.len())]));
+    }
     let http = Client::builder()
         .timeout(std::time::Duration::from_secs(20))
-        .user_agent(format!(
-            "surreal-mind/{} (component=reembed; ns={}; db={})",
-            env!("CARGO_PKG_VERSION"),
-            ns,
-            dbname
-        ))
+        .user_agent(ua)
         .build()?;
 
     // Embedder

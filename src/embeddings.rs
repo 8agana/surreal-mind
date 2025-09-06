@@ -39,12 +39,16 @@ struct OpenAIResponse {
 
 impl OpenAIEmbedder {
     pub fn new(api_key: String, model: String, dims: Option<usize>, retries: u32) -> Result<Self> {
+        let mut ua = format!(
+            "surreal-mind/{} (component=embeddings; provider=openai)",
+            env!("CARGO_PKG_VERSION")
+        );
+        if let Ok(commit) = std::env::var("SURR_COMMIT_HASH") {
+            ua.push_str(&format!("; commit={}", &commit[..7.min(commit.len())]));
+        }
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(20))
-            .user_agent(format!(
-                "surreal-mind/{} (component=embeddings; provider=openai)",
-                env!("CARGO_PKG_VERSION")
-            ))
+            .user_agent(ua)
             .build()
             .context("Failed to build reqwest client with timeout")?;
 
