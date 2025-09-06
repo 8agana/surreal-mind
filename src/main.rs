@@ -44,7 +44,7 @@ async fn main() -> Result<()> {
     if !config.runtime.mcp_no_log {
         info!("✅ Server initialized successfully");
         info!(
-            "🛠️  Available tools: think_convo, think_plan, think_debug, think_build, think_stuck, think_search, memories_create, memories_search, memories_moderate, maintenance_ops"
+            "🛠️  Available tools: think_convo, think_plan, think_debug, think_build, think_stuck, memories_create, memories_moderate, maintenance_ops, detailed_help, inner_voice, photography_think, photography_memories, legacymind_search, photography_search"
         );
     }
 
