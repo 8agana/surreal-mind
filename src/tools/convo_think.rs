@@ -183,7 +183,7 @@ impl SurrealMindServer {
                 if let Some(env) = framework_analysis.as_ref().and_then(|a| a.as_object()) {
                     if let Some(data) = env.get("data").and_then(|d| d.as_object()) {
                         if let Some(tags) = data.get("tags").and_then(|t| t.as_array()) {
-                            // Merge tags
+                            // Merge tags, then filter by whitelist to ensure only allowed tags persist
                             let existing_tags: Vec<String> = params.tags.unwrap_or_default();
                             let envelope_tags: Vec<String> = tags
                                 .iter()
@@ -193,7 +193,17 @@ impl SurrealMindServer {
                             let mut merged_set: HashSet<String> =
                                 existing_tags.into_iter().collect();
                             merged_set.extend(envelope_tags.into_iter());
-                            let merged: Vec<String> = merged_set.into_iter().collect();
+                            // Build whitelist from env (same source used by framework)
+                            let whitelist: HashSet<String> =
+                                std::env::var("SURR_THINK_TAG_WHITELIST")
+                                    .unwrap_or("plan,debug,dx,photography,idea".to_string())
+                                    .split(',')
+                                    .map(|s| s.trim().to_string())
+                                    .collect();
+                            let merged: Vec<String> = merged_set
+                                .into_iter()
+                                .filter(|t| whitelist.contains(t))
+                                .collect();
                             query.push_str(", tags = $merged_tags");
                             binds.push((
                                 "merged_tags",

@@ -53,7 +53,7 @@ pub async fn run_reembed(
     let http_base = if host.starts_with("http") {
         host
     } else {
-        format!("http://{}", host)
+        format!("http://{}", host.trim_end_matches('/'))
     };
     let sql_url = format!("{}/sql", http_base.trim_end_matches('/'));
     let user = config.runtime.database_user.clone();
@@ -62,6 +62,12 @@ pub async fn run_reembed(
     let dbname = config.system.database_db.clone();
     let http = Client::builder()
         .timeout(std::time::Duration::from_secs(20))
+        .user_agent(format!(
+            "surreal-mind/{} (component=reembed; ns={}; db={})",
+            env!("CARGO_PKG_VERSION"),
+            ns,
+            dbname
+        ))
         .build()?;
 
     // Embedder
@@ -86,7 +92,7 @@ pub async fn run_reembed(
         let take = remaining.min(batch_size);
 
         let select_sql = format!(
-            "USE NS {} DB {}; SELECT id, content, created_at, array::len(embedding) AS elen FROM thoughts ORDER BY created_at ASC LIMIT {} START {};",
+            "USE NS {} DB {}; SELECT meta::id(id) AS id, content, created_at, array::len(embedding) AS elen FROM thoughts ORDER BY created_at ASC LIMIT {} START {};",
             ns, dbname, take, start
         );
         let resp = http
@@ -105,10 +111,11 @@ pub async fn run_reembed(
         }
         let blocks: serde_json::Value = resp.json().await?;
         let result = blocks
-            .get(1)
-            .and_then(|b| b.get("result"))
-            .and_then(|r| r.as_array())
-            .cloned()
+            .as_array()
+            .and_then(|arr| {
+                arr.iter()
+                    .find_map(|b| b.get("result").and_then(|r| r.as_array()).cloned())
+            })
             .unwrap_or_default();
         if result.is_empty() {
             break;
@@ -116,10 +123,6 @@ pub async fn run_reembed(
 
         for item in result.iter() {
             let id_raw = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
-            let mut parts = id_raw.splitn(2, ':');
-            let tb = parts.next().unwrap_or("thoughts");
-            let inner = parts.next().unwrap_or("").trim();
-            let inner = inner.trim_start_matches('⟨').trim_end_matches('⟩');
             let content = item
                 .get("content")
                 .and_then(|v| v.as_str())
@@ -155,8 +158,8 @@ pub async fn run_reembed(
             }
             let emb_json = serde_json::to_string(&new_emb)?;
             let update_sql = format!(
-                "USE NS {} DB {}; UPDATE type::thing('{}', '{}') SET embedding = {}, embedding_provider = '{}', embedding_model = '{}', embedding_dim = {}, embedded_at = time::now() RETURN NONE;",
-                ns, dbname, tb, inner, emb_json, provider, model, expected_dim
+                "USE NS {} DB {}; UPDATE thoughts SET embedding = {}, embedding_provider = '{}', embedding_model = '{}', embedding_dim = {}, embedded_at = time::now() WHERE id = '{}' RETURN NONE;",
+                ns, dbname, emb_json, provider, model, expected_dim, id_raw
             );
             let uresp = http
                 .post(&sql_url)

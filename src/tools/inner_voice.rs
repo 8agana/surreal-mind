@@ -430,17 +430,6 @@ impl SurrealMindServer {
             sql.push_str(" AND created_at >= $from_date AND created_at <= $to_date");
         }
 
-        let mut query = self.db.query(&sql).bind(("dim", q_dim));
-
-        // Date bindings
-        if let Some(date_range) = date_filter {
-            let from_datetime = format!("{}T00:00:00Z", date_range.from);
-            let to_datetime = format!("{}T23:59:59Z", date_range.to);
-            query = query
-                .bind(("from_date", from_datetime))
-                .bind(("to_date", to_datetime));
-        }
-
         if !include_tags.is_empty() {
             sql.push_str(" AND (");
             for (i, _) in include_tags.iter().enumerate() {
@@ -459,6 +448,18 @@ impl SurrealMindServer {
         }
 
         sql.push_str(" LIMIT $limit");
+
+        // Build query after finalizing SQL string
+        let mut query = self.db.query(&sql).bind(("dim", q_dim));
+
+        // Date bindings
+        if let Some(date_range) = date_filter {
+            let from_datetime = format!("{}T00:00:00Z", date_range.from);
+            let to_datetime = format!("{}T23:59:59Z", date_range.to);
+            query = query
+                .bind(("from_date", from_datetime))
+                .bind(("to_date", to_datetime));
+        }
 
         // Bind tags
         for (i, tag) in include_tags.iter().enumerate() {
