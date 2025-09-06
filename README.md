@@ -7,7 +7,7 @@ A Model Context Protocol (MCP) server implementing bidirectional consciousness p
 - **Orbital Mechanics**: Memory relevance based on age, access patterns, and significance
 - **Semantic Understanding**: OpenAI text-embedding-3-small (1536 dims) for semantic similarity
 - **Graph Persistence**: SurrealDB service for consciousness graph storage
-- **Injection Scales**: 0-5 (Sun to Pluto) controlling memory retrieval distance
+- **Injection Scales**: 1-3 controlling memory retrieval distance
 - **Memory Injection**: KG-only retrieval with orbital mechanics (no thought-to-thought injection)
 
 ## Setup
@@ -139,13 +139,10 @@ export SURR_DB_SERIAL=true  # Forces sequential DB access to prevent deadlocks
 This adds a small performance cost but ensures stability when the SurrealDB WebSocket connection experiences concurrent query issues.
 
 ### Example: Memory Injection Scales
-Memory retrieval adjusts based on injection scale (0-5):
-- **Scale 0 (Sun)**: No injection - pure thought storage
-- **Scale 1 (Mercury)**: 5 entities, 0.8 proximity threshold
-- **Scale 2 (Venus)**: 10 entities, 0.6 proximity threshold  
-- **Scale 3 (Mars)**: 20 entities, 0.4 proximity threshold
-- **Scale 4 (Jupiter)**: 30 entities, 0.3 proximity threshold
-- **Scale 5 (Pluto)**: 50 entities, 0.2 proximity threshold
+Memory retrieval adjusts based on injection scale (1-3):
+- **Scale 1**: 5 entities, 0.8 proximity threshold
+- **Scale 2**: 10 entities, 0.6 proximity threshold  
+- **Scale 3**: 20 entities, 0.4 proximity threshold
 
 Server will read these automatically at startup.
 
@@ -167,13 +164,10 @@ Parameters:
 - `content` (required): The thought to store
 - `injection_scale`: Memory injection distance (multiple formats supported)
   - Named presets (case-insensitive):
-    - `"NONE"` = 0 (no injection)
-    - `"LIGHT"` = 1 (Mercury - hot/current memories only) 
-    - `"MEDIUM"` = 2 (Venus - recent context)
-    - `"DEFAULT"` = 3 (Mars - foundational memories) [default]
-    - `"HIGH"` = 4 (Jupiter - broad context)
-    - `"MAXIMUM"` = 5 (Pluto - all relevant memories)
-  - Numeric: 0-5
+    - `"LIGHT"` = 1 (current memories only) 
+    - `"MEDIUM"` = 2 (recent context)
+    - `"DEFAULT"` = 3 (foundational memories) [default]
+  - Numeric: 1-3
 - `significance`: Importance weight (multiple formats supported)
   - String presets (case-insensitive):
     - `"low"` = 0.2
@@ -191,7 +185,7 @@ Example calls:
   "tool": "think_convo",
   "arguments": {
     "content": "Building persistence frameworks requires careful architecture",
-    "injection_scale": "HIGH",
+    "injection_scale": "DEFAULT",
     "significance": "high",
   }
 }
@@ -201,7 +195,7 @@ Example calls:
   "tool": "think_convo",
   "arguments": {
     "content": "Critical bug found in memory injection",
-    "injection_scale": "MAXIMUM",
+    "injection_scale": 3,
     "significance": 9,
   }
 }
@@ -221,12 +215,11 @@ Response includes:
 - `thought_id`: Unique identifier
 - `memories_injected`: Count of related memories found
 - `enriched_content`: Content enhanced with memory context
-- `submode_used`: Applied submode (validated/defaulted)
 - `framework_enhanced`: boolean
 - `framework_analysis`: { framework_version: "convo/1", methodology, data{summary,takeaways,prompts,next_step,tags[]} }
 - `orbital_proximities`: Memory relevance proximities
 - `memory_summary`: Description of injection results
- - `user_friendly`: Additive, human-oriented block with summary, readable memory context (percentages + labels), and conversational analysis
+- `user_friendly`: Additive, human-oriented block with summary, readable memory context (percentages + labels), and conversational analysis
 
 ### MCP Tool: think_plan
 
@@ -235,16 +228,10 @@ Technical reasoning pipeline mirroring `think_convo`, specialized for software w
 
 Parameters:
 - `content` (required)
-- `injection_scale`: same presets and numeric formats as `think_convo`
-- `submode`: Technical mode — `plan` (default) | `build` | `debug`
+- `injection_scale`: same presets and numeric formats as `think_convo` (default: 3)
 - `significance`: same formats as `think_convo`
 - `verbose_analysis`: boolean (default true)
 - `tags`: optional
-
-Defaults by submode (if `injection_scale` omitted):
-- plan → 3 (DEFAULT/MARS)
-- build → 2 (MEDIUM/VENUS)
-- debug → 4 (HIGH/JUPITER)
 
 Examples:
 ```json
@@ -252,7 +239,6 @@ Examples:
   "tool": "think_plan",
   "arguments": {
     "content": "Design module A with clear interfaces",
-    "submode": "plan",
     "injection_scale": "DEFAULT",
     "significance": "medium"
   }
@@ -262,8 +248,7 @@ Examples:
   "tool": "think_plan",
   "arguments": {
     "content": "Fix panic in parser when input is empty",
-    "submode": "debug",
-    "injection_scale": "HIGH",
+    "injection_scale": 3,
     "significance": 10,
     "verbose_analysis": false
   }
@@ -388,7 +373,7 @@ Memory distance calculated from:
 - **Access** (30%): How often it's been accessed
 - **Significance** (30%): Explicit importance
 
-When `SURR_SUBMODE_RETRIEVAL=true`, weights adjust based on submode profile.
+When `SURR_SUBMODE_RETRIEVAL=true` (internal flag), retrieval weights may be adjusted.
 
 ### Storage
 - **SurrealDB**: Persistent storage with optional in-memory mode for testing
@@ -401,12 +386,12 @@ When `SURR_SUBMODE_RETRIEVAL=true`, weights adjust based on submode profile.
 
 ### New Persistence Fields
 **Thoughts table:**
-- `submode`: Active conversation style during creation
+- `submode`: Internal field, not exposed via API
 - `framework_enhanced`: Boolean indicating framework processing
 - `framework_analysis`: JSON object with insights, questions, next steps
 
 **Recalls table:**
-- `submode_match`: Whether connected thoughts share same submode
+- `submode_match`: Internal field for retrieval tuning
 - `flavor`: Content flavor (contrarian, abstract, emotional, solution, neutral)
 
 ### Embeddings
@@ -439,7 +424,6 @@ Parameters:
 - `top_k`: 1–50 (default: `SURR_SEARCH_TOP_K` → `SURR_TOP_K` → 10).
 - `offset`: Pagination offset (default 0).
 - `sim_thresh`: 0.0–1.0 (default: `SURR_SEARCH_SIM_THRESH` → `SURR_SIM_THRESH` → 0.5).
-- `submode`: One of `sarcastic|philosophical|empathetic|problem_solving` (used when `SURR_SUBMODE_RETRIEVAL=true`).
 - `min_significance`: 0.0–1.0 (default 0.0).
 - `date_range`: `{ from?: ISO8601, to?: ISO8601 }` (optional).
 - `expand_graph`: boolean (default false) — expand via recalls both directions.

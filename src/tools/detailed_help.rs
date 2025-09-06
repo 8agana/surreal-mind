@@ -42,24 +42,25 @@ impl SurrealMindServer {
             return Ok(CallToolResult::structured(json!({ "prompts": list })));
         }
 
-        if maybe_tool.is_none() {
-            // Canonical tools roster
-            let overview = json!([
-                {"name": "think_convo", "one_liner": "Store a conversational thought with optional memory injection", "key_params": ["content", "injection_scale", "significance", "tags"]},
-                {"name": "think_plan", "one_liner": "Architecture/strategy thinking (high context)", "key_params": ["content", "injection_scale", "significance", "tags"]},
-                {"name": "think_debug", "one_liner": "Root cause analysis (maximum context)", "key_params": ["content", "injection_scale", "significance", "tags"]},
-                {"name": "think_build", "one_liner": "Implementation-focused thinking (focused context)", "key_params": ["content", "injection_scale", "significance", "tags"]},
-                {"name": "think_stuck", "one_liner": "Lateral thinking to unblock progress", "key_params": ["content", "injection_scale", "significance", "tags"]},
-                {"name": "memories_create", "one_liner": "Create entities/relationships/observations in the KG", "key_params": ["kind", "data", "confidence", "source_thought_id"]},
-                {"name": "memories_moderate", "one_liner": "Review/decide on KG candidates", "key_params": ["action", "target", "status", "items", "dry_run"]},
-                {"name": "legacymind_search", "one_liner": "Unified LM search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]},
-                {"name": "photography_search", "one_liner": "Unified Photography search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]},
-                {"name": "maintenance_ops", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]}
-            ]);
-            return Ok(CallToolResult::structured(overview));
-        }
-
-        let tool = maybe_tool.unwrap();
+        let tool = match maybe_tool {
+            None => {
+                // Canonical tools roster
+                let overview = json!([
+                    {"name": "think_convo", "one_liner": "Store a conversational thought with optional memory injection", "key_params": ["content", "injection_scale", "significance", "tags"]},
+                    {"name": "think_plan", "one_liner": "Architecture/strategy thinking (high context)", "key_params": ["content", "injection_scale", "significance", "tags"]},
+                    {"name": "think_debug", "one_liner": "Root cause analysis (maximum context)", "key_params": ["content", "injection_scale", "significance", "tags"]},
+                    {"name": "think_build", "one_liner": "Implementation-focused thinking (focused context)", "key_params": ["content", "injection_scale", "significance", "tags"]},
+                    {"name": "think_stuck", "one_liner": "Lateral thinking to unblock progress", "key_params": ["content", "injection_scale", "significance", "tags"]},
+                    {"name": "memories_create", "one_liner": "Create entities/relationships/observations in the KG", "key_params": ["kind", "data", "confidence", "source_thought_id"]},
+                    {"name": "memories_moderate", "one_liner": "Review/decide on KG candidates", "key_params": ["action", "target", "status", "items", "dry_run"]},
+                    {"name": "legacymind_search", "one_liner": "Unified LM search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]},
+                    {"name": "photography_search", "one_liner": "Unified Photography search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]},
+                    {"name": "maintenance_ops", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]}
+                ]);
+                return Ok(CallToolResult::structured(overview));
+            }
+            Some(t) => t,
+        };
 
         let help = match tool {
             // New think tools

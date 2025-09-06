@@ -17,7 +17,6 @@ pub mod tools;
 pub mod utils;
 
 use anyhow::Result;
-use reqwest::Client;
 
 #[derive(Debug, serde::Serialize)]
 pub struct ReembedStats {
@@ -49,31 +48,14 @@ pub async fn run_reembed(
     // Load configuration
     let config = crate::config::Config::load()?;
 
-    // HTTP SQL client
-    let host = config.system.database_url.clone();
-    let http_base = if host.starts_with("http") {
-        host
-    } else {
-        format!("http://{}", host.trim_end_matches('/'))
-    };
-    let sql_url = format!("{}/sql", http_base.trim_end_matches('/'));
-    let user = config.runtime.database_user.clone();
-    let pass = config.runtime.database_pass.clone();
-    let ns = config.system.database_ns.clone();
-    let dbname = config.system.database_db.clone();
-    let mut ua = format!(
-        "surreal-mind/{} (component=reembed; ns={}; db={})",
-        env!("CARGO_PKG_VERSION"),
-        ns,
-        dbname
-    );
-    if let Ok(commit) = std::env::var("SURR_COMMIT_HASH") {
-        ua.push_str(&format!("; commit={}", &commit[..7.min(commit.len())]));
-    }
-    let http = Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
-        .user_agent(ua)
-        .build()?;
+    // HTTP SQL client using centralized utility
+    let http_config = utils::HttpSqlConfig::from_config(&config, "reembed");
+    let sql_url = http_config.sql_url();
+    let user = http_config.username.clone();
+    let pass = http_config.password.clone();
+    let ns = http_config.namespace.clone();
+    let dbname = http_config.database.clone();
+    let http = http_config.build_client()?;
 
     // Embedder
     let embedder = embeddings::create_embedder(&config).await?;

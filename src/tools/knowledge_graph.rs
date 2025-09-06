@@ -95,10 +95,12 @@ impl SurrealMindServer {
                                         })
                                     })
                                     .collect::<Vec<_>>();
-                                entity.as_object_mut().unwrap().insert(
-                                    "canonical_suggestions".to_string(),
-                                    json!({"suggestions": suggestions_json}),
-                                );
+                                if let Some(obj) = entity.as_object_mut() {
+                                    obj.insert(
+                                        "canonical_suggestions".to_string(),
+                                        json!({"suggestions": suggestions_json}),
+                                    );
+                                }
                             }
                         }
                     }
@@ -567,30 +569,29 @@ impl SurrealMindServer {
                 let src_id = self.resolve_entity_id_str(&src_s).await?;
                 let dst_id = self.resolve_entity_id_str(&dst_s).await?;
 
-                if src_id.is_none() || dst_id.is_none() {
-                    return Err(SurrealMindError::Validation {
-                        message: format!(
-                            "Could not resolve one or both entities for relationship: src: '{}', dst: '{}'",
-                            src_s, dst_s
-                        ),
-                    });
-                }
-
-                let src_bare = src_id.unwrap();
-                let dst_bare = dst_id.unwrap();
+                let (src_bare, dst_bare) = match (src_id, dst_id) {
+                    (Some(s), Some(d)) => (s, d),
+                    _ => {
+                        return Err(SurrealMindError::Validation {
+                            message: format!(
+                                "Could not resolve one or both entities for relationship: src: '{}', dst: '{}'",
+                                src_s, dst_s
+                            ),
+                        });
+                    }
+                };
 
                 // Build Thing records for bind parameters
                 let src_thing =
-                    surrealdb::sql::Thing::from_str(&format!("kg_entities:{}", src_bare)).ok();
+                    surrealdb::sql::Thing::from_str(&format!("kg_entities:{}", src_bare))
+                        .map_err(|_| SurrealMindError::Validation {
+                            message: format!("Failed to construct record link for source entity: {}", src_bare),
+                        })?;
                 let dst_thing =
-                    surrealdb::sql::Thing::from_str(&format!("kg_entities:{}", dst_bare)).ok();
-                if src_thing.is_none() || dst_thing.is_none() {
-                    return Err(SurrealMindError::Validation {
-                        message: "Failed to construct record links for relationship".into(),
-                    });
-                }
-                let src_thing = src_thing.unwrap();
-                let dst_thing = dst_thing.unwrap();
+                    surrealdb::sql::Thing::from_str(&format!("kg_entities:{}", dst_bare))
+                        .map_err(|_| SurrealMindError::Validation {
+                            message: format!("Failed to construct record link for destination entity: {}", dst_bare),
+                        })?;
 
                 // Upsert: check for existing triplet using resolved Things in kg_edges
                 if upsert {
@@ -1184,13 +1185,14 @@ impl SurrealMindServer {
             .await?
             .take(0)?;
 
+        let threshold = self.config.retrieval.kg_moderation_threshold;
         let mut candidates: Vec<(String, String, f32)> = rows
             .into_iter()
             .filter_map(|row| {
                 let id = row.get("id")?.as_str()?.to_string();
                 let entity_name = row.get("name")?.as_str()?.to_string();
                 let similarity = Self::calculate_name_similarity(&normalized, &entity_name);
-                if similarity > 0.6 {
+                if similarity > threshold {
                     // Only include reasonably similar matches
                     Some((id, entity_name, similarity))
                 } else {
