@@ -23,7 +23,7 @@ impl HttpSqlConfig {
         } else {
             format!("http://{}", host.trim_end_matches('/'))
         };
-        
+
         Self {
             base_url,
             namespace: config.system.database_ns.clone(),
@@ -34,12 +34,12 @@ impl HttpSqlConfig {
             timeout_secs: 20,
         }
     }
-    
+
     /// Build the SQL endpoint URL
     pub fn sql_url(&self) -> String {
         format!("{}/sql", self.base_url.trim_end_matches('/'))
     }
-    
+
     /// Build the User-Agent string
     pub fn user_agent(&self) -> String {
         let mut ua = format!(
@@ -54,7 +54,7 @@ impl HttpSqlConfig {
         }
         ua
     }
-    
+
     /// Create an HTTP client configured for SQL queries
     pub fn build_client(&self) -> reqwest::Result<Client> {
         Client::builder()

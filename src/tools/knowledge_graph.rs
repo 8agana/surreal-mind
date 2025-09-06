@@ -583,15 +583,23 @@ impl SurrealMindServer {
 
                 // Build Thing records for bind parameters
                 let src_thing =
-                    surrealdb::sql::Thing::from_str(&format!("kg_entities:{}", src_bare))
-                        .map_err(|_| SurrealMindError::Validation {
-                            message: format!("Failed to construct record link for source entity: {}", src_bare),
-                        })?;
+                    surrealdb::sql::Thing::from_str(&format!("kg_entities:{}", src_bare)).map_err(
+                        |_| SurrealMindError::Validation {
+                            message: format!(
+                                "Failed to construct record link for source entity: {}",
+                                src_bare
+                            ),
+                        },
+                    )?;
                 let dst_thing =
-                    surrealdb::sql::Thing::from_str(&format!("kg_entities:{}", dst_bare))
-                        .map_err(|_| SurrealMindError::Validation {
-                            message: format!("Failed to construct record link for destination entity: {}", dst_bare),
-                        })?;
+                    surrealdb::sql::Thing::from_str(&format!("kg_entities:{}", dst_bare)).map_err(
+                        |_| SurrealMindError::Validation {
+                            message: format!(
+                                "Failed to construct record link for destination entity: {}",
+                                dst_bare
+                            ),
+                        },
+                    )?;
 
                 // Upsert: check for existing triplet using resolved Things in kg_edges
                 if upsert {

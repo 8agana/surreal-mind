@@ -272,7 +272,11 @@ impl SurrealMindServer {
         }
 
         // Sort by score desc
-        selected.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        selected.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Take top_k
         selected.truncate(top_k);
@@ -926,9 +930,17 @@ pub fn apply_adaptive_floor(
 
     // Sort by score desc
     let mut t_sorted: Vec<Candidate> = t_hits.to_vec();
-    t_sorted.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    t_sorted.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let mut k_sorted: Vec<Candidate> = k_hits.to_vec();
-    k_sorted.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    k_sorted.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // If we have candidates and total < top_k, try adaptive
     let total_hits = t_sorted.len() + k_sorted.len();

@@ -140,9 +140,7 @@ impl SurrealMindServer {
         );
 
         // Use shared cosine similarity function
-        let cosine = |a: &[f32], b: &[f32]| -> f32 {
-            crate::utils::cosine_similarity(a, b)
-        };
+        let cosine = |a: &[f32], b: &[f32]| -> f32 { crate::utils::cosine_similarity(a, b) };
 
         let mut matches: Vec<(f32, SimpleRow)> = Vec::new();
         let mut skipped_mismatched = 0;
