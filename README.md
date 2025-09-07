@@ -1,13 +1,17 @@
 # Surreal Mind - Consciousness Persistence MCP Server
 
-A Model Context Protocol (MCP) server implementing bidirectional consciousness persistence with orbital mechanics for memory retrieval.
+A Model Context Protocol (MCP) server implementing bidirectional consciousness persistence with orbital mechanics for memory retrieval and cognitive scaffolding.
 
 ## Features
+- **Unified Thinking Tools**: `legacymind_think` and `photography_think` with automatic mode routing
+- **Sequential Thinking**: Session continuity via session_id and previous_thought_id chaining
+- **Hypothesis Verification**: Evidence-based validation against Knowledge Graph (Phase C)
+- **Cognitive Scaffolding**: Structured thinking shapes (OODA, FirstPrinciples, RootCause, Socratic)
 - **Bidirectional Memory Injection**: Thoughts automatically pull relevant memories during storage
 - **Orbital Mechanics**: Memory relevance based on age, access patterns, and significance
 - **Semantic Understanding**: OpenAI text-embedding-3-small (1536 dims) for semantic similarity
 - **Graph Persistence**: SurrealDB service for consciousness graph storage
-- **Injection Scales**: 1-3 controlling memory retrieval distance
+- **Injection Scales**: 0-3 controlling memory retrieval (0=none, 1=5, 2=10, 3=20 entities)
 - **Memory Injection**: KG-only retrieval with orbital mechanics (no thought-to-thought injection)
 
 ## Setup
@@ -49,13 +53,26 @@ Note: The server connects via WebSocket only. Embedded in-process DB is not curr
 
 See [DATABASE.md](DATABASE.md) for detailed schema, indexes, and maintenance operations.
 
-## Updates (2025‑09‑06)
+## Recent Updates
 
-- Unified search tools: `legacymind_search` and `photography_search` replace legacy tools. Defaults to memories; set `include_thoughts=true` to also search thoughts.
-- Photography tools: `photography_think`, `photography_memories`, `photography_search` are always visible and auto‑connect to `ns=photography`, `db=work`. `photography_think` uses 500 KG candidates.
-- inner_voice: Persists a synthesized thought and, by default, auto‑extracts KG candidates (pending) with `data.staged_by_thought` for moderation via `memories_moderate`. Disable via `SURR_IV_AUTO_EXTRACT_KG=0`.
-- think_convo frameworks (local, deterministic): runs a fast “convo/1” enhancement to produce `{summary, takeaways[], prompts[], next_step, tags[]}`; strict JSON; 600ms timeout; seeded determinism; tags merged via whitelist.
-- Observability & robustness: HTTP re‑embed parsing is resilient; ids normalized via `meta::id(id)`; reqwest clients use descriptive User‑Agent strings (optionally append `; commit=<sha>` when `SURR_COMMIT_HASH` is set).
+### 2025-09-07 - Major Refactor: Unified Thinking Tools
+- **Phase A/B Complete**: Consolidated 5 think tools into 2 domain-focused tools
+  - `legacymind_think`: Development/technical thinking with mode routing
+  - `photography_think`: Photography-specific thinking (auto-connects to photography namespace)
+- **Mode Routing**: Automatic selection based on trigger phrases or heuristics
+  - Trigger phrases: "debug time", "building time", "plan time", "i'm stuck", "question time"
+  - Heuristic keywords: error→debug, implement→build, design→plan
+- **Session Continuity**: Chain thoughts via `session_id` and `previous_thought_id`
+- **Phase C Implemented**: Hypothesis verification with evidence-based validation
+  - Deterministic rule-based classification
+  - Confidence scoring: supporting/(supporting+contradicting)
+  - Configurable thresholds and evidence limits
+
+### 2025-09-06 - Production Ready
+- Unified search tools: `legacymind_search` and `photography_search` replace legacy tools
+- inner_voice: Synthesis with auto-extraction to KG candidates
+- Frameworks: Local deterministic enhancements (600ms timeout)
+- HTTP robustness: Resilient parsing, descriptive User-Agent strings
 
 ### Env quick‑ref (new)
 

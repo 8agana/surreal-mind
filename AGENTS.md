@@ -2,7 +2,7 @@
 
 Last updated: 2025-09-07
 
-This file is the working guide for operating and extending the Surreal Mind MCP server. It reflects the current design after the thought/injection refactor and should be used by CLI agents (Codex, CC) and contributors.
+This file is the working guide for operating and extending the Surreal Mind MCP server. It reflects the current design after the major thinking tools refactor (Phases A/B/C) and should be used by Federation members (CC, Codex, Warp, Grok) and contributors.
 
 — WARP users: `WARP.md` is a symlink to this file.
 
@@ -16,14 +16,21 @@ Surreal Mind augments agent thinking with persistent memory backed by SurrealDB 
 - Injection: KG-only (entities + observations). Limits by scale: 1→5, 2→10, 3→20. UNION queries were removed; two SELECTs are merged client-side.
 - Submodes: Removed from storage and tool surfaces; any legacy `submode` input is ignored.
 
-### Status — 2025-09-07 (HTTP + Think Refactor live)
-- Branch `cc-fixes-20250906` is production-ready; Codex CCR P1/P2 complete.
-- Injection scales standardized: 0=none, 1→5, 2→10, 3→20. Docs/help aligned.
-- SQL: Added `WHERE embedding_dim=$dim AND embedding IS NOT NULL` to KG and thoughts retrieval paths.
-- Error handling: Removed risky `unwrap` on hot paths; safer `Result` flows and comparisons in sorts.
-- Config validation: Enforces provider/model/dimension coherence (OpenAI small=1536), DB URL scheme, and clamps `embed_retries` 1..10.
-- HTTP client: UA includes optional `; commit=<sha>`; default timeouts 20s.
-- Tests/build: 43 tests passing; `clippy -D warnings` clean; `cargo fmt` clean; release binary builds.
+### Status — 2025-09-07 (Unified Thinking Tools + Phase C Complete)
+- **Major Refactor Complete**: Phases A/B/C all implemented and production-ready
+  - Phase A: Router pattern with trigger phrases (8 minutes implementation by Grok)
+  - Phase B: Session continuity fields (6.5 minutes implementation)
+  - Phase C: Hypothesis verification (completed by Grok)
+- **New Tool Architecture**:
+  - `legacymind_think`: Unified development thinking with mode routing
+  - `photography_think`: Photography-specific variant
+  - Automatic mode selection via triggers or heuristics
+  - Session chaining via `session_id` and `previous_thought_id`
+- **Hypothesis Verification**: Deterministic evidence-based validation
+  - Queries KG entities/observations for supporting/contradicting evidence
+  - Confidence scoring and revision suggestions
+  - Configurable via env vars: `SURR_VERIFY_TOPK`, `SURR_VERIFY_MIN_SIM`, `SURR_VERIFY_EVIDENCE_LIMIT`
+- **Tests/Build**: All 41 tests passing; zero clippy warnings; production build successful
 
 Acceptance Snapshot — 2025-09-06
 - Tools roster: `think_*`, `memories_*`, `maintenance_ops`, `detailed_help`, `inner_voice`, `legacymind_search`, `photography_*`.
@@ -39,14 +46,31 @@ Quick Ops (Post-Restart)
 4) Logs (if enabled) show `provider=openai`, `model=text-embedding-3-small`, `dims=1536`; UA commit tag present when `SURR_COMMIT_HASH` set.
 
 ## Exposed MCP Tools
-- `think_convo`: Persist a thought with embeddings and run KG-only injection (scale configurable). Runs a local, deterministic “frameworks” pass (convo/1) post‑create, pre‑injection. Returns thought id and framework_enhanced flag.
-- `think_plan`, `think_debug`, `think_build`, `think_stuck`: Variants tuned for retrieval pool size only (no behavior drift beyond thresholds).
-- `legacymind_search`: Unified LM repo search — memories by default; include_thoughts=true also searches thoughts.
-- `photography_think`, `photography_memories`, `photography_search`: Tools scoped to Photography repo (ns=photography, db=work). photography_think injection candidate pool=500.
-- `memories_create` (alias: `knowledgegraph_create`): Create KG entities/observations.
-- `memories_moderate` (alias: `knowledgegraph_moderate`): Review/stage KG entries.
-- `maintenance_ops`: Health checks, re-embedding, archival/export, and cleanup.
-- `inner_voice`: Retrieval + synthesis with optional auto‑extraction to staged KG candidates (default ON). Thought persisted with compact Sources line.
+
+### Primary Thinking Tools (NEW)
+- `legacymind_think`: Unified development thinking with automatic mode routing
+  - Trigger phrases: "debug time", "building time", "plan time", "i'm stuck", "question time"
+  - Heuristic routing: Keywords like error→debug, implement→build
+  - Session continuity: `session_id`, `previous_thought_id`, `chain_id` for chaining
+  - Hypothesis verification: `hypothesis` + `needs_verification=true` for evidence-based validation
+  - Returns: thought_id, mode_selected, reason, injection count, optional verification results
+- `photography_think`: Photography-specific thinking (auto-connects to ns=photography, db=work)
+  - Same features as legacymind_think but scoped to photography namespace
+  - Injection candidate pool: 500
+
+### Legacy Think Tools (Still Available)
+- `think_convo`, `think_plan`, `think_debug`, `think_build`, `think_stuck`: Now internally route through the unified system
+
+### Search & Knowledge Graph
+- `legacymind_search`: Unified search — memories by default; `include_thoughts=true` also searches thoughts
+- `photography_search`: Photography-scoped search
+- `memories_create` (alias: `knowledgegraph_create`): Create KG entities/observations
+- `memories_moderate` (alias: `knowledgegraph_moderate`): Review/stage KG entries
+
+### Synthesis & Maintenance
+- `inner_voice`: Retrieval + synthesis with optional auto‑extraction to staged KG candidates
+- `maintenance_ops`: Health checks, re-embedding, archival/export, and cleanup
+- `detailed_help`: Get tool documentation and usage examples
 
 Notes
 - Tools are always listed (no env flag required for visibility). Any gating is enforced inside handlers.
@@ -206,20 +230,31 @@ Using profiles in practice
 ## Roadmap (next focus)
 
 ### Completed
-- **[2025-09-04] First AI-driven Feature**: Self-aware prompt registry with transparency, lineage, and critique capabilities.
+- **[2025-09-07] Unified Thinking Tools**: Major refactor consolidating 5 tools into 2 domain-focused tools
+  - Router pattern with automatic mode selection
+  - Session continuity via thought chaining
+  - Hypothesis verification with evidence-based validation
+  - 14.5 minute implementation by Codex/Grok team
+- **[2025-09-04] First AI-driven Feature**: Self-aware prompt registry with transparency, lineage, and critique capabilities
   - Transparent prompt metadata via detailed_help
   - Git-style lineage with parent/child relationships
   - Critique storage as linked thoughts
   - MCP_NO_LOG and dimension guardrails
-  - Optional invocation metrics
+
+### In Design: Cognitive Shapes (Scaffold Mode)
+- **Concept**: Structured templates for different thinking modes that scaffold reasoning without replacing it
+- **Core Shapes**:
+  - **OODA**: Observe (facts/signals) → Orient (models/constraints) → Decide (options/criteria) → Act (steps/checkpoints)
+  - **FirstPrinciples**: Goal, Constraints, Invariants, KnownTruths[], Assumptions[], Subproblems[]
+  - **RootCause**: Problem, Timeline, 5 Whys with evidence, CandidateCauses[], FixPlan
+  - **Socratic**: Clarify, Assumptions, Evidence For/Against, Alternatives, Implications
+- **Future Shapes**: Inversion, Second-Order Thinking, Game Theory, Analogical Reasoning
+- **Implementation**: structure_only flag, deterministic (no LLM calls), optional injection
 
 ### Next
-- Restore injection thresholds to recommended values after validation.
-- Light cleanup: confirm DB indexes, drop dead imports, update docs as code stabilizes.
-- Potential prompt registry extensions:
-  - Critiques and evolution suggestions for core tools
-  - Usage stats collection for popular patterns
-  - Cross-reference support between prompts and thoughts
+- Implement scaffold mode for legacymind_think with shape templates
+- Restore injection thresholds to recommended values after validation
+- Light cleanup: confirm DB indexes, drop dead imports, update docs as code stabilizes
 
 ## Safety & Guardrails
 - Do not reintroduce fake/deterministic or Nomic embedders.

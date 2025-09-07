@@ -1,3 +1,39 @@
+## 2025-09-07 - Major Refactor: Unified Thinking Tools (Phases A/B/C)
+
+### Phase A - Router Pattern (8 minutes implementation by Grok)
+- **Consolidated 5 tools → 2 domain tools**: `legacymind_think` and `photography_think`
+- **Automatic mode routing** via trigger phrases or heuristic keywords
+  - Trigger phrases: "debug time", "building time", "plan time", "i'm stuck", "question time"
+  - Heuristic fallback: error→debug, implement→build, design→plan
+- **Extracted common logic** to `src/tools/thinking.rs` with `run_*` functions
+- **Backward compatible**: Legacy tools still available, internally route through new system
+
+### Phase B - Session Continuity (6.5 minutes implementation by Grok)
+- **Added session linking fields**: `session_id`, `previous_thought_id`, `chain_id`
+- **Thought chaining**: Create linked sequences of thoughts across sessions
+- **Revision tracking**: `revises_thought`, `branch_from` for non-linear thinking
+- **Telemetry**: Track what triggered routing decisions
+
+### Phase C - Hypothesis Verification (Completed by Grok)
+- **Evidence-based validation**: Query KG for supporting/contradicting evidence
+- **Deterministic classification**: Pattern matching for contradiction detection
+- **Confidence scoring**: `supporting_count / (supporting_count + contradicting_count)`
+- **Configurable thresholds**: Via env vars `SURR_VERIFY_TOPK`, `SURR_VERIFY_MIN_SIM`
+- **Optional persistence**: Store verification results as JSON blob on thought
+
+### Implementation Stats
+- **Total time**: 14.5 minutes (Phase A: 8 min, Phase B: 6.5 min)
+- **Tests**: All 41 passing, zero clippy warnings
+- **Team**: Codex (design), Grok Code Fast 1 (implementation), CC (testing/feedback)
+
+## 2025-09-06 - Production Ready (cc-fixes-20250906 branch)
+
+### Code Consistency Review Fixes
+- **Fixed clippy warnings** in tests/inner_voice_retrieve.rs
+- **Removed redundant imports** and unnecessary vec! macros
+- **Improved error handling** with safer Result flows
+- **Config validation** enforcing provider/model coherence
+
 ## 2025-08-31 - Phase 2: maintenance_ops
 
 - Added maintenance_ops tool with subcommands:
