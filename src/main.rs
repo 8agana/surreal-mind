@@ -1,5 +1,6 @@
 use anyhow::Result;
 use rmcp::{ServiceExt, transport::stdio};
+mod http;
 use surreal_mind::{config::Config, server::SurrealMindServer};
 use tracing::info;
 
@@ -48,18 +49,30 @@ async fn main() -> Result<()> {
         );
     }
 
-    // Start MCP server with stdio transport
-    let service = server.serve(stdio()).await.map_err(|e| {
+    // Check transport selection
+    if config.runtime.transport == "http" {
         if !config.runtime.mcp_no_log {
-            eprintln!("Failed to start MCP service: {}", e);
+            info!("🌐 Starting HTTP server for MCP transport");
         }
-        e
-    })?;
-
-    if !config.runtime.mcp_no_log {
-        info!("🎯 MCP Server ready - waiting for requests...");
+        http::start_http_server(server).await.map_err(|e| {
+            if !config.runtime.mcp_no_log {
+                eprintln!("Failed to start HTTP server: {}", e);
+            }
+            e
+        })?;
+    } else {
+        // Default stdio transport
+        if !config.runtime.mcp_no_log {
+            info!("🎯 MCP Server ready - waiting for requests...");
+        }
+        let service = server.serve(stdio()).await.map_err(|e| {
+            if !config.runtime.mcp_no_log {
+                eprintln!("Failed to start MCP service: {}", e);
+            }
+            e
+        })?;
+        service.waiting().await?;
     }
-    service.waiting().await?;
 
     Ok(())
 }

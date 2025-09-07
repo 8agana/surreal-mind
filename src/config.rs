@@ -231,6 +231,17 @@ pub struct RuntimeConfig {
     pub photo_db: Option<String>,
     pub photo_user: Option<String>,
     pub photo_pass: Option<String>,
+    // HTTP transport configuration
+    pub transport: String,
+    pub http_bind: std::net::SocketAddr,
+    pub http_path: String,
+    pub bearer_token: Option<String>,
+    pub allow_token_in_url: bool,
+    pub http_sse_keepalive_sec: u64,
+    pub http_session_ttl_sec: u64,
+    pub http_request_timeout_ms: u64,
+    pub http_mcp_op_timeout_ms: Option<u64>,
+    pub http_metrics_mode: String,
 }
 
 impl Default for RuntimeConfig {
@@ -263,6 +274,16 @@ impl Default for RuntimeConfig {
             photo_db: None,
             photo_user: None,
             photo_pass: None,
+            transport: "stdio".to_string(),
+            http_bind: "127.0.0.1:8787".parse().unwrap(),
+            http_path: "/mcp".to_string(),
+            bearer_token: None,
+            allow_token_in_url: false,
+            http_sse_keepalive_sec: 15,
+            http_session_ttl_sec: 900,
+            http_request_timeout_ms: 10000,
+            http_mcp_op_timeout_ms: None,
+            http_metrics_mode: "basic".to_string(),
         }
     }
 }
@@ -505,6 +526,16 @@ impl RuntimeConfig {
             photo_db: None,
             photo_user: None,
             photo_pass: None,
+            transport: "stdio".to_string(),
+            http_bind: "127.0.0.1:8787".parse().unwrap(),
+            http_path: "/mcp".to_string(),
+            bearer_token: None,
+            allow_token_in_url: false,
+            http_sse_keepalive_sec: 15,
+            http_session_ttl_sec: 900,
+            http_request_timeout_ms: 10000,
+            http_mcp_op_timeout_ms: None,
+            http_metrics_mode: "basic".to_string(),
         };
 
         // Photography repo envs
@@ -516,6 +547,48 @@ impl RuntimeConfig {
         cfg.photo_db = std::env::var("SURR_PHOTO_DB").ok();
         cfg.photo_user = std::env::var("SURR_PHOTO_USER").ok();
         cfg.photo_pass = std::env::var("SURR_PHOTO_PASS").ok();
+
+        // HTTP transport configuration
+        cfg.transport = std::env::var("SURR_TRANSPORT").unwrap_or_else(|_| "stdio".to_string());
+        if let Ok(v) = std::env::var("SURR_HTTP_BIND") {
+            if let Ok(bind) = v.parse::<std::net::SocketAddr>() {
+                cfg.http_bind = bind;
+            }
+        }
+        cfg.http_path = std::env::var("SURR_HTTP_PATH").unwrap_or_else(|_| "/mcp".to_string());
+        cfg.bearer_token = std::env::var("SURR_BEARER_TOKEN").ok().or_else(|| {
+            // Fallback to ~/.surr_token
+            let home = std::env::var("HOME").ok()?;
+            std::fs::read_to_string(format!("{}/.surr_token", home))
+                .ok()
+                .map(|s| s.trim().to_string())
+        });
+        if let Ok(allow) = std::env::var("SURR_ALLOW_TOKEN_IN_URL") {
+            cfg.allow_token_in_url = allow == "1" || allow.to_lowercase() == "true";
+        }
+        if let Some(sse) = std::env::var("SURR_HTTP_SSE_KEEPALIVE_SEC")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+        {
+            cfg.http_sse_keepalive_sec = sse;
+        }
+        if let Some(ttl) = std::env::var("SURR_HTTP_SESSION_TTL_SEC")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+        {
+            cfg.http_session_ttl_sec = ttl;
+        }
+        if let Some(timeout) = std::env::var("SURR_HTTP_REQUEST_TIMEOUT_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+        {
+            cfg.http_request_timeout_ms = timeout;
+        }
+        cfg.http_mcp_op_timeout_ms = std::env::var("SURR_HTTP_MCP_OP_TIMEOUT_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok());
+        cfg.http_metrics_mode =
+            std::env::var("SURR_HTTP_METRICS_MODE").unwrap_or_else(|_| "basic".to_string());
 
         cfg
     }
