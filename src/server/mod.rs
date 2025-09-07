@@ -195,7 +195,7 @@ impl ServerHandler for SurrealMindServer {
 
         let convo_think_schema_map = crate::schemas::convo_think_schema();
 
-        let tech_think_schema_map = crate::schemas::tech_think_schema();
+        let legacymind_think_schema_map = crate::schemas::legacymind_think_schema();
 
         let maintenance_ops_schema_map = crate::schemas::maintenance_ops_schema();
         let kg_create_schema_map = crate::schemas::kg_create_schema();
@@ -205,39 +205,9 @@ impl ServerHandler for SurrealMindServer {
 
         let mut tools = vec![
             Tool {
-                name: "think_convo".into(),
-                description: Some("Store conversational thoughts with memory injection".into()),
-                input_schema: convo_think_schema_map.clone(),
-                annotations: None,
-                output_schema: None,
-            },
-            Tool {
-                name: "think_plan".into(),
-                description: Some("Architecture and strategy thinking (high context)".into()),
-                input_schema: tech_think_schema_map.clone(),
-                annotations: None,
-                output_schema: None,
-            },
-            Tool {
-                name: "think_debug".into(),
-                description: Some(
-                    "Problem solving with maximum context (root cause analysis)".into(),
-                ),
-                input_schema: tech_think_schema_map.clone(),
-                annotations: None,
-                output_schema: None,
-            },
-            Tool {
-                name: "think_build".into(),
-                description: Some("Implementation thinking (focused context)".into()),
-                input_schema: tech_think_schema_map.clone(),
-                annotations: None,
-                output_schema: None,
-            },
-            Tool {
-                name: "think_stuck".into(),
-                description: Some("Breaking through blocks (lateral thinking)".into()),
-                input_schema: tech_think_schema_map.clone(),
+                name: "legacymind_think".into(),
+                description: Some("Unified thinking tool with automatic mode routing".into()),
+                input_schema: legacymind_think_schema_map,
                 annotations: None,
                 output_schema: None,
             },
@@ -340,12 +310,11 @@ impl ServerHandler for SurrealMindServer {
     ) -> std::result::Result<CallToolResult, McpError> {
         // Route to appropriate tool handler
         match request.name.as_ref() {
-            // New think tools
-            "think_convo" => self.handle_convo_think(request).await.map_err(|e| e.into()),
-            "think_plan" => self.handle_think_plan(request).await.map_err(|e| e.into()),
-            "think_debug" => self.handle_think_debug(request).await.map_err(|e| e.into()),
-            "think_build" => self.handle_think_build(request).await.map_err(|e| e.into()),
-            "think_stuck" => self.handle_think_stuck(request).await.map_err(|e| e.into()),
+            // Unified thinking tool
+            "legacymind_think" => self
+                .handle_legacymind_think(request)
+                .await
+                .map_err(|e| e.into()),
             // Intelligence and utility
             "maintenance_ops" => self
                 .handle_maintenance_ops(request)

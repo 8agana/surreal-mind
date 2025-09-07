@@ -46,16 +46,14 @@ impl SurrealMindServer {
             None => {
                 // Canonical tools roster
                 let overview = json!([
-                    {"name": "think_convo", "one_liner": "Store a conversational thought with optional memory injection", "key_params": ["content", "injection_scale", "significance", "tags"]},
-                    {"name": "think_plan", "one_liner": "Architecture/strategy thinking (high context)", "key_params": ["content", "injection_scale", "significance", "tags"]},
-                    {"name": "think_debug", "one_liner": "Root cause analysis (maximum context)", "key_params": ["content", "injection_scale", "significance", "tags"]},
-                    {"name": "think_build", "one_liner": "Implementation-focused thinking (focused context)", "key_params": ["content", "injection_scale", "significance", "tags"]},
-                    {"name": "think_stuck", "one_liner": "Lateral thinking to unblock progress", "key_params": ["content", "injection_scale", "significance", "tags"]},
+                    {"name": "legacymind_think", "one_liner": "Unified thinking tool with automatic mode routing via triggers/heurs", "key_params": ["content", "hint", "injection_scale", "tags", "significance"]},
+                    {"name": "photography_think", "one_liner": "Store photography thoughts with memory injection (isolated repo)", "key_params": ["content", "injection_scale", "tags", "significance"]},
                     {"name": "memories_create", "one_liner": "Create entities/relationships/observations in the KG", "key_params": ["kind", "data", "confidence", "source_thought_id"]},
                     {"name": "memories_moderate", "one_liner": "Review/decide on KG candidates", "key_params": ["action", "target", "status", "items", "dry_run"]},
                     {"name": "legacymind_search", "one_liner": "Unified LM search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]},
                     {"name": "photography_search", "one_liner": "Unified Photography search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]},
-                    {"name": "maintenance_ops", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]}
+                    {"name": "maintenance_ops", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]},
+                    {"name": "inner_voice", "one_liner": "Retrieve relevant memories and thoughts with optional synthesis", "key_params": ["query", "top_k", "auto_extract_to_kg"]}
                 ]);
                 return Ok(CallToolResult::structured(overview));
             }
@@ -63,61 +61,65 @@ impl SurrealMindServer {
         };
 
         let help = match tool {
-            // New think tools
-            "think_convo" => json!({
-                "name": "think_convo",
-                "description": "Store conversational thoughts with optional memory injection.",
+            "legacymind_think" => json!({
+                "name": "legacymind_think",
+                "description": "Unified thinking tool that routes to appropriate mode based on triggers, hint, or heuristics.",
+                "arguments": {
+                    "content": "string (required) — the thought text",
+                    "hint": "string — optional explicit mode ('debug', 'build', 'plan', 'stuck', 'question', 'conclude')",
+                    "injection_scale": "integer|string (0-3) — memory injection level (overrides mode default)",
+                    "tags": "string[] — optional tags",
+                    "significance": "number|string (0.0-1.0) — importance (overrides mode default)"
+                },
+                "returns": {
+                    "mode_selected": "string",
+                    "reason": "string",
+                    "delegated_result": "object — result from the chosen mode",
+                    "telemetry": "object — trigger/heuristic info"
+                },
+                "routing": {
+                    "triggers": {
+                        "debug": "debug time",
+                        "build": "building time",
+                        "plan": "plan/planning time",
+                        "stuck": "i'm stuck / stuck",
+                        "question": "question time",
+                        "conclude": "wrap up / conclude"
+                    },
+                    "heuristics": {
+                        "debug": ["error", "bug", "stack trace", "failed", "exception", "panic"],
+                        "build": ["implement", "create", "add function", "build", "scaffold", "wire"],
+                        "plan": ["architecture", "design", "approach", "how should", "strategy", "trade-off"],
+                        "stuck": ["stuck", "unsure", "confused", "not sure", "blocked"]
+                    }
+                }
+            }),
+            "photography_think" => json!({
+                "name": "photography_think",
+                "description": "Store photography thoughts with memory injection (isolated photography repo).",
                 "arguments": {
                     "content": "string (required) — the thought text",
                     "injection_scale": "integer|string (0-3 or presets) — memory injection level (0=no injection, 1-3=scale)",
                     "tags": "string[] — optional tags",
                     "significance": "number|string (0.0-1.0 or presets) — importance"
                 },
-                "returns": {"thought_id": "string", "memories_injected": "number", "embedding_model": "string", "embedding_dim": "number"}
+                "returns": {"thought_id": "string", "memories_injected": "number", "embedding_model": "string", "embedding_dim": "number", "framework_enhanced": "boolean"}
             }),
-            "think_plan" => json!({
-                "name": "think_plan",
-                "description": "Architecture and strategy thinking (systems_thinking). High context injection.",
+            "inner_voice" => json!({
+                "name": "inner_voice",
+                "description": "Retrieve relevant memories and thoughts with optional auto-extraction to KG candidates.",
                 "arguments": {
-                    "content": "string (required)",
-                    "injection_scale": "integer|string (default: 3)",
-                    "significance": "number|string (default: 0.7)",
-                    "tags": "string[]"
+                    "query": "string (required) — search query",
+                    "top_k": "integer (1-50; default 10) — max snippets",
+                    "sim_thresh": "number — similarity floor",
+                    "floor": "number — minimum similarity",
+                    "mix": "number (0.0-1.0; default 0.6) — KG/thoughts mix",
+                    "include_private": "boolean (default false)",
+                    "include_tags": "string[] — include thoughts with these tags",
+                    "exclude_tags": "string[] — exclude thoughts with these tags",
+                    "auto_extract_to_kg": "boolean (default false) — stage KG candidates"
                 },
-                "returns": {"thought_id": "string", "memories_injected": "number", "embedding_model": "string", "embedding_dim": "number"}
-            }),
-            "think_debug" => json!({
-                "name": "think_debug",
-                "description": "Problem solving (root_cause_analysis). Maximum context injection.",
-                "arguments": {
-                    "content": "string (required)",
-                    "injection_scale": "integer|string (default: 3)",
-                    "significance": "number|string (default: 0.8)",
-                    "tags": "string[]"
-                },
-                "returns": {"thought_id": "string", "memories_injected": "number", "embedding_model": "string", "embedding_dim": "number"}
-            }),
-            "think_build" => json!({
-                "name": "think_build",
-                "description": "Implementation thinking (incremental). Focused context injection.",
-                "arguments": {
-                    "content": "string (required)",
-                    "injection_scale": "integer|string (default: 2)",
-                    "significance": "number|string (default: 0.6)",
-                    "tags": "string[]"
-                },
-                "returns": {"thought_id": "string", "memories_injected": "number", "embedding_model": "string", "embedding_dim": "number"}
-            }),
-            "think_stuck" => json!({
-                "name": "think_stuck",
-                "description": "Breaking through blocks (lateral_thinking). Varied context injection.",
-                "arguments": {
-                    "content": "string (required)",
-                    "injection_scale": "integer|string (default: 3)",
-                    "significance": "number|string (default: 0.9)",
-                    "tags": "string[]"
-                },
-                "returns": {"thought_id": "string", "memories_injected": "number", "embedding_model": "string", "embedding_dim": "number"}
+                "returns": {"snippets": "array", "answer": "string?", "diagnostics": "object"}
             }),
             "legacymind_search" => json!({
                 "name": "legacymind_search",
