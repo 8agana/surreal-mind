@@ -140,10 +140,142 @@ impl SurrealMindServer {
             "health_check_indexes" => self.handle_health_check_indexes(dry_run).await,
             "reembed" => self.handle_reembed(limit, dry_run).await,
             "reembed_kg" => self.handle_reembed_kg(limit, dry_run).await,
+            "ensure_continuity_fields" => self.handle_ensure_continuity_fields(dry_run).await,
             _ => Err(SurrealMindError::Validation {
                 message: format!("Unknown subcommand: {}", params.subcommand),
             }),
         }
+    }
+
+    /// Ensure continuity fields and indexes exist on thoughts table
+    async fn handle_ensure_continuity_fields(&self, dry_run: bool) -> Result<CallToolResult> {
+        let mut created_fields = vec![];
+        let mut created_indexes = vec![];
+        let mut existing_fields = vec![];
+        let mut existing_indexes = vec![];
+
+        // Fields to ensure exist
+        let fields = vec![
+            "session_id: string NULL",
+            "chain_id: string NULL",
+            "previous_thought_id: record(thoughts) | string NULL",
+            "revises_thought: record(thoughts) | string NULL",
+            "branch_from: record(thoughts) | string NULL",
+            "confidence: float NULL",
+        ];
+
+        // Indexes to ensure exist
+        let indexes = vec![
+            "idx_thoughts_session: session_id, created_at",
+            "idx_thoughts_chain: chain_id, created_at",
+        ];
+
+        let fields_len = fields.len();
+        let indexes_len = indexes.len();
+
+        // Check and create fields
+        for field_def in &fields {
+            let field_name = field_def.split(':').next().unwrap();
+            let full_field_def = format!(
+                "DEFINE FIELD {} ON TABLE thoughts TYPE {}",
+                field_def, field_def
+            );
+
+            // Check if field exists (simple check - may not catch all cases)
+            let check_query = format!("INFO FOR TABLE thoughts");
+            if let Ok(mut response) = self.db.query(&check_query).await {
+                if let Ok(vec) = response.take::<Vec<serde_json::Value>>(0) {
+                    if let Some(table_info) = vec.first() {
+                        if let Some(fields_obj) = table_info.get("fields") {
+                            if let Some(_field_info) = fields_obj.get(field_name) {
+                                existing_fields.push(field_name.to_string());
+                                continue;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !dry_run {
+                match self.db.query(&full_field_def).await {
+                    Ok(_) => {
+                        created_fields.push(field_name.to_string());
+                        tracing::info!("Created continuity field: {}", field_name);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to create continuity field {}: {}", field_name, e);
+                        // Continue with other fields
+                    }
+                }
+            } else {
+                created_fields.push(format!("{} (dry-run)", field_name));
+            }
+        }
+
+        // Check and create indexes
+        for index_def in &indexes {
+            let parts: Vec<&str> = index_def.split(": ").collect();
+            if parts.len() != 2 {
+                continue;
+            }
+            let index_name = parts[0];
+            let index_cols = parts[1];
+            let full_index_def = format!(
+                "DEFINE INDEX {} ON TABLE thoughts FIELDS {};",
+                index_name, index_cols
+            );
+
+            // Check if index exists (simple check - may not catch all cases)
+            let check_query = "INFO FOR TABLE thoughts".to_string();
+            if let Ok(mut response) = self.db.query(&check_query).await {
+                if let Ok(vec) = response.take::<Vec<serde_json::Value>>(0) {
+                    if let Some(table_info) = vec.first() {
+                        if let Some(indexes_obj) = table_info.get("indexes") {
+                            if let Some(_) = indexes_obj.get(index_name) {
+                                existing_indexes.push(index_name.to_string());
+                                continue;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !dry_run {
+                match self.db.query(&full_index_def).await {
+                    Ok(_) => {
+                        created_indexes.push(index_name.to_string());
+                        tracing::info!("Created continuity index: {}", index_name);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to create continuity index {}: {}", index_name, e);
+                        // Continue with other indexes
+                    }
+                }
+            } else {
+                created_indexes.push(format!("{} (dry-run)", index_name));
+            }
+        }
+
+        let result = json!({
+            "created_fields": created_fields,
+            "created_indexes": created_indexes,
+            "existing_fields": existing_fields,
+            "existing_indexes": existing_indexes,
+            "dry_run": dry_run,
+            "summary": format!(
+                "Fields: {}/{} created, {}/{} existing. Indexes: {}/{} created, {}/{} existing.",
+                created_fields.len(),
+                fields_len,
+                existing_fields.len(),
+                fields_len,
+                created_indexes.len(),
+                indexes_len,
+                existing_indexes.len(),
+                indexes_len
+            )
+        });
+
+        Ok(CallToolResult::structured(result))
     }
 
     async fn handle_health_check_embeddings(&self, _dry_run: bool) -> Result<CallToolResult> {
