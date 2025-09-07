@@ -182,12 +182,12 @@ impl SurrealMindServer {
             );
 
             // Check if field exists (simple check - may not catch all cases)
-            let check_query = format!("INFO FOR TABLE thoughts");
+            let check_query = "INFO FOR TABLE thoughts".to_string();
             if let Ok(mut response) = self.db.query(&check_query).await {
                 if let Ok(vec) = response.take::<Vec<serde_json::Value>>(0) {
                     if let Some(table_info) = vec.first() {
                         if let Some(fields_obj) = table_info.get("fields") {
-                            if let Some(_field_info) = fields_obj.get(field_name) {
+                            if fields_obj.get(field_name).is_some() {
                                 existing_fields.push(field_name.to_string());
                                 continue;
                             }
@@ -231,7 +231,7 @@ impl SurrealMindServer {
                 if let Ok(vec) = response.take::<Vec<serde_json::Value>>(0) {
                     if let Some(table_info) = vec.first() {
                         if let Some(indexes_obj) = table_info.get("indexes") {
-                            if let Some(_) = indexes_obj.get(index_name) {
+                            if indexes_obj.get(index_name).is_some() {
                                 existing_indexes.push(index_name.to_string());
                                 continue;
                             }
