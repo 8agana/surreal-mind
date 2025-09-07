@@ -16,11 +16,12 @@ pub fn convo_think_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
-pub fn tech_think_schema() -> Arc<Map<String, Value>> {
+pub fn legacymind_think_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
         "properties": {
             "content": {"type": "string"},
+            "hint": {"type": "string", "enum": ["debug", "build", "plan", "stuck", "question", "conclude"]},
             "injection_scale": {"type": ["integer", "string"]},
             "tags": {"type": "array", "items": {"type": "string"}},
             "significance": {"type": ["number", "string"]},

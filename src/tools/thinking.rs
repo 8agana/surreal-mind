@@ -1,0 +1,745 @@
+//! thinking module: common run_* helpers for think tools and new legacymind_think
+
+use crate::error::{Result, SurrealMindError};
+use crate::frameworks::{ConvoOpts, run_convo as frameworks_run_convo};
+use crate::server::SurrealMindServer;
+use rmcp::model::{CallToolRequestParam, CallToolResult};
+use serde_json::json;
+use std::collections::HashSet;
+use std::time::{Duration, Instant};
+
+/// Maximum content size in bytes (100KB)
+const MAX_CONTENT_SIZE: usize = 100 * 1024;
+
+/// Modes for legacymind_think routing
+#[derive(Debug, Clone, PartialEq)]
+enum ThinkMode {
+    Debug,
+    Build,
+    Plan,
+    Stuck,
+    Question,
+    Conclude,
+}
+
+/// Parameters for legacymind_think
+#[derive(Debug, serde::Deserialize)]
+pub struct LegacymindThinkParams {
+    pub content: String,
+    #[serde(default)]
+    pub hint: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::deserializers::de_option_u8_forgiving"
+    )]
+    pub injection_scale: Option<u8>,
+    #[serde(default, deserialize_with = "crate::deserializers::de_option_tags")]
+    pub tags: Option<Vec<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::deserializers::de_option_f32_forgiving"
+    )]
+    pub significance: Option<f32>,
+    #[serde(default)]
+    pub verbose_analysis: Option<bool>,
+}
+
+impl SurrealMindServer {
+    /// Run conversational think (with framework enhancement, origin='human')
+    pub async fn run_convo(
+        &self,
+        content: &str,
+        injection_scale: Option<u8>,
+        tags: Option<Vec<String>>,
+        significance: Option<f32>,
+        verbose_analysis: Option<bool>,
+        is_conclude: bool,
+    ) -> Result<serde_json::Value> {
+        let injection_scale = injection_scale.unwrap_or(1) as i64;
+        let significance = significance.unwrap_or(0.5_f32) as f64;
+        let content_str = content.to_string();
+        let tags = tags.unwrap_or_default();
+
+        // Compute embedding
+        let embedding =
+            self.embedder
+                .embed(&content_str)
+                .await
+                .map_err(|e| SurrealMindError::Embedding {
+                    message: e.to_string(),
+                })?;
+
+        if embedding.is_empty() {
+            return Err(SurrealMindError::Embedding {
+                message: "Generated embedding is empty".into(),
+            });
+        }
+
+        let thought_id = uuid::Uuid::new_v4().to_string();
+        let (provider, model, dim) = self.get_embedding_metadata();
+
+        self.db
+            .query(
+                "CREATE type::thing('thoughts', $id) CONTENT {
+                    content: $content,
+                    created_at: time::now(),
+                    embedding: $embedding,
+                    injected_memories: [],
+                    enriched_content: NONE,
+                    injection_scale: $injection_scale,
+                    significance: $significance,
+                    access_count: 0,
+                    last_accessed: NONE,
+                    submode: NONE,
+                    framework_enhanced: NONE,
+                    framework_analysis: NONE,
+                    origin: 'human',
+                    tags: $tags,
+                    is_private: false,
+                    embedding_provider: $provider,
+                    embedding_model: $model,
+                    embedding_dim: $dim,
+                    embedded_at: time::now()
+                } RETURN NONE;",
+            )
+            .bind(("id", thought_id.clone()))
+            .bind(("content", content_str.clone()))
+            .bind(("embedding", embedding.clone()))
+            .bind(("injection_scale", injection_scale))
+            .bind(("significance", significance))
+            .bind(("tags", tags.clone()))
+            .await?;
+
+        // Framework enhancement (skip for conclude)
+        let enhance_enabled =
+            !is_conclude && std::env::var("SURR_THINK_ENHANCE").unwrap_or("1".to_string()) == "1";
+        let verbose_analysis = verbose_analysis.unwrap_or(false);
+        let mut framework_enhanced = false;
+        let mut framework_analysis: Option<serde_json::Value> = None;
+        if enhance_enabled || verbose_analysis {
+            tracing::debug!("Running framework enhancement for thought {}", thought_id);
+            let start = Instant::now();
+            let opts = ConvoOpts {
+                strict_json: std::env::var("SURR_THINK_STRICT_JSON").unwrap_or("1".to_string())
+                    == "1",
+                tag_whitelist: std::env::var("SURR_THINK_TAG_WHITELIST")
+                    .unwrap_or("plan,debug,dx,photography,idea".to_string())
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .collect(),
+                timeout_ms: std::env::var("SURR_THINK_ENHANCE_TIMEOUT_MS")
+                    .unwrap_or("600".to_string())
+                    .parse()
+                    .unwrap_or(600),
+            };
+            match tokio::time::timeout(
+                Duration::from_millis(opts.timeout_ms),
+                frameworks_run_convo(&content_str, &opts),
+            )
+            .await
+            {
+                Ok(Ok(envelope)) => {
+                    framework_enhanced = true;
+                    framework_analysis = Some(serde_json::to_value(&envelope).unwrap_or(json!({})));
+                    tracing::info!("think.convo.enhance.calls");
+                    tracing::info!("think.convo.methodology.{}", envelope.methodology);
+                }
+                Ok(Err(e)) => {
+                    tracing::warn!(
+                        "Framework enhancement failed for thought {}: {}",
+                        thought_id,
+                        e
+                    );
+                    tracing::info!("think.convo.enhance.drop_json");
+                }
+                Err(_) => {
+                    tracing::warn!("Framework enhancement timed out for thought {}", thought_id);
+                    tracing::info!("think.convo.enhance.timeout");
+                }
+            }
+        }
+
+        // Update thought with enhancement
+        if framework_enhanced || framework_analysis.is_some() {
+            let mut query = "UPDATE type::thing('thoughts', $id) SET framework_enhanced = $enhanced, framework_analysis = $analysis".to_string();
+            let mut binds = vec![
+                ("id", serde_json::Value::String(thought_id.clone())),
+                ("enhanced", serde_json::Value::Bool(framework_enhanced)),
+                (
+                    "analysis",
+                    framework_analysis
+                        .clone()
+                        .unwrap_or(serde_json::Value::Null),
+                ),
+            ];
+            if framework_enhanced {
+                if let Some(env) = framework_analysis.as_ref().and_then(|a| a.as_object()) {
+                    if let Some(data) = env.get("data").and_then(|d| d.as_object()) {
+                        if let Some(tags_from_analysis) =
+                            data.get("tags").and_then(|t| t.as_array())
+                        {
+                            let existing_tags: Vec<String> = tags.clone();
+                            let envelope_tags: Vec<String> = tags_from_analysis
+                                .iter()
+                                .filter_map(|t| t.as_str())
+                                .map(|s| s.to_string())
+                                .collect();
+                            let mut merged_set: HashSet<String> =
+                                existing_tags.into_iter().collect();
+                            merged_set.extend(envelope_tags.into_iter());
+                            let whitelist: HashSet<String> =
+                                std::env::var("SURR_THINK_TAG_WHITELIST")
+                                    .unwrap_or("plan,debug,dx,photography,idea".to_string())
+                                    .split(',')
+                                    .map(|s| s.trim().to_string())
+                                    .collect();
+                            let merged: Vec<String> = merged_set
+                                .into_iter()
+                                .filter(|t| whitelist.contains(t))
+                                .collect();
+                            query.push_str(", tags = $merged_tags");
+                            binds.push((
+                                "merged_tags",
+                                serde_json::Value::Array(
+                                    merged.into_iter().map(serde_json::Value::String).collect(),
+                                ),
+                            ));
+                        }
+                    }
+                }
+            }
+            query.push_str(" RETURN NONE;");
+            let mut db_query = self.db.query(&query);
+            for (k, v) in binds {
+                db_query = db_query.bind((k, v));
+            }
+            db_query.await?;
+        }
+
+        // Inject memories
+        let (mem_count, _) = self
+            .inject_memories(
+                &thought_id,
+                &embedding,
+                injection_scale,
+                None,
+                Some("think_convo"),
+            )
+            .await
+            .unwrap_or((0, None));
+
+        Ok(json!({
+            "thought_id": thought_id,
+            "embedding_model": self.get_embedding_metadata().1,
+            "embedding_dim": self.embedder.dimensions(),
+            "memories_injected": mem_count,
+            "framework_enhanced": framework_enhanced
+        }))
+    }
+
+    /// Run technical think (no framework, origin='tool', mode-specific defaults)
+    pub async fn run_technical(
+        &self,
+        content: &str,
+        injection_scale: Option<u8>,
+        tags: Option<Vec<String>>,
+        significance: Option<f32>,
+        verbose_analysis: Option<bool>,
+        mode: &str,
+    ) -> Result<serde_json::Value> {
+        let (default_injection_scale, default_significance) = match mode {
+            "debug" => (4u8, 0.8_f32),
+            "build" => (2u8, 0.6_f32),
+            "plan" => (3u8, 0.7_f32),
+            "stuck" => (3u8, 0.9_f32),
+            _ => (2u8, 0.6_f32), // fallback
+        };
+        let injection_scale = injection_scale.unwrap_or(default_injection_scale) as i64;
+        let significance = significance.unwrap_or(default_significance) as f64;
+        let content_str = content.to_string();
+        let tags = tags.unwrap_or_default();
+
+        // Compute embedding
+        let embedding =
+            self.embedder
+                .embed(&content_str)
+                .await
+                .map_err(|e| SurrealMindError::Embedding {
+                    message: e.to_string(),
+                })?;
+
+        if embedding.is_empty() {
+            return Err(SurrealMindError::Embedding {
+                message: "Generated embedding is empty".into(),
+            });
+        }
+
+        let thought_id = uuid::Uuid::new_v4().to_string();
+        let (provider, model, dim) = self.get_embedding_metadata();
+
+        self.db
+            .query(
+                "CREATE type::thing('thoughts', $id) CONTENT {
+                    content: $content,
+                    created_at: time::now(),
+                    embedding: $embedding,
+                    injected_memories: [],
+                    enriched_content: NONE,
+                    injection_scale: $injection_scale,
+                    significance: $significance,
+                    access_count: 0,
+                    last_accessed: NONE,
+                    submode: NONE,
+                    framework_enhanced: NONE,
+                    framework_analysis: NONE,
+                    origin: 'tool',
+                    tags: $tags,
+                    is_private: false,
+                    embedding_provider: $provider,
+                    embedding_model: $model,
+                    embedding_dim: $dim,
+                    embedded_at: time::now()
+                } RETURN NONE;",
+            )
+            .bind(("id", thought_id.clone()))
+            .bind(("content", content_str.clone()))
+            .bind(("embedding", embedding.clone()))
+            .bind(("injection_scale", injection_scale))
+            .bind(("significance", significance))
+            .bind(("tags", tags.clone()))
+            .await?;
+
+        let tool_name = format!("think_{}", mode);
+        let (mem_count, _) = self
+            .inject_memories(
+                &thought_id,
+                &embedding,
+                injection_scale,
+                None,
+                Some(&tool_name),
+            )
+            .await
+            .unwrap_or((0, None));
+
+        Ok(json!({
+            "thought_id": thought_id,
+            "embedding_model": self.get_embedding_metadata().1,
+            "embedding_dim": self.embedder.dimensions(),
+            "memories_injected": mem_count
+        }))
+    }
+
+    /// Detect mode from content if no hint
+    fn detect_mode(&self, content: &str) -> ThinkMode {
+        let content_lower = content.to_lowercase();
+        let keywords = [
+            (
+                "debug",
+                vec![
+                    "error",
+                    "bug",
+                    "stack trace",
+                    "failed",
+                    "exception",
+                    "panic",
+                ],
+            ),
+            (
+                "build",
+                vec![
+                    "implement",
+                    "create",
+                    "add function",
+                    "build",
+                    "scaffold",
+                    "wire",
+                ],
+            ),
+            (
+                "plan",
+                vec![
+                    "architecture",
+                    "design",
+                    "approach",
+                    "how should",
+                    "strategy",
+                    "trade-off",
+                ],
+            ),
+            (
+                "stuck",
+                vec!["stuck", "unsure", "confused", "not sure", "blocked"],
+            ),
+        ];
+        let mut best_mode = "question";
+        let mut best_score = 0;
+        for (mode, kw) in keywords.iter() {
+            let score = kw.iter().filter(|k| content_lower.contains(*k)).count();
+            if score > best_score {
+                best_score = score;
+                best_mode = mode;
+            }
+        }
+        if best_score == 0 {
+            ThinkMode::Question
+        } else {
+            match best_mode {
+                "debug" => ThinkMode::Debug,
+                "build" => ThinkMode::Build,
+                "plan" => ThinkMode::Plan,
+                "stuck" => ThinkMode::Stuck,
+                _ => ThinkMode::Question,
+            }
+        }
+    }
+
+    /// Handle legacymind_think tool
+    pub async fn handle_legacymind_think(
+        &self,
+        request: CallToolRequestParam,
+    ) -> Result<CallToolResult> {
+        let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {
+            message: "Missing parameters".into(),
+        })?;
+        let params: LegacymindThinkParams = serde_json::from_value(serde_json::Value::Object(args))
+            .map_err(|e| SurrealMindError::Serialization {
+                message: format!("Invalid parameters: {}", e),
+            })?;
+
+        if params.content.len() > MAX_CONTENT_SIZE {
+            return Err(SurrealMindError::Validation {
+                message: format!(
+                    "Content exceeds maximum size of {}KB",
+                    MAX_CONTENT_SIZE / 1024
+                ),
+            });
+        }
+
+        let content_lower = params.content.to_lowercase();
+        let mode = if let Some(hint) = &params.hint {
+            match hint.as_str() {
+                "debug" => ThinkMode::Debug,
+                "build" => ThinkMode::Build,
+                "plan" => ThinkMode::Plan,
+                "stuck" => ThinkMode::Stuck,
+                "question" => ThinkMode::Question,
+                "conclude" => ThinkMode::Conclude,
+                _ => self.detect_mode(&params.content),
+            }
+        } else if content_lower.contains("debug time") {
+            ThinkMode::Debug
+        } else if content_lower.contains("building time") {
+            ThinkMode::Build
+        } else if content_lower.contains("plan time") || content_lower.contains("planning time") {
+            ThinkMode::Plan
+        } else if content_lower.contains("i'm stuck") || content_lower.contains("stuck") {
+            ThinkMode::Stuck
+        } else if content_lower.contains("question time") {
+            ThinkMode::Question
+        } else if content_lower.contains("wrap up") || content_lower.contains("conclude") {
+            ThinkMode::Conclude
+        } else {
+            self.detect_mode(&params.content)
+        };
+
+        let (mode_selected, reason, trigger_matched, heuristics) = match mode {
+            ThinkMode::Debug => {
+                if params.hint.as_ref().map(|h| h == "debug").unwrap_or(false) {
+                    (
+                        "debug".to_string(),
+                        "hint specified".to_string(),
+                        None,
+                        None,
+                    )
+                } else if content_lower.contains("debug time") {
+                    (
+                        "debug".to_string(),
+                        "trigger phrase 'debug time'".to_string(),
+                        Some("debug time".to_string()),
+                        None,
+                    )
+                } else if let Some(h) = &params.hint {
+                    (
+                        "debug".to_string(),
+                        format!("heuristic override from hint {}", h),
+                        None,
+                        None,
+                    )
+                } else {
+                    let matched = vec![
+                        "error",
+                        "bug",
+                        "stack trace",
+                        "failed",
+                        "exception",
+                        "panic",
+                    ];
+                    let keywords: Vec<String> = matched
+                        .iter()
+                        .filter(|k| content_lower.contains(*k))
+                        .map(|s| s.to_string())
+                        .collect();
+                    let score = keywords.len();
+                    (
+                        "debug".to_string(),
+                        "heuristic keyword match".to_string(),
+                        None,
+                        Some((keywords, score)),
+                    )
+                }
+            }
+            ThinkMode::Build => {
+                if params.hint.as_ref().map(|h| h == "build").unwrap_or(false) {
+                    (
+                        "build".to_string(),
+                        "hint specified".to_string(),
+                        None,
+                        None,
+                    )
+                } else if content_lower.contains("building time") {
+                    (
+                        "build".to_string(),
+                        "trigger phrase 'building time'".to_string(),
+                        Some("building time".to_string()),
+                        None,
+                    )
+                } else if let Some(h) = &params.hint {
+                    (
+                        "build".to_string(),
+                        format!("heuristic override from hint {}", h),
+                        None,
+                        None,
+                    )
+                } else {
+                    let matched = vec![
+                        "implement",
+                        "create",
+                        "add function",
+                        "build",
+                        "scaffold",
+                        "wire",
+                    ];
+                    let keywords: Vec<String> = matched
+                        .iter()
+                        .filter(|k| content_lower.contains(*k))
+                        .map(|s| s.to_string())
+                        .collect();
+                    let score = keywords.len();
+                    (
+                        "build".to_string(),
+                        "heuristic keyword match".to_string(),
+                        None,
+                        Some((keywords, score)),
+                    )
+                }
+            }
+            ThinkMode::Plan => {
+                if params.hint.as_ref().map(|h| h == "plan").unwrap_or(false) {
+                    ("plan".to_string(), "hint specified".to_string(), None, None)
+                } else if content_lower.contains("plan time")
+                    || content_lower.contains("planning time")
+                {
+                    (
+                        "plan".to_string(),
+                        "trigger phrase".to_string(),
+                        Some("plan/planning time".to_string()),
+                        None,
+                    )
+                } else if let Some(h) = &params.hint {
+                    (
+                        "plan".to_string(),
+                        format!("heuristic override from hint {}", h),
+                        None,
+                        None,
+                    )
+                } else {
+                    let matched = vec![
+                        "architecture",
+                        "design",
+                        "approach",
+                        "how should",
+                        "strategy",
+                        "trade-off",
+                    ];
+                    let keywords: Vec<String> = matched
+                        .iter()
+                        .filter(|k| content_lower.contains(*k))
+                        .map(|s| s.to_string())
+                        .collect();
+                    let score = keywords.len();
+                    (
+                        "plan".to_string(),
+                        "heuristic keyword match".to_string(),
+                        None,
+                        Some((keywords, score)),
+                    )
+                }
+            }
+            ThinkMode::Stuck => {
+                if params.hint.as_ref().map(|h| h == "stuck").unwrap_or(false) {
+                    (
+                        "stuck".to_string(),
+                        "hint specified".to_string(),
+                        None,
+                        None,
+                    )
+                } else if content_lower.contains("i'm stuck") || content_lower.contains("stuck") {
+                    (
+                        "stuck".to_string(),
+                        "trigger phrase".to_string(),
+                        Some("stuck".to_string()),
+                        None,
+                    )
+                } else if let Some(h) = &params.hint {
+                    (
+                        "stuck".to_string(),
+                        format!("heuristic override from hint {}", h),
+                        None,
+                        None,
+                    )
+                } else {
+                    let matched = vec!["stuck", "unsure", "confused", "not sure", "blocked"];
+                    let keywords: Vec<String> = matched
+                        .iter()
+                        .filter(|k| content_lower.contains(*k))
+                        .map(|s| s.to_string())
+                        .collect();
+                    let score = keywords.len();
+                    (
+                        "stuck".to_string(),
+                        "heuristic keyword match".to_string(),
+                        None,
+                        Some((keywords, score)),
+                    )
+                }
+            }
+            ThinkMode::Question => {
+                if params
+                    .hint
+                    .as_ref()
+                    .map(|h| h == "question")
+                    .unwrap_or(false)
+                {
+                    (
+                        "question".to_string(),
+                        "hint specified".to_string(),
+                        None,
+                        None,
+                    )
+                } else if content_lower.contains("question time") {
+                    (
+                        "question".to_string(),
+                        "trigger phrase 'question time'".to_string(),
+                        Some("question time".to_string()),
+                        None,
+                    )
+                } else {
+                    (
+                        "question".to_string(),
+                        "default for general content".to_string(),
+                        None,
+                        None,
+                    )
+                }
+            }
+            ThinkMode::Conclude => {
+                if params
+                    .hint
+                    .as_ref()
+                    .map(|h| h == "conclude")
+                    .unwrap_or(false)
+                {
+                    (
+                        "conclude".to_string(),
+                        "hint specified".to_string(),
+                        None,
+                        None,
+                    )
+                } else if content_lower.contains("wrap up") || content_lower.contains("conclude") {
+                    (
+                        "conclude".to_string(),
+                        "trigger phrase".to_string(),
+                        Some("wrap up/conclude".to_string()),
+                        None,
+                    )
+                } else if let Some(h) = &params.hint {
+                    (
+                        "conclude".to_string(),
+                        format!("heuristic override from hint {}", h),
+                        None,
+                        None,
+                    )
+                } else {
+                    (
+                        "conclude".to_string(),
+                        "trigger match".to_string(),
+                        Some("wrap up/conclude".to_string()),
+                        None,
+                    )
+                }
+            }
+        };
+
+        let injection_scale =
+            if matches!(mode, ThinkMode::Conclude) && params.injection_scale.is_none() {
+                Some(1)
+            } else {
+                params.injection_scale
+            };
+
+        let is_conclude = matches!(mode, ThinkMode::Conclude);
+
+        let delegated_result = match mode {
+            ThinkMode::Question | ThinkMode::Conclude => {
+                self.run_convo(
+                    &params.content,
+                    injection_scale,
+                    params.tags.clone(),
+                    params.significance,
+                    params.verbose_analysis,
+                    is_conclude,
+                )
+                .await?
+            }
+            _ => {
+                let mode_str = match mode {
+                    ThinkMode::Debug => "debug",
+                    ThinkMode::Build => "build",
+                    ThinkMode::Plan => "plan",
+                    ThinkMode::Stuck => "stuck",
+                    _ => unreachable!(),
+                };
+                self.run_technical(
+                    &params.content,
+                    injection_scale,
+                    params.tags.clone(),
+                    params.significance,
+                    params.verbose_analysis,
+                    mode_str,
+                )
+                .await?
+            }
+        };
+
+        let telemetry = json!({
+            "trigger_matched": trigger_matched,
+            "heuristics": if let Some((keywords, score)) = heuristics {
+                json!({
+                    "keywords": keywords,
+                    "score": score
+                })
+            } else {
+                serde_json::Value::Null
+            }
+        });
+
+        let result = json!({
+            "mode_selected": mode_selected,
+            "reason": reason,
+            "delegated_result": delegated_result,
+            "telemetry": telemetry
+        });
+
+        Ok(CallToolResult::structured(result))
+    }
+}

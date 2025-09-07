@@ -13,6 +13,10 @@ use axum::{
     response::IntoResponse,
     routing::get,
 };
+use rmcp::transport::streamable_http_server::{
+    session::local::LocalSessionManager,
+    tower::{StreamableHttpServerConfig, StreamableHttpService},
+};
 use serde_json::json;
 use std::{
     collections::HashMap,
@@ -22,10 +26,6 @@ use std::{
 use surreal_mind::{config::Config, error::Result, server::SurrealMindServer};
 use tokio::sync::Mutex;
 use tower_http::cors::{Any, CorsLayer};
-use rmcp::transport::streamable_http_server::{
-    session::local::LocalSessionManager,
-    tower::{StreamableHttpServerConfig, StreamableHttpService},
-};
 
 /// Session entry for TTL tracking
 #[derive(Debug)]
@@ -153,7 +153,9 @@ pub async fn start_http_server(server: SurrealMindServer) -> Result<()> {
         .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any))
         .layer(middleware::from_fn_with_state(
             (state.metrics.clone(), path.clone()),
-            |State((metrics, base)): State<(Arc<Mutex<HttpMetrics>>, String)>, req: axum::http::Request<Body>, next: axum::middleware::Next| async move {
+            |State((metrics, base)): State<(Arc<Mutex<HttpMetrics>>, String)>,
+             req: axum::http::Request<Body>,
+             next: axum::middleware::Next| async move {
                 if req.uri().path().starts_with(&base) {
                     let mut m = metrics.lock().await;
                     m.total_requests = m.total_requests.saturating_add(1);
@@ -171,7 +173,9 @@ pub async fn start_http_server(server: SurrealMindServer) -> Result<()> {
                 server.config.runtime.bearer_token.clone(),
                 server.config.runtime.allow_token_in_url,
             ),
-            |State((token, allow_q)): State<(Option<String>, bool)>, req: axum::http::Request<Body>, next: axum::middleware::Next| async move {
+            |State((token, allow_q)): State<(Option<String>, bool)>,
+             req: axum::http::Request<Body>,
+             next: axum::middleware::Next| async move {
                 // Allow /health without auth
                 if req.uri().path() == "/health" {
                     return next.run(req).await;
@@ -182,7 +186,8 @@ pub async fn start_http_server(server: SurrealMindServer) -> Result<()> {
                         return (
                             StatusCode::UNAUTHORIZED,
                             [(header::CONTENT_TYPE, "application/json")],
-                            serde_json::json!({"error": {"code": 401, "message": "Unauthorized"}}).to_string(),
+                            serde_json::json!({"error": {"code": 401, "message": "Unauthorized"}})
+                                .to_string(),
                         )
                             .into_response();
                     }
@@ -210,7 +215,8 @@ pub async fn start_http_server(server: SurrealMindServer) -> Result<()> {
                     return (
                         StatusCode::UNAUTHORIZED,
                         [(header::CONTENT_TYPE, "application/json")],
-                        serde_json::json!({"error": {"code": 401, "message": "Unauthorized"}}).to_string(),
+                        serde_json::json!({"error": {"code": 401, "message": "Unauthorized"}})
+                            .to_string(),
                     )
                         .into_response();
                 }
