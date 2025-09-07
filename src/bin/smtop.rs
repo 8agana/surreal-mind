@@ -3,9 +3,9 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use crossterm::{event, execute, terminal};
-use reqwest::blocking::Client;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
+use reqwest::blocking::Client;
 
 #[derive(Default, Clone)]
 struct Status {
@@ -46,37 +46,36 @@ fn main() -> anyhow::Result<()> {
         }
 
         if event::poll(Duration::from_millis(200))? {
-            match event::read()? {
-                event::Event::Key(k) => {
-                    use crossterm::event::{KeyCode, KeyModifiers};
-                    match k.code {
-                        KeyCode::Char('q') | KeyCode::Esc => break,
-                        KeyCode::Char('r') => {
-                            let _ = restart_sm();
-                            status = gather_status(Some(&status));
-                        }
-                        KeyCode::Char('f') => {
-                            let _ = start_cloudflared();
-                            status = gather_status(Some(&status));
-                        }
-                        KeyCode::Char('g') => {
-                            let _ = stop_cloudflared();
-                            status = gather_status(Some(&status));
-                        }
-                        KeyCode::Char('y') => {
-                            let _ = copy_to_clipboard(&status.url);
-                        }
-                        KeyCode::Char('Y') => {
-                            let _ = copy_to_clipboard(&status.token);
-                        }
-                        KeyCode::Char('a') => { status.use_header_auth = !status.use_header_auth; },
-                        KeyCode::PageUp => status.log_scroll = status.log_scroll.saturating_add(10),
-                        KeyCode::PageDown => status.log_scroll = status.log_scroll.saturating_sub(10),
-                        KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => break,
-                        _ => {}
+            if let event::Event::Key(k) = event::read()? {
+                use crossterm::event::{KeyCode, KeyModifiers};
+                match k.code {
+                    KeyCode::Char('q') | KeyCode::Esc => break,
+                    KeyCode::Char('r') => {
+                        let _ = restart_sm();
+                        status = gather_status(Some(&status));
                     }
+                    KeyCode::Char('f') => {
+                        let _ = start_cloudflared();
+                        status = gather_status(Some(&status));
+                    }
+                    KeyCode::Char('g') => {
+                        let _ = stop_cloudflared();
+                        status = gather_status(Some(&status));
+                    }
+                    KeyCode::Char('y') => {
+                        let _ = copy_to_clipboard(&status.url);
+                    }
+                    KeyCode::Char('Y') => {
+                        let _ = copy_to_clipboard(&status.token);
+                    }
+                    KeyCode::Char('a') => {
+                        status.use_header_auth = !status.use_header_auth;
+                    }
+                    KeyCode::PageUp => status.log_scroll = status.log_scroll.saturating_add(10),
+                    KeyCode::PageDown => status.log_scroll = status.log_scroll.saturating_sub(10),
+                    KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => break,
+                    _ => {}
                 }
-                _ => {}
             }
         }
     }
@@ -101,7 +100,9 @@ fn ui(f: &mut Frame, s: &Status) {
     let header = Paragraph::new(Line::from(vec![
         Span::styled(
             "Surreal‑Mind — Remote MCP Dashboard",
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::raw("  |  "),
         Span::raw(format!("URL: {}", s.url)),
@@ -116,8 +117,13 @@ fn ui(f: &mut Frame, s: &Status) {
 
     let svc = Paragraph::new(vec![
         Line::raw(format!("Service: {}", on_off(s.service_running))),
-        Line::raw(format!("Local health: {}{}",
-            ok_fail(s.health_local), s.latency_local_ms.map(|d| format!(" ({d} ms)")).unwrap_or_default())),
+        Line::raw(format!(
+            "Local health: {}{}",
+            ok_fail(s.health_local),
+            s.latency_local_ms
+                .map(|d| format!(" ({d} ms)"))
+                .unwrap_or_default()
+        )),
         Line::raw("Bind: 127.0.0.1:8787"),
         Line::raw("Path: /mcp"),
     ])
@@ -177,7 +183,11 @@ fn ui(f: &mut Frame, s: &Status) {
             .collect()
     };
     let logs_p = Paragraph::new(logs_lines)
-        .block(Block::default().borders(Borders::ALL).title("Recent Logs (PgUp/PgDn)"))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Recent Logs (PgUp/PgDn)"),
+        )
         .wrap(Wrap { trim: true });
     f.render_widget(logs_p, chunks[2]);
 
@@ -189,20 +199,35 @@ fn ui(f: &mut Frame, s: &Status) {
     f.render_widget(help, chunks[3]);
 }
 
-fn on_off(b: bool) -> String { if b { "on".into() } else { "off".into() } }
-fn ok_fail(b: bool) -> String { if b { "ok".into() } else { "fail".into() } }
+fn on_off(b: bool) -> String {
+    if b { "on".into() } else { "off".into() }
+}
+fn ok_fail(b: bool) -> String {
+    if b { "ok".into() } else { "fail".into() }
+}
 
 fn gather_status(prev: Option<&Status>) -> Status {
-    let token = std::fs::read_to_string(format!("{}/.surr_token", std::env::var("HOME").unwrap_or_default()))
-        .unwrap_or_default()
-        .trim()
-        .to_string();
+    let token = std::fs::read_to_string(format!(
+        "{}/.surr_token",
+        std::env::var("HOME").unwrap_or_default()
+    ))
+    .unwrap_or_default()
+    .trim()
+    .to_string();
     let url = if token.is_empty() {
         "https://mcp.samataganaphotography.com/mcp".to_string()
     } else {
-        format!("https://mcp.samataganaphotography.com/mcp?access_token={}", token)
+        format!(
+            "https://mcp.samataganaphotography.com/mcp?access_token={}",
+            token
+        )
     };
-    let mut st = Status { url: url.clone(), token: token.clone(), use_header_auth: prev.map(|p| p.use_header_auth).unwrap_or(false), ..Default::default() };
+    let mut st = Status {
+        url: url.clone(),
+        token: token.clone(),
+        use_header_auth: prev.map(|p| p.use_header_auth).unwrap_or(false),
+        ..Default::default()
+    };
 
     // Service running?
     st.service_running = port_listening(8787);
@@ -219,21 +244,46 @@ fn gather_status(prev: Option<&Status>) -> Status {
 
     // /metrics for total_requests
     if !token.is_empty() {
-        if let Some(m) = http_json_auth_mode("http://127.0.0.1:8787/metrics", &token, st.use_header_auth) {
-            if let Some(t) = m.get("total_requests").and_then(|v| v.as_u64()) { st.total_requests = Some(t); }
+        if let Some(m) =
+            http_json_auth_mode("http://127.0.0.1:8787/metrics", &token, st.use_header_auth)
+        {
+            if let Some(t) = m.get("total_requests").and_then(|v| v.as_u64()) {
+                st.total_requests = Some(t);
+            }
             if let Some(prev_t) = prev.and_then(|p| p.total_requests) {
-                if let Some(cur) = st.total_requests { let dt = 2.0_f64; st.rps = Some((cur.saturating_sub(prev_t) as f64)/dt); }
+                if let Some(cur) = st.total_requests {
+                    let dt = 2.0_f64;
+                    st.rps = Some((cur.saturating_sub(prev_t) as f64) / dt);
+                }
             }
             let mut rps_hist = prev.map(|p| p.rps_history.clone()).unwrap_or_default();
-            if let Some(rps) = st.rps { rps_hist.push(rps); }
-            if rps_hist.len() > 60 { let _ = rps_hist.drain(0..(rps_hist.len() - 60)); }
+            if let Some(rps) = st.rps {
+                rps_hist.push(rps);
+            }
+            if rps_hist.len() > 60 {
+                let _ = rps_hist.drain(0..(rps_hist.len() - 60));
+            }
             st.rps_history = rps_hist;
         }
     }
 
     // Track latency histories
-    if let Some(ms) = st.latency_local_ms { let mut v = prev.map(|p| p.lat_local_hist.clone()).unwrap_or_default(); v.push(ms as f64); if v.len() > 60 { let _ = v.drain(0..(v.len() - 60)); } st.lat_local_hist = v; }
-    if let Some(ms) = st.latency_remote_ms { let mut v = prev.map(|p| p.lat_remote_hist.clone()).unwrap_or_default(); v.push(ms as f64); if v.len() > 60 { let _ = v.drain(0..(v.len() - 60)); } st.lat_remote_hist = v; }
+    if let Some(ms) = st.latency_local_ms {
+        let mut v = prev.map(|p| p.lat_local_hist.clone()).unwrap_or_default();
+        v.push(ms as f64);
+        if v.len() > 60 {
+            let _ = v.drain(0..(v.len() - 60));
+        }
+        st.lat_local_hist = v;
+    }
+    if let Some(ms) = st.latency_remote_ms {
+        let mut v = prev.map(|p| p.lat_remote_hist.clone()).unwrap_or_default();
+        v.push(ms as f64);
+        if v.len() > 60 {
+            let _ = v.drain(0..(v.len() - 60));
+        }
+        st.lat_remote_hist = v;
+    }
 
     // Merge logs
     let logs_dir = format!("{}/Library/Logs", std::env::var("HOME").unwrap_or_default());
@@ -253,7 +303,12 @@ fn port_listening(port: u16) -> bool {
 }
 
 fn is_process_running(name: &str) -> bool {
-    Command::new("pgrep").arg("-x").arg(name).output().map(|o| !o.stdout.is_empty()).unwrap_or(false)
+    Command::new("pgrep")
+        .arg("-x")
+        .arg(name)
+        .output()
+        .map(|o| !o.stdout.is_empty())
+        .unwrap_or(false)
 }
 
 fn http_health_latency(url: &str) -> (bool, Option<u128>) {
@@ -263,42 +318,63 @@ fn http_health_latency(url: &str) -> (bool, Option<u128>) {
         .build();
     if let Ok(c) = client {
         let t0 = Instant::now();
-        if let Ok(resp) = c.get(url).send() { return (resp.status().is_success(), Some(t0.elapsed().as_millis())); }
+        if let Ok(resp) = c.get(url).send() {
+            return (resp.status().is_success(), Some(t0.elapsed().as_millis()));
+        }
     }
     (false, None)
 }
 
 fn http_json_auth_mode(url: &str, tok: &str, header: bool) -> Option<serde_json::Value> {
-    let client = Client::builder().timeout(Duration::from_millis(1500)).danger_accept_invalid_certs(true).build().ok()?;
+    let client = Client::builder()
+        .timeout(Duration::from_millis(1500))
+        .danger_accept_invalid_certs(true)
+        .build()
+        .ok()?;
     let req = if header {
-        client.get(url).header("Authorization", format!("Bearer {}", tok))
+        client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", tok))
     } else {
         let sep = if url.contains('?') { '&' } else { '?' };
         let full = format!("{url}{sep}access_token={tok}");
         client.get(&full)
     };
     let resp = req.send().ok()?;
-    if !resp.status().is_success() { return None; }
+    if !resp.status().is_success() {
+        return None;
+    }
     resp.json::<serde_json::Value>().ok()
 }
 
 fn restart_sm() -> anyhow::Result<()> {
     Command::new("launchctl")
-        .args(["kickstart", "-k", &format!("gui/{}/dev.legacymind.surreal-mind", uid())])
+        .args([
+            "kickstart",
+            "-k",
+            &format!("gui/{}/dev.legacymind.surreal-mind", uid()),
+        ])
         .status()?;
     Ok(())
 }
 
 fn start_cloudflared() -> anyhow::Result<()> {
     Command::new("launchctl")
-        .args(["kickstart", "-k", &format!("gui/{}/com.legacymind.cloudflared-tunnel", uid())])
+        .args([
+            "kickstart",
+            "-k",
+            &format!("gui/{}/com.legacymind.cloudflared-tunnel", uid()),
+        ])
         .status()?;
     Ok(())
 }
 
 fn stop_cloudflared() -> anyhow::Result<()> {
     Command::new("launchctl")
-        .args(["bootout", &format!("gui/{}/com.legacymind.cloudflared-tunnel", uid())])
+        .args([
+            "bootout",
+            &format!("gui/{}/com.legacymind.cloudflared-tunnel", uid()),
+        ])
         .status()?;
     Ok(())
 }
@@ -313,8 +389,13 @@ fn uid() -> String {
 }
 
 fn copy_to_clipboard(text: &str) -> anyhow::Result<()> {
-    let mut child = Command::new("pbcopy").stdin(std::process::Stdio::piped()).spawn()?;
-    if let Some(mut stdin) = child.stdin.take() { use std::io::Write; write!(stdin, "{text}")?; }
+    let mut child = Command::new("pbcopy")
+        .stdin(std::process::Stdio::piped())
+        .spawn()?;
+    if let Some(mut stdin) = child.stdin.take() {
+        use std::io::Write;
+        write!(stdin, "{text}")?;
+    }
     let _ = child.wait()?;
     Ok(())
 }
@@ -322,7 +403,9 @@ fn copy_to_clipboard(text: &str) -> anyhow::Result<()> {
 fn tail_lines(path: &str, max: usize) -> Vec<String> {
     if let Ok(data) = std::fs::read_to_string(path) {
         let mut lines: Vec<String> = data.lines().map(|s| s.to_string()).collect();
-        if lines.len() > max { lines = lines.split_off(lines.len() - max); }
+        if lines.len() > max {
+            lines = lines.split_off(lines.len() - max);
+        }
         return lines;
     }
     vec![]
@@ -330,8 +413,12 @@ fn tail_lines(path: &str, max: usize) -> Vec<String> {
 
 fn parse_ts(line: &str) -> Option<std::time::SystemTime> {
     if let Some(first) = line.split_whitespace().next() {
-        if let Ok(dt) = time::OffsetDateTime::parse(first, &time::format_description::well_known::Rfc3339) {
-            return Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(dt.unix_timestamp() as u64));
+        if let Ok(dt) =
+            time::OffsetDateTime::parse(first, &time::format_description::well_known::Rfc3339)
+        {
+            return Some(
+                std::time::UNIX_EPOCH + std::time::Duration::from_secs(dt.unix_timestamp() as u64),
+            );
         }
     }
     None
@@ -339,12 +426,27 @@ fn parse_ts(line: &str) -> Option<std::time::SystemTime> {
 
 fn merge_logs_chrono(out1: &str, err1: &str, out2: &str, err2: &str, max: usize) -> Vec<String> {
     let mut merged: Vec<(Option<std::time::SystemTime>, usize, String)> = Vec::new();
-    for (i, l) in tail_lines(out1, max).into_iter().enumerate() { merged.push((parse_ts(&l), i, format!("[sm.out] {}", l))); }
-    for (i, l) in tail_lines(err1, max).into_iter().enumerate() { merged.push((parse_ts(&l), i, format!("[sm.err] {}", l))); }
-    for (i, l) in tail_lines(out2, max).into_iter().enumerate() { merged.push((parse_ts(&l), i, format!("[cf.out] {}", l))); }
-    for (i, l) in tail_lines(err2, max).into_iter().enumerate() { merged.push((parse_ts(&l), i, format!("[cf.err] {}", l))); }
-    merged.sort_by(|a, b| match (a.0, b.0) { (Some(ta), Some(tb)) => ta.cmp(&tb), (Some(_), None) => std::cmp::Ordering::Less, (None, Some(_)) => std::cmp::Ordering::Greater, (None, None) => a.1.cmp(&b.1) });
+    for (i, l) in tail_lines(out1, max).into_iter().enumerate() {
+        merged.push((parse_ts(&l), i, format!("[sm.out] {}", l)));
+    }
+    for (i, l) in tail_lines(err1, max).into_iter().enumerate() {
+        merged.push((parse_ts(&l), i, format!("[sm.err] {}", l)));
+    }
+    for (i, l) in tail_lines(out2, max).into_iter().enumerate() {
+        merged.push((parse_ts(&l), i, format!("[cf.out] {}", l)));
+    }
+    for (i, l) in tail_lines(err2, max).into_iter().enumerate() {
+        merged.push((parse_ts(&l), i, format!("[cf.err] {}", l)));
+    }
+    merged.sort_by(|a, b| match (a.0, b.0) {
+        (Some(ta), Some(tb)) => ta.cmp(&tb),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.1.cmp(&b.1),
+    });
     let mut out: Vec<String> = merged.into_iter().map(|(_, _, s)| s).collect();
-    if out.len() > max { out = out.split_off(out.len() - max); }
+    if out.len() > max {
+        out = out.split_off(out.len() - max);
+    }
     out
 }

@@ -73,6 +73,7 @@ pub struct ContinuityResult {
 
 impl SurrealMindServer {
     /// Run conversational think (with framework enhancement, origin='human')
+    #[allow(clippy::too_many_arguments)]
     pub async fn run_convo(
         &self,
         content: &str,
@@ -307,6 +308,7 @@ impl SurrealMindServer {
     }
 
     /// Run technical think (no framework, origin='tool', mode-specific defaults)
+    #[allow(clippy::too_many_arguments)]
     pub async fn run_technical(
         &self,
         content: &str,
@@ -506,6 +508,7 @@ impl SurrealMindServer {
     }
 
     /// Resolve continuity links with validation and normalization
+    #[allow(clippy::single_match, clippy::redundant_pattern_matching)]
     async fn resolve_continuity_links(
         &self,
         new_thought_id: &str,
@@ -729,7 +732,7 @@ impl SurrealMindServer {
                         None,
                     )
                 } else {
-                    let matched = vec![
+                    let matched = [
                         "error",
                         "bug",
                         "stack trace",
@@ -774,7 +777,7 @@ impl SurrealMindServer {
                         None,
                     )
                 } else {
-                    let matched = vec![
+                    let matched = [
                         "implement",
                         "create",
                         "add function",
@@ -816,7 +819,7 @@ impl SurrealMindServer {
                         None,
                     )
                 } else {
-                    let matched = vec![
+                    let matched = [
                         "architecture",
                         "design",
                         "approach",
@@ -861,7 +864,7 @@ impl SurrealMindServer {
                         None,
                     )
                 } else {
-                    let matched = vec!["stuck", "unsure", "confused", "not sure", "blocked"];
+                    let matched = ["stuck", "unsure", "confused", "not sure", "blocked"];
                     let keywords: Vec<String> = matched
                         .iter()
                         .filter(|k| content_lower.contains(*k))
