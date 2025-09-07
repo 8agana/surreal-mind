@@ -3,9 +3,9 @@
 //! Implements deterministic extraction of sections, claims, and candidates from README.md
 //! using CommonMark parsing without LLM dependencies.
 
-use crate::error::{Result, SurrealMindError};
+use crate::error::Result;
 use crate::ingest::{Candidate, Claim, DocumentParser, Provenance, Section, utils};
-use pulldown_cmark::{Event, Parser, Tag};
+use pulldown_cmark::{Event, Parser, Tag, TagEnd};
 use regex::Regex;
 use std::path::Path;
 
@@ -65,8 +65,8 @@ impl DocumentParser for ReadmeParser {
                         section.content.push(' ');
                     }
                 }
-                Event::End(tag) => {
-                    if let pulldown_cmark::TagEnd::Heading(_) = tag {
+                Event::End(tag_end) => {
+                    if let TagEnd::Heading(_) = tag_end {
                         if let Some(ref mut section) = current_section {
                             section.title = heading_text.clone();
                             section.slug = slugify(&heading_text);
@@ -152,8 +152,17 @@ impl DocumentParser for ReadmeParser {
         let mut candidates = Vec::new();
 
         for claim in claims {
-            // Generate entity candidates from component mentions
-            if claim.claim_text.contains("module") || claim.claim_text.contains("component") {
+            // Generate entity candidates from component mentions (more inclusive)
+            if claim.claim_text.contains("module")
+                || claim.claim_text.contains("component")
+                || claim.claim_text.contains("server")
+                || claim.claim_text.contains("tool")
+                || claim.claim_text.contains("config")
+                || claim.claim_text.contains("system")
+                || claim.claim_text.contains("feature")
+                || claim.claim_text.contains("provider")
+                || claim.claim_text.contains("database")
+            {
                 let candidate = Candidate {
                     kind: "entity".to_string(),
                     data: serde_json::json!({
@@ -175,12 +184,32 @@ impl DocumentParser for ReadmeParser {
                 candidates.push(candidate);
             }
 
-            // Generate command entity candidates
-            if claim.claim_text.starts_with("Command available:") {
-                let cmd = claim
-                    .claim_text
-                    .trim_start_matches("Command available: ")
-                    .trim();
+            // Generate command entity candidates (more inclusive patterns)
+            if claim.claim_text.starts_with("Command available:")
+                || claim.claim_text.contains("cargo")
+                || claim.claim_text.contains("install")
+            {
+                let cmd = if claim.claim_text.starts_with("Command available: ") {
+                    claim
+                        .claim_text
+                        .trim_start_matches("Command available: ")
+                        .trim()
+                } else {
+                    // Extract command from claim text
+                    if claim.claim_text.contains("cargo install") {
+                        claim
+                            .claim_text
+                            .split("cargo install")
+                            .nth(1)
+                            .unwrap_or(&claim.claim_text)
+                            .trim()
+                            .split_whitespace()
+                            .next()
+                            .unwrap_or(&claim.claim_text)
+                    } else {
+                        &claim.claim_text
+                    }
+                };
                 let candidate = Candidate {
                     kind: "entity".to_string(),
                     data: serde_json::json!({
@@ -190,6 +219,35 @@ impl DocumentParser for ReadmeParser {
                         "status": "pending"
                     }),
                     confidence: 0.80, // SURR_INGEST_CONFIDENCE_COMMAND default
+                    provenance: Provenance {
+                        doc_id: format!("{}:readme:README.md", project_slug),
+                        section_id: claim.source_id.clone(),
+                        claim_id: claim.id.clone(),
+                        commit_sha: claim.commit_sha.clone(),
+                        line_from: 0,
+                        line_to: 0,
+                    },
+                };
+                candidates.push(candidate);
+            }
+
+            // Also create candidates for claims that look like features
+            if claim.claim_text.contains("supports")
+                || claim.claim_text.contains("provides")
+                || claim.claim_text.contains("uses")
+                || claim.claim_text.contains("requires")
+            {
+                let candidate = Candidate {
+                    kind: "entity".to_string(),
+                    data: serde_json::json!({
+                        "name": extract_entity_name(&claim.claim_text),
+                        "entity_type": "feature",
+                        "properties": {
+                            "description": claim.claim_text.clone()
+                        },
+                        "status": "pending"
+                    }),
+                    confidence: 0.70,
                     provenance: Provenance {
                         doc_id: format!("{}:readme:README.md", project_slug),
                         section_id: claim.source_id.clone(),
@@ -265,7 +323,19 @@ fn extract_commands_from_content(content: &str, _section_id: &str) -> Option<Vec
         for line in block_content.lines() {
             let line = line.trim();
             if !line.is_empty() && !line.starts_with('#') {
-                commands.push(line.to_string());
+                // Extract command name from lines like "cargo install surreal-mind"
+                if line.contains("cargo install") {
+                    if let Some(cmd_part) = line.split("cargo install").nth(1) {
+                        let cmd = cmd_part
+                            .trim()
+                            .split_whitespace()
+                            .next()
+                            .unwrap_or(cmd_part.trim());
+                        commands.push(format!("cargo install {}", cmd));
+                    }
+                } else {
+                    commands.push(line.to_string());
+                }
             }
         }
     }
@@ -279,21 +349,39 @@ fn extract_commands_from_content(content: &str, _section_id: &str) -> Option<Vec
 
 /// Extract entity name from claim text
 fn extract_entity_name(claim_text: &str) -> String {
-    // Simple heuristic: take first noun-like phrase
-    if let Some(start) = claim_text.find("module") {
-        let before = &claim_text[..start];
-        let words: Vec<&str> = before.split_whitespace().collect();
-        if let Some(last_word) = words.last() {
-            return last_word.to_string();
+    // Simple heuristic: take first noun-like phrase after keywords
+    let keywords = [
+        "module",
+        "component",
+        "server",
+        "tool",
+        "config",
+        "system",
+        "feature",
+        "provider",
+        "database",
+    ];
+
+    for &keyword in &keywords {
+        if let Some(start) = claim_text.find(keyword) {
+            let before = &claim_text[..start];
+            let words: Vec<&str> = before.split_whitespace().collect();
+            if let Some(last_word) = words.last() {
+                if !last_word.is_empty() {
+                    return last_word.to_string();
+                }
+            }
         }
     }
-    if let Some(start) = claim_text.find("component") {
-        let before = &claim_text[..start];
-        let words: Vec<&str> = before.split_whitespace().collect();
-        if let Some(last_word) = words.last() {
-            return last_word.to_string();
+
+    // Fallback: take first meaningful word
+    let words: Vec<&str> = claim_text.split_whitespace().collect();
+    for word in words {
+        if word.len() > 3 && word.chars().all(|c| c.is_alphanumeric() || c == '-') {
+            return word.to_string();
         }
     }
+
     "unknown".to_string()
 }
 
