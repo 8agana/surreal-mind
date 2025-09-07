@@ -730,6 +730,26 @@ impl SurrealMindServer {
         contradiction_patterns: Option<&[String]>,
     ) -> Result<Option<VerificationResult>> {
         let start = std::time::Instant::now();
+
+        // Instrumentation: log setup
+        if std::env::var("RUST_LOG")
+            .unwrap_or_default()
+            .contains("debug")
+        {
+            tracing::debug!(
+                "hypothesis_verification_setup: ns={}, db={}, embedder_provider={}, embedder_model={}, embedder_dim={}, hypothesis_prefix={}, verify_top_k={}, min_similarity={}, evidence_limit={}",
+                self.config.system.database_ns,
+                self.config.system.database_db,
+                self.get_embedding_metadata().0,
+                self.get_embedding_metadata().1,
+                self.get_embedding_metadata().2,
+                &hypothesis[..hypothesis.len().min(50)],
+                top_k,
+                min_similarity,
+                evidence_limit
+            );
+        }
+
         let embedding = self.embedder.embed(hypothesis).await?;
         let q_dim = embedding.len() as i64;
 
@@ -745,14 +765,29 @@ impl SurrealMindServer {
         };
 
         // Query KG entities and observations
+        let query_sql = format!(
+            "SELECT meta::id(id) as id, name, data, embedding FROM kg_entities \
+             WHERE embedding_dim = $dim AND embedding IS NOT NULL LIMIT {}; \
+             SELECT meta::id(id) as id, name, data, embedding FROM kg_observations \
+             WHERE embedding_dim = $dim AND embedding IS NOT NULL LIMIT {};",
+            top_k as i64, top_k as i64
+        );
+
+        if std::env::var("RUST_LOG")
+            .unwrap_or_default()
+            .contains("debug")
+        {
+            tracing::debug!(
+                "hypothesis_verification_query: query_sql={}, dim={}, lim={}",
+                query_sql,
+                q_dim,
+                top_k as i64
+            );
+        }
+
         let mut q = self
             .db
-            .query(
-                "SELECT meta::id(id) as id, name, data FROM kg_entities \
-                 WHERE embedding_dim = $dim AND embedding IS NOT NULL LIMIT $lim; \
-                 SELECT meta::id(id) as id, name, data FROM kg_observations \
-                 WHERE embedding_dim = $dim AND embedding IS NOT NULL LIMIT $lim;",
-            )
+            .query(&query_sql)
             .bind(("dim", q_dim))
             .bind(("lim", top_k as i64))
             .await?;
@@ -760,10 +795,25 @@ impl SurrealMindServer {
         let mut rows2: Vec<serde_json::Value> = q.take(1).unwrap_or_default();
         rows.append(&mut rows2);
 
+        let total_candidates = rows.len();
+
+        if std::env::var("RUST_LOG")
+            .unwrap_or_default()
+            .contains("debug")
+        {
+            tracing::debug!(
+                "hypothesis_verification_candidates: total_candidates_after_query={}",
+                total_candidates
+            );
+        }
+
         let mut supporting = Vec::new();
         let mut contradicting = Vec::new();
         let mut matched_support = 0;
         let mut matched_contradict = 0;
+
+        let mut candidates_with_embedding = 0;
+        let mut candidates_after_similarity = 0;
 
         for r in rows {
             if let (Some(id), Some(name)) = (
@@ -784,6 +834,7 @@ impl SurrealMindServer {
                         .collect();
                     if vecf.len() == embedding.len() {
                         emb_opt = Some(vecf);
+                        candidates_with_embedding += 1;
                     }
                 }
                 if emb_opt.is_none() {
@@ -796,6 +847,7 @@ impl SurrealMindServer {
                 if let Some(emb_e) = emb_opt {
                     let sim = Self::cosine_similarity(&embedding, &emb_e);
                     if sim >= min_similarity {
+                        candidates_after_similarity += 1;
                         let item = EvidenceItem {
                             table: if id.starts_with("kg_entities:") {
                                 "kg_entities"
@@ -822,6 +874,17 @@ impl SurrealMindServer {
                     }
                 }
             }
+        }
+
+        if std::env::var("RUST_LOG")
+            .unwrap_or_default()
+            .contains("debug")
+        {
+            tracing::debug!(
+                "hypothesis_verification_counts: candidates_with_embedding={}, candidates_after_similarity={}",
+                candidates_with_embedding,
+                candidates_after_similarity
+            );
         }
 
         // Sort and limit
@@ -863,7 +926,10 @@ impl SurrealMindServer {
             "min_similarity": min_similarity,
             "time_ms": start.elapsed().as_millis(),
             "matched_support": matched_support,
-            "matched_contradict": matched_contradict
+            "matched_contradict": matched_contradict,
+            "total_candidates": total_candidates,
+            "candidates_with_embedding": candidates_with_embedding,
+            "candidates_after_similarity": candidates_after_similarity
         });
 
         let result = VerificationResult {
