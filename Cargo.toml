@@ -18,14 +18,19 @@ candle-nn = { version = "0.9.1" }
 candle-transformers = { version = "0.9.1", features = ["metal"] }
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.9.0"
+clap = "4.0"
+# TUI dashboard
+crossterm = "0.27"
 dotenvy = "0.15"
 hf-hub = "0.4.3"
 # Bounded in-memory cache
 lru = "0.12"
 once_cell = "1.19"
+pulldown-cmark = "0.11"
+ratatui = "0.26"
 regex = "1.10"
 # Embedding support
-reqwest = { version = "0.12", features = ["json", "blocking", "rustls-tls"] }
+reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls"] }
 # RMCP is the foundation - not optional
 rmcp = { version = "0.6.3", features = [
   "macros",
@@ -33,6 +38,7 @@ rmcp = { version = "0.6.3", features = [
   "transport-streamable-http-server",
   "transport-worker",
 ] }
+semver = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 # For query parameter parsing in HTTP auth
@@ -42,6 +48,7 @@ strsim = "0.11"
 # SurrealDB with WebSocket client
 surrealdb = { version = "2.0", features = ["protocol-ws"] }
 thiserror = "1.0"
+time = { version = "0.3", features = ["formatting", "parsing"] }
 tokenizers = "0.22.0"
 # Core dependencies
 tokio = { version = "1.0", features = ["full"] }
@@ -53,11 +60,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 unicode-normalization = "0.1"
 uuid = { version = "1.0", features = ["serde", "v4"] }
-time = { version = "0.3", features = ["parsing", "formatting"] }
-
-# TUI dashboard
-crossterm = "0.27"
-ratatui = "0.26"
 
 [features]
 # Enables DB-backed integration tests (not enabled by default)

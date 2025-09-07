@@ -27,6 +27,7 @@ t1 = 0.6
 t2 = 0.4
 t3 = 0.25
 floor = 0.15
+kg_moderation_threshold = 0.6  # Threshold for KG candidate moderation
 # Performance and limits
 db_limit = 100  # For SURR_DB_LIMIT
 candidates = 20  # For SURR_RETRIEVE_CANDIDATES
