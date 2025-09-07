@@ -223,6 +223,10 @@ pub struct RuntimeConfig {
     pub kg_min_edge_strength: f32,
     pub kg_timeout_ms: u64,
     pub kg_candidates: usize,
+    pub verify_topk: usize,
+    pub verify_min_sim: f32,
+    pub verify_evidence_limit: usize,
+    pub persist_verification: bool,
     pub inner_voice: InnerVoiceConfig,
     // Photography repo support (env-driven)
     pub photo_enable: bool,
@@ -257,6 +261,10 @@ impl Default for RuntimeConfig {
             cache_max: 5000,
             cache_warm: 64,
             retrieve_candidates: 500,
+            verify_topk: 100,
+            verify_min_sim: 0.70,
+            verify_evidence_limit: 10,
+            persist_verification: false,
             max_retries: 3,
             retry_delay_ms: 500,
             embed_strict: false,
@@ -482,6 +490,21 @@ impl RuntimeConfig {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(500),
+            verify_topk: std::env::var("SURR_VERIFY_TOPK")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(100),
+            verify_min_sim: std::env::var("SURR_VERIFY_MIN_SIM")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0.70),
+            verify_evidence_limit: std::env::var("SURR_VERIFY_EVIDENCE_LIMIT")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(10),
+            persist_verification: std::env::var("SURR_PERSIST_VERIFICATION")
+                .ok()
+                .is_some_and(|v| v == "true" || v == "1"),
             max_retries: std::env::var("SURR_EMBED_RETRIES")
                 .ok()
                 .and_then(|v| v.parse().ok())

@@ -11,6 +11,41 @@ use std::time::{Duration, Instant};
 /// Maximum content size in bytes (100KB)
 const MAX_CONTENT_SIZE: usize = 100 * 1024;
 
+/// Default contradiction patterns for hypothesis verification (case-insensitive)
+const CONTRADICTION_PATTERNS: &[&str] = &[
+    "not",
+    "no",
+    "cannot",
+    "false",
+    "incorrect",
+    "fails",
+    "broken",
+    "doesn't",
+    "isn't",
+    "won't",
+];
+
+/// Evidence item for hypothesis verification
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct EvidenceItem {
+    pub table: String,
+    pub id: String,
+    pub text: String,
+    pub similarity: f32,
+    pub provenance: Option<serde_json::Value>,
+}
+
+/// Verification result for hypothesis verification
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct VerificationResult {
+    pub hypothesis: String,
+    pub supporting: Vec<EvidenceItem>,
+    pub contradicting: Vec<EvidenceItem>,
+    pub confidence_score: f32,
+    pub suggested_revision: Option<String>,
+    pub telemetry: serde_json::Value,
+}
+
 /// Modes for legacymind_think routing
 #[derive(Debug, Clone, PartialEq)]
 enum ThinkMode {
@@ -57,6 +92,18 @@ pub struct LegacymindThinkParams {
         deserialize_with = "crate::deserializers::de_option_f32_forgiving"
     )]
     pub confidence: Option<f32>,
+    #[serde(default)]
+    pub hypothesis: Option<String>,
+    #[serde(default)]
+    pub needs_verification: Option<bool>,
+    #[serde(default)]
+    pub verify_top_k: Option<usize>,
+    #[serde(default)]
+    pub min_similarity: Option<f32>,
+    #[serde(default)]
+    pub evidence_limit: Option<usize>,
+    #[serde(default)]
+    pub contradiction_patterns: Option<Vec<String>>,
 }
 
 /// Result struct for continuity links resolution
@@ -659,6 +706,178 @@ impl SurrealMindServer {
         Ok(resolved)
     }
 
+    /// Build text from KG entity or observation for embedding
+    fn build_kg_text(name: &str, data: Option<&serde_json::Value>) -> String {
+        let mut text = name.to_string();
+        if let Some(d) = data.as_ref().and_then(|v| v.as_object()) {
+            if let Some(etype) = d.get("entity_type").and_then(|v| v.as_str()) {
+                text = format!("{} ({})", name, etype);
+            } else if let Some(desc) = d.get("description").and_then(|v| v.as_str()) {
+                text.push_str(" - ");
+                text.push_str(desc);
+            }
+        }
+        text
+    }
+
+    /// Run hypothesis verification against KG
+    pub async fn run_hypothesis_verification(
+        &self,
+        hypothesis: &str,
+        top_k: usize,
+        min_similarity: f32,
+        evidence_limit: usize,
+        contradiction_patterns: Option<&[String]>,
+    ) -> Result<Option<VerificationResult>> {
+        let start = std::time::Instant::now();
+        let embedding = self.embedder.embed(hypothesis).await?;
+        let q_dim = embedding.len() as i64;
+
+        let patterns = contradiction_patterns.unwrap_or(&[]).to_vec();
+        let default_patterns: Vec<String> = CONTRADICTION_PATTERNS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let all_patterns = if patterns.is_empty() {
+            &default_patterns
+        } else {
+            &patterns
+        };
+
+        // Query KG entities and observations
+        let mut q = self
+            .db
+            .query(
+                "SELECT meta::id(id) as id, name, data FROM kg_entities \
+                 WHERE embedding_dim = $dim AND embedding IS NOT NULL LIMIT $lim; \
+                 SELECT meta::id(id) as id, name, data FROM kg_observations \
+                 WHERE embedding_dim = $dim AND embedding IS NOT NULL LIMIT $lim;",
+            )
+            .bind(("dim", q_dim))
+            .bind(("lim", top_k as i64))
+            .await?;
+        let mut rows: Vec<serde_json::Value> = q.take(0).unwrap_or_default();
+        let mut rows2: Vec<serde_json::Value> = q.take(1).unwrap_or_default();
+        rows.append(&mut rows2);
+
+        let mut supporting = Vec::new();
+        let mut contradicting = Vec::new();
+        let mut matched_support = 0;
+        let mut matched_contradict = 0;
+
+        for r in rows {
+            if let (Some(id), Some(name)) = (
+                r.get("id").and_then(|v| v.as_str()),
+                r.get("name").and_then(|v| v.as_str()),
+            ) {
+                let data = r.get("data");
+                let text = Self::build_kg_text(name, data);
+
+                // Embed the text if needed, but for now assume we have embedding or skip
+                // For simplicity, check if embedding exists; if not, compute and persist
+                let mut emb_opt = None;
+                if let Some(ev) = r.get("embedding").and_then(|v| v.as_array()) {
+                    let vecf: Vec<f32> = ev
+                        .iter()
+                        .filter_map(|x| x.as_f64())
+                        .map(|f| f as f32)
+                        .collect();
+                    if vecf.len() == embedding.len() {
+                        emb_opt = Some(vecf);
+                    }
+                }
+                if emb_opt.is_none() {
+                    let new_emb = self.embedder.embed(&text).await?;
+                    if new_emb.len() == embedding.len() {
+                        emb_opt = Some(new_emb.clone());
+                        // Persist (similar to inject_memories)
+                    }
+                }
+                if let Some(emb_e) = emb_opt {
+                    let sim = Self::cosine_similarity(&embedding, &emb_e);
+                    if sim >= min_similarity {
+                        let item = EvidenceItem {
+                            table: if id.starts_with("kg_entities:") {
+                                "kg_entities"
+                            } else {
+                                "kg_observations"
+                            }
+                            .to_string(),
+                            id: id.to_string(),
+                            text: text.clone(),
+                            similarity: sim,
+                            provenance: data.cloned(),
+                        };
+                        let lower_text = text.to_lowercase();
+                        let is_contradiction = all_patterns
+                            .iter()
+                            .any(|pat| lower_text.contains(&pat.to_lowercase()));
+                        if is_contradiction {
+                            contradicting.push(item);
+                            matched_contradict += 1;
+                        } else {
+                            supporting.push(item);
+                            matched_support += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sort and limit
+        supporting.sort_by(|a, b| {
+            b.similarity
+                .partial_cmp(&a.similarity)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        contradicting.sort_by(|a, b| {
+            b.similarity
+                .partial_cmp(&a.similarity)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        supporting.truncate(evidence_limit);
+        contradicting.truncate(evidence_limit);
+
+        let total = supporting.len() + contradicting.len();
+        let confidence_score = if total > 0 {
+            supporting.len() as f32 / total as f32
+        } else {
+            0.5
+        };
+
+        let suggested_revision = if confidence_score < 0.4 {
+            Some(format!(
+                "Consider revising hypothesis based on {} contradicting items",
+                contradicting.len()
+            ))
+        } else {
+            None
+        };
+
+        let telemetry = json!({
+            "embedding_dim": embedding.len(),
+            "provider": self.get_embedding_metadata().0,
+            "model": self.get_embedding_metadata().1,
+            "dim": self.get_embedding_metadata().2,
+            "k": top_k,
+            "min_similarity": min_similarity,
+            "time_ms": start.elapsed().as_millis(),
+            "matched_support": matched_support,
+            "matched_contradict": matched_contradict
+        });
+
+        let result = VerificationResult {
+            hypothesis: hypothesis.to_string(),
+            supporting,
+            contradicting,
+            confidence_score,
+            suggested_revision,
+            telemetry,
+        };
+
+        Ok(Some(result))
+    }
+
     /// Handle legacymind_think tool
     pub async fn handle_legacymind_think(
         &self,
@@ -999,6 +1218,55 @@ impl SurrealMindServer {
             }
         };
 
+        // Run hypothesis verification if requested
+        let verification_result = if let (Some(hypothesis), Some(true)) =
+            (&params.hypothesis, params.needs_verification)
+        {
+            if !hypothesis.is_empty() {
+                let top_k = params
+                    .verify_top_k
+                    .unwrap_or(self.config.runtime.verify_topk);
+                let min_similarity = params
+                    .min_similarity
+                    .unwrap_or(self.config.runtime.verify_min_sim);
+                let evidence_limit = params
+                    .evidence_limit
+                    .unwrap_or(self.config.runtime.verify_evidence_limit);
+                let contradiction_patterns = params.contradiction_patterns.as_deref();
+                self.run_hypothesis_verification(
+                    hypothesis,
+                    top_k,
+                    min_similarity,
+                    evidence_limit,
+                    contradiction_patterns,
+                )
+                .await?
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Persist verification result if enabled and available
+        if let (Some(verification), true) = (
+            &verification_result,
+            self.config.runtime.persist_verification,
+        ) {
+            if let Some(thought_id) = delegated_result.get("thought_id").and_then(|v| v.as_str()) {
+                let thought_id = thought_id.to_string();
+                let _ = self
+                    .db
+                    .query("UPDATE type::thing('thoughts', $id) SET verification = $verif")
+                    .bind(("id", thought_id))
+                    .bind((
+                        "verif",
+                        serde_json::to_value(verification).unwrap_or(serde_json::Value::Null),
+                    ))
+                    .await;
+            }
+        }
+
         let telemetry = json!({
             "trigger_matched": trigger_matched,
             "heuristics": if let Some((keywords, score)) = heuristics {
@@ -1027,6 +1295,17 @@ impl SurrealMindServer {
             "telemetry": telemetry
         });
 
-        Ok(CallToolResult::structured(result))
+        // Include verification result in the response if present
+        let mut final_result = result;
+        if let Some(verification) = verification_result {
+            let map = final_result.as_object_mut().unwrap();
+            map.insert(
+                "verification".to_string(),
+                serde_json::to_value(verification).unwrap_or(serde_json::Value::Null),
+            );
+            final_result = serde_json::Value::Object(map.clone());
+        }
+
+        Ok(CallToolResult::structured(final_result))
     }
 }

@@ -75,7 +75,13 @@ impl SurrealMindServer {
                     "previous_thought_id": "string — optional reference to previous thought",
                     "revises_thought": "string — optional reference to thought being revised",
                     "branch_from": "string — optional reference to thought being branched from",
-                    "confidence": "number (0.0-1.0) — optional confidence level"
+                    "confidence": "number (0.0-1.0) — optional confidence level",
+                    "hypothesis": "string — optional hypothesis to verify against KG evidence",
+                    "needs_verification": "boolean — set true to run hypothesis verification (only when hypothesis provided)",
+                    "verify_top_k": "integer (1-500) — candidate pool size for KG search (default 100)",
+                    "min_similarity": "number (0.0-1.0) — minimum similarity threshold (default 0.70)",
+                    "evidence_limit": "integer (1-25) — max evidence items per bucket (default 10)",
+                    "contradiction_patterns": "string[] — optional custom patterns for contradiction detection (default: ['not', 'no', 'cannot', 'false', 'incorrect', 'fails', 'broken', 'doesn't', 'isn't', 'won't'])"
                 },
                 "returns": {
                     "mode_selected": "string",
@@ -89,7 +95,16 @@ impl SurrealMindServer {
                         "branch_from": "string? — resolved branch reference",
                         "confidence": "number? — clamped confidence value"
                     },
+                    "verification": "object? — hypothesis verification result (only if needs_verification=true and hypothesis provided)",
                     "telemetry": "object — trigger/heuristic info + link resolution details"
+                },
+                "hypothesis_verification": {
+                    "description": "Optional KG-based verification of a provided hypothesis. Embeds the hypothesis, searches similar KG entities/observations, classifies evidence as supporting/contradicting based on pattern matching, and computes a confidence score.",
+                    "example": {
+                        "input": {"hypothesis": "Rust is a memory-safe language", "needs_verification": true, "evidence_limit": 5},
+                        "output": {"verification": {"hypothesis": "Rust is a memory-safe language", "supporting": [{"table": "kg_entities", "id": "kg_entities:123", "text": "Rust prevents memory errors", "similarity": 0.85, "provenance": {"entity_type": "language"}}], "contradicting": [], "confidence_score": 1.0, "suggested_revision": null, "telemetry": {"embedding_dim": 1536, "provider": "openai", "k": 100, "time_ms": 150}}}
+                    },
+                    "notes": ["Verification is deterministic and rule-based (no LLM calls)", "Results may include suggested revisions if confidence < 0.4", "Evidence is sorted by similarity and limited per bucket", "Default patterns detect common contradictions; customize with contradiction_patterns"]
                 },
                 "routing": {
                     "triggers": {

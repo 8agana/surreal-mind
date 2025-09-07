@@ -31,7 +31,13 @@ pub fn legacymind_think_schema() -> Arc<Map<String, Value>> {
             "previous_thought_id": {"type": "string"},
             "revises_thought": {"type": "string"},
             "branch_from": {"type": "string"},
-            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0}
+            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "hypothesis": {"type": "string"},
+            "needs_verification": {"type": "boolean"},
+            "verify_top_k": {"type": "integer", "minimum": 1, "maximum": 500},
+            "min_similarity": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "evidence_limit": {"type": "integer", "minimum": 1, "maximum": 25},
+            "contradiction_patterns": {"type": "array", "items": {"type": "string"}}
         },
         "required": ["content"]
     });

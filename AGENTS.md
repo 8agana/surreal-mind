@@ -1,6 +1,6 @@
 # Surreal Mind MCP — Agent Guide
 
-Last updated: 2025-09-06
+Last updated: 2025-09-07
 
 This file is the working guide for operating and extending the Surreal Mind MCP server. It reflects the current design after the thought/injection refactor and should be used by CLI agents (Codex, CC) and contributors.
 
@@ -15,6 +15,28 @@ Surreal Mind augments agent thinking with persistent memory backed by SurrealDB 
 - Dimension hygiene: All search/injection paths filter by `embedding_dim` before cosine.
 - Injection: KG-only (entities + observations). Limits by scale: 1→5, 2→10, 3→20. UNION queries were removed; two SELECTs are merged client-side.
 - Submodes: Removed from storage and tool surfaces; any legacy `submode` input is ignored.
+
+### Status — 2025-09-07 (HTTP + Think Refactor live)
+- Branch `cc-fixes-20250906` is production-ready; Codex CCR P1/P2 complete.
+- Injection scales standardized: 0=none, 1→5, 2→10, 3→20. Docs/help aligned.
+- SQL: Added `WHERE embedding_dim=$dim AND embedding IS NOT NULL` to KG and thoughts retrieval paths.
+- Error handling: Removed risky `unwrap` on hot paths; safer `Result` flows and comparisons in sorts.
+- Config validation: Enforces provider/model/dimension coherence (OpenAI small=1536), DB URL scheme, and clamps `embed_retries` 1..10.
+- HTTP client: UA includes optional `; commit=<sha>`; default timeouts 20s.
+- Tests/build: 43 tests passing; `clippy -D warnings` clean; `cargo fmt` clean; release binary builds.
+
+Acceptance Snapshot — 2025-09-06
+- Tools roster: `think_*`, `memories_*`, `maintenance_ops`, `detailed_help`, `inner_voice`, `legacymind_search`, `photography_*`.
+- Injection: KG-only; embedding_dim filter enforced; scales inject 5/10/20; thresholds from config.
+- Embeddings: Single provider per runtime; provider/model/dim/embedded_at stamped on writes; no per-call fallback.
+- Inner Voice: Default ON; persists thought with compact Sources; optional auto-extract to staged KG candidates.
+- Config: Env-first; provider/model/dim coherence checks active; retries clamped; DB URL scheme validated.
+
+Quick Ops (Post-Restart)
+1) `maintenance_ops { subcommand: "health_check_embeddings" }` → expect `mismatched_or_missing=0` across thoughts/KG.
+2) `think_convo` with `injection_scale=1/2/3` → expect 5/10/20 injected; logs show `embedding_dim` filter.
+3) `tools/list` shows full roster; `detailed_help` reflects 0–3 injection scales.
+4) Logs (if enabled) show `provider=openai`, `model=text-embedding-3-small`, `dims=1536`; UA commit tag present when `SURR_COMMIT_HASH` set.
 
 ## Exposed MCP Tools
 - `think_convo`: Persist a thought with embeddings and run KG-only injection (scale configurable). Runs a local, deterministic “frameworks” pass (convo/1) post‑create, pre‑injection. Returns thought id and framework_enhanced flag.
