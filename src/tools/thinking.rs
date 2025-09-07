@@ -76,7 +76,7 @@ impl SurrealMindServer {
         }
 
         let thought_id = uuid::Uuid::new_v4().to_string();
-        let (provider, model, dim) = self.get_embedding_metadata();
+        let (_provider, _model, _dim) = self.get_embedding_metadata();
 
         self.db
             .query(
@@ -118,7 +118,7 @@ impl SurrealMindServer {
         let mut framework_analysis: Option<serde_json::Value> = None;
         if enhance_enabled || verbose_analysis {
             tracing::debug!("Running framework enhancement for thought {}", thought_id);
-            let start = Instant::now();
+            let _start = Instant::now();
             let opts = ConvoOpts {
                 strict_json: std::env::var("SURR_THINK_STRICT_JSON").unwrap_or("1".to_string())
                     == "1",
@@ -244,7 +244,7 @@ impl SurrealMindServer {
         injection_scale: Option<u8>,
         tags: Option<Vec<String>>,
         significance: Option<f32>,
-        verbose_analysis: Option<bool>,
+        _verbose_analysis: Option<bool>,
         mode: &str,
     ) -> Result<serde_json::Value> {
         let (default_injection_scale, default_significance) = match mode {
@@ -275,7 +275,7 @@ impl SurrealMindServer {
         }
 
         let thought_id = uuid::Uuid::new_v4().to_string();
-        let (provider, model, dim) = self.get_embedding_metadata();
+        let (_provider, _model, _dim) = self.get_embedding_metadata();
 
         self.db
             .query(

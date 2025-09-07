@@ -3,7 +3,6 @@
 use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
-use serde_json::json;
 
 /// Maximum content size in bytes (100KB)
 const MAX_CONTENT_SIZE: usize = 100 * 1024;
@@ -72,8 +71,8 @@ impl SurrealMindServer {
         &self,
         request: CallToolRequestParam,
         _forced_submode: &str,
-        default_injection_scale: u8,
-        default_significance: f32,
+        _default_injection_scale: u8,
+        _default_significance: f32,
         tool_name: &str,
     ) -> Result<CallToolResult> {
         let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {
