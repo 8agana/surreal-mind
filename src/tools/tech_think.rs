@@ -5,6 +5,9 @@ use crate::server::SurrealMindServer;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde_json::json;
 
+/// Maximum content size in bytes (100KB)
+const MAX_CONTENT_SIZE: usize = 100 * 1024;
+
 /// Parameters for the tech_think tool (reuses ConvoThinkParams structure)
 #[derive(Debug, serde::Deserialize)]
 pub struct TechThinkParams {
@@ -80,6 +83,16 @@ impl SurrealMindServer {
             .map_err(|e| SurrealMindError::Serialization {
                 message: format!("Invalid parameters: {}", e),
             })?;
+
+        // Validate content size
+        if params.content.len() > MAX_CONTENT_SIZE {
+            return Err(SurrealMindError::Validation {
+                message: format!(
+                    "Content exceeds maximum size of {}KB",
+                    MAX_CONTENT_SIZE / 1024
+                ),
+            });
+        }
 
         // Submode removed: this field is deprecated and not stored/used
 

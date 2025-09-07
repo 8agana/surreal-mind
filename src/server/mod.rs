@@ -462,7 +462,9 @@ impl SurrealMindServer {
             .and_then(|v| v.parse::<usize>().ok())
             .filter(|&v| v > 0)
             .unwrap_or(5000);
-        let thoughts_cache = LruCache::new(NonZeroUsize::new(cache_max).unwrap());
+        let thoughts_cache = LruCache::new(
+            NonZeroUsize::new(cache_max).unwrap_or_else(|| NonZeroUsize::new(1).unwrap()),
+        );
 
         // Optionally connect a photography database handle
         let db_photo: Option<Arc<Surreal<Client>>> = if config.runtime.photo_enable {
@@ -577,6 +579,7 @@ impl SurrealMindServer {
             DEFINE INDEX thoughts_status_idx ON TABLE thoughts FIELDS status;
             DEFINE INDEX idx_thoughts_created ON TABLE thoughts FIELDS created_at;
             DEFINE INDEX idx_thoughts_embedding_model ON TABLE thoughts FIELDS embedding_model;
+            DEFINE INDEX idx_thoughts_embedding_dim ON TABLE thoughts FIELDS embedding_dim;
 
             DEFINE TABLE recalls SCHEMALESS;
             DEFINE INDEX idx_recalls_created ON TABLE recalls FIELDS created_at;
@@ -706,29 +709,10 @@ impl SurrealMindServer {
         (provider, model, dim)
     }
 
-    /// Calculate cosine similarity between two vectors
+    /// Calculate cosine similarity between two vectors (delegates to utils)
     #[allow(dead_code)]
     pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-        if a.len() != b.len() {
-            tracing::warn!(
-                "cosine_similarity dimension mismatch: a={}, b={}",
-                a.len(),
-                b.len()
-            );
-            return 0.0;
-        }
-        if a.is_empty() {
-            return 0.0;
-        }
-        let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-        let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-        let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-
-        if norm_a == 0.0 || norm_b == 0.0 {
-            0.0
-        } else {
-            dot / (norm_a * norm_b)
-        }
+        crate::utils::cosine_similarity(a, b)
     }
 
     /// Perform KG-only memory injection: find similar KG entities and attach their IDs.
@@ -828,12 +812,17 @@ impl SurrealMindServer {
         }
 
         // Fetch candidate entities and observations (two statements to avoid UNION pitfalls)
+        // Filter by embedding_dim to avoid dimension mismatches at the DB level
+        let q_dim = embedding.len() as i64;
         let mut q = self
             .db
             .query(
-                "SELECT meta::id(id) as id, name, data, embedding FROM kg_entities LIMIT $lim; \
-                 SELECT meta::id(id) as id, name, data, embedding FROM kg_observations LIMIT $lim;",
+                "SELECT meta::id(id) as id, name, data, embedding FROM kg_entities \
+                 WHERE embedding_dim = $dim AND embedding IS NOT NULL LIMIT $lim; \
+                 SELECT meta::id(id) as id, name, data, embedding FROM kg_observations \
+                 WHERE embedding_dim = $dim AND embedding IS NOT NULL LIMIT $lim;",
             )
+            .bind(("dim", q_dim))
             .bind(("lim", retrieve as i64))
             .await?;
         let mut rows: Vec<serde_json::Value> = q.take(0).unwrap_or_default();
@@ -892,12 +881,16 @@ impl SurrealMindServer {
                             .trim_start_matches('⟨')
                             .trim_end_matches('⟩');
                         // Persist embedding for future fast retrieval (best-effort)
+                        let (provider, model, dim) = self.get_embedding_metadata();
                         let _ = self
                             .db
-                            .query("UPDATE type::thing($tb, $id) SET embedding = $emb RETURN meta::id(id) as id")
+                            .query("UPDATE type::thing($tb, $id) SET embedding = $emb, embedding_provider = $provider, embedding_model = $model, embedding_dim = $dim, embedded_at = time::now() RETURN meta::id(id) as id")
                             .bind(("tb", tb))
                             .bind(("id", inner_id.to_string()))
                             .bind(("emb", new_emb))
+                            .bind(("provider", provider))
+                            .bind(("model", model))
+                            .bind(("dim", dim))
                             .await;
                     }
                 }

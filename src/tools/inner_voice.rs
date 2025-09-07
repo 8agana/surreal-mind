@@ -12,7 +12,7 @@ use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::HashSet;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use unicode_normalization::UnicodeNormalization;
 
 /// Parameters for the inner_voice tool
@@ -272,7 +272,11 @@ impl SurrealMindServer {
         }
 
         // Sort by score desc
-        selected.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+        selected.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Take top_k
         selected.truncate(top_k);
@@ -757,24 +761,9 @@ fn build_extraction_messages(text: &str) -> serde_json::Value {
     })
 }
 
-/// Compute cosine similarity
+/// Compute cosine similarity (delegates to utils)
 fn cosine(a: &[f32], b: &[f32]) -> f32 {
-    if a.is_empty() || b.is_empty() || a.len() != b.len() {
-        return 0.0;
-    }
-    let mut dot = 0.0;
-    let mut na = 0.0;
-    let mut nb = 0.0;
-    for i in 0..a.len() {
-        dot += a[i] * b[i];
-        na += a[i] * a[i];
-        nb += b[i] * b[i];
-    }
-    if na == 0.0 || nb == 0.0 {
-        0.0
-    } else {
-        dot / (na.sqrt() * nb.sqrt())
-    }
+    crate::utils::cosine_similarity(a, b)
 }
 
 /// Build synthesis messages for Grok using provided snippets
@@ -834,7 +823,12 @@ async fn call_planner_grok(base: &str, api_key: &str, query: &str) -> Result<Pla
         "temperature": 0.2,
         "max_tokens": 200
     });
-    let client = Client::new();
+    let client = Client::builder()
+        .timeout(Duration::from_secs(20))
+        .build()
+        .map_err(|e| SurrealMindError::Internal {
+            message: format!("Failed to build HTTP client: {}", e),
+        })?;
     let resp = client
         .post(url)
         .bearer_auth(api_key)
@@ -893,7 +887,12 @@ async fn call_grok(
         "temperature": 0.2,
         "max_tokens": 400
     });
-    let client = Client::new();
+    let client = Client::builder()
+        .timeout(Duration::from_secs(20))
+        .build()
+        .map_err(|e| SurrealMindError::Internal {
+            message: format!("Failed to build HTTP client: {}", e),
+        })?;
     let resp = client
         .post(url)
         .bearer_auth(api_key)
@@ -931,9 +930,17 @@ pub fn apply_adaptive_floor(
 
     // Sort by score desc
     let mut t_sorted: Vec<Candidate> = t_hits.to_vec();
-    t_sorted.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+    t_sorted.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let mut k_sorted: Vec<Candidate> = k_hits.to_vec();
-    k_sorted.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+    k_sorted.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // If we have candidates and total < top_k, try adaptive
     let total_hits = t_sorted.len() + k_sorted.len();
