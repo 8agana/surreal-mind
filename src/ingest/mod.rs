@@ -26,6 +26,7 @@ pub struct IngestConfig {
     pub progress: bool,
     pub prometheus: bool,
     pub json: bool,
+    pub persist_verification: bool,
 }
 
 /// Represented document from filesystem
