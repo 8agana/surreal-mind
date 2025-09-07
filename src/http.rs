@@ -18,27 +18,15 @@ use rmcp::transport::streamable_http_server::{
     tower::{StreamableHttpServerConfig, StreamableHttpService},
 };
 use serde_json::json;
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
-    time::{Duration, Instant},
-};
+use std::{sync::Arc, time::Duration};
 use surreal_mind::{config::Config, error::Result, server::SurrealMindServer};
 use tokio::sync::Mutex;
 use tower_http::cors::{Any, CorsLayer};
-
-/// Session entry for TTL tracking
-#[derive(Debug)]
-struct SessionEntry {
-    created_at: Instant,
-    last_active: Instant,
-}
 
 /// Shared state for HTTP server
 #[derive(Clone)]
 pub struct HttpState {
     pub config: Arc<Config>,
-    pub sessions: Arc<RwLock<HashMap<String, SessionEntry>>>,
     pub metrics: Arc<Mutex<HttpMetrics>>,
 }
 
@@ -47,7 +35,6 @@ pub struct HttpState {
 pub struct HttpMetrics {
     pub total_requests: u64,
     pub last_request_unix: u64,
-    pub error_count: u64,
 }
 
 impl HttpMetrics {
@@ -58,7 +45,6 @@ impl HttpMetrics {
                 .elapsed()
                 .unwrap_or_default()
                 .as_secs(),
-            error_count: 0,
         }
     }
 }
@@ -113,21 +99,11 @@ pub async fn metrics_handler(State(state): State<HttpState>) -> impl IntoRespons
     )
 }
 
-/// MCP placeholder endpoint
-pub async fn mcp_handler() -> impl IntoResponse {
-    (
-        StatusCode::NOT_IMPLEMENTED,
-        [(header::CONTENT_TYPE, "application/json")],
-        json!({"error": "MCP transport not yet implemented"}).to_string(),
-    )
-}
-
 /// Start the HTTP server
 pub async fn start_http_server(server: SurrealMindServer) -> Result<()> {
     // Create HTTP state
     let state = HttpState {
         config: server.config.clone(),
-        sessions: Arc::new(RwLock::new(HashMap::new())),
         metrics: Arc::new(Mutex::new(HttpMetrics::new())),
     };
 
