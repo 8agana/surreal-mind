@@ -61,7 +61,7 @@ impl SurrealMindServer {
             tracing::debug!("convo_think content (first 200 chars): {}", dbg_preview);
         }
 
-        let result = self
+        let (result, _continuity) = self
             .run_convo(
                 &params.content,
                 params.injection_scale,
@@ -69,6 +69,12 @@ impl SurrealMindServer {
                 params.significance,
                 params.verbose_analysis,
                 false,
+                None, // session_id
+                None, // chain_id
+                None, // previous_thought_id
+                None, // revises_thought
+                None, // branch_from
+                None, // confidence
             )
             .await?;
 

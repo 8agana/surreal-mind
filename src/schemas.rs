@@ -25,7 +25,13 @@ pub fn legacymind_think_schema() -> Arc<Map<String, Value>> {
             "injection_scale": {"type": ["integer", "string"]},
             "tags": {"type": "array", "items": {"type": "string"}},
             "significance": {"type": ["number", "string"]},
-            "verbose_analysis": {"type": "boolean"}
+            "verbose_analysis": {"type": "boolean"},
+            "session_id": {"type": "string"},
+            "chain_id": {"type": "string"},
+            "previous_thought_id": {"type": "string"},
+            "revises_thought": {"type": "string"},
+            "branch_from": {"type": "string"},
+            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0}
         },
         "required": ["content"]
     });
@@ -203,7 +209,7 @@ pub fn maintenance_ops_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
         "properties": {
-            "subcommand": {"type": "string", "enum": ["list_removal_candidates", "export_removals", "finalize_removal", "health_check_embeddings", "reembed", "reembed_kg"], "description": "Maintenance operation to perform"},
+            "subcommand": {"type": "string", "enum": ["list_removal_candidates", "export_removals", "finalize_removal", "health_check_embeddings", "reembed", "reembed_kg", "ensure_continuity_fields"], "description": "Maintenance operation to perform"},
             "dry_run": {"type": "boolean", "default": false, "description": "Simulate operation without making changes"},
             "limit": {"type": ["integer", "number", "string"], "default": 100, "description": "Maximum number of thoughts to process"},
             "format": {"type": "string", "enum": ["parquet"], "default": "parquet", "description": "Export format (only parquet supported)"},

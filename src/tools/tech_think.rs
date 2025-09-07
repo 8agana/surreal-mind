@@ -95,7 +95,7 @@ impl SurrealMindServer {
 
         // Extract mode from tool_name, e.g. "think_debug" -> "debug"
         let mode = tool_name.trim_start_matches("think_");
-        let result = self
+        let (result, _continuity) = self
             .run_technical(
                 &params.content,
                 params.injection_scale,
@@ -103,6 +103,12 @@ impl SurrealMindServer {
                 params.significance,
                 params.verbose_analysis,
                 mode,
+                None, // session_id
+                None, // chain_id
+                None, // previous_thought_id
+                None, // revises_thought
+                None, // branch_from
+                None, // confidence
             )
             .await?;
 

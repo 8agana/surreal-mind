@@ -42,6 +42,33 @@ pub struct LegacymindThinkParams {
     pub significance: Option<f32>,
     #[serde(default)]
     pub verbose_analysis: Option<bool>,
+    #[serde(default)]
+    pub session_id: Option<String>,
+    #[serde(default)]
+    pub chain_id: Option<String>,
+    #[serde(default)]
+    pub previous_thought_id: Option<String>,
+    #[serde(default)]
+    pub revises_thought: Option<String>,
+    #[serde(default)]
+    pub branch_from: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::deserializers::de_option_f32_forgiving"
+    )]
+    pub confidence: Option<f32>,
+}
+
+/// Result struct for continuity links resolution
+#[derive(Debug, serde::Serialize)]
+pub struct ContinuityResult {
+    pub session_id: Option<String>,
+    pub chain_id: Option<String>,
+    pub previous_thought_id: Option<String>,
+    pub revises_thought: Option<String>,
+    pub branch_from: Option<String>,
+    pub confidence: Option<f32>,
+    pub links_resolved: serde_json::Value,
 }
 
 impl SurrealMindServer {
@@ -54,11 +81,24 @@ impl SurrealMindServer {
         significance: Option<f32>,
         verbose_analysis: Option<bool>,
         is_conclude: bool,
-    ) -> Result<serde_json::Value> {
+        session_id: Option<String>,
+        chain_id: Option<String>,
+        previous_thought_id: Option<String>,
+        revises_thought: Option<String>,
+        branch_from: Option<String>,
+        confidence: Option<f32>,
+    ) -> Result<(serde_json::Value, ContinuityResult)> {
         let injection_scale = injection_scale.unwrap_or(1) as i64;
         let significance = significance.unwrap_or(0.5_f32) as f64;
         let content_str = content.to_string();
         let tags = tags.unwrap_or_default();
+
+        // Clamp confidence to [0.0, 1.0]
+        let confidence = confidence.map(|c| c.clamp(0.0, 1.0));
+
+        // Step 1: Generate IDs and compute embedding
+        let thought_id = uuid::Uuid::new_v4().to_string();
+        let (_provider, _model, _dim) = self.get_embedding_metadata();
 
         // Compute embedding
         let embedding =
@@ -75,32 +115,30 @@ impl SurrealMindServer {
             });
         }
 
-        let thought_id = uuid::Uuid::new_v4().to_string();
-        let (_provider, _model, _dim) = self.get_embedding_metadata();
-
+        // Step 2: Create thought with basic fields first
         self.db
             .query(
                 "CREATE type::thing('thoughts', $id) CONTENT {
-                    content: $content,
-                    created_at: time::now(),
-                    embedding: $embedding,
-                    injected_memories: [],
-                    enriched_content: NONE,
-                    injection_scale: $injection_scale,
-                    significance: $significance,
-                    access_count: 0,
-                    last_accessed: NONE,
-                    submode: NONE,
-                    framework_enhanced: NONE,
-                    framework_analysis: NONE,
-                    origin: 'human',
-                    tags: $tags,
-                    is_private: false,
-                    embedding_provider: $provider,
-                    embedding_model: $model,
-                    embedding_dim: $dim,
-                    embedded_at: time::now()
-                } RETURN NONE;",
+            content: $content,
+            created_at: time::now(),
+            embedding: $embedding,
+            injected_memories: [],
+            enriched_content: NONE,
+            injection_scale: $injection_scale,
+            significance: $significance,
+            access_count: 0,
+            last_accessed: NONE,
+            submode: NONE,
+            framework_enhanced: NONE,
+            framework_analysis: NONE,
+            origin: 'human',
+            tags: $tags,
+            is_private: false,
+            embedding_provider: $_provider,
+            embedding_model: $_model,
+            embedding_dim: $_dim,
+            embedded_at: time::now()
+        } RETURN NONE;",
             )
             .bind(("id", thought_id.clone()))
             .bind(("content", content_str.clone()))
@@ -108,6 +146,33 @@ impl SurrealMindServer {
             .bind(("injection_scale", injection_scale))
             .bind(("significance", significance))
             .bind(("tags", tags.clone()))
+            .await?;
+
+        // Step 3: Resolve continuity links
+        let mut resolved_continuity = self
+            .resolve_continuity_links(
+                &thought_id,
+                previous_thought_id.clone(),
+                revises_thought.clone(),
+                branch_from.clone(),
+            )
+            .await?;
+        resolved_continuity.session_id = session_id.clone();
+        resolved_continuity.chain_id = chain_id.clone();
+        resolved_continuity.confidence = confidence;
+
+        // Step 4: Update thought with resolved continuity links
+        self.db
+            .query(
+                "UPDATE type::thing('thoughts', $id) SET session_id = $session_id, chain_id = $chain_id, previous_thought_id = $previous_thought_id, revises_thought = $revises_thought, branch_from = $branch_from, confidence = $confidence RETURN NONE;",
+            )
+            .bind(("id", thought_id.clone()))
+            .bind(("session_id", resolved_continuity.session_id.clone()))
+            .bind(("chain_id", resolved_continuity.chain_id.clone()))
+            .bind(("previous_thought_id", resolved_continuity.previous_thought_id.clone()))
+            .bind(("revises_thought", resolved_continuity.revises_thought.clone()))
+            .bind(("branch_from", resolved_continuity.branch_from.clone()))
+            .bind(("confidence", resolved_continuity.confidence))
             .await?;
 
         // Framework enhancement (skip for conclude)
@@ -159,7 +224,7 @@ impl SurrealMindServer {
             }
         }
 
-        // Update thought with enhancement
+        // Update thought with enhancement results and merge tags if enhanced
         if framework_enhanced || framework_analysis.is_some() {
             let mut query = "UPDATE type::thing('thoughts', $id) SET framework_enhanced = $enhanced, framework_analysis = $analysis".to_string();
             let mut binds = vec![
@@ -178,6 +243,7 @@ impl SurrealMindServer {
                         if let Some(tags_from_analysis) =
                             data.get("tags").and_then(|t| t.as_array())
                         {
+                            // Merge tags, then filter by whitelist to ensure only allowed tags persist
                             let existing_tags: Vec<String> = tags.clone();
                             let envelope_tags: Vec<String> = tags_from_analysis
                                 .iter()
@@ -187,6 +253,7 @@ impl SurrealMindServer {
                             let mut merged_set: HashSet<String> =
                                 existing_tags.into_iter().collect();
                             merged_set.extend(envelope_tags.into_iter());
+                            // Build whitelist from env (same source used by framework)
                             let whitelist: HashSet<String> =
                                 std::env::var("SURR_THINK_TAG_WHITELIST")
                                     .unwrap_or("plan,debug,dx,photography,idea".to_string())
@@ -216,8 +283,8 @@ impl SurrealMindServer {
             db_query.await?;
         }
 
-        // Inject memories
-        let (mem_count, _) = self
+        // Memory injection (simple cosine similarity over recent thoughts)
+        let (mem_count, _enriched) = self
             .inject_memories(
                 &thought_id,
                 &embedding,
@@ -228,13 +295,15 @@ impl SurrealMindServer {
             .await
             .unwrap_or((0, None));
 
-        Ok(json!({
-            "thought_id": thought_id,
+        let original_result = json!({
+            "thought_id": thought_id.clone(),
             "embedding_model": self.get_embedding_metadata().1,
             "embedding_dim": self.embedder.dimensions(),
             "memories_injected": mem_count,
             "framework_enhanced": framework_enhanced
-        }))
+        });
+
+        Ok((original_result, resolved_continuity))
     }
 
     /// Run technical think (no framework, origin='tool', mode-specific defaults)
@@ -246,7 +315,13 @@ impl SurrealMindServer {
         significance: Option<f32>,
         _verbose_analysis: Option<bool>,
         mode: &str,
-    ) -> Result<serde_json::Value> {
+        session_id: Option<String>,
+        chain_id: Option<String>,
+        previous_thought_id: Option<String>,
+        revises_thought: Option<String>,
+        branch_from: Option<String>,
+        confidence: Option<f32>,
+    ) -> Result<(serde_json::Value, ContinuityResult)> {
         let (default_injection_scale, default_significance) = match mode {
             "debug" => (4u8, 0.8_f32),
             "build" => (2u8, 0.6_f32),
@@ -258,6 +333,12 @@ impl SurrealMindServer {
         let significance = significance.unwrap_or(default_significance) as f64;
         let content_str = content.to_string();
         let tags = tags.unwrap_or_default();
+
+        // Clamp confidence to [0.0, 1.0]
+        let confidence = confidence.map(|c| c.clamp(0.0, 1.0));
+
+        let thought_id = uuid::Uuid::new_v4().to_string();
+        let (_provider, _model, _dim) = self.get_embedding_metadata();
 
         // Compute embedding
         let embedding =
@@ -274,32 +355,49 @@ impl SurrealMindServer {
             });
         }
 
-        let thought_id = uuid::Uuid::new_v4().to_string();
-        let (_provider, _model, _dim) = self.get_embedding_metadata();
+        // Step 1: Resolve continuity links
+        let mut resolved_continuity = self
+            .resolve_continuity_links(
+                &thought_id,
+                previous_thought_id.clone(),
+                revises_thought.clone(),
+                branch_from.clone(),
+            )
+            .await?;
+        resolved_continuity.session_id = session_id.clone();
+        resolved_continuity.chain_id = chain_id.clone();
+        resolved_continuity.confidence = confidence;
 
+        // Step 2: Create thought with all fields including resolved continuity
         self.db
             .query(
                 "CREATE type::thing('thoughts', $id) CONTENT {
-                    content: $content,
-                    created_at: time::now(),
-                    embedding: $embedding,
-                    injected_memories: [],
-                    enriched_content: NONE,
-                    injection_scale: $injection_scale,
-                    significance: $significance,
-                    access_count: 0,
-                    last_accessed: NONE,
-                    submode: NONE,
-                    framework_enhanced: NONE,
-                    framework_analysis: NONE,
-                    origin: 'tool',
-                    tags: $tags,
-                    is_private: false,
-                    embedding_provider: $provider,
-                    embedding_model: $model,
-                    embedding_dim: $dim,
-                    embedded_at: time::now()
-                } RETURN NONE;",
+            content: $content,
+            created_at: time::now(),
+            embedding: $embedding,
+            injected_memories: [],
+            enriched_content: NONE,
+            injection_scale: $injection_scale,
+            significance: $significance,
+            access_count: 0,
+            last_accessed: NONE,
+            submode: NONE,
+            framework_enhanced: NONE,
+            framework_analysis: NONE,
+            origin: 'tool',
+            tags: $tags,
+            is_private: false,
+            embedding_provider: $_provider,
+            embedding_model: $_model,
+            embedding_dim: $_dim,
+            embedded_at: time::now(),
+            session_id: $session_id,
+            chain_id: $chain_id,
+            previous_thought_id: $previous_thought_id,
+            revises_thought: $revises_thought,
+            branch_from: $branch_from,
+            confidence: $confidence
+        } RETURN NONE;",
             )
             .bind(("id", thought_id.clone()))
             .bind(("content", content_str.clone()))
@@ -307,10 +405,22 @@ impl SurrealMindServer {
             .bind(("injection_scale", injection_scale))
             .bind(("significance", significance))
             .bind(("tags", tags.clone()))
+            .bind(("session_id", resolved_continuity.session_id.clone()))
+            .bind(("chain_id", resolved_continuity.chain_id.clone()))
+            .bind((
+                "previous_thought_id",
+                resolved_continuity.previous_thought_id.clone(),
+            ))
+            .bind((
+                "revises_thought",
+                resolved_continuity.revises_thought.clone(),
+            ))
+            .bind(("branch_from", resolved_continuity.branch_from.clone()))
+            .bind(("confidence", resolved_continuity.confidence))
             .await?;
 
         let tool_name = format!("think_{}", mode);
-        let (mem_count, _) = self
+        let (mem_count, _enriched) = self
             .inject_memories(
                 &thought_id,
                 &embedding,
@@ -321,12 +431,14 @@ impl SurrealMindServer {
             .await
             .unwrap_or((0, None));
 
-        Ok(json!({
+        let original_result = json!({
             "thought_id": thought_id,
             "embedding_model": self.get_embedding_metadata().1,
             "embedding_dim": self.embedder.dimensions(),
             "memories_injected": mem_count
-        }))
+        });
+
+        Ok((original_result, resolved_continuity))
     }
 
     /// Detect mode from content if no hint
@@ -391,6 +503,157 @@ impl SurrealMindServer {
                 _ => ThinkMode::Question,
             }
         }
+    }
+
+    /// Resolve continuity links with validation and normalization
+    async fn resolve_continuity_links(
+        &self,
+        new_thought_id: &str,
+        previous_thought_id: Option<String>,
+        revises_thought: Option<String>,
+        branch_from: Option<String>,
+    ) -> Result<ContinuityResult> {
+        let mut links_resolved = serde_json::Map::new();
+
+        let mut resolved = ContinuityResult {
+            session_id: None,
+            chain_id: None,
+            previous_thought_id: None,
+            revises_thought: None,
+            branch_from: None,
+            confidence: None,
+            links_resolved: serde_json::Value::Object(serde_json::Map::new()),
+        };
+
+        // Helper function to resolve and validate a thought reference
+        let resolve_thought = |id: String| async move {
+            // Check if it's already a Surreal thing format
+            if id.starts_with("thoughts:") {
+                let check_query = "SELECT id FROM type::thing($id) LIMIT 1";
+                match self.db.query(check_query).bind(("id", id.clone())).await {
+                    Ok(mut response) => {
+                        if let Ok(_) = response.take::<Vec<serde_json::Value>>(0) {
+                            return (Some(id), "record");
+                        }
+                    }
+                    Err(_) => {}
+                }
+            } else {
+                // Try to find by plain ID
+                let check_query = "SELECT id FROM thoughts WHERE id = $id LIMIT 1";
+                match self
+                    .db
+                    .query(check_query)
+                    .bind(("id", format!("thoughts:{}", id)))
+                    .await
+                {
+                    Ok(mut response) => {
+                        if let Ok(vec) = response.take::<Vec<serde_json::Value>>(0) {
+                            if !vec.is_empty() {
+                                return (Some(format!("thoughts:{}", id)), "record");
+                            }
+                        }
+                    }
+                    Err(_) => {}
+                }
+            }
+            (Some(id), "string")
+        };
+
+        // Resolve each link
+        if let Some(id) = previous_thought_id {
+            let (resolved_id, resolution_type) = resolve_thought(id).await;
+            resolved.previous_thought_id = resolved_id;
+            links_resolved.insert(
+                "previous_thought_id".to_string(),
+                serde_json::Value::String(resolution_type.to_string()),
+            );
+        }
+
+        if let Some(id) = revises_thought {
+            let (resolved_id, resolution_type) = resolve_thought(id).await;
+            resolved.revises_thought = resolved_id;
+            links_resolved.insert(
+                "revises_thought".to_string(),
+                serde_json::Value::String(resolution_type.to_string()),
+            );
+        }
+
+        if let Some(id) = branch_from {
+            let (resolved_id, resolution_type) = resolve_thought(id).await;
+            resolved.branch_from = resolved_id;
+            links_resolved.insert(
+                "branch_from".to_string(),
+                serde_json::Value::String(resolution_type.to_string()),
+            );
+        }
+
+        // Prevent self-links
+        if resolved
+            .previous_thought_id
+            .as_ref()
+            .map(|id| id.contains(new_thought_id))
+            .unwrap_or(false)
+        {
+            resolved.previous_thought_id = None;
+            links_resolved.insert(
+                "previous_thought_id".to_string(),
+                serde_json::Value::String("dropped_self_link".to_string()),
+            );
+        }
+        if resolved
+            .revises_thought
+            .as_ref()
+            .map(|id| id.contains(new_thought_id))
+            .unwrap_or(false)
+        {
+            resolved.revises_thought = None;
+            links_resolved.insert(
+                "revises_thought".to_string(),
+                serde_json::Value::String("dropped_self_link".to_string()),
+            );
+        }
+        if resolved
+            .branch_from
+            .as_ref()
+            .map(|id| id.contains(new_thought_id))
+            .unwrap_or(false)
+        {
+            resolved.branch_from = None;
+            links_resolved.insert(
+                "branch_from".to_string(),
+                serde_json::Value::String("dropped_self_link".to_string()),
+            );
+        }
+
+        // Deduplicate (keep first occurrence)
+        let mut seen_ids = std::collections::HashSet::new();
+        if let Some(ref id) = resolved.previous_thought_id {
+            seen_ids.insert(id.clone());
+        }
+        if let Some(ref id) = resolved.revises_thought {
+            if seen_ids.contains(id) {
+                resolved.revises_thought = None;
+                links_resolved.insert(
+                    "revises_thought".to_string(),
+                    serde_json::Value::String("dropped_duplicate".to_string()),
+                );
+            } else {
+                seen_ids.insert(id.clone());
+            }
+        }
+        if let Some(ref id) = resolved.branch_from {
+            if seen_ids.contains(id) {
+                resolved.branch_from = None;
+                links_resolved.insert(
+                    "branch_from".to_string(),
+                    serde_json::Value::String("dropped_duplicate".to_string()),
+                );
+            }
+        }
+
+        resolved.links_resolved = serde_json::Value::Object(links_resolved);
+        Ok(resolved)
     }
 
     /// Handle legacymind_think tool
@@ -689,7 +952,7 @@ impl SurrealMindServer {
 
         let is_conclude = matches!(mode, ThinkMode::Conclude);
 
-        let delegated_result = match mode {
+        let (delegated_result, continuity_result) = match mode {
             ThinkMode::Question | ThinkMode::Conclude => {
                 self.run_convo(
                     &params.content,
@@ -698,6 +961,12 @@ impl SurrealMindServer {
                     params.significance,
                     params.verbose_analysis,
                     is_conclude,
+                    params.session_id.clone(),
+                    params.chain_id.clone(),
+                    params.previous_thought_id.clone(),
+                    params.revises_thought.clone(),
+                    params.branch_from.clone(),
+                    params.confidence,
                 )
                 .await?
             }
@@ -716,6 +985,12 @@ impl SurrealMindServer {
                     params.significance,
                     params.verbose_analysis,
                     mode_str,
+                    params.session_id.clone(),
+                    params.chain_id.clone(),
+                    params.previous_thought_id.clone(),
+                    params.revises_thought.clone(),
+                    params.branch_from.clone(),
+                    params.confidence,
                 )
                 .await?
             }
@@ -730,13 +1005,22 @@ impl SurrealMindServer {
                 })
             } else {
                 serde_json::Value::Null
-            }
+            },
+            "links_telemetry": continuity_result.links_resolved
         });
 
         let result = json!({
             "mode_selected": mode_selected,
             "reason": reason,
             "delegated_result": delegated_result,
+            "links": {
+                "session_id": continuity_result.session_id,
+                "chain_id": continuity_result.chain_id,
+                "previous_thought_id": continuity_result.previous_thought_id,
+                "revises_thought": continuity_result.revises_thought,
+                "branch_from": continuity_result.branch_from,
+                "confidence": continuity_result.confidence
+            },
             "telemetry": telemetry
         });
 

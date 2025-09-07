@@ -69,13 +69,27 @@ impl SurrealMindServer {
                     "hint": "string — optional explicit mode ('debug', 'build', 'plan', 'stuck', 'question', 'conclude')",
                     "injection_scale": "integer|string (0-3) — memory injection level (overrides mode default)",
                     "tags": "string[] — optional tags",
-                    "significance": "number|string (0.0-1.0) — importance (overrides mode default)"
+                    "significance": "number|string (0.0-1.0) — importance (overrides mode default)",
+                    "session_id": "string — optional session identifier",
+                    "chain_id": "string — optional chain identifier",
+                    "previous_thought_id": "string — optional reference to previous thought",
+                    "revises_thought": "string — optional reference to thought being revised",
+                    "branch_from": "string — optional reference to thought being branched from",
+                    "confidence": "number (0.0-1.0) — optional confidence level"
                 },
                 "returns": {
                     "mode_selected": "string",
                     "reason": "string",
                     "delegated_result": "object — result from the chosen mode",
-                    "telemetry": "object — trigger/heuristic info"
+                    "links": {
+                        "session_id": "string? — resolved session identifier",
+                        "chain_id": "string? — resolved chain identifier",
+                        "previous_thought_id": "string? — resolved previous thought reference",
+                        "revises_thought": "string? — resolved thought being revised",
+                        "branch_from": "string? — resolved branch reference",
+                        "confidence": "number? — clamped confidence value"
+                    },
+                    "telemetry": "object — trigger/heuristic info + link resolution details"
                 },
                 "routing": {
                     "triggers": {
