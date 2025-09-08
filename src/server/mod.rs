@@ -295,29 +295,6 @@ impl ServerHandler for SurrealMindServer {
             annotations: None,
             output_schema: None,
         });
-        
-        // Convenience tools for thread navigation
-        let thoughts_thread_schema = crate::schemas::thoughts_thread_schema();
-        tools.push(Tool {
-            name: "thoughts.thread".into(),
-            description: Some(
-                "Retrieve ordered thought threads by session_id".into(),
-            ),
-            input_schema: thoughts_thread_schema,
-            annotations: None,
-            output_schema: None,
-        });
-        
-        let thoughts_links_schema = crate::schemas::thoughts_links_schema();
-        tools.push(Tool {
-            name: "thoughts.links".into(),
-            description: Some(
-                "Retrieve thought link relationships (previous, revises, branch)".into(),
-            ),
-            input_schema: thoughts_links_schema,
-            annotations: None,
-            output_schema: None,
-        });
         // (removed) photography_thoughts_search and photography_memories_search in favor of unified photography_search
 
         Ok(ListToolsResult {
@@ -383,15 +360,6 @@ impl ServerHandler for SurrealMindServer {
                 .map_err(|e| e.into()),
             "photography_search" => self
                 .handle_photography_unified_search(request)
-                .await
-                .map_err(|e| e.into()),
-            // Convenience tools for thread navigation
-            "thoughts.thread" => self
-                .handle_thoughts_thread(request)
-                .await
-                .map_err(|e| e.into()),
-            "thoughts.links" => self
-                .handle_thoughts_links(request)
                 .await
                 .map_err(|e| e.into()),
             // (removed) photography_thoughts_search and photography_memories_search
