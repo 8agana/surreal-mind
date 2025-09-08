@@ -1,0 +1,45 @@
+🔍 Verifying 19 claims against knowledge graph...
+  ✓ Verified 'uses edition 2024) Cargo' (confidence: 0.80)
+  ✓ Verified 'is not currently supported.' (confidence: 0.80)
+  ✓ Verified 'Uses same OpenAI text-embedding-3-small model as K' (confidence: 0.80)
+  ✓ Verified 'use these defaults over a network.' (confidence: 0.80)
+  ✓ Verified 'Use secure transports in production: WebSocket (DB' (confidence: 0.80)
+  ✓ Verified 'is https:// when used remotely.' (confidence: 0.80)
+  ✓ Verified 'use TLS (https/wss) to protect credentials in tran' (confidence: 0.80)
+  ✓ Verified 'Use   or quieter.' (confidence: 0.80)
+  ✓ Verified 'is disabled in stdio MCP mode.' (confidence: 0.80)
+  ✓ Verified 'uses KG entities and observations only (no raw tho' (confidence: 0.80)
+  ✓ Verified 'is local‑only; no API calls.' (confidence: 0.80)
+  ✓ Verified 'uses KG entities and observations only (no raw tho' (confidence: 0.80)
+  ✓ Verified 'uses Python wrapper) Use   to build all binaries t' (confidence: 0.80)
+  ✓ Verified 'enables prompt transparency, lineage, and analysis' (confidence: 0.80)
+  ✓ Verified 'provides: Stable prompt IDs, versions, and checksu' (confidence: 1.00)
+  ✓ Verified 'is discoverability + analysis; changes require exp' (confidence: 0.80)
+  ✓ Verified 'enable an improvement loop.' (confidence: 0.80)
+  ✓ Verified 'is Access  (30%): How often it's been accessed Sig' (confidence: 0.80)
+  ✓ Verified 'uses edge strengths and neighbor boosts for deeper' (confidence: 0.80)
+📊 Verification Results:
+  - Claims verified: 19
+  - Supporting evidence: 1
+  - Contradicting evidence: 0
+  - Top K: 200
+  - Min similarity: 0.50
+  - Embedding provider: openai
+  - Embedding model: text-embedding-3-small
+  - Embedding dim: 1536
+💾 Persisting 2 documents, 19 claims, 6 candidates...
+💾 Mock persistence activated - would connect to: ws://127.0.0.1:8000
+📊 Would validate schema and create missing tables
+📄 Would persist 2 documents
+💭 Would persist 19 claims in batches of 100
+🎯 Would persist 6 candidates
+  → Document: surreal-mind:readme:README.md (readme)
+  → Document: surreal-mind:changelog:CHANGELOG.md (changelog)
+  → Claim: uses edition 2024) Cargo (readme)
+  → Claim: is not currently supported. (readme)
+  → Claim: Uses same OpenAI text-embedding-3-small  (readme)
+  → Candidate: "uses" (entity)
+  → Candidate: "uses" (entity)
+  → Candidate: "uses" (entity)
+✅ All data persisted successfully
+{"documents_processed":2,"sections_extracted":41,"claims_extracted":0,"claims_generated":19,"claims_deduped":0,"claims_verified":19,"support_hits":1,"contradict_hits":0,"candidates_created":6,"errors":[],"metrics":"# HELP ingest_sections_parsed_total Total sections parsed\n# TYPE ingest_sections_parsed_total counter\ningest_sections_parsed_total 41\n# HELP ingest_claims_extracted_total Total claims extracted\n# TYPE ingest_claims_extracted_total counter\ningest_claims_extracted_total 19\n# HELP ingest_claims_deduped_total Total claims deduplicated\n# TYPE ingest_claims_deduped_total counter\ningest_claims_deduped_total 0\n# HELP ingest_claims_verified_total Total claims verified\n# TYPE ingest_claims_verified_total counter\ningest_claims_verified_total 0\n# HELP ingest_support_hits_total Total supporting evidence hits\n# TYPE ingest_support_hits_total counter\ningest_support_hits_total 0\n# HELP ingest_contradict_hits_total Total contradicting evidence hits\n# TYPE ingest_contradict_hits_total counter\ningest_contradict_hits_total 0\n# HELP ingest_candidates_created_total Total candidates created\n# TYPE ingest_candidates_created_total counter\ningest_candidates_created_total 6\n# HELP ingest_errors_count_total Total errors during ingestion\n# TYPE ingest_errors_count_total counter\ningest_errors_count_total 0\n"}

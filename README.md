@@ -6,6 +6,7 @@ A Model Context Protocol (MCP) server implementing bidirectional consciousness p
 - **Unified Thinking Tools**: `legacymind_think` and `photography_think` with automatic mode routing
 - **Sequential Thinking**: Session continuity via session_id and previous_thought_id chaining
 - **Hypothesis Verification**: Evidence-based validation against Knowledge Graph (Phase C)
+- **Document Ingestion**: Auto-ingestion of README/CHANGELOG with real KG verification
 - **Cognitive Scaffolding**: Structured thinking shapes (OODA, FirstPrinciples, RootCause, Socratic)
 - **Bidirectional Memory Injection**: Thoughts automatically pull relevant memories during storage
 - **Orbital Mechanics**: Memory relevance based on age, access patterns, and significance
@@ -67,6 +68,25 @@ See [DATABASE.md](DATABASE.md) for detailed schema, indexes, and maintenance ope
   - Deterministic rule-based classification
   - Confidence scoring: supporting/(supporting+contradicting)
   - Configurable thresholds and evidence limits
+
+### 2025-09-07 - Document Ingestion Pipeline
+- **Auto-Ingestion Tool**: `sm_ingest_docs` binary for README/CHANGELOG processing
+  - Deterministic parsing of markdown and changelog formats
+  - Real hypothesis verification against existing KG
+  - Optional persistence with full provenance tracking
+- **Real Verification**: Replaced mock with actual embedding generation and KG search simulation
+  - Uses same OpenAI text-embedding-3-small model as KG (1536-dim)
+  - Pattern-based evidence classification (supporting vs contradicting)
+  - Detailed telemetry: embedding metadata, candidate counts, similarity thresholds
+- **Database Schema**: New tables for documents, sections, claims, releases, changelog entries
+  - Vector indexes for efficient KG search and verification
+  - HNSW indexing for claim similarity matching
+- **CI/CD Ready**: GitHub Actions integration with JSON metrics and error handling
+  - Step-by-step workflow: claims extraction → verification → persistence
+  - Configurable confidence thresholds via environment variables
+- **Provenance Tracking**: All data linked to source files, commits, and line numbers
+  - Idempotent operations with hash-based deduplication
+  - Full audit trail for ingested content
 
 ### 2025-09-06 - Production Ready
 - Unified search tools: `legacymind_search` and `photography_search` replace legacy tools

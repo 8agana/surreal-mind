@@ -15,6 +15,23 @@ database_db = "consciousness"
 # System behavior
 inject_debounce = 1000  # For SURR_INJECT_DEBOUNCE - milliseconds
 
+[ingest]
+# Document ingestion configuration
+project_slug = "surreal-mind"  # Default project identifier
+# Confidence thresholds for candidate generation
+confidence_heading = 0.65  # SURR_INGEST_CONFIDENCE_HEADING
+confidence_command = 0.80  # SURR_INGEST_CONFIDENCE_COMMAND
+confidence_changelog = 0.75  # SURR_INGEST_CONFIDENCE_CHANGELOG
+# Verification adjustments
+confidence_verification_bonus = 0.05  # SURR_INGEST_CONFIDENCE_VERIFICATION_BONUS
+confidence_contradiction_penalty = 0.10  # SURR_INGEST_CONFIDENCE_CONTRADICTION_PENALTY
+# Processing settings
+batch_size = 100  # Default batch size for DB operations
+min_similarity = 0.5  # Default minimum similarity for verification
+verify_top_k = 200  # Default top K candidates for verification
+evidence_limit = 5  # Default evidence items per bucket
+max_retries = 2  # Default max retries for failed operations
+
 [retrieval]
 # Core retrieval settings
 max_injection_scale = 3
