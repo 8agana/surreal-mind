@@ -6,7 +6,6 @@ pub mod embeddings;
 pub mod error;
 pub mod frameworks;
 pub mod indexes;
-pub mod ingest;
 pub mod kg_extractor;
 pub mod prompt_critiques;
 pub mod prompt_metrics;
