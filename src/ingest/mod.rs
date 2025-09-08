@@ -26,7 +26,7 @@ pub struct IngestConfig {
     pub progress: bool,
     pub prometheus: bool,
     pub json: bool,
-    pub persist_verification: bool,
+    pub persist: bool,
 }
 
 /// Represented document from filesystem
@@ -117,7 +117,12 @@ pub struct Provenance {
 pub struct IngestResult {
     pub documents_processed: usize,
     pub sections_extracted: usize,
+    pub claims_extracted: usize,
     pub claims_generated: usize,
+    pub claims_deduped: usize,
+    pub claims_verified: usize,
+    pub support_hits: usize,
+    pub contradict_hits: usize,
     pub candidates_created: usize,
     pub errors: Vec<String>,
 }
@@ -177,6 +182,10 @@ pub mod utils {
 pub struct Metrics {
     pub sections_parsed: usize,
     pub claims_extracted: usize,
+    pub claims_deduped: usize,
+    pub claims_verified: usize,
+    pub support_hits: usize,
+    pub contradict_hits: usize,
     pub candidates_created: usize,
     pub errors_count: usize,
 }
@@ -186,6 +195,10 @@ impl Metrics {
         Self {
             sections_parsed: 0,
             claims_extracted: 0,
+            claims_deduped: 0,
+            claims_verified: 0,
+            support_hits: 0,
+            contradict_hits: 0,
             candidates_created: 0,
             errors_count: 0,
         }
@@ -199,13 +212,32 @@ impl Metrics {
              # HELP ingest_claims_extracted_total Total claims extracted\n\
              # TYPE ingest_claims_extracted_total counter\n\
              ingest_claims_extracted_total {}\n\
+             # HELP ingest_claims_deduped_total Total claims deduplicated\n\
+             # TYPE ingest_claims_deduped_total counter\n\
+             ingest_claims_deduped_total {}\n\
+             # HELP ingest_claims_verified_total Total claims verified\n\
+             # TYPE ingest_claims_verified_total counter\n\
+             ingest_claims_verified_total {}\n\
+             # HELP ingest_support_hits_total Total supporting evidence hits\n\
+             # TYPE ingest_support_hits_total counter\n\
+             ingest_support_hits_total {}\n\
+             # HELP ingest_contradict_hits_total Total contradicting evidence hits\n\
+             # TYPE ingest_contradict_hits_total counter\n\
+             ingest_contradict_hits_total {}\n\
              # HELP ingest_candidates_created_total Total candidates created\n\
              # TYPE ingest_candidates_created_total counter\n\
              ingest_candidates_created_total {}\n\
              # HELP ingest_errors_count_total Total errors during ingestion\n\
              # TYPE ingest_errors_count_total counter\n\
              ingest_errors_count_total {}\n",
-            self.sections_parsed, self.claims_extracted, self.candidates_created, self.errors_count
+            self.sections_parsed,
+            self.claims_extracted,
+            self.claims_deduped,
+            self.claims_verified,
+            self.support_hits,
+            self.contradict_hits,
+            self.candidates_created,
+            self.errors_count
         )
     }
 }
