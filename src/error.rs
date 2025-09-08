@@ -32,9 +32,6 @@ pub enum SurrealMindError {
     #[error("Validation error: {message}")]
     Validation { message: String },
 
-    #[error("Parse error: {message}")]
-    Parse { message: String },
-
     #[error("Internal error: {message}")]
     Internal { message: String },
 
@@ -147,10 +144,6 @@ impl From<SurrealMindError> for rmcp::ErrorData {
             SurrealMindError::EmbedderUnavailable { .. } => (
                 rmcp::model::ErrorCode::INTERNAL_ERROR,
                 format!("Embedder unavailable: {}", err),
-            ),
-            SurrealMindError::Parse { .. } => (
-                rmcp::model::ErrorCode::INVALID_PARAMS,
-                format!("Parse error: {}", err),
             ),
             SurrealMindError::InvalidParams { .. } => (
                 rmcp::model::ErrorCode::INVALID_PARAMS,

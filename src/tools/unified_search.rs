@@ -28,17 +28,6 @@ pub struct UnifiedSearchParams {
     pub top_k_thoughts: Option<usize>,
     #[serde(default)]
     pub sim_thresh: Option<f32>,
-    // Continuity field filters (Phase B+)
-    #[serde(default)]
-    pub session_id: Option<String>,
-    #[serde(default)]
-    pub chain_id: Option<String>,
-    #[serde(default)]
-    pub confidence_gte: Option<f32>,
-    #[serde(default)]
-    pub confidence_lte: Option<f32>,
-    #[serde(default)]
-    pub order: Option<String>, // "created_at_asc" | "created_at_desc"
 }
 
 #[derive(Debug, Serialize)]
@@ -163,69 +152,17 @@ pub async fn unified_search_inner(
                         message: e.to_string(),
                     })?;
             let q_dim = q_emb.len() as i64;
-            
-            // Build WHERE clause with continuity filters
-            let mut where_clauses = vec![
-                "embedding_dim = $dim".to_string(),
-                "embedding IS NOT NULL".to_string(),
-                "vector::similarity::cosine(embedding, $q) > $sim".to_string(),
-            ];
-            
-            // Add continuity field filters if present
-            if params.session_id.is_some() {
-                where_clauses.push("session_id = $session_id".to_string());
-            }
-            if params.chain_id.is_some() {
-                where_clauses.push("chain_id = $chain_id".to_string());
-            }
-            
-            // Add confidence bounds (clamp to [0,1])
-            if let Some(conf_gte) = params.confidence_gte {
-                let clamped = conf_gte.clamp(0.0, 1.0);
-                where_clauses.push(format!("confidence >= {}", clamped));
-            }
-            if let Some(conf_lte) = params.confidence_lte {
-                let clamped = conf_lte.clamp(0.0, 1.0);
-                where_clauses.push(format!("confidence <= {}", clamped));
-            }
-            
-            let where_clause = where_clauses.join(" AND ");
-            
-            // Determine ordering: if session/chain present and no explicit order, use ASC
-            let order_by = if let Some(ref order) = params.order {
-                match order.as_str() {
-                    "created_at_asc" => "ORDER BY created_at ASC",
-                    "created_at_desc" => "ORDER BY created_at DESC",
-                    _ => "ORDER BY similarity DESC", // fallback to similarity
-                }
-            } else if params.session_id.is_some() || params.chain_id.is_some() {
-                "ORDER BY created_at ASC" // Natural thread view for session/chain
-            } else {
-                "ORDER BY similarity DESC" // Default for general search
-            };
-            
-            let sql = format!(
-                "SELECT meta::id(id) as id, content, significance, \
-                 vector::similarity::cosine(embedding, $q) AS similarity \
-                 FROM thoughts WHERE {} {} LIMIT $k",
-                where_clause, order_by
-            );
-            
-            let mut query = server.db.query(&sql)
+            let sql = "SELECT meta::id(id) as id, content, significance, vector::similarity::cosine(embedding, $q) AS similarity \
+                       FROM thoughts WHERE embedding_dim = $dim AND vector::similarity::cosine(embedding, $q) > $sim \
+                       ORDER BY similarity DESC LIMIT $k";
+            let mut resp = server
+                .db
+                .query(sql)
                 .bind(("q", q_emb))
                 .bind(("dim", q_dim))
                 .bind(("sim", sim_thresh))
-                .bind(("k", top_k_th as i64));
-            
-            // Bind optional parameters
-            if let Some(ref sid) = params.session_id {
-                query = query.bind(("session_id", sid.clone()));
-            }
-            if let Some(ref cid) = params.chain_id {
-                query = query.bind(("chain_id", cid.clone()));
-            }
-            
-            let mut resp = query.await?;
+                .bind(("k", top_k_th as i64))
+                .await?;
             #[derive(Debug, Deserialize)]
             struct Row {
                 id: String,
