@@ -304,28 +304,3 @@ pub fn inner_voice_schema() -> Arc<Map<String, Value>> {
 }
 
 // (photography_search_schema removed in favor of two explicit tools)
-
-pub fn thoughts_thread_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "session_id": {"type": "string"},
-            "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100},
-            "offset": {"type": "integer", "minimum": 0, "default": 0},
-            "order": {"type": "string", "enum": ["asc", "desc"], "default": "asc"}
-        },
-        "required": ["session_id"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn thoughts_links_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "thought_id": {"type": "string"}
-        },
-        "required": ["thought_id"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
