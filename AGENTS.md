@@ -72,6 +72,14 @@ Quick Ops (Post-Restart)
 - `maintenance_ops`: Health checks, re-embedding, archival/export, and cleanup
 - `detailed_help`: Get tool documentation and usage examples
 
+### Document Ingestion Tools (Binary)
+- `sm_ingest_docs`: Standalone binary for deterministic ingestion of README/CHANGELOG files
+  - Real hypothesis verification with KG search simulation
+  - Optional persistence with full provenance tracking (`--persist` flag)
+  - CI/CD ready with JSON metrics and error handling
+  - Enhanced telemetry: embedding provider/model/dim, candidate counts, evidence classification
+  - Command: `cargo run --bin ingest_repo_docs -- --readme --changelog --verify-claims --persist`
+
 Notes
 - Tools are always listed (no env flag required for visibility). Any gating is enforced inside handlers.
 - See `src/schemas.rs`, `src/server/mod.rs`, and `src/tools/*` for exact parameters. `detailed_help` returns live schema/aliases.

@@ -3,25 +3,25 @@ name: Ingest Documentation
 on:
   push:
     paths:
-      - 'README.md'
-      - 'CHANGELOG.md'
+      - "README.md"
+      - "CHANGELOG.md"
 
 jobs:
   ingest:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up Rust
-      uses: dtolnay/rust-toolchain@stable
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
 
-    - name: Cache dependencies
-      uses: Swatinem/rust-cache@v2
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
 
-    - name: Build ingest binary
-      run: cargo build --release --bin ingest_repo_docs
+      - name: Build ingest binary
+        run: cargo build --release --bin ingest_repo_docs
 
     - name: Extract claims from documents
       id: extract-claims
@@ -36,21 +36,23 @@ jobs:
         SURR_INGEST_CONFIDENCE_CHANGELOG: ${{ vars.SURR_INGEST_CONFIDENCE_CHANGELOG || '0.75' }}
         SURR_INGEST_CONFIDENCE_VERIFICATION_BONUS: ${{ vars.SURR_INGEST_CONFIDENCE_VERIFICATION_BONUS || '0.05' }}
         SURR_INGEST_CONFIDENCE_CONTRADICTION_PENALTY: ${{ vars.SURR_INGEST_CONFIDENCE_CONTRADICTION_PENALTY || '0.10' }}
-      run: |
-        ./target/release/ingest_repo_docs --readme --changelog --claims-only --json --batch-size 100 --continue-on-error --commit ${{ github.sha }} > claims_output.json
+        run: |
+          ./target/release/ingest_repo_docs --readme --changelog --claims-only --json --batch-size 100 --continue-on-error --commit ${{ github.sha }} > claims_output.json
 
-        # Check for errors
-        if jq -e '.errors | length > 0' claims_output.json; then
-          echo "Claims extraction had errors:" >&2
-          jq '.errors' claims_output.json >&2
-          echo "Continuing with verification despite errors..." >&2
-        fi
+          # Check for errors
+          if jq -e '.errors | length > 0' claims_output.json; then
+            echo "Claims extraction had errors:" >&2
+            jq '.errors' claims_output.json >&2
+            echo "Continuing with verification despite errors..." >&2
+          fi
 
-        # Set step summary
-        echo "## 📄 Claims Extraction Results" >> $GITHUB_STEP_SUMMARY
-        echo "- Documents processed: $(jq '.documents_processed' claims_output.json)" >> $GITHUB_STEP_SUMMARY
-        echo "- Sections extracted: $(jq '.sections_extracted' claims_output.json)" >> $GITHUB_STEP_SUMMARY
-        echo "- Claims generated: $(jq '.claims_generated' claims_output.json)" >> $GITHUB_STEP_SUMMARY
+          # Set step summary
+          echo "## 📄 Claims Extraction Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Documents processed: $(jq '.documents_processed' claims_output.json)" >> $GITHUB_STEP_SUMMARY
+          echo "- Sections extracted: $(jq '.sections_extracted' claims_output.json)" >> $GITHUB_STEP_SUMMARY
+          echo "- Claims extracted: $(jq '.claims_extracted' claims_output.json)" >> $GITHUB_STEP_SUMMARY
+          echo "- Claims generated: $(jq '.claims_generated' claims_output.json)" >> $GITHUB_STEP_SUMMARY
+          echo "- Claims deduped: $(jq '.claims_deduped' claims_output.json)" >> $GITHUB_STEP_SUMMARY
 
     - name: Run hypothesis verification
       id: verify-claims
@@ -65,47 +67,54 @@ jobs:
         SURR_INGEST_CONFIDENCE_CHANGELOG: ${{ vars.SURR_INGEST_CONFIDENCE_CHANGELOG || '0.75' }}
         SURR_INGEST_CONFIDENCE_VERIFICATION_BONUS: ${{ vars.SURR_INGEST_CONFIDENCE_VERIFICATION_BONUS || '0.05' }}
         SURR_INGEST_CONFIDENCE_CONTRADICTION_PENALTY: ${{ vars.SURR_INGEST_CONFIDENCE_CONTRADICTION_PENALTY || '0.10' }}
-      run: |
-        ./target/release/ingest_repo_docs --verify-claims --min-sim 0.5 --verify-top-k 200 --evidence-limit 5 --json --batch-size 100 --continue-on-error --commit ${{ github.sha }} > verify_output.json
+        run: |
+          ./target/release/ingest_repo_docs --verify-claims --min-sim 0.5 --verify-top-k 200 --evidence-limit 5 --json --batch-size 100 --continue-on-error --persist --commit ${{ github.sha }} > verify_output.json
 
-        # Check for errors
-        if jq -e '.errors | length > 0' verify_output.json; then
-          echo "Verification had errors:" >&2
-          jq '.errors' verify_output.json >&2
-        fi
+          # Check for errors
+          if jq -e '.errors | length > 0' verify_output.json; then
+            echo "Verification had errors:" >&2
+            jq '.errors' verify_output.json >&2
+          fi
 
-        # Validate verification metrics
-        total_candidates=$(jq '.metrics."total_candidates"' verify_output.json 2>/dev/null || echo 0)
-        if [ "$total_candidates" -eq 0 ]; then
-          echo "⚠️ Warning: No candidates found for verification" >&2
-        else
-          echo "✅ Found $total_candidates candidates for verification" >&2
-        fi
+          # Validate verification metrics
+          total_candidates=$(jq '.metrics."total_candidates"' verify_output.json 2>/dev/null || echo 0)
+          if [ "$total_candidates" -eq 0 ]; then
+            echo "⚠️ Warning: No candidates found for verification" >&2
+          else
+            echo "✅ Found $total_candidates candidates for verification" >&2
+          fi
 
-        # Set step summary
-        echo "## 🔍 Verification Results" >> $GITHUB_STEP_SUMMARY
-        echo "- Candidates verified: $(jq '.candidates_created' verify_output.json)" >> $GITHUB_STEP_SUMMARY
-        echo "- Total KG candidates processed: $total_candidates" >> $GITHUB_STEP_SUMMARY
-        echo "- Verification telemetry available: ✅" >> $GITHUB_STEP_SUMMARY
+          # Set step summary
+          echo "## 🔍 Verification Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Claims verified: $(jq '.claims_verified' verify_output.json)" >> $GITHUB_STEP_SUMMARY
+          echo "- Support hits: $(jq '.support_hits' verify_output.json)" >> $GITHUB_STEP_SUMMARY
+          echo "- Contradict hits: $(jq '.contradict_hits' verify_output.json)" >> $GITHUB_STEP_SUMMARY
+          echo "- Total KG candidates processed: $total_candidates" >> $GITHUB_STEP_SUMMARY
+          echo "- Persistence enabled: ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- Verification telemetry available: ✅" >> $GITHUB_STEP_SUMMARY
 
-        # Add metrics to summary
-        echo "### 📊 Metrics" >> $GITHUB_STEP_SUMMARY
-        jq -r '.metrics | to_entries[] | "- \(.key): \(.value)"' verify_output.json >> $GITHUB_STEP_SUMMARY
+          # Add metrics to summary
+          echo "### 📊 Metrics" >> $GITHUB_STEP_SUMMARY
+          jq -r '.metrics | to_entries[] | "- \(.key): \(.value)"' verify_output.json >> $GITHUB_STEP_SUMMARY
 
-        # Store outputs for potential job status
-        echo "claims_count=$(jq '.claims_generated' claims_output.json)" >> $GITHUB_OUTPUT
+          # Store outputs for potential job status
+          echo "claims_count=$(jq '.claims_generated' claims_output.json)" >> $GITHUB_OUTPUT
+          echo "claims_verified=$(jq '.claims_verified' verify_output.json)" >> $GITHUB_OUTPUT
+          echo "support_hits=$(jq '.support_hits' verify_output.json)" >> $GITHUB_OUTPUT
         echo "verification_candidates=$total_candidates" >> $GITHUB_OUTPUT
 
-    - name: Check job status
-      if: failure()
-      run: |
-        echo "❌ Documentation ingestion failed" >&2
-        echo "## ❌ Ingestion Failed" >> $GITHUB_STEP_SUMMARY
-        echo "Check the job logs for details" >> $GITHUB_STEP_SUMMARY
-        exit 1
+    # No persistence from GitHub Actions by design per owner preference
 
-    - name: Success summary
-      if: success()
-      run: |
-        echo "## ✅ Ingestion Successful" >> $GITHUB_STEP_SUMMARY
-        echo "Documentation has been processed and verified against the knowledge graph." >> $GITHUB_STEP_SUMMARY
+      - name: Check job status
+        if: failure()
+        run: |
+          echo "❌ Documentation ingestion failed" >&2
+          echo "## ❌ Ingestion Failed" >> $GITHUB_STEP_SUMMARY
+          echo "Check the job logs for details" >> $GITHUB_STEP_SUMMARY
+          exit 1
+
+      - name: Success summary
+        if: success()
+        run: |
+          echo "## ✅ Ingestion Successful" >> $GITHUB_STEP_SUMMARY
+          echo "Documentation has been processed and verified against the knowledge graph." >> $GITHUB_STEP_SUMMARY
