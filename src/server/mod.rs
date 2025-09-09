@@ -20,7 +20,7 @@ use std::sync::Arc;
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::Client;
 use tokio::sync::RwLock;
-use tracing::info;
+use tracing::{info, warn};
 
 /// Custom deserializer for SurrealDB Thing to String
 pub fn deserialize_thing_to_string<'de, D>(deserializer: D) -> std::result::Result<String, D::Error>
@@ -455,14 +455,50 @@ impl SurrealMindServer {
         let ns = &config.system.database_ns;
         let dbname = &config.system.database_db;
 
-        let db = surrealdb::Surreal::new::<surrealdb::engine::remote::ws::Ws>(url)
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to connect to SurrealDB at URL: {}",
-                    config.system.database_url
-                )
-            })?;
+        // Optional reconnection strategy with backoff
+        let db_reconnect_enabled = std::env::var("SURR_DB_RECONNECT")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let max_retries = if db_reconnect_enabled { 5 } else { 0 };
+
+        let mut db = None;
+        for attempt in 0..=max_retries {
+            match surrealdb::Surreal::new::<surrealdb::engine::remote::ws::Ws>(url.clone()).await {
+                Ok(conn) => {
+                    db = Some(conn);
+                    if attempt > 0 {
+                        info!(
+                            "Successfully reconnected to SurrealDB after {} attempts",
+                            attempt + 1
+                        );
+                    }
+                    break;
+                }
+                Err(e) => {
+                    if attempt == max_retries {
+                        return Err(SurrealMindError::Database {
+                            message: format!(
+                                "Failed to connect to SurrealDB at {} after {} attempts: {}",
+                                config.system.database_url,
+                                max_retries + 1,
+                                e
+                            ),
+                        });
+                    } else {
+                        let delay_ms = (1000 * (1u64 << attempt.min(5))).min(60000); // 1s, 2s, 4s, 8s, 16s, then 60s max
+                        warn!(
+                            "SurrealDB connection attempt {} failed: {}. Retrying in {}ms...",
+                            attempt + 1,
+                            e,
+                            delay_ms
+                        );
+                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                    }
+                }
+            }
+        }
+
+        let db = db.unwrap();
 
         // Sign in with credentials
         db.signin(surrealdb::opt::auth::Root {

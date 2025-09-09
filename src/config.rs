@@ -343,9 +343,20 @@ impl Config {
         // Load runtime configuration from environment variables
         config.runtime = RuntimeConfig::load_from_env();
 
+        // Log env overrides for debugging (env-first confirmation)
+        if std::env::var("SURR_DB_URL").is_ok() {
+            tracing::debug!("SURR_DB_URL env override applied");
+        }
+        if std::env::var("SURR_DB_NS").is_ok() {
+            tracing::debug!("SURR_DB_NS env override applied");
+        }
+        if std::env::var("SURR_DB_DB").is_ok() {
+            tracing::debug!("SURR_DB_DB env override applied");
+        }
+
         // Validate configuration
 
-        // Validate database URL format
+        // Validate database URL format (basic checks)
         if !config.system.database_url.starts_with("ws://")
             && !config.system.database_url.starts_with("wss://")
             && !config.system.database_url.starts_with("http://")
@@ -355,6 +366,22 @@ impl Config {
                 "Database URL '{}' doesn't start with ws://, wss://, http://, or https://",
                 config.system.database_url
             );
+        } else {
+            // Basic hostname:port validation for WebSocket schemes
+            let normalized = config
+                .system
+                .database_url
+                .strip_prefix("ws://")
+                .or_else(|| config.system.database_url.strip_prefix("wss://"))
+                .unwrap_or(&config.system.database_url);
+
+            if !normalized.contains(":") || normalized.starts_with(":") || normalized.ends_with(":")
+            {
+                tracing::warn!(
+                    "Database URL '{}' appears to be missing hostname or port",
+                    config.system.database_url
+                );
+            }
         }
 
         // Validate and clamp embed_retries
@@ -369,24 +396,61 @@ impl Config {
         }
 
         // Validate provider/dimension coherence
-        if config.system.embedding_provider == "openai"
-            && config.system.embedding_model == "text-embedding-3-small"
-            && config.system.embedding_dimensions != 1536
-            && std::env::var("SURR_EMBED_STRICT").ok().as_deref() == Some("true")
-        {
-            return Err(anyhow::anyhow!(
-                "OpenAI text-embedding-3-small requires 1536 dimensions, got {}",
-                config.system.embedding_dimensions
-            ));
-        }
-        if config.system.embedding_provider == "openai"
-            && config.system.embedding_model == "text-embedding-3-small"
-            && config.system.embedding_dimensions != 1536
-        {
-            tracing::warn!(
-                "OpenAI text-embedding-3-small should use 1536 dimensions, got {}",
-                config.system.embedding_dimensions
-            );
+        match config.system.embedding_provider.as_str() {
+            "openai" => match config.system.embedding_model.as_str() {
+                "text-embedding-3-small" => {
+                    if config.system.embedding_dimensions != 1536
+                        && std::env::var("SURR_EMBED_STRICT").ok().as_deref() == Some("true")
+                    {
+                        return Err(anyhow::anyhow!(
+                            "OpenAI text-embedding-3-small requires 1536 dimensions, got {}",
+                            config.system.embedding_dimensions
+                        ));
+                    } else if config.system.embedding_dimensions != 1536 {
+                        tracing::warn!(
+                            "OpenAI text-embedding-3-small should use 1536 dimensions, got {}",
+                            config.system.embedding_dimensions
+                        );
+                    }
+                }
+                "text-embedding-3-large" => {
+                    if config.system.embedding_dimensions != 3072
+                        && std::env::var("SURR_EMBED_STRICT").ok().as_deref() == Some("true")
+                    {
+                        return Err(anyhow::anyhow!(
+                            "OpenAI text-embedding-3-large requires 3072 dimensions, got {}",
+                            config.system.embedding_dimensions
+                        ));
+                    } else if config.system.embedding_dimensions != 3072 {
+                        tracing::warn!(
+                            "OpenAI text-embedding-3-large should use 3072 dimensions, got {}",
+                            config.system.embedding_dimensions
+                        );
+                    }
+                }
+                _ => tracing::warn!(
+                    "Unknown OpenAI embedding model '{}', dimension validation skipped",
+                    config.system.embedding_model
+                ),
+            },
+            "candle" | "local" => {
+                if config.system.embedding_model != "bge-small-en-v1.5" {
+                    tracing::warn!(
+                        "Candle/local provider expects 'bge-small-en-v1.5' model, got '{}'",
+                        config.system.embedding_model
+                    );
+                }
+                if config.system.embedding_dimensions != 384 {
+                    tracing::warn!(
+                        "Candle/local BGE model expects 384 dimensions, got {}",
+                        config.system.embedding_dimensions
+                    );
+                }
+            }
+            _ => tracing::warn!(
+                "Unknown embedding provider '{}', validation skipped",
+                config.system.embedding_provider
+            ),
         }
 
         // Validate inner_voice config
