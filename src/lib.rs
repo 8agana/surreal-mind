@@ -7,6 +7,7 @@ pub mod error;
 pub mod frameworks;
 pub mod indexes;
 pub mod kg_extractor;
+// pub mod legacy_storage; // Temporarily disabled due to arrow version conflict
 pub mod prompt_critiques;
 pub mod prompt_metrics;
 pub mod prompts;

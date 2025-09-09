@@ -52,3 +52,11 @@ SELECT COUNT() as total, COUNT(embedding) as with_embedding FROM kg_entities GRO
 SELECT id, name, array::len(embedding) as embed_dim FROM kg_entities WHERE embedding != NONE LIMIT 5;
 SELECT id, name, array::len(embedding) as embed_dim, data FROM kg_entities WHERE id = 'kg_entities:7y4siy38zv6gabl0n2gn';
 SELECT id, name, array::len(embedding) as embed_dim, data FROM kg_entities WHERE name ~ 'Sam';
+SELECT * FROM thoughts;
+SELECT * FROM kg_entities;
+SELECT * FROM kg_relationships;
+SELECT * FROM kg_observations;
+SELECT * FROM kg_entity_candidates;
+SELECT * FROM kg_relationship_candidates;
+SELECT * FROM kg_observation_candidates;
+SELECT * FROM thoughts LIMIT 1;
