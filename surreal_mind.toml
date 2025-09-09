@@ -22,6 +22,8 @@ default_injection_scale = 1
 kg_only = true  # New: only pull from KG, not thoughts
 similarity_threshold = 0.5
 top_k = 5
+# Required by older stable build (2fb3ec1)
+kg_moderation_threshold = 0.6
 # Thresholds for memory injection scales and floor (required)
 t1 = 0.6
 t2 = 0.4
