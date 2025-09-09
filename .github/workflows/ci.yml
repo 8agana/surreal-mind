@@ -36,7 +36,9 @@ jobs:
         run: cargo test --workspace --locked
 
       - name: Install cargo-audit
-        run: cargo install cargo-audit
+        run: |
+          rustup update stable
+          cargo install cargo-audit --force
 
       - name: Security audit (cargo-audit)
         run: cargo audit
