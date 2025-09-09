@@ -447,6 +447,40 @@ impl SurrealMindServer {
                 .to_string()
         }
 
+        // Connect to SurrealDB instance
+        // DB connection values from config
+        let url = normalize_ws_url(&config.system.database_url);
+        let user = &config.runtime.database_user;
+        let pass = &config.runtime.database_pass;
+        let ns = &config.system.database_ns;
+        let dbname = &config.system.database_db;
+
+        let db = surrealdb::Surreal::new::<surrealdb::engine::remote::ws::Ws>(url)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to connect to SurrealDB at URL: {}",
+                    config.system.database_url
+                )
+            })?;
+
+        // Sign in with credentials
+        db.signin(surrealdb::opt::auth::Root {
+            username: user.as_str(),
+            password: pass.as_str(),
+        })
+        .await
+        .with_context(|| format!("Failed to authenticate with SurrealDB as user '{}'", user))?;
+
+        // Select namespace and database
+        db.use_ns(ns)
+            .await
+            .with_context(|| format!("Failed to select namespace '{}'", ns))?;
+
+        db.use_db(dbname)
+            .await
+            .with_context(|| format!("Failed to select database '{}'", dbname))?;
+
         // DB connection values from config
         let url = normalize_ws_url(&config.system.database_url);
         let user = &config.runtime.database_user;

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use rmcp::{ServiceExt, transport::stdio};
 mod http;
 use surreal_mind::{config::Config, server::SurrealMindServer};
@@ -12,12 +12,16 @@ async fn main() -> Result<()> {
         .unwrap_or(false);
 
     // Load configuration using the new typed config system
-    let config = Config::load().map_err(|e| {
-        if !no_log {
-            eprintln!("Failed to load configuration: {}", e);
-        }
-        e
-    })?;
+    let config = Config::load()
+        .with_context(
+            || "Failed to load Surreal Mind configuration from TOML and environment variables",
+        )
+        .map_err(|e| {
+            if !no_log {
+                eprintln!("Failed to load configuration: {}", e);
+            }
+            e
+        })?;
 
     // Initialize tracing unless MCP_NO_LOG is set; default to error-only in stdio mode
     if !config.runtime.mcp_no_log {
@@ -35,12 +39,15 @@ async fn main() -> Result<()> {
     }
 
     // Create server using the new modular architecture
-    let server = SurrealMindServer::new(&config).await.map_err(|e| {
-        if !config.runtime.mcp_no_log {
-            eprintln!("Failed to create server: {}", e);
-        }
-        e
-    })?;
+    let server = SurrealMindServer::new(&config)
+        .await
+        .with_context(|| "Failed to initialize SurrealDB connection and SurrealMindServer")
+        .map_err(|e| {
+            if !config.runtime.mcp_no_log {
+                eprintln!("Failed to create server: {}", e);
+            }
+            e
+        })?;
 
     // Optional startup dim-hygiene preflight
     if config.runtime.embed_strict
@@ -48,7 +55,11 @@ async fn main() -> Result<()> {
             .map(|v| v == "1")
             .unwrap_or(false)
     {
-        if let Err(e) = server.check_embedding_dims().await {
+        if let Err(e) = server
+            .check_embedding_dims()
+            .await
+            .with_context(|| "Startup dimension hygiene check failed")
+        {
             return Err(anyhow::anyhow!(
                 "Embedding dimension mismatch detected: {}",
                 e
@@ -77,23 +88,30 @@ async fn main() -> Result<()> {
         if !config.runtime.mcp_no_log {
             info!("🌐 Starting HTTP server for MCP transport");
         }
-        http::start_http_server(server).await.map_err(|e| {
-            if !config.runtime.mcp_no_log {
-                eprintln!("Failed to start HTTP server: {}", e);
-            }
-            e
-        })?;
+        http::start_http_server(server)
+            .await
+            .with_context(|| "Failed to start HTTP MCP server")
+            .map_err(|e| {
+                if !config.runtime.mcp_no_log {
+                    eprintln!("Failed to start HTTP server: {}", e);
+                }
+                e
+            })?;
     } else {
         // Default stdio transport
         if !config.runtime.mcp_no_log {
             info!("🎯 MCP Server ready - waiting for requests...");
         }
-        let service = server.serve(stdio()).await.map_err(|e| {
-            if !config.runtime.mcp_no_log {
-                eprintln!("Failed to start MCP service: {}", e);
-            }
-            e
-        })?;
+        let service = server
+            .serve(stdio())
+            .await
+            .with_context(|| "Failed to start stdio MCP service")
+            .map_err(|e| {
+                if !config.runtime.mcp_no_log {
+                    eprintln!("Failed to start MCP service: {}", e);
+                }
+                e
+            })?;
         service.waiting().await?;
     }
 
