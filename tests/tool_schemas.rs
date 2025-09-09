@@ -17,45 +17,61 @@ fn test_list_tools_returns_expected_tools() {
     // For now, we're testing the expected structure
 
     let expected_tools = [
+        "legacymind_think",
         "think_convo",
         "think_plan",
         "think_debug",
         "think_build",
         "think_stuck",
-        "think_search",
         "memories_create",
-        "memories_search",
         "memories_moderate",
         "maintenance_ops",
         "detailed_help",
+        "inner_voice",
+        "photography_think",
+        "photography_memories",
+        "legacymind_search",
+        "photography_search",
     ];
     assert_eq!(
         expected_tools.len(),
-        11,
-        "Tool roster should list 11 entries in Phase 1"
+        15,
+        "Tool roster should list 15 entries with unified tools and photography support"
     );
 }
 
 #[test]
-fn test_convo_think_schema_structure() {
-    // Test that convo_think has the expected schema structure
+fn test_legacymind_think_schema_structure() {
+    // Test that legacymind_think has the expected schema structure
     let expected_schema = json!({
         "type": "object",
         "properties": {
             "content": {"type": "string"},
-            "injection_scale": {"type": ["integer", "string"]},
-            "submode": {"type": "string", "enum": ["sarcastic", "philosophical", "empathetic", "problem_solving"]},
+            "hint": {"type": "string", "enum": ["debug", "build", "plan", "stuck", "question", "conclude"]},
+            "injection_scale": {"type": "integer", "minimum": 0, "maximum": 3},
             "tags": {"type": "array", "items": {"type": "string"}},
-            "significance": {"type": ["number", "string"]},
-            "verbose_analysis": {"type": "boolean", "default": true}
+            "significance": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "verbose_analysis": {"type": "boolean"},
+            "session_id": {"type": "string"},
+            "chain_id": {"type": "string"},
+            "previous_thought_id": {"type": "string"},
+            "revises_thought": {"type": "string"},
+            "branch_from": {"type": "string"},
+            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "hypothesis": {"type": "string"},
+            "needs_verification": {"type": "boolean"},
+            "verify_top_k": {"type": "integer"},
+            "min_similarity": {"type": "number"},
+            "evidence_limit": {"type": "integer"},
+            "contradiction_patterns": {"type": "array", "items": {"type": "string"}}
         },
         "required": ["content"]
     });
 
     // Verify required properties
     assert!(schema_has_property(&expected_schema, "content"));
+    assert!(schema_has_property(&expected_schema, "hint"));
     assert!(schema_has_property(&expected_schema, "injection_scale"));
-    assert!(schema_has_property(&expected_schema, "submode"));
     assert!(schema_has_property(&expected_schema, "tags"));
     assert!(schema_has_property(&expected_schema, "significance"));
     assert!(schema_has_property(&expected_schema, "verbose_analysis"));
@@ -66,29 +82,30 @@ fn test_convo_think_schema_structure() {
 }
 
 #[test]
-fn test_tech_think_schema_structure() {
-    // Test that tech_think has the expected schema structure
+fn test_photography_think_schema_structure() {
+    // Test that photography_think has the expected schema structure (similar to legacymind_think)
     let expected_schema = json!({
         "type": "object",
         "properties": {
             "content": {"type": "string"},
-            "injection_scale": {"type": ["integer", "string"]},
-            "submode": {"type": "string", "enum": ["plan", "build", "debug"], "default": "plan"},
+            "injection_scale": {"type": "integer", "minimum": 0, "maximum": 3},
             "tags": {"type": "array", "items": {"type": "string"}},
-            "significance": {"type": ["number", "string"]},
-            "verbose_analysis": {"type": "boolean", "default": true}
+            "significance": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "verbose_analysis": {"type": "boolean"}
         },
         "required": ["content"]
     });
 
-    // Verify tech_think specific submodes
-    let submodes = expected_schema["properties"]["submode"]["enum"]
-        .as_array()
-        .unwrap();
-    assert_eq!(submodes.len(), 3);
-    assert!(submodes.contains(&json!("plan")));
-    assert!(submodes.contains(&json!("build")));
-    assert!(submodes.contains(&json!("debug")));
+    // Verify required properties
+    assert!(schema_has_property(&expected_schema, "content"));
+    assert!(schema_has_property(&expected_schema, "injection_scale"));
+    assert!(schema_has_property(&expected_schema, "tags"));
+    assert!(schema_has_property(&expected_schema, "significance"));
+    assert!(schema_has_property(&expected_schema, "verbose_analysis"));
+
+    // Verify required array
+    assert_eq!(expected_schema["required"].as_array().unwrap().len(), 1);
+    assert_eq!(expected_schema["required"][0].as_str().unwrap(), "content");
 }
 
 #[test]
@@ -97,13 +114,15 @@ fn test_detailed_help_schema_structure() {
     let expected_schema = json!({
         "type": "object",
         "properties": {
-            "tool": {"type": "string", "enum": ["convo_think", "tech_think"]},
-            "format": {"type": "string", "enum": ["compact", "full"], "default": "full"}
+            "tool": {"type": "string", "enum": ["legacymind_think", "photography_think", "think_convo", "think_plan", "think_debug", "think_build", "think_stuck", "memories_create", "memories_moderate", "maintenance_ops", "detailed_help", "inner_voice", "legacymind_search", "photography_search"]},
+            "format": {"type": "string", "enum": ["compact", "full"], "default": "full"},
+            "prompts": {"type": "boolean"}
         }
     });
 
     assert!(schema_has_property(&expected_schema, "tool"));
     assert!(schema_has_property(&expected_schema, "format"));
+    assert!(schema_has_property(&expected_schema, "prompts"));
 
     // Verify format has default
     assert_eq!(expected_schema["properties"]["format"]["default"], "full");
@@ -121,26 +140,21 @@ fn test_convo_think_accepts_valid_params() {
             "injection_scale": 3
         }),
         json!({
-            "content": "Test with preset",
-            "injection_scale": "HIGH"
-        }),
-        json!({
             "content": "Test with significance",
             "significance": 0.8
         }),
         json!({
-            "content": "Test with string significance",
-            "significance": "high"
+            "content": "Test with low significance",
+            "significance": 0.2
         }),
         json!({
-            "content": "Test with integer significance",
-            "significance": 8
+            "content": "Test with high significance",
+            "significance": 0.9
         }),
         json!({
             "content": "Full params test",
-            "injection_scale": "MAXIMUM",
-            "significance": "low",
-            "submode": "philosophical",
+            "injection_scale": 3,
+            "significance": 0.7,
             "tags": ["test", "integration"],
             "verbose_analysis": false
         }),
@@ -153,25 +167,37 @@ fn test_convo_think_accepts_valid_params() {
             params["content"].is_string(),
             "Content must be present and be a string"
         );
+        // Verify optional parameters are valid types
+        if let Some(injection_scale) = params["injection_scale"].as_i64() {
+            assert!(
+                (0..=3).contains(&injection_scale),
+                "Injection scale must be 0-3"
+            );
+        }
+        if let Some(significance) = params["significance"].as_f64() {
+            assert!(
+                (0.0..=1.0).contains(&significance),
+                "Significance must be 0.0-1.0"
+            );
+        }
     }
 }
 
 #[test]
 fn test_tech_think_accepts_valid_params() {
-    // Test valid parameter combinations for tech_think
+    // Test valid parameter combinations for tech_think (photography_think)
     let valid_params = vec![
         json!({
-            "content": "Technical thought"
+            "content": "Photography thought"
         }),
         json!({
-            "content": "Tech with submode",
-            "submode": "debug"
+            "content": "Photo with injection scale",
+            "injection_scale": 2
         }),
         json!({
-            "content": "Tech with all params",
-            "injection_scale": "MEDIUM",
-            "significance": 7,
-            "submode": "build",
+            "content": "Photo with all params",
+            "injection_scale": 3,
+            "significance": 0.7,
             "tags": ["rust", "mcp"],
             "verbose_analysis": true
         }),
@@ -182,40 +208,48 @@ fn test_tech_think_accepts_valid_params() {
             params["content"].is_string(),
             "Content must be present and be a string"
         );
-        if let Some(submode) = params["submode"].as_str() {
+        // Photography think validates injection_scale and significance ranges
+        if let Some(injection_scale) = params["injection_scale"].as_i64() {
             assert!(
-                ["plan", "build", "debug"].contains(&submode),
-                "Submode must be valid"
+                (0..=3).contains(&injection_scale),
+                "Injection scale must be 0-3"
+            );
+        }
+        if let Some(significance) = params["significance"].as_f64() {
+            assert!(
+                (0.0..=1.0).contains(&significance),
+                "Significance must be 0.0-1.0"
             );
         }
     }
 }
 
 #[test]
-fn test_convo_think_rejects_invalid_significance() {
-    // Test that significance value of 1 is rejected
+fn test_legacymind_think_rejects_invalid_significance() {
+    // Test that significance value of -1 is rejected
     let invalid_params = json!({
         "content": "Test thought",
-        "significance": 1
+        "significance": -1.0
     });
 
     // This would be rejected by the actual deserializer
-    // The error message should mention ambiguity
-    let sig_value = invalid_params["significance"].as_i64().unwrap();
-    assert_eq!(sig_value, 1, "Testing rejection of ambiguous value 1");
+    let sig_value = invalid_params["significance"].as_f64().unwrap();
+    assert!(
+        sig_value < 0.0,
+        "Testing rejection of negative significance"
+    );
 }
 
 #[test]
-fn test_tech_think_rejects_invalid_significance() {
-    // Test that tech_think also rejects significance value of 1
+fn test_photography_think_rejects_invalid_significance() {
+    // Test that photography_think also rejects significance value of 1.5
     let invalid_params = json!({
-        "content": "Technical thought",
-        "significance": 1,
-        "submode": "plan"
+        "content": "Photography thought",
+        "significance": 1.5
     });
 
-    let sig_value = invalid_params["significance"].as_i64().unwrap();
-    assert_eq!(sig_value, 1, "Testing rejection of ambiguous value 1");
+    let sig_value = invalid_params["significance"].as_f64().unwrap();
+    assert!(sig_value > 1.0, "Testing rejection of significance > 1.0");
 }
 
 /// Integration test that would require actual server running

@@ -342,7 +342,10 @@ This project includes:
 
 ### Main MCP Server Binary
 - `cargo run` or `./target/release/surreal-mind`: Starts the MCP server with stdio transport
-- Handles all tools: think_convo, think_plan, think_debug, think_build, think_stuck, memories_create, memories_moderate, detailed_help, inner_voice, legacymind_search, photography_search
+- **Unified Thinking Tools**: `legacymind_think` (with automatic mode routing), `photography_think`
+- **Legacy Tool Aliases** (forward to `legacymind_think`): `think_convo`, `think_plan`, `think_debug`, `think_build`, `think_stuck`
+- **Memory & Knowledge Tools**: `memories_create`, `memories_moderate`, `inner_voice`, `legacymind_search`, `photography_search`, `photography_memories`
+- **Maintenance Tools**: `maintenance_ops`, `detailed_help`
 
 ### Additional Binaries (src/bin/)
 - `cargo run --bin reembed`: CLI for re-embedding thoughts (fixes dimension mismatches, recomputes embeddings)

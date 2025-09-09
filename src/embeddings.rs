@@ -125,7 +125,11 @@ impl Embedder for OpenAIEmbedder {
                 .json(&body)
                 .send()
                 .await
-                .context("Failed to send request to OpenAI API");
+                .context(format!(
+                    "Failed to send embedding request to OpenAI API for model '{}' ({} chars)",
+                    self.model,
+                    text.len()
+                ));
             let response = match send_res {
                 Ok(resp) => resp,
                 Err(e) => {
@@ -140,8 +144,10 @@ impl Embedder for OpenAIEmbedder {
                 let status = response.status();
                 let error_text = response.text().await.unwrap_or_default();
                 last_err = Some(anyhow::anyhow!(
-                    "OpenAI API error {}: {}",
+                    "OpenAI API error {} for model '{}' ({} chars): {}",
                     status,
+                    self.model,
+                    text.len(),
                     error_text
                 ));
                 let delay_ms = 200u64 * (1u64 << i);
@@ -149,10 +155,11 @@ impl Embedder for OpenAIEmbedder {
                 continue;
             }
 
-            let parse_res: Result<OpenAIResponse> = response
-                .json()
-                .await
-                .context("Failed to parse OpenAI response");
+            let parse_res: Result<OpenAIResponse> = response.json().await.context(format!(
+                "Failed to parse JSON response from OpenAI API for model '{}' ({} chars)",
+                self.model,
+                text.len()
+            ));
             match parse_res {
                 Ok(result) => {
                     return result
@@ -160,7 +167,11 @@ impl Embedder for OpenAIEmbedder {
                         .into_iter()
                         .next()
                         .map(|d| d.embedding)
-                        .context("No embedding returned from OpenAI");
+                        .context(format!(
+                            "No embedding data returned from OpenAI API for model '{}' ({} chars)",
+                            self.model,
+                            text.len()
+                        ));
                 }
                 Err(e) => {
                     last_err = Some(e);
@@ -170,7 +181,13 @@ impl Embedder for OpenAIEmbedder {
             }
         }
 
-        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("Unknown OpenAI embedding error")))
+        Err(last_err.unwrap_or_else(|| {
+            anyhow::anyhow!(
+                "Unknown error generating OpenAI embedding for model '{}' ({} chars)",
+                self.model,
+                text.len()
+            )
+        }))
     }
 
     fn dimensions(&self) -> usize {
