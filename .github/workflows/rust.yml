@@ -13,6 +13,8 @@ jobs:
   check:
     name: Check
     runs-on: macos-latest
+    env:
+      PROTOC: /opt/homebrew/bin/protoc
     steps:
       - uses: actions/checkout@v4
       - name: Install protoc
@@ -37,6 +39,8 @@ jobs:
   test-matrix:
     name: Test Matrix
     runs-on: macos-latest
+    env:
+      PROTOC: /opt/homebrew/bin/protoc
     strategy:
       matrix:
         include:
