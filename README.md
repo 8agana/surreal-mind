@@ -53,6 +53,45 @@ Note: The server connects via WebSocket only. Embedded in-process DB is not curr
 
 See [DATABASE.md](DATABASE.md) for detailed schema, indexes, and maintenance operations.
 
+## Quick Start
+
+### 1. Launch SurrealDB
+```bash
+# Quick in-memory start (data lost on restart)
+surreal start --user root --pass root --bind 127.0.0.1:8000 memory
+```
+
+### 2. Set Environment Variables
+```bash
+export OPENAI_API_KEY=sk-your-openai-key-here
+# Optional: For reconnection on network issues
+export SURR_DB_RECONNECT=1
+# Optional: Strict embedding validation
+export SURR_EMBED_STRICT=true
+```
+
+### 3. Start the MCP Server
+```bash
+./target/release/surreal-mind
+```
+
+### 4. Test with MCP Client
+The server is now ready to handle MCP requests. Test with your preferred MCP client or use the provided test scripts:
+
+```bash
+# Run comprehensive tests
+cargo test --test tool_schemas
+
+# Or use the MCP comprehensive script
+./tests/test_mcp_comprehensive.sh
+```
+
+### Troubleshooting
+- **Protoc errors**: Install with `brew install protobuf` (already handled in CI)
+- **Dimension mismatches**: Run `./target/release/reembed` to fix
+- **Connection issues**: Check `SURR_DB_URL` points to running SurrealDB instance
+- **Logs**: Set `RUST_LOG=surreal_mind=debug` for detailed output
+
 ## Recent Updates
 
 ### 2025-09-07 - Major Refactor: Unified Thinking Tools
@@ -83,6 +122,8 @@ See [DATABASE.md](DATABASE.md) for detailed schema, indexes, and maintenance ope
   - `SURR_THINK_TAG_WHITELIST=plan,debug,dx,photography,idea`
   - `SURR_THINK_LEXICON_DECIDE`, `SURR_THINK_LEXICON_VENT`, `SURR_THINK_LEXICON_CAUSAL`, `SURR_THINK_LEXICON_POS`, `SURR_THINK_LEXICON_NEG`
   - `SURR_THINK_DEEP_LOG=1` (gates 200‑char debug preview)
+- Database: `SURR_DB_RECONNECT=1` (enables auto-reconnection with backoff), `SURR_DB_URL=wss://example.com:8000` (WebSocket endpoint)
+- Embeddings: `SURR_EMBED_STRICT=true` (strict dimension/provider validation), `SURR_EMBED_RPS=1.0` (rate limit for API calls)
 - inner_voice: `SURR_IV_AUTO_EXTRACT_KG=1` (default ON)
 - UA traceability (optional): `SURR_COMMIT_HASH=<shortsha>`
 
@@ -430,8 +471,21 @@ make ci    # Run all checks
 ```
 
 ### Tests
+Run the full test suite (52 tests total, includes unit, integration, KG, schema validation):
 ```bash
 cargo test
+```
+
+Run specific test suites:
+```bash
+# Tool schemas and parameters
+cargo test --test tool_schemas
+
+# Integration tests
+cargo test --test inner_voice_retrieve
+
+# MCP comprehensive tests
+./tests/test_mcp_comprehensive.sh
 ```
 
 ## License

@@ -30,10 +30,10 @@ Surreal Mind augments agent thinking with persistent memory backed by SurrealDB 
   - Queries KG entities/observations for supporting/contradicting evidence
   - Confidence scoring and revision suggestions
   - Configurable via env vars: `SURR_VERIFY_TOPK`, `SURR_VERIFY_MIN_SIM`, `SURR_VERIFY_EVIDENCE_LIMIT`
-- **Tests/Build**: All 41 tests passing; zero clippy warnings; production build successful
+- **Tests/Build**: All 52 tests passing; zero clippy warnings; production build successful
 
-Acceptance Snapshot — 2025-09-06
-- Tools roster: `think_*`, `memories_*`, `maintenance_ops`, `detailed_help`, `inner_voice`, `legacymind_search`, `photography_*`.
+Acceptance Snapshot — 2025-09-09
+- Tools roster: `legacymind_think`, `photography_think`, `think_convo`, `think_plan`, `think_debug`, `think_build`, `think_stuck`, `memories_create`, `memories_moderate`, `inner_voice`, `legacymind_search`, `photography_search`, `photography_memories`, `maintenance_ops`, `detailed_help` (15 tools total).
 - Injection: KG-only; embedding_dim filter enforced; scales inject 5/10/20; thresholds from config.
 - Embeddings: Single provider per runtime; provider/model/dim/embedded_at stamped on writes; no per-call fallback.
 - Inner Voice: Default ON; persists thought with compact Sources; optional auto-extract to staged KG candidates.
