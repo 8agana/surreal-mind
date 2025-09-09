@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use tokio::time::{Duration, Instant};
 use tracing::{debug, info};
 
 #[async_trait]
@@ -17,6 +19,9 @@ pub struct OpenAIEmbedder {
     model: String,
     dims: usize,
     retries: u32,
+    // Simple rate limiter: tokens per second
+    rps_limit: f32,
+    last_call: Arc<AtomicU64>,
 }
 
 #[derive(Serialize)]
@@ -46,6 +51,12 @@ impl OpenAIEmbedder {
         if let Ok(commit) = std::env::var("SURR_COMMIT_HASH") {
             ua.push_str(&format!("; commit={}", &commit[..7.min(commit.len())]));
         }
+
+        let rps_limit = std::env::var("SURR_EMBED_RPS")
+            .ok()
+            .and_then(|s| s.parse::<f32>().ok())
+            .unwrap_or(1.0);
+
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(20))
             .user_agent(ua)
@@ -65,6 +76,8 @@ impl OpenAIEmbedder {
             model,
             dims,
             retries,
+            rps_limit,
+            last_call: Arc::new(AtomicU64::new(0)),
         })
     }
 }
@@ -77,6 +90,19 @@ impl Embedder for OpenAIEmbedder {
             self.model,
             text.len()
         );
+
+        // Simple rate limiting: wait if needed to respect RPS
+        if self.rps_limit > 0.0 {
+            let interval_ms = (1000.0 / self.rps_limit) as u64;
+            let now = Instant::now().elapsed().as_millis() as u64;
+            let last = self.last_call.load(Ordering::SeqCst);
+            if now < last + interval_ms {
+                let delay = last + interval_ms - now;
+                debug!("Rate limiting OpenAI embedding, delaying {}ms", delay);
+                tokio::time::sleep(Duration::from_millis(delay)).await;
+            }
+            self.last_call.store(now, Ordering::SeqCst);
+        }
 
         let body = OpenAIRequest {
             model: &self.model,

@@ -372,7 +372,7 @@ impl SurrealMindServer {
         confidence: Option<f32>,
     ) -> Result<(serde_json::Value, ContinuityResult)> {
         let (default_injection_scale, default_significance) = match mode {
-            "debug" => (4u8, 0.8_f32),
+            "debug" => (3u8, 0.8_f32),
             "build" => (2u8, 0.6_f32),
             "plan" => (3u8, 0.7_f32),
             "stuck" => (3u8, 0.9_f32),
