@@ -329,6 +329,17 @@ impl Config {
             Self::default()
         };
 
+        // Apply env overrides for database configuration (env-first)
+        if let Ok(db_url) = std::env::var("SURR_DB_URL") {
+            config.system.database_url = db_url;
+        }
+        if let Ok(db_ns) = std::env::var("SURR_DB_NS") {
+            config.system.database_ns = db_ns;
+        }
+        if let Ok(db_name) = std::env::var("SURR_DB_DB") {
+            config.system.database_db = db_name;
+        }
+
         // Load runtime configuration from environment variables
         config.runtime = RuntimeConfig::load_from_env();
 
@@ -430,7 +441,7 @@ impl Default for Config {
                 embed_retries: 3,
                 database_url: "127.0.0.1:8000".to_string(),
                 database_ns: "surreal_mind".to_string(),
-                database_db: "consciousness".to_string(),
+                database_db: "conciousness".to_string(),
                 inject_debounce: 1000,
             },
             retrieval: RetrievalConfig {

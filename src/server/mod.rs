@@ -207,6 +207,42 @@ impl ServerHandler for SurrealMindServer {
             Tool {
                 name: "legacymind_think".into(),
                 description: Some("Unified thinking tool with automatic mode routing".into()),
+                input_schema: legacymind_think_schema_map.clone(),
+                annotations: None,
+                output_schema: None,
+            },
+            // Legacy aliases for backward compatibility
+            Tool {
+                name: "think_convo".into(),
+                description: Some("Backward-compatible alias for legacymind_think".into()),
+                input_schema: legacymind_think_schema_map.clone(),
+                annotations: None,
+                output_schema: None,
+            },
+            Tool {
+                name: "think_plan".into(),
+                description: Some("Backward-compatible alias for legacymind_think".into()),
+                input_schema: legacymind_think_schema_map.clone(),
+                annotations: None,
+                output_schema: None,
+            },
+            Tool {
+                name: "think_debug".into(),
+                description: Some("Backward-compatible alias for legacymind_think".into()),
+                input_schema: legacymind_think_schema_map.clone(),
+                annotations: None,
+                output_schema: None,
+            },
+            Tool {
+                name: "think_build".into(),
+                description: Some("Backward-compatible alias for legacymind_think".into()),
+                input_schema: legacymind_think_schema_map.clone(),
+                annotations: None,
+                output_schema: None,
+            },
+            Tool {
+                name: "think_stuck".into(),
+                description: Some("Backward-compatible alias for legacymind_think".into()),
                 input_schema: legacymind_think_schema_map,
                 annotations: None,
                 output_schema: None,
@@ -312,6 +348,27 @@ impl ServerHandler for SurrealMindServer {
         match request.name.as_ref() {
             // Unified thinking tool
             "legacymind_think" => self
+                .handle_legacymind_think(request)
+                .await
+                .map_err(|e| e.into()),
+            // Legacy aliases forwarding to unified handler
+            "think_convo" => self
+                .handle_legacymind_think(request)
+                .await
+                .map_err(|e| e.into()),
+            "think_plan" => self
+                .handle_legacymind_think(request)
+                .await
+                .map_err(|e| e.into()),
+            "think_debug" => self
+                .handle_legacymind_think(request)
+                .await
+                .map_err(|e| e.into()),
+            "think_build" => self
+                .handle_legacymind_think(request)
+                .await
+                .map_err(|e| e.into()),
+            "think_stuck" => self
                 .handle_legacymind_think(request)
                 .await
                 .map_err(|e| e.into()),
@@ -965,6 +1022,55 @@ impl SurrealMindServer {
         );
 
         Ok((memory_ids.len(), enriched))
+    }
+
+    /// Check for mixed embedding dimensions across thoughts and KG tables
+    pub async fn check_embedding_dims(&self) -> Result<()> {
+        use surrealdb::sql;
+
+        // Query distinct embedding dimensions in thoughts
+        let thoughts_dims: Vec<i64> = self
+            .db
+            .query(sql::parse(
+                "SELECT array::len(embedding) AS dim FROM thoughts GROUP BY array::len(embedding)",
+            ).map_err(|e| SurrealMindError::Internal { message: format!("SQL parse error: {}", e) })?)
+            .await
+            .map_err(|e| SurrealMindError::Database { message: format!("Database query error: {}", e) })?
+            .take(0)?;
+
+        // Query distinct dimensions in KG entities
+        let kg_entity_dims: Vec<i64> = self
+            .db
+            .query(sql::parse("SELECT array::len(embedding) AS dim FROM kg_entities GROUP BY array::len(embedding)").map_err(|e| SurrealMindError::Internal { message: format!("SQL parse error: {}", e) })?)
+            .await
+            .map_err(|e| SurrealMindError::Database { message: format!("Database query error: {}", e) })?
+            .take(0)?;
+
+        // Query distinct dimensions in KG observations
+        let kg_obs_dims: Vec<i64> = self
+            .db
+            .query(sql::parse("SELECT array::len(embedding) AS dim FROM kg_observations GROUP BY array::len(embedding)").map_err(|e| SurrealMindError::Internal { message: format!("SQL parse error: {}", e) })?)
+            .await
+            .map_err(|e| SurrealMindError::Database { message: format!("Database query error: {}", e) })?
+            .take(0)?;
+
+        let mut all_dims = Vec::new();
+        all_dims.extend(thoughts_dims);
+        all_dims.extend(kg_entity_dims);
+        all_dims.extend(kg_obs_dims);
+
+        let unique_dims: std::collections::HashSet<_> = all_dims.into_iter().collect();
+
+        if unique_dims.len() > 1 {
+            return Err(SurrealMindError::Database {
+                message: format!(
+                    "Mixed embedding dimensions detected: {:?}. Re-embed to fix.",
+                    unique_dims
+                ),
+            });
+        }
+
+        Ok(())
     }
 }
 

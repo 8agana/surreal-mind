@@ -18,8 +18,18 @@ impl HttpSqlConfig {
     /// Create from a Config object
     pub fn from_config(config: &crate::config::Config, component: &str) -> Self {
         let host = config.system.database_url.clone();
-        let base_url = if host.starts_with("http") {
+        let base_url = if host.starts_with("http://") || host.starts_with("https://") {
             host
+        } else if host.starts_with("ws://") {
+            format!(
+                "http://{}",
+                host.trim_start_matches("ws://").trim_end_matches('/')
+            )
+        } else if host.starts_with("wss://") {
+            format!(
+                "https://{}",
+                host.trim_start_matches("wss://").trim_end_matches('/')
+            )
         } else {
             format!("http://{}", host.trim_end_matches('/'))
         };

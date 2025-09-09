@@ -42,6 +42,29 @@ async fn main() -> Result<()> {
         e
     })?;
 
+    // Optional startup dim-hygiene preflight
+    if config.runtime.embed_strict
+        || std::env::var("SURR_EMBED_STRICT")
+            .map(|v| v == "1")
+            .unwrap_or(false)
+    {
+        if let Err(e) = server.check_embedding_dims().await {
+            return Err(anyhow::anyhow!(
+                "Embedding dimension mismatch detected: {}",
+                e
+            ));
+        }
+    } else if !config.runtime.mcp_no_log {
+        if let Err(e) = server.check_embedding_dims().await {
+            tracing::warn!(
+                "Embedding dimension hygiene issue detected: {}. Re-embed to fix.",
+                e
+            );
+        } else {
+            tracing::debug!("Embedding dimensions are consistent");
+        }
+    }
+
     if !config.runtime.mcp_no_log {
         info!("✅ Server initialized successfully");
         info!(

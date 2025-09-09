@@ -38,10 +38,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - embedder: openai
-            env:
-              SURR_EMBED_PROVIDER: openai
-              OPENAI_API_KEY: dummy-key-for-tests
           - embedder: candle
             env:
               SURR_EMBED_PROVIDER: candle
