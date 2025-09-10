@@ -133,6 +133,7 @@ Notes
   2) `cargo run --bin reembed` (HTTP client UA: `surreal-mind/<ver> (component=reembed; ns=<ns>; db=<db>[; commit=<sha>])`)
   3) Verify: `SELECT array::len(embedding), count() FROM thoughts GROUP BY array::len(embedding);`
 - Re-embed KG: `cargo run --bin reembed_kg` (observes active provider; persists dims and metadata).
+- Fix dimension mismatches: `cargo run --bin fix_dimensions` (corrects thoughts with wrong embedding dimensions to current provider/model, useful after model switches).
 
 ## Configuration
 - Env-first; `surreal_mind.toml` mirrors defaults. Key env vars:
