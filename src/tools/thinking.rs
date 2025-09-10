@@ -3,6 +3,7 @@
 use crate::error::{Result, SurrealMindError};
 use crate::frameworks::{ConvoOpts, run_convo as frameworks_run_convo};
 use crate::server::SurrealMindServer;
+use anyhow::Context;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde_json::json;
 use std::collections::HashSet;

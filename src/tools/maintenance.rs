@@ -3,6 +3,7 @@
 use crate::error::{Result, SurrealMindError};
 use crate::indexes::{IndexHealth, TableInfo, get_expected_indexes};
 use crate::server::SurrealMindServer;
+use anyhow::Context;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde_json::json;
 use std::fs;
