@@ -211,42 +211,6 @@ impl ServerHandler for SurrealMindServer {
                 annotations: None,
                 output_schema: None,
             },
-            // Legacy aliases for backward compatibility
-            Tool {
-                name: "think_convo".into(),
-                description: Some("Backward-compatible alias for legacymind_think".into()),
-                input_schema: legacymind_think_schema_map.clone(),
-                annotations: None,
-                output_schema: None,
-            },
-            Tool {
-                name: "think_plan".into(),
-                description: Some("Backward-compatible alias for legacymind_think".into()),
-                input_schema: legacymind_think_schema_map.clone(),
-                annotations: None,
-                output_schema: None,
-            },
-            Tool {
-                name: "think_debug".into(),
-                description: Some("Backward-compatible alias for legacymind_think".into()),
-                input_schema: legacymind_think_schema_map.clone(),
-                annotations: None,
-                output_schema: None,
-            },
-            Tool {
-                name: "think_build".into(),
-                description: Some("Backward-compatible alias for legacymind_think".into()),
-                input_schema: legacymind_think_schema_map.clone(),
-                annotations: None,
-                output_schema: None,
-            },
-            Tool {
-                name: "think_stuck".into(),
-                description: Some("Backward-compatible alias for legacymind_think".into()),
-                input_schema: legacymind_think_schema_map,
-                annotations: None,
-                output_schema: None,
-            },
             Tool {
                 name: "maintenance_ops".into(),
                 description: Some("Maintenance operations for archival and cleanup".into()),
@@ -351,27 +315,7 @@ impl ServerHandler for SurrealMindServer {
                 .handle_legacymind_think(request)
                 .await
                 .map_err(|e| e.into()),
-            // Legacy aliases forwarding to unified handler
-            "think_convo" => self
-                .handle_legacymind_think(request)
-                .await
-                .map_err(|e| e.into()),
-            "think_plan" => self
-                .handle_legacymind_think(request)
-                .await
-                .map_err(|e| e.into()),
-            "think_debug" => self
-                .handle_legacymind_think(request)
-                .await
-                .map_err(|e| e.into()),
-            "think_build" => self
-                .handle_legacymind_think(request)
-                .await
-                .map_err(|e| e.into()),
-            "think_stuck" => self
-                .handle_legacymind_think(request)
-                .await
-                .map_err(|e| e.into()),
+
             // Intelligence and utility
             "maintenance_ops" => self
                 .handle_maintenance_ops(request)
@@ -392,11 +336,7 @@ impl ServerHandler for SurrealMindServer {
                 .handle_inner_voice_retrieve(request)
                 .await
                 .map_err(|e| e.into()),
-            // Backward-compatible alias
-            "inner_voice.retrieve" => self
-                .handle_inner_voice_retrieve(request)
-                .await
-                .map_err(|e| e.into()),
+
             // Help
             "detailed_help" => self
                 .handle_detailed_help(request)

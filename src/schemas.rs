@@ -167,12 +167,10 @@ pub fn detailed_help_schema() -> Arc<Map<String, Value>> {
         "type": "object",
         "properties": {
             "tool": {"type": "string", "enum": [
-                // Canonical tool names only
-                "think_convo", "think_plan", "think_debug", "think_build", "think_stuck",
+                "legacymind_think", "photography_think", "photography_memories",
                 "memories_create", "memories_moderate",
                 "legacymind_search", "photography_search",
-                "maintenance_ops",
-                "inner_voice"
+                "maintenance_ops", "inner_voice", "detailed_help"
             ]},
             "format": {"type": "string", "enum": ["compact", "full"], "default": "full"}
         }

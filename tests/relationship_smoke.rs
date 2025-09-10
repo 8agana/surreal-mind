@@ -92,8 +92,8 @@ async fn relationship_flow_smoke() {
     );
     s_args.insert("top_k".into(), serde_json::Value::Number(10u64.into()));
     let items_val = server
-        .handle_knowledgegraph_search(CallToolRequestParam {
-            name: "memories_search".into(),
+        .handle_unified_search(CallToolRequestParam {
+            name: "legacymind_search".into(),
             arguments: Some(s_args),
         })
         .await
