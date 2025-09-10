@@ -45,7 +45,7 @@ echo "=== Test 3: Call Tool ==="
     sleep 0.5
     echo '{"jsonrpc":"2.0","method":"notifications/initialized"}'
     sleep 0.5
-    echo '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"think_convo","arguments":{"content":"This is a test thought for MCP validation"}}}'
+    echo '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"legacymind_think","arguments":{"content":"This is a test thought for MCP validation"}}}'
     sleep 3
     echo '{"jsonrpc":"2.0","id":999,"method":"exit"}'
 ) | RUST_LOG=debug cargo run 2>&1 | grep -A 20 -B 5 '"result"'

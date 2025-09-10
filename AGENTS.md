@@ -58,12 +58,10 @@ Quick Ops (Post-Restart)
   - Same features as legacymind_think but scoped to photography namespace
   - Injection candidate pool: 500
 
-### Legacy Think Tools (Still Available)
-- `think_convo`, `think_plan`, `think_debug`, `think_build`, `think_stuck`: Now internally route through the unified system
-
 ### Search & Knowledge Graph
 - `legacymind_search`: Unified search — memories by default; `include_thoughts=true` also searches thoughts
 - `photography_search`: Photography-scoped search
+- `photography_memories`: Photography-scoped knowledge graph operations (create/search/moderate)
 - `memories_create` (alias: `knowledgegraph_create`): Create KG entities/observations
 - `memories_moderate` (alias: `knowledgegraph_moderate`): Review/stage KG entries
 

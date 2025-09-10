@@ -6,7 +6,7 @@ use rmcp::service::RequestContext;
 use surreal_mind::{config::Config, server::SurrealMindServer};
 
 #[tokio::test]
-async fn test_tools_list_has_think_convo_when_enabled() {
+async fn test_tools_list_has_legacymind_think_when_enabled() {
     if std::env::var("RUN_DB_TESTS").is_err() {
         return;
     }
@@ -20,11 +20,11 @@ async fn test_tools_list_has_think_convo_when_enabled() {
         .await
         .expect("list_tools");
     let names: Vec<_> = res.tools.iter().map(|t| t.name.to_string()).collect();
-    assert!(names.contains(&"think_convo".to_string()));
+    assert!(names.contains(&"legacymind_think".to_string()));
 }
 
 #[tokio::test]
-async fn test_call_tool_invalid_params_rejected_when_enabled() {
+async fn test_call_tool_invalid_params_rejected_legacymind_think() {
     if std::env::var("RUN_DB_TESTS").is_err() {
         return;
     }
@@ -40,7 +40,7 @@ async fn test_call_tool_invalid_params_rejected_when_enabled() {
     ); // invalid
 
     let req = CallToolRequestParam {
-        name: "think_convo".into(),
+        name: "legacymind_think".into(),
         arguments: Some(obj),
     };
 
