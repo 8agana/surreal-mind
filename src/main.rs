@@ -49,11 +49,16 @@ async fn main() -> Result<()> {
             e
         })?;
 
-    // Optional startup dim-hygiene preflight
-    if config.runtime.embed_strict
-        || std::env::var("SURR_EMBED_STRICT")
-            .map(|v| v == "1")
-            .unwrap_or(false)
+    // Optional startup dim-hygiene preflight (bypassed by SURR_SKIP_DIM_CHECK)
+    let skip_dim_check = std::env::var("SURR_SKIP_DIM_CHECK")
+        .map(|v| v == "1" || v == "true")
+        .unwrap_or(false);
+
+    if !skip_dim_check
+        && (config.runtime.embed_strict
+            || std::env::var("SURR_EMBED_STRICT")
+                .map(|v| v == "1")
+                .unwrap_or(false))
     {
         if let Err(e) = server
             .check_embedding_dims()
@@ -65,7 +70,7 @@ async fn main() -> Result<()> {
                 e
             ));
         }
-    } else if !config.runtime.mcp_no_log {
+    } else if !skip_dim_check && !config.runtime.mcp_no_log {
         if let Err(e) = server.check_embedding_dims().await {
             tracing::warn!(
                 "Embedding dimension hygiene issue detected: {}. Re-embed to fix.",
@@ -79,7 +84,7 @@ async fn main() -> Result<()> {
     if !config.runtime.mcp_no_log {
         info!("✅ Server initialized successfully");
         info!(
-            "🛠️  Available tools: think_convo, think_plan, think_debug, think_build, think_stuck, memories_create, memories_moderate, maintenance_ops, detailed_help, inner_voice, photography_think, photography_memories, legacymind_search, photography_search"
+            "🛠️  Available tools: legacymind_think, memories_create, memories_moderate, maintenance_ops, detailed_help, inner_voice, photography_think, photography_memories, legacymind_search, photography_search"
         );
     }
 

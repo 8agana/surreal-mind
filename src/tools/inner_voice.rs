@@ -83,7 +83,8 @@ pub struct Candidate {
 }
 
 /// Regex for sentence boundary detection
-static SENTENCE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"[.!?]["”"']?\s"#).unwrap());
+static SENTENCE_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"[.!?]["”"']?\s"#).expect("regex should compile"));
 
 impl SurrealMindServer {
     /// Handle the inner_voice tool call

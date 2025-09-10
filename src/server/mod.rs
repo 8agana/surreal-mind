@@ -498,7 +498,7 @@ impl SurrealMindServer {
             }
         }
 
-        let db = db.unwrap();
+        let db = db.expect("database should be initialized");
 
         // Sign in with credentials
         db.signin(surrealdb::opt::auth::Root {
@@ -558,9 +558,8 @@ impl SurrealMindServer {
             .and_then(|v| v.parse::<usize>().ok())
             .filter(|&v| v > 0)
             .unwrap_or(5000);
-        let thoughts_cache = LruCache::new(
-            NonZeroUsize::new(cache_max).unwrap_or_else(|| NonZeroUsize::new(1).unwrap()),
-        );
+        let thoughts_cache =
+            LruCache::new(NonZeroUsize::new(cache_max).unwrap_or(NonZeroUsize::MIN));
 
         // Optionally connect a photography database handle
         let db_photo: Option<Arc<Surreal<Client>>> = if config.runtime.photo_enable {

@@ -283,7 +283,9 @@ impl Default for RuntimeConfig {
             photo_user: None,
             photo_pass: None,
             transport: "stdio".to_string(),
-            http_bind: "127.0.0.1:8787".parse().unwrap(),
+            http_bind: "127.0.0.1:8787"
+                .parse()
+                .expect("default bind address should parse"),
             http_path: "/mcp".to_string(),
             bearer_token: None,
             allow_token_in_url: false,
@@ -471,9 +473,11 @@ impl Config {
 
     /// Get submode configuration by name, with fallback to "build" mode
     pub fn get_submode(&self, mode: &str) -> &SubmodeConfig {
-        self.submodes
-            .get(mode)
-            .unwrap_or_else(|| self.submodes.get("build").unwrap())
+        self.submodes.get(mode).unwrap_or_else(|| {
+            self.submodes
+                .get("build")
+                .expect("build submode should exist")
+        })
     }
 }
 
@@ -625,7 +629,9 @@ impl RuntimeConfig {
             photo_user: None,
             photo_pass: None,
             transport: "stdio".to_string(),
-            http_bind: "127.0.0.1:8787".parse().unwrap(),
+            http_bind: "127.0.0.1:8787"
+                .parse()
+                .expect("default bind address should parse"),
             http_path: "/mcp".to_string(),
             bearer_token: None,
             allow_token_in_url: false,
