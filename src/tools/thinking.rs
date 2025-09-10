@@ -1364,10 +1364,13 @@ impl SurrealMindServer {
         // Include verification result in the response if present
         let mut final_result = result;
         if let Some(verification) = verification_result {
-            let map = final_result.as_object_mut().unwrap();
+            let map = final_result
+                .as_object_mut()
+                .context("Expected final_result to be a JSON object")?;
             map.insert(
                 "verification".to_string(),
-                serde_json::to_value(verification).unwrap_or(serde_json::Value::Null),
+                serde_json::to_value(verification)
+                    .map_err(|e| anyhow::anyhow!("Serialization error: {}", e))?,
             );
             final_result = serde_json::Value::Object(map.clone());
         }

@@ -166,6 +166,7 @@ export SURR_CACHE_WARM=64           # Cache warm-up batch size on DB fallback (d
 # Embedding Configuration
 export SURR_EMBED_RETRIES=3         # Max retries for embedding API calls (default: 3)
 export SURR_EMBED_STRICT=false      # If true, error when no provider configured
+export SURR_SKIP_DIM_CHECK=false    # If true, bypass startup embedding dimension hygiene check
 
 # Retrieval Tuning
 export SURR_RETRIEVE_CANDIDATES=500 # DB candidate limit override (default: SURR_DB_LIMIT, range: 50-5000)

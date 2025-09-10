@@ -175,7 +175,10 @@ impl SurrealMindServer {
 
         // Check and create fields
         for field_def in &fields {
-            let field_name = field_def.split(':').next().unwrap();
+            let field_name = field_def
+                .split(':')
+                .next()
+                .context("field definition should have ':' separator")?;
             let full_field_def = format!(
                 "DEFINE FIELD {} ON TABLE thoughts TYPE {}",
                 field_def, field_def

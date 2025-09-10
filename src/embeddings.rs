@@ -142,7 +142,10 @@ impl Embedder for OpenAIEmbedder {
 
             if !response.status().is_success() {
                 let status = response.status();
-                let error_text = response.text().await.unwrap_or_default();
+                let error_text = response
+                    .text()
+                    .await
+                    .context("Failed to read error response from OpenAI API")?;
                 last_err = Some(anyhow::anyhow!(
                     "OpenAI API error {} for model '{}' ({} chars): {}",
                     status,

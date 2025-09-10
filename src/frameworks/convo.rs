@@ -142,7 +142,9 @@ fn select_methodology(sense: &ConvoSense) -> &'static str {
 }
 
 fn one_line_summary(content: &str) -> String {
-    let cleaned = Regex::new(r"[^\w\s]").unwrap().replace_all(content, "");
+    let cleaned = Regex::new(r"[^\w\s]")
+        .expect("regex should compile")
+        .replace_all(content, "");
     let words: Vec<&str> = cleaned.split_whitespace().collect();
     if words.len() < 5 {
         return content.chars().take(100).collect();
@@ -294,7 +296,11 @@ pub fn run_convo_impl(content: &str, opts: &ConvoOpts) -> Result<FrameworkEnvelo
     let sense = analyze(&norm);
     let method = select_methodology(&sense);
     let hash = blake3::hash(norm.as_bytes());
-    let seed = u64::from_le_bytes(hash.as_bytes()[0..8].try_into().unwrap());
+    let seed = u64::from_le_bytes(
+        hash.as_bytes()[0..8]
+            .try_into()
+            .expect("blake3 hash should be at least 8 bytes"),
+    );
     let data = generate_convo_data(method, &norm, seed, &opts.tag_whitelist);
     validate(&data, opts.strict_json)?;
     Ok(FrameworkEnvelope {
