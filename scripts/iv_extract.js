@@ -33,10 +33,13 @@ async function run() {
   const cliArgsJson = process.env.IV_CLI_ARGS_JSON || '["generate","--model","{model}","--response-mime-type","application/json","--temperature","0"]';
   let cliArgs;
   try { cliArgs = JSON.parse(cliArgsJson); } catch { cliArgs = ["generate","--model","{model}","--response-mime-type","application/json","--temperature","0"]; }
-  const strictJson = (process.env.IV_STRICT_JSON || 'true').toLowerCase() !== 'false';
+  // Be tolerant by default for CLI output; one repair pass will be attempted regardless
+  const strictJson = (process.env.IV_STRICT_JSON || 'false').toLowerCase() !== 'false';
   const perTimeoutMs = parseInt(process.env.IV_TIMEOUT_MS || '20000', 10);
   const totalTimeoutMs = parseInt(process.env.IV_TOTAL_TIMEOUT_MS || '30000', 10);
   const allowGrok = (process.env.IV_ALLOW_GROK || 'true').toLowerCase() !== 'false';
+  const maxEntities = parseInt(process.env.IV_MAX_ENTITIES || '200', 10);
+  const maxEdges = parseInt(process.env.IV_MAX_EDGES || '300', 10);
 
   const deadline = Date.now() + totalTimeoutMs;
 
@@ -60,9 +63,35 @@ async function run() {
       console.error(JSON.stringify({ stage: 'attempt', provider: model, status: 'fail', reason: 'invalid_json' }));
       continue;
     }
-    const valid = validateExtraction(obj);
+    // Inject doc_meta and enforce caps
+    obj.doc_meta = obj.doc_meta || {};
+    obj.doc_meta.origin = 'inner_voice';
+    obj.doc_meta.model = model;
+    obj.doc_meta.latency_ms = latency;
+    const e = Array.isArray(obj.entities) ? obj.entities : [];
+    const r = Array.isArray(obj.edges) ? obj.edges : [];
+    let truncated = false;
+    if (e.length > maxEntities) { obj.entities = e.slice(0, maxEntities); truncated = true; }
+    if (r.length > maxEdges) { obj.edges = r.slice(0, maxEdges); truncated = true; }
+    if (truncated) obj.truncated = true;
+
+    // Optional AJV validation if available
+    let valid = { ok: true };
+    try {
+      const Ajv = require('ajv');
+      const ajv = new Ajv({ allErrors: true, strict: false });
+      const schemaPath = path.join(__dirname, '..', 'schemas', 'kg_extraction.schema.json');
+      const schema = JSON.parse(fs.readFileSync(schemaPath, 'utf8'));
+      const validate = ajv.compile(schema);
+      if (!validate(obj)) {
+        valid = { ok: false, reason: 'ajv_invalid', errors: validate.errors };
+      }
+    } catch (_) {
+      // ajv not present; fall back to lightweight validation
+      valid = validateExtraction(obj);
+    }
     if (!valid.ok) {
-      console.error(JSON.stringify({ stage: 'attempt', provider: model, status: 'fail', reason: 'schema_invalid', details: valid.reason }));
+      console.error(JSON.stringify({ stage: 'attempt', provider: model, status: 'fail', reason: valid.reason || 'schema_invalid' }));
       continue;
     }
     // Success
@@ -80,8 +109,34 @@ async function run() {
       const latency = Date.now() - start;
       let obj = safeJsonParse(out, strictJson);
       if (!obj) throw new Error('invalid_json');
-      const valid = validateExtraction(obj);
-      if (!valid.ok) throw new Error('schema_invalid');
+      // Inject doc_meta and caps for Grok as well
+      obj.doc_meta = obj.doc_meta || {};
+      obj.doc_meta.origin = 'inner_voice';
+      obj.doc_meta.model = 'grok-code-fast-1';
+      obj.doc_meta.latency_ms = latency;
+      const e = Array.isArray(obj.entities) ? obj.entities : [];
+      const r = Array.isArray(obj.edges) ? obj.edges : [];
+      let truncated = false;
+      if (e.length > maxEntities) { obj.entities = e.slice(0, maxEntities); truncated = true; }
+      if (r.length > maxEdges) { obj.edges = r.slice(0, maxEdges); truncated = true; }
+      if (truncated) obj.truncated = true;
+
+      // Optional AJV validation
+      let valid = { ok: true };
+      try {
+        const Ajv = require('ajv');
+        const ajv = new Ajv({ allErrors: true, strict: false });
+        const schemaPath = path.join(__dirname, '..', 'schemas', 'kg_extraction.schema.json');
+        const schema = JSON.parse(fs.readFileSync(schemaPath, 'utf8'));
+        const validate = ajv.compile(schema);
+        if (!validate(obj)) {
+          valid = { ok: false, reason: 'ajv_invalid', errors: validate.errors };
+        }
+      } catch (_) {
+        valid = validateExtraction(obj);
+      }
+      if (!valid.ok) throw new Error(valid.reason || 'schema_invalid');
+
       if (outToStdout) process.stdout.write(JSON.stringify(obj));
       else fs.writeFileSync(args.out, JSON.stringify(obj));
       console.error(JSON.stringify({ stage: 'result', provider: 'grok-code-fast-1', entities: (obj.entities||[]).length, edges: (obj.edges||[]).length, truncated: !!obj.truncated, latency_ms: latency }));
@@ -91,11 +146,9 @@ async function run() {
     }
   }
 
-  // Give back an empty but valid structure
-  const empty = { entities: [], edges: [], doc_meta: { origin: 'inner_voice', model: '', latency_ms: 0 } };
-  if (outToStdout) process.stdout.write(JSON.stringify(empty));
-  else fs.writeFileSync(args.out, JSON.stringify(empty));
-  process.exit(0);
+  // Total failure: emit fatal telemetry and exit non-zero
+  console.error(JSON.stringify({ stage: 'fatal', reason: 'no_provider_succeeded' }));
+  process.exit(3);
 }
 
 function parseArgs(argv) {
