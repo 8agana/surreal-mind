@@ -403,6 +403,11 @@ impl SurrealMindServer {
                     .auto_extract_candidates_via_cli(&synthesized, &thought_id)
                     .await
                 {
+                    tracing::debug!(
+                        "inner_voice: CLI extractor staged candidates: entities={}, edges={}",
+                        ec,
+                        rc
+                    );
                     extracted_entities = ec;
                     extracted_rels = rc;
                 }
@@ -422,6 +427,11 @@ impl SurrealMindServer {
                     )
                     .await
                 {
+                    tracing::debug!(
+                        "inner_voice: Grok fallback staged candidates: entities={}, edges={}",
+                        ec,
+                        rc
+                    );
                     extracted_entities = ec;
                     extracted_rels = rc;
                 }
@@ -736,9 +746,14 @@ impl SurrealMindServer {
         let _ = std::fs::remove_file(&tmp_path);
 
         if !out.status.success() {
+            tracing::debug!(
+                "inner_voice: CLI extractor failed (status={:?}); considering Grok fallback",
+                out.status.code()
+            );
             return Ok((0, 0));
         }
         let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+        tracing::debug!("inner_voice: CLI extractor produced {} bytes", stdout.len());
         let parsed: serde_json::Value =
             serde_json::from_str(&stdout).unwrap_or(serde_json::json!({
                 "entities": [],
