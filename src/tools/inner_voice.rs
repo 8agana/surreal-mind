@@ -325,8 +325,8 @@ impl SurrealMindServer {
             p
         }
 
-        // Try Gemini CLI first when requested and we have snippets to ground on
-        if provider_pref.eq_ignore_ascii_case("gemini_cli") && !snippets.is_empty() {
+        // Try Gemini CLI first when requested (even if snippets are empty)
+        if provider_pref.eq_ignore_ascii_case("gemini_cli") {
             let cli_cmd = std::env::var("IV_SYNTH_CLI_CMD").unwrap_or_else(|_| "gemini".to_string());
             let cli_model = std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-2.5-pro".to_string());
             let cli_args_json = std::env::var("IV_SYNTH_CLI_ARGS_JSON")
@@ -357,7 +357,7 @@ impl SurrealMindServer {
             let grok_key = std::env::var("GROK_API_KEY").unwrap_or_default();
             let allow_grok = std::env::var("IV_ALLOW_GROK").unwrap_or_else(|_| "true".to_string()) != "false";
             let messages = build_synthesis_messages(&params.query, &snippets);
-            if allow_grok && !grok_key.is_empty() && !snippets.is_empty() {
+            if allow_grok && !grok_key.is_empty() {
                 if let Ok(ans) = call_grok(&base, &model, &grok_key, &messages).await {
                     synthesized = ans;
                     synth_provider = "grok".to_string();
