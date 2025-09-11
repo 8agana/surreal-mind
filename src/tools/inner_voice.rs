@@ -389,19 +389,52 @@ impl SurrealMindServer {
             .unwrap_or(self.config.runtime.inner_voice.auto_extract_default);
         let mut extracted_entities = 0usize;
         let mut extracted_rels = 0usize;
-        if auto_extract && !grok_key.is_empty() {
-            if let Ok((ec, rc)) = self
-                .auto_extract_candidates_from_text(
-                    &base,
-                    &model,
-                    &grok_key,
-                    &synthesized,
-                    &thought_id,
-                )
-                .await
+        if auto_extract {
+            // Prefer CLI extractor when enabled; fall back to Grok when allowed
+            // Default: CLI extractor enabled, but allow override via env
+            let use_cli = std::env::var("IV_USE_CLI_EXTRACTOR")
+                .map(|v| v.trim() != "false")
+                .unwrap_or(true);
+            let allow_grok =
+                std::env::var("IV_ALLOW_GROK").unwrap_or_else(|_| "true".to_string()) != "false";
+
+            if use_cli {
+                if let Ok((ec, rc)) = self
+                    .auto_extract_candidates_via_cli(&synthesized, &thought_id)
+                    .await
+                {
+                    tracing::debug!(
+                        "inner_voice: CLI extractor staged candidates: entities={}, edges={}",
+                        ec,
+                        rc
+                    );
+                    extracted_entities = ec;
+                    extracted_rels = rc;
+                }
+            }
+
+            if (extracted_entities == 0 && extracted_rels == 0)
+                && allow_grok
+                && !grok_key.is_empty()
             {
-                extracted_entities = ec;
-                extracted_rels = rc;
+                if let Ok((ec, rc)) = self
+                    .auto_extract_candidates_from_text(
+                        &base,
+                        &model,
+                        &grok_key,
+                        &synthesized,
+                        &thought_id,
+                    )
+                    .await
+                {
+                    tracing::debug!(
+                        "inner_voice: Grok fallback staged candidates: entities={}, edges={}",
+                        ec,
+                        rc
+                    );
+                    extracted_entities = ec;
+                    extracted_rels = rc;
+                }
             }
         }
 
@@ -662,6 +695,218 @@ struct ExtractRel {
 }
 
 impl SurrealMindServer {
+    /// Use CLI (Gemini-first) to extract candidate entities/relationships and stage them into *_candidates tables
+    pub async fn auto_extract_candidates_via_cli(
+        &self,
+        text: &str,
+        thought_id: &str,
+    ) -> Result<(usize, usize)> {
+        // Preflight: require Node to be available; if missing, disable CLI path
+        if !self.cli_prereqs_ok().await {
+            tracing::warn!(target: "inner_voice", "CLI extractor prerequisites missing (node). Skipping CLI and allowing fallback.");
+            return Ok((0, 0));
+        }
+
+        use std::process::Stdio;
+        use tokio::process::Command;
+        // Prepare input payload
+        let mut hasher = Hasher::new();
+        hasher.update(text.as_bytes());
+        let prompt_hash = hasher.finalize().to_hex().to_string();
+        let input = serde_json::json!({
+            "synth_text": text,
+            "doc_id": thought_id,
+            "prompt_hash": prompt_hash,
+        });
+
+        // Write to a temp file
+        let tmp_path = std::env::temp_dir().join(format!("iv_in_{}.json", thought_id));
+        let payload = serde_json::to_vec(&input)?;
+        std::fs::write(&tmp_path, payload).map_err(|e| SurrealMindError::Internal {
+            message: format!("Failed to write temp file {}: {}", tmp_path.display(), e),
+        })?;
+
+        // Execute Node script
+        let script_path =
+            std::env::var("IV_SCRIPT_PATH").unwrap_or_else(|_| "scripts/iv_extract.js".to_string());
+        let mut cmd = Command::new("node");
+        cmd.arg(&script_path)
+            .arg("--input")
+            .arg(&tmp_path)
+            .arg("--out")
+            .arg("-")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let child = cmd.spawn().map_err(|e| SurrealMindError::Internal {
+            message: format!("Failed to spawn CLI extractor: {}", e),
+        })?;
+        let out = child
+            .wait_with_output()
+            .await
+            .map_err(|e| SurrealMindError::Internal {
+                message: format!("CLI extractor wait failed: {}", e),
+            })?;
+
+        // Clean up temp file best-effort
+        let _ = std::fs::remove_file(&tmp_path);
+
+        if !out.status.success() {
+            tracing::debug!(
+                "inner_voice: CLI extractor failed (status={:?}); considering Grok fallback",
+                out.status.code()
+            );
+            return Ok((0, 0));
+        }
+        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+        tracing::debug!("inner_voice: CLI extractor produced {} bytes", stdout.len());
+        let parsed: serde_json::Value =
+            serde_json::from_str(&stdout).unwrap_or(serde_json::json!({
+                "entities": [],
+                "edges": []
+            }));
+        let entities = parsed
+            .get("entities")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let edges = parsed
+            .get("edges")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        // Map entity ids to labels for edge name resolution
+        use std::collections::HashMap;
+        let mut id_to_label: HashMap<String, String> = HashMap::new();
+        for e in &entities {
+            let id = e
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let label = e
+                .get("label")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if !id.is_empty() && !label.is_empty() {
+                id_to_label.insert(id, label);
+            }
+        }
+
+
+        // Stage entities (deterministic IDs for idempotency)
+        let mut ecount = 0usize;
+        for e in entities {
+            let name = e
+                .get("label")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if name.is_empty() {
+                continue;
+            }
+            let etype = e
+                .get("type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            // Stable id key: sha1(doc_id|name|etype)
+            let mut h = Hasher::new();
+            h.update(thought_id.as_bytes());
+            h.update(b"|");
+            h.update(name.as_bytes());
+            h.update(b"|");
+            h.update(etype.as_bytes());
+            let key = h.finalize().to_hex().to_string();
+
+            let existing: Vec<serde_json::Value> = self
+                .db
+                .query("SELECT meta::id(id) as id FROM type::thing('kg_entity_candidates', $id)")
+                .bind(("id", key.clone()))
+                .await?
+                .take(0)?;
+            if existing.is_empty() {
+                // Create with deterministic id; if a race occurs and record exists, ignore error
+                let _ = self
+                    .db
+                    .query("CREATE type::thing('kg_entity_candidates', $id) SET created_at = time::now(), name = $n, entity_type = $t, confidence = 0.6, status = 'pending', data = { staged_by_thought: $th, origin: 'inner_voice' }")
+                    .bind(("id", key))
+                    .bind(("n", name))
+                    .bind(("t", etype))
+                    .bind(("th", thought_id.to_string()))
+                    .await;
+                ecount += 1;
+            }
+        }
+
+
+        let mut rcount = 0usize;
+        for r in edges {
+            let from_id = r.get("from_id").and_then(|v| v.as_str()).unwrap_or("");
+            let to_id = r.get("to_id").and_then(|v| v.as_str()).unwrap_or("");
+            let kind = r
+                .get("relation")
+                .and_then(|v| v.as_str())
+                .unwrap_or("related_to")
+                .to_string();
+            let src = id_to_label.get(from_id).cloned().unwrap_or_default();
+            let dst = id_to_label.get(to_id).cloned().unwrap_or_default();
+            if src.is_empty() || dst.is_empty() {
+                continue;
+            }
+            let conf = r
+                .get("confidence")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.6_f64) as f32;
+
+            // Stable edge id key: sha1(doc_id|src|dst|kind)
+            let mut h = Hasher::new();
+            h.update(thought_id.as_bytes());
+            h.update(b"|");
+            h.update(src.as_bytes());
+            h.update(b"|");
+            h.update(dst.as_bytes());
+            h.update(b"|");
+            h.update(kind.as_bytes());
+            let key = h.finalize().to_hex().to_string();
+
+            let existing: Vec<serde_json::Value> = self
+                .db
+                .query("SELECT meta::id(id) as id FROM type::thing('kg_edge_candidates', $id)")
+                .bind(("id", key.clone()))
+                .await?
+                .take(0)?;
+            if existing.is_empty() {
+                let _ = self
+                    .db
+                    .query("CREATE type::thing('kg_edge_candidates', $id) SET created_at = time::now(), source_name = $s, target_name = $t, rel_type = $k, confidence = $c, status = 'pending', data = { staged_by_thought: $th, origin: 'inner_voice' }")
+                    .bind(("id", key))
+                    .bind(("s", src))
+                    .bind(("t", dst))
+                    .bind(("k", kind))
+                    .bind(("c", conf))
+                    .bind(("th", thought_id.to_string()))
+                    .await;
+                rcount += 1;
+            }
+        }
+
+        Ok((ecount, rcount))
+    }
+
+
+    /// Lightweight preflight: ensure Node is present; Gemini CLI availability is handled by the Node runner
+    async fn cli_prereqs_ok(&self) -> bool {
+        use tokio::process::Command;
+        match Command::new("node").arg("--version").output().await {
+            Ok(o) => o.status.success(),
+            Err(_) => false,
+        }
+    }
+
     /// Use Grok to extract candidate entities/relationships and stage them into *_candidates tables
     pub async fn auto_extract_candidates_from_text(
         &self,
