@@ -1,0 +1,11 @@
+{
+  "name": "surreal-mind-iv-scripts",
+  "private": true,
+  "type": "commonjs",
+  "version": "0.1.0",
+  "description": "Helper scripts for inner_voice extraction (Gemini CLI + Grok)",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "ajv": "^8.12.0"
+  }
+}
