@@ -14,6 +14,7 @@ use serde_json::json;
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
 use unicode_normalization::UnicodeNormalization;
+use tokio::process::Command;
 
 /// Parameters for the inner_voice tool
 #[derive(Debug, serde::Deserialize)]
@@ -300,24 +301,87 @@ impl SurrealMindServer {
             })
             .collect();
 
-        // Synthesize with Grok (required behavior). If missing key, produce a gentle self-question.
-        let base =
-            std::env::var("GROK_BASE_URL").unwrap_or_else(|_| "https://api.x.ai/v1".to_string());
-        let model = std::env::var("GROK_MODEL").unwrap_or_else(|_| "grok-code-fast-1".to_string());
-        let grok_key = std::env::var("GROK_API_KEY").unwrap_or_default();
-        let messages = build_synthesis_messages(&params.query, &snippets);
+        // Synthesize answer — prefer Gemini CLI when configured, else Grok HTTP.
         let mut synthesized = String::new();
-        if !grok_key.is_empty() && !snippets.is_empty() {
-            if let Ok(ans) = call_grok(&base, &model, &grok_key, &messages).await {
-                synthesized = ans;
+        let mut synth_provider = String::new();
+        let mut synth_model = String::new();
+
+        let provider_pref = std::env::var("IV_SYNTH_PROVIDER").unwrap_or_else(|_| "gemini_cli".to_string());
+
+        // Helper: build a single-text prompt for CLI models from snippets
+        fn build_cli_prompt(user_query: &str, snippets: &[Snippet]) -> String {
+            let mut p = String::new();
+            p.push_str("You are a precise synthesis engine.\n");
+            p.push_str("Answer the user's question using ONLY the snippets.\n");
+            p.push_str("Constraints: <=3 sentences; no hedging; no requests for more context; cite nothing.\n\n");
+            p.push_str(&format!("Question: {}\n\n", user_query.trim()));
+            p.push_str("Snippets:\n");
+            for (i, s) in snippets.iter().enumerate() {
+                let mut text = s.text.clone();
+                cap_text(&mut text, 800);
+                p.push_str(&format!("[{}] {}\n", i + 1, text));
+            }
+            p.push_str("\nAnswer:\n");
+            p
+        }
+
+        // Try Gemini CLI first when requested and we have snippets to ground on
+        if provider_pref.eq_ignore_ascii_case("gemini_cli") && !snippets.is_empty() {
+            let cli_cmd = std::env::var("IV_SYNTH_CLI_CMD").unwrap_or_else(|_| "gemini".to_string());
+            let cli_model = std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-2.5-pro".to_string());
+            let cli_args_json = std::env::var("IV_SYNTH_CLI_ARGS_JSON")
+                .unwrap_or_else(|_| "[\"generate\",\"--model\",\"{model}\",\"--temperature\",\"0.2\"]".to_string());
+            let cli_timeout_ms: u64 = std::env::var("IV_SYNTH_TIMEOUT_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(20_000);
+            let cli_args: Vec<String> = serde_json::from_str(&cli_args_json).unwrap_or_else(|_| vec!["generate".into(), "--model".into(), "{model}".into(), "--temperature".into(), "0.2".into()]);
+
+            let args: Vec<String> = cli_args
+                .into_iter()
+                .map(|a| if a == "{model}" { cli_model.clone() } else { a })
+                .collect();
+
+            // Spawn CLI and feed prompt via stdin
+            match SurrealMindServer::synth_via_cli(&cli_cmd, &args, &build_cli_prompt(&params.query, &snippets), cli_timeout_ms).await {
+                Ok(out) if !out.trim().is_empty() => {
+                    synthesized = out.trim().to_string();
+                    synth_provider = "gemini_cli".to_string();
+                    synth_model = cli_model;
+                }
+                _ => { /* fall back to Grok below */ }
             }
         }
+
+        // Grok HTTP fallback or primary if provider_pref != gemini_cli
         if synthesized.trim().is_empty() {
-            // Fallback: ask a clarifying question rather than erroring
-            synthesized = format!(
-                "I may need more context to answer precisely. What specific aspect of ‘{}’ should I focus on?",
-                params.query.trim()
-            );
+            let base = std::env::var("GROK_BASE_URL").unwrap_or_else(|_| "https://api.x.ai/v1".to_string());
+            let model = std::env::var("GROK_MODEL").unwrap_or_else(|_| "grok-code-fast-1".to_string());
+            let grok_key = std::env::var("GROK_API_KEY").unwrap_or_default();
+            let allow_grok = std::env::var("IV_ALLOW_GROK").unwrap_or_else(|_| "true".to_string()) != "false";
+            let messages = build_synthesis_messages(&params.query, &snippets);
+            if allow_grok && !grok_key.is_empty() && !snippets.is_empty() {
+                if let Ok(ans) = call_grok(&base, &model, &grok_key, &messages).await {
+                    synthesized = ans;
+                    synth_provider = "grok".to_string();
+                    synth_model = model;
+                }
+            }
+        }
+
+        if synthesized.trim().is_empty() {
+            // Last-resort fallback: minimal grounded summary style, no refusals
+            if !snippets.is_empty() {
+                let joined = snippets
+                    .iter()
+                    .take(3)
+                    .map(|s| s.text.trim())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let summary: String = joined.chars().take(440).collect();
+                synthesized = format!("Based on what I could find: {}", summary);
+            } else {
+                synthesized = "Based on what I could find, there wasn’t enough directly relevant material in the corpus to answer confidently.".to_string();
+            }
+            if synth_provider.is_empty() { synth_provider = "fallback".into(); }
+            if synth_model.is_empty() { synth_model = "n/a".into(); }
         }
 
         // Minimal citations line from internal selections
@@ -415,13 +479,16 @@ impl SurrealMindServer {
 
             if (extracted_entities == 0 && extracted_rels == 0)
                 && allow_grok
-                && !grok_key.is_empty()
             {
+                let grok_base = std::env::var("GROK_BASE_URL").unwrap_or_else(|_| "https://api.x.ai/v1".to_string());
+                let grok_model = std::env::var("GROK_MODEL").unwrap_or_else(|_| "grok-code-fast-1".to_string());
+                let grok_key_ex = std::env::var("GROK_API_KEY").unwrap_or_default();
+                if !grok_key_ex.is_empty() {
                 if let Ok((ec, rc)) = self
                     .auto_extract_candidates_from_text(
-                        &base,
-                        &model,
-                        &grok_key,
+                        &grok_base,
+                        &grok_model,
+                        &grok_key_ex,
                         &synthesized,
                         &thought_id,
                     )
@@ -435,6 +502,7 @@ impl SurrealMindServer {
                     extracted_entities = ec;
                     extracted_rels = rc;
                 }
+                }
             }
         }
 
@@ -442,11 +510,46 @@ impl SurrealMindServer {
             "thought_id": thought_id,
             "embedding_model": model_name,
             "embedding_dim": self.embedder.dimensions(),
+            "synth_provider": synth_provider,
+            "synth_model": synth_model,
             "auto_extract": auto_extract,
             "extracted": {"entities": extracted_entities, "relationships": extracted_rels}
         });
 
         Ok(CallToolResult::structured(result))
+    }
+
+    /// Spawn a local CLI (e.g., `gemini`) to synthesize an answer from grounded snippets
+    async fn synth_via_cli(cmd: &str, args: &[String], prompt: &str, timeout_ms: u64) -> Result<String> {
+        use tokio::io::AsyncWriteExt;
+        use tokio::time::{timeout, Duration};
+
+        let mut child = Command::new(cmd)
+            .args(args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| SurrealMindError::Internal { message: format!("failed to spawn CLI '{}': {}", cmd, e) })?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(prompt.as_bytes())
+                .await
+                .map_err(|e| SurrealMindError::Internal { message: format!("failed to write prompt to CLI: {}", e) })?;
+        }
+
+        let out = timeout(Duration::from_millis(timeout_ms), child.wait_with_output())
+            .await
+            .map_err(|_| SurrealMindError::Timeout { operation: "cli_synthesis".into(), timeout_ms })
+            .and_then(|r| r.map_err(|e| SurrealMindError::Internal { message: format!("CLI synthesis failed: {}", e) }))?;
+
+        if !out.status.success() {
+            return Err(SurrealMindError::Internal { message: format!("CLI exited with status {}", out.status) });
+        }
+
+        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+        Ok(stdout)
     }
     async fn fetch_thought_candidates(
         &self,

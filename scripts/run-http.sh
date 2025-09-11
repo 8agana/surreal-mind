@@ -1,5 +1,6 @@
 #!/bin/zsh
 set -euo pipefail
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 export SURR_TRANSPORT=http
 export SURR_HTTP_BIND=127.0.0.1:8787
 # Allow query token for Claude Desktop simplicity
