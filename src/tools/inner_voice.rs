@@ -391,8 +391,10 @@ impl SurrealMindServer {
         let mut extracted_rels = 0usize;
         if auto_extract {
             // Prefer CLI extractor when enabled; fall back to Grok when allowed
-            // Default: CLI extractor enabled without flags; Grok remains as fallback
-            let use_cli = true;
+            // Default: CLI extractor enabled, but allow override via env
+            let use_cli = std::env::var("IV_USE_CLI_EXTRACTOR")
+                .map(|v| v.trim() != "false")
+                .unwrap_or(true);
             let allow_grok =
                 std::env::var("IV_ALLOW_GROK").unwrap_or_else(|_| "true".to_string()) != "false";
 
@@ -704,8 +706,8 @@ impl SurrealMindServer {
         // Write to a temp file
         let tmp_path = std::env::temp_dir().join(format!("iv_in_{}.json", thought_id));
         let payload = serde_json::to_vec(&input)?;
-        std::fs::write(&tmp_path, payload).map_err(|e| SurrealMindError::Embedding {
-            message: e.to_string(),
+        std::fs::write(&tmp_path, payload).map_err(|e| SurrealMindError::Internal {
+            message: format!("Failed to write temp file {}: {}", tmp_path.display(), e),
         })?;
 
         // Execute Node script
@@ -720,14 +722,14 @@ impl SurrealMindServer {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let child = cmd.spawn().map_err(|e| SurrealMindError::Embedding {
-            message: e.to_string(),
+        let child = cmd.spawn().map_err(|e| SurrealMindError::Internal {
+            message: format!("Failed to spawn CLI extractor: {}", e),
         })?;
         let out = child
             .wait_with_output()
             .await
-            .map_err(|e| SurrealMindError::Embedding {
-                message: e.to_string(),
+            .map_err(|e| SurrealMindError::Internal {
+                message: format!("CLI extractor wait failed: {}", e),
             })?;
 
         // Clean up temp file best-effort
