@@ -701,6 +701,12 @@ impl SurrealMindServer {
         text: &str,
         thought_id: &str,
     ) -> Result<(usize, usize)> {
+        // Preflight: require Node to be available; if missing, disable CLI path
+        if !self.cli_prereqs_ok().await {
+            tracing::warn!(target: "inner_voice", "CLI extractor prerequisites missing (node). Skipping CLI and allowing fallback.");
+            return Ok((0, 0));
+        }
+
         use std::process::Stdio;
         use tokio::process::Command;
         // Prepare input payload
@@ -789,7 +795,8 @@ impl SurrealMindServer {
             }
         }
 
-        // Stage entities
+
+        // Stage entities (deterministic IDs for idempotency)
         let mut ecount = 0usize;
         for e in entities {
             let name = e
@@ -806,27 +813,36 @@ impl SurrealMindServer {
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            let found: Vec<serde_json::Value> = self
+            // Stable id key: sha1(doc_id|name|etype)
+            let mut h = Hasher::new();
+            h.update(thought_id.as_bytes());
+            h.update(b"|");
+            h.update(name.as_bytes());
+            h.update(b"|");
+            h.update(etype.as_bytes());
+            let key = h.finalize().to_hex().to_string();
+
+            let existing: Vec<serde_json::Value> = self
                 .db
-                .query("SELECT meta::id(id) as id FROM kg_entity_candidates WHERE name = $n AND entity_type = $t AND status = 'pending' LIMIT 1")
-                .bind(("n", name.clone()))
-                .bind(("t", etype.clone()))
+                .query("SELECT meta::id(id) as id FROM type::thing('kg_entity_candidates', $id)")
+                .bind(("id", key.clone()))
                 .await?
                 .take(0)?;
-            if found.is_empty() {
-                let _ : Vec<serde_json::Value> = self
+            if existing.is_empty() {
+                // Create with deterministic id; if a race occurs and record exists, ignore error
+                let _ = self
                     .db
-                    .query("CREATE kg_entity_candidates SET created_at = time::now(), name = $n, entity_type = $t, confidence = 0.6, status = 'pending', data = { staged_by_thought: $th, origin: 'inner_voice' } RETURN meta::id(id) as id")
+                    .query("CREATE type::thing('kg_entity_candidates', $id) SET created_at = time::now(), name = $n, entity_type = $t, confidence = 0.6, status = 'pending', data = { staged_by_thought: $th, origin: 'inner_voice' }")
+                    .bind(("id", key))
                     .bind(("n", name))
                     .bind(("t", etype))
                     .bind(("th", thought_id.to_string()))
-                    .await?
-                    .take(0)?;
+                    .await;
                 ecount += 1;
             }
         }
 
-        // Stage edges
+
         let mut rcount = 0usize;
         for r in edges {
             let from_id = r.get("from_id").and_then(|v| v.as_str()).unwrap_or("");
@@ -846,30 +862,49 @@ impl SurrealMindServer {
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.6_f64) as f32;
 
-            let found: Vec<serde_json::Value> = self
+            // Stable edge id key: sha1(doc_id|src|dst|kind)
+            let mut h = Hasher::new();
+            h.update(thought_id.as_bytes());
+            h.update(b"|");
+            h.update(src.as_bytes());
+            h.update(b"|");
+            h.update(dst.as_bytes());
+            h.update(b"|");
+            h.update(kind.as_bytes());
+            let key = h.finalize().to_hex().to_string();
+
+            let existing: Vec<serde_json::Value> = self
                 .db
-                .query("SELECT meta::id(id) as id FROM kg_edge_candidates WHERE source_name = $s AND target_name = $t AND rel_type = $k AND status = 'pending' LIMIT 1")
-                .bind(("s", src.clone()))
-                .bind(("t", dst.clone()))
-                .bind(("k", kind.clone()))
+                .query("SELECT meta::id(id) as id FROM type::thing('kg_edge_candidates', $id)")
+                .bind(("id", key.clone()))
                 .await?
                 .take(0)?;
-            if found.is_empty() {
-                let _ : Vec<serde_json::Value> = self
+            if existing.is_empty() {
+                let _ = self
                     .db
-                    .query("CREATE kg_edge_candidates SET created_at = time::now(), source_name = $s, target_name = $t, rel_type = $k, confidence = $c, status = 'pending', data = { staged_by_thought: $th, origin: 'inner_voice' } RETURN meta::id(id) as id")
+                    .query("CREATE type::thing('kg_edge_candidates', $id) SET created_at = time::now(), source_name = $s, target_name = $t, rel_type = $k, confidence = $c, status = 'pending', data = { staged_by_thought: $th, origin: 'inner_voice' }")
+                    .bind(("id", key))
                     .bind(("s", src))
                     .bind(("t", dst))
                     .bind(("k", kind))
                     .bind(("c", conf))
                     .bind(("th", thought_id.to_string()))
-                    .await?
-                    .take(0)?;
+                    .await;
                 rcount += 1;
             }
         }
 
         Ok((ecount, rcount))
+    }
+
+
+    /// Lightweight preflight: ensure Node is present; Gemini CLI availability is handled by the Node runner
+    async fn cli_prereqs_ok(&self) -> bool {
+        use tokio::process::Command;
+        match Command::new("node").arg("--version").output().await {
+            Ok(o) => o.status.success(),
+            Err(_) => false,
+        }
     }
 
     /// Use Grok to extract candidate entities/relationships and stage them into *_candidates tables
