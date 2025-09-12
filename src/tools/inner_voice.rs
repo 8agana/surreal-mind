@@ -339,21 +339,14 @@ impl SurrealMindServer {
             let cli_model =
                 std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-2.5-pro".to_string());
             let cli_args_json = std::env::var("IV_SYNTH_CLI_ARGS_JSON").unwrap_or_else(|_| {
-                "[\"generate\",\"--model\",\"{model}\",\"--temperature\",\"0.2\"]".to_string()
+                "[\"-m\",\"{model}\"]".to_string()
             });
             let cli_timeout_ms: u64 = std::env::var("IV_SYNTH_TIMEOUT_MS")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(20_000);
-            let cli_args: Vec<String> = serde_json::from_str(&cli_args_json).unwrap_or_else(|_| {
-                vec![
-                    "generate".into(),
-                    "--model".into(),
-                    "{model}".into(),
-                    "--temperature".into(),
-                    "0.2".into(),
-                ]
-            });
+            let cli_args: Vec<String> = serde_json::from_str(&cli_args_json)
+                .unwrap_or_else(|_| vec!["-m".into(), "{model}".into()]);
 
             let args: Vec<String> = cli_args
                 .into_iter()
