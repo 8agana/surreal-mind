@@ -13,8 +13,8 @@ use serde::Deserialize;
 use serde_json::json;
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
-use unicode_normalization::UnicodeNormalization;
 use tokio::process::Command;
+use unicode_normalization::UnicodeNormalization;
 
 /// Parameters for the inner_voice tool
 #[derive(Debug, serde::Deserialize)]
@@ -34,6 +34,12 @@ pub struct InnerVoiceRetrieveParams {
     pub exclude_tags: Vec<String>,
     #[serde(default)]
     pub auto_extract_to_kg: Option<bool>,
+    #[serde(default)]
+    pub previous_thought_id: Option<String>,
+    #[serde(default)]
+    pub include_feedback: Option<bool>,
+    #[serde(default)]
+    pub feedback_max_lines: Option<usize>,
 }
 
 /// Planner response from Grok
@@ -306,7 +312,8 @@ impl SurrealMindServer {
         let mut synth_provider = String::new();
         let mut synth_model = String::new();
 
-        let provider_pref = std::env::var("IV_SYNTH_PROVIDER").unwrap_or_else(|_| "gemini_cli".to_string());
+        let provider_pref =
+            std::env::var("IV_SYNTH_PROVIDER").unwrap_or_else(|_| "gemini_cli".to_string());
 
         // Helper: build a single-text prompt for CLI models from snippets
         fn build_cli_prompt(user_query: &str, snippets: &[Snippet]) -> String {
@@ -327,12 +334,26 @@ impl SurrealMindServer {
 
         // Try Gemini CLI first when requested (even if snippets are empty)
         if provider_pref.eq_ignore_ascii_case("gemini_cli") {
-            let cli_cmd = std::env::var("IV_SYNTH_CLI_CMD").unwrap_or_else(|_| "gemini".to_string());
-            let cli_model = std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-2.5-pro".to_string());
-            let cli_args_json = std::env::var("IV_SYNTH_CLI_ARGS_JSON")
-                .unwrap_or_else(|_| "[\"generate\",\"--model\",\"{model}\",\"--temperature\",\"0.2\"]".to_string());
-            let cli_timeout_ms: u64 = std::env::var("IV_SYNTH_TIMEOUT_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(20_000);
-            let cli_args: Vec<String> = serde_json::from_str(&cli_args_json).unwrap_or_else(|_| vec!["generate".into(), "--model".into(), "{model}".into(), "--temperature".into(), "0.2".into()]);
+            let cli_cmd =
+                std::env::var("IV_SYNTH_CLI_CMD").unwrap_or_else(|_| "gemini".to_string());
+            let cli_model =
+                std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-2.5-pro".to_string());
+            let cli_args_json = std::env::var("IV_SYNTH_CLI_ARGS_JSON").unwrap_or_else(|_| {
+                "[\"generate\",\"--model\",\"{model}\",\"--temperature\",\"0.2\"]".to_string()
+            });
+            let cli_timeout_ms: u64 = std::env::var("IV_SYNTH_TIMEOUT_MS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(20_000);
+            let cli_args: Vec<String> = serde_json::from_str(&cli_args_json).unwrap_or_else(|_| {
+                vec![
+                    "generate".into(),
+                    "--model".into(),
+                    "{model}".into(),
+                    "--temperature".into(),
+                    "0.2".into(),
+                ]
+            });
 
             let args: Vec<String> = cli_args
                 .into_iter()
@@ -340,7 +361,14 @@ impl SurrealMindServer {
                 .collect();
 
             // Spawn CLI and feed prompt via stdin
-            match SurrealMindServer::synth_via_cli(&cli_cmd, &args, &build_cli_prompt(&params.query, &snippets), cli_timeout_ms).await {
+            match SurrealMindServer::synth_via_cli(
+                &cli_cmd,
+                &args,
+                &build_cli_prompt(&params.query, &snippets),
+                cli_timeout_ms,
+            )
+            .await
+            {
                 Ok(out) if !out.trim().is_empty() => {
                     synthesized = out.trim().to_string();
                     synth_provider = "gemini_cli".to_string();
@@ -352,10 +380,13 @@ impl SurrealMindServer {
 
         // Grok HTTP fallback or primary if provider_pref != gemini_cli
         if synthesized.trim().is_empty() {
-            let base = std::env::var("GROK_BASE_URL").unwrap_or_else(|_| "https://api.x.ai/v1".to_string());
-            let model = std::env::var("GROK_MODEL").unwrap_or_else(|_| "grok-code-fast-1".to_string());
+            let base = std::env::var("GROK_BASE_URL")
+                .unwrap_or_else(|_| "https://api.x.ai/v1".to_string());
+            let model =
+                std::env::var("GROK_MODEL").unwrap_or_else(|_| "grok-code-fast-1".to_string());
             let grok_key = std::env::var("GROK_API_KEY").unwrap_or_default();
-            let allow_grok = std::env::var("IV_ALLOW_GROK").unwrap_or_else(|_| "true".to_string()) != "false";
+            let allow_grok =
+                std::env::var("IV_ALLOW_GROK").unwrap_or_else(|_| "true".to_string()) != "false";
             let messages = build_synthesis_messages(&params.query, &snippets);
             if allow_grok && !grok_key.is_empty() {
                 if let Ok(ans) = call_grok(&base, &model, &grok_key, &messages).await {
@@ -380,8 +411,12 @@ impl SurrealMindServer {
             } else {
                 synthesized = "Based on what I could find, there wasn’t enough directly relevant material in the corpus to answer confidently.".to_string();
             }
-            if synth_provider.is_empty() { synth_provider = "fallback".into(); }
-            if synth_model.is_empty() { synth_model = "n/a".into(); }
+            if synth_provider.is_empty() {
+                synth_provider = "fallback".into();
+            }
+            if synth_model.is_empty() {
+                synth_model = "n/a".into();
+            }
         }
 
         // Minimal citations line from internal selections
@@ -407,7 +442,7 @@ impl SurrealMindServer {
             synthesized.push_str(&ids.join(", "));
         }
 
-        // Embed synthesized content and save as a new thought (origin = inner_voice), injection disabled
+        // Persist synthesis thought (Thought A)
         let embedding =
             self.embedder
                 .embed(&synthesized)
@@ -415,8 +450,9 @@ impl SurrealMindServer {
                 .map_err(|e| SurrealMindError::Embedding {
                     message: e.to_string(),
                 })?;
-        let thought_id = uuid::Uuid::new_v4().to_string();
+        let synth_thought_id = uuid::Uuid::new_v4().to_string();
         let (provider, model_name, dim) = self.get_embedding_metadata();
+        let prev_thought_id = params.previous_thought_id.clone();
         self.db
             .query(
                 "CREATE type::thing('thoughts', $id) CONTENT {
@@ -436,16 +472,82 @@ impl SurrealMindServer {
                     embedding_provider: $provider,
                     embedding_model: $model,
                     embedding_dim: $dim,
-                    embedded_at: time::now()
+                    embedded_at: time::now(),
+                    previous_thought_id: $prev
                 } RETURN NONE;",
             )
-            .bind(("id", thought_id.clone()))
+            .bind(("id", synth_thought_id.clone()))
             .bind(("content", synthesized.clone()))
             .bind(("embedding", embedding))
-            .bind(("provider", provider))
+            .bind(("provider", provider.clone()))
             .bind(("model", model_name.clone()))
             .bind(("dim", dim))
+            .bind(("prev", prev_thought_id))
             .await?;
+
+        // Generate feedback prompt if enabled
+        let include_feedback = params.include_feedback.unwrap_or(true);
+        let feedback_max_lines = params.feedback_max_lines.unwrap_or(3);
+        let (feedback_text, feedback_thought_id) = if include_feedback {
+            // Generate feedback via Gemini CLI
+            let feedback_prompt = format!(
+                "Propose the single highest-impact next question that would improve the answer above. Keep it under 2 short lines. No bullets, no preamble.\n\nAnswer:\n{}",
+                synthesized
+            );
+            let feedback_content = match self.generate_feedback_via_cli(&feedback_prompt).await {
+                Ok(f) => f.trim().to_string(),
+                Err(_) => "No feedback generated.".to_string(),
+            };
+            // Truncate to feedback_max_lines
+            let truncated_feedback = feedback_content
+                .lines()
+                .take(feedback_max_lines)
+                .collect::<Vec<_>>()
+                .join("\n");
+            // Persist feedback thought (Thought B)
+            let feedback_embedding =
+                self.embedder
+                    .embed(&truncated_feedback)
+                    .await
+                    .map_err(|e| SurrealMindError::Embedding {
+                        message: e.to_string(),
+                    })?;
+            let feedback_id = uuid::Uuid::new_v4().to_string();
+            self.db
+                .query(
+                    "CREATE type::thing('thoughts', $id) CONTENT {
+                        content: $content,
+                        created_at: time::now(),
+                        embedding: $embedding,
+                        injected_memories: [],
+                        enriched_content: NONE,
+                        injection_scale: 0,
+                        significance: 0.5,
+                        access_count: 0,
+                        last_accessed: NONE,
+                        submode: NONE,
+                        framework_enhanced: NONE,
+                        framework_analysis: NONE,
+                        origin: 'inner_voice.feedback',
+                        embedding_provider: $provider,
+                        embedding_model: $model,
+                        embedding_dim: $dim,
+                        embedded_at: time::now(),
+                        previous_thought_id: $prev
+                    } RETURN NONE;",
+                )
+                .bind(("id", feedback_id.clone()))
+                .bind(("content", truncated_feedback.clone()))
+                .bind(("embedding", feedback_embedding))
+                .bind(("provider", provider))
+                .bind(("model", model_name))
+                .bind(("dim", dim))
+                .bind(("prev", synth_thought_id.clone()))
+                .await?;
+            (truncated_feedback, Some(feedback_id))
+        } else {
+            (String::new(), None)
+        };
 
         // Optional auto-extraction to KG candidates using Grok JSON extraction
         let auto_extract = params
@@ -464,7 +566,7 @@ impl SurrealMindServer {
 
             if use_cli {
                 if let Ok((ec, rc)) = self
-                    .auto_extract_candidates_via_cli(&synthesized, &thought_id)
+                    .auto_extract_candidates_via_cli(&synthesized, &synth_thought_id)
                     .await
                 {
                     tracing::debug!(
@@ -477,52 +579,174 @@ impl SurrealMindServer {
                 }
             }
 
-            if (extracted_entities == 0 && extracted_rels == 0)
-                && allow_grok
-            {
-                let grok_base = std::env::var("GROK_BASE_URL").unwrap_or_else(|_| "https://api.x.ai/v1".to_string());
-                let grok_model = std::env::var("GROK_MODEL").unwrap_or_else(|_| "grok-code-fast-1".to_string());
+            if (extracted_entities == 0 && extracted_rels == 0) && allow_grok {
+                let grok_base = std::env::var("GROK_BASE_URL")
+                    .unwrap_or_else(|_| "https://api.x.ai/v1".to_string());
+                let grok_model =
+                    std::env::var("GROK_MODEL").unwrap_or_else(|_| "grok-code-fast-1".to_string());
                 let grok_key_ex = std::env::var("GROK_API_KEY").unwrap_or_default();
                 if !grok_key_ex.is_empty() {
-                if let Ok((ec, rc)) = self
-                    .auto_extract_candidates_from_text(
-                        &grok_base,
-                        &grok_model,
-                        &grok_key_ex,
-                        &synthesized,
-                        &thought_id,
-                    )
-                    .await
-                {
-                    tracing::debug!(
-                        "inner_voice: Grok fallback staged candidates: entities={}, edges={}",
-                        ec,
-                        rc
-                    );
-                    extracted_entities = ec;
-                    extracted_rels = rc;
+                    if let Ok((ec, rc)) = self
+                        .auto_extract_candidates_from_text(
+                            &grok_base,
+                            &grok_model,
+                            &grok_key_ex,
+                            &synthesized,
+                            &synth_thought_id,
+                        )
+                        .await
+                    {
+                        tracing::debug!(
+                            "inner_voice: Grok fallback staged candidates: entities={}, edges={}",
+                            ec,
+                            rc
+                        );
+                        extracted_entities = ec;
+                        extracted_rels = rc;
+                    }
                 }
+            }
+
+            // Optional HeuristicExtractor fallback
+            if extracted_entities == 0 && extracted_rels == 0 {
+                let heuristic_enabled = std::env::var("SURR_IV_HEURISTIC_FALLBACK")
+                    .map(|v| v != "0")
+                    .unwrap_or(true);
+                if heuristic_enabled {
+                    if let Ok((ec, rc)) = self
+                        .heuristic_extract(&synthesized, &synth_thought_id)
+                        .await
+                    {
+                        tracing::debug!(
+                            "inner_voice: Heuristic fallback staged candidates: entities={}, edges={}",
+                            ec,
+                            rc
+                        );
+                        extracted_entities = ec;
+                        extracted_rels = rc;
+                    }
                 }
             }
         }
 
+        // Build sources_compact
+        let sources_compact = if !ids.is_empty() {
+            format!("Sources: {}", ids.join(", "))
+        } else {
+            String::new()
+        };
+
         let result = json!({
-            "thought_id": thought_id,
-            "embedding_model": model_name,
-            "embedding_dim": self.embedder.dimensions(),
+            "answer": synthesized,
+            "synth_thought_id": synth_thought_id,
+            "feedback": feedback_text,
+            "feedback_thought_id": feedback_thought_id,
+            "sources_compact": sources_compact,
             "synth_provider": synth_provider,
             "synth_model": synth_model,
-            "auto_extract": auto_extract,
+            "embedding_dim": dim,
             "extracted": {"entities": extracted_entities, "relationships": extracted_rels}
         });
 
         Ok(CallToolResult::structured(result))
     }
 
+    /// Generate feedback prompt via CLI
+    async fn generate_feedback_via_cli(&self, prompt: &str) -> Result<String> {
+        let cli_cmd = std::env::var("IV_SYNTH_CLI_CMD").unwrap_or_else(|_| "gemini".to_string());
+        let cli_model =
+            std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-2.5-pro".to_string());
+        let cli_args_json = std::env::var("IV_SYNTH_CLI_ARGS_JSON")
+            .unwrap_or_else(|_| "[\"-m\",\"{model}\"]".to_string());
+        let cli_timeout_ms: u64 = std::env::var("IV_SYNTH_TIMEOUT_MS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(20_000);
+        let cli_args: Vec<String> = serde_json::from_str(&cli_args_json)
+            .unwrap_or_else(|_| vec!["-m".into(), "{model}".into()]);
+
+        let args: Vec<String> = cli_args
+            .into_iter()
+            .map(|a| if a == "{model}" { cli_model.clone() } else { a })
+            .collect();
+
+        Self::synth_via_cli(&cli_cmd, &args, prompt, cli_timeout_ms).await
+    }
+
+    /// HeuristicExtractor fallback
+    async fn heuristic_extract(&self, text: &str, thought_id: &str) -> Result<(usize, usize)> {
+        // Simple pattern-based extraction
+        let entities_cap = std::env::var("SURR_IV_HEURISTIC_MAX_ENTITIES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(20);
+        let edges_cap = std::env::var("SURR_IV_HEURISTIC_MAX_EDGES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(30);
+
+        let mut entities = Vec::new();
+        let mut edges = Vec::new();
+
+        // Basic entity extraction (capitalized words)
+        for word in text.split_whitespace() {
+            if word.chars().next().is_some_and(|c| c.is_uppercase()) && word.len() > 2 {
+                entities.push(word.to_string());
+                if entities.len() >= entities_cap {
+                    break;
+                }
+            }
+        }
+
+        // Basic relationships (simple patterns)
+        let patterns = ["uses", "depends on", "related to", "->"];
+        for pattern in &patterns {
+            if let Some(pos) = text.find(pattern) {
+                let before = &text[..pos];
+                let after = &text[pos + pattern.len()..];
+                if let Some(src) = before.split_whitespace().last() {
+                    if let Some(dst) = after.split_whitespace().next() {
+                        edges.push((src.to_string(), dst.to_string()));
+                        if edges.len() >= edges_cap {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Stage with low confidence
+        let mut ecount = 0;
+        for name in entities.into_iter().take(entities_cap) {
+            let _ = self.db.query("CREATE kg_entity_candidates SET created_at = time::now(), name = $n, entity_type = 'unknown', confidence = 0.7, status = 'pending', data = { staged_by_thought: $th, origin: 'inner_voice' }")
+                .bind(("n", name))
+                .bind(("th", thought_id.to_string()))
+                .await;
+            ecount += 1;
+        }
+
+        let mut rcount = 0;
+        for (src, dst) in edges.into_iter().take(edges_cap) {
+            let _ = self.db.query("CREATE kg_edge_candidates SET created_at = time::now(), source_name = $s, target_name = $t, rel_type = 'related_to', confidence = 0.6, status = 'pending', data = { staged_by_thought: $th, origin: 'inner_voice' }")
+                .bind(("s", src))
+                .bind(("t", dst))
+                .bind(("th", thought_id.to_string()))
+                .await;
+            rcount += 1;
+        }
+
+        Ok((ecount, rcount))
+    }
+
     /// Spawn a local CLI (e.g., `gemini`) to synthesize an answer from grounded snippets
-    async fn synth_via_cli(cmd: &str, args: &[String], prompt: &str, timeout_ms: u64) -> Result<String> {
+    async fn synth_via_cli(
+        cmd: &str,
+        args: &[String],
+        prompt: &str,
+        timeout_ms: u64,
+    ) -> Result<String> {
         use tokio::io::AsyncWriteExt;
-        use tokio::time::{timeout, Duration};
+        use tokio::time::{Duration, timeout};
 
         let mut child = Command::new(cmd)
             .args(args)
@@ -530,22 +754,35 @@ impl SurrealMindServer {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
-            .map_err(|e| SurrealMindError::Internal { message: format!("failed to spawn CLI '{}': {}", cmd, e) })?;
+            .map_err(|e| SurrealMindError::Internal {
+                message: format!("failed to spawn CLI '{}': {}", cmd, e),
+            })?;
 
         if let Some(mut stdin) = child.stdin.take() {
             stdin
                 .write_all(prompt.as_bytes())
                 .await
-                .map_err(|e| SurrealMindError::Internal { message: format!("failed to write prompt to CLI: {}", e) })?;
+                .map_err(|e| SurrealMindError::Internal {
+                    message: format!("failed to write prompt to CLI: {}", e),
+                })?;
         }
 
         let out = timeout(Duration::from_millis(timeout_ms), child.wait_with_output())
             .await
-            .map_err(|_| SurrealMindError::Timeout { operation: "cli_synthesis".into(), timeout_ms })
-            .and_then(|r| r.map_err(|e| SurrealMindError::Internal { message: format!("CLI synthesis failed: {}", e) }))?;
+            .map_err(|_| SurrealMindError::Timeout {
+                operation: "cli_synthesis".into(),
+                timeout_ms,
+            })
+            .and_then(|r| {
+                r.map_err(|e| SurrealMindError::Internal {
+                    message: format!("CLI synthesis failed: {}", e),
+                })
+            })?;
 
         if !out.status.success() {
-            return Err(SurrealMindError::Internal { message: format!("CLI exited with status {}", out.status) });
+            return Err(SurrealMindError::Internal {
+                message: format!("CLI exited with status {}", out.status),
+            });
         }
 
         let stdout = String::from_utf8_lossy(&out.stdout).to_string();
@@ -830,6 +1067,7 @@ impl SurrealMindServer {
         })?;
 
         // Execute Node script
+        let start = Instant::now();
         let script_path =
             std::env::var("IV_SCRIPT_PATH").unwrap_or_else(|_| "scripts/iv_extract.js".to_string());
         let mut cmd = Command::new("node");
@@ -850,14 +1088,27 @@ impl SurrealMindServer {
             .map_err(|e| SurrealMindError::Internal {
                 message: format!("CLI extractor wait failed: {}", e),
             })?;
+        let latency = start.elapsed().as_millis() as u64;
 
         // Clean up temp file best-effort
         let _ = std::fs::remove_file(&tmp_path);
 
         if !out.status.success() {
+            let stderr_snip = String::from_utf8_lossy(&out.stderr)
+                .chars()
+                .take(500)
+                .collect::<String>();
+            let stdout_snip = String::from_utf8_lossy(&out.stdout)
+                .chars()
+                .take(500)
+                .collect::<String>();
             tracing::debug!(
-                "inner_voice: CLI extractor failed (status={:?}); considering Grok fallback",
-                out.status.code()
+                cmd = %script_path,
+                code = ?out.status.code(),
+                stderr_snip = %stderr_snip,
+                stdout_snip = %stdout_snip,
+                latency_ms = latency,
+                "inner_voice.extract_fail"
             );
             return Ok((0, 0));
         }
@@ -897,7 +1148,6 @@ impl SurrealMindServer {
                 id_to_label.insert(id, label);
             }
         }
-
 
         // Stage entities (deterministic IDs for idempotency)
         let mut ecount = 0usize;
@@ -944,7 +1194,6 @@ impl SurrealMindServer {
                 ecount += 1;
             }
         }
-
 
         let mut rcount = 0usize;
         for r in edges {
@@ -999,7 +1248,6 @@ impl SurrealMindServer {
 
         Ok((ecount, rcount))
     }
-
 
     /// Lightweight preflight: ensure Node is present; Gemini CLI availability is handled by the Node runner
     async fn cli_prereqs_ok(&self) -> bool {
