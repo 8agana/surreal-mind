@@ -294,7 +294,10 @@ pub fn inner_voice_schema() -> Arc<Map<String, Value>> {
             "include_private": {"type": "boolean", "default": false},
             "include_tags": {"type": "array", "items": {"type": "string"}},
             "exclude_tags": {"type": "array", "items": {"type": "string"}},
-            "auto_extract_to_kg": {"type": "boolean", "default": false}
+            "auto_extract_to_kg": {"type": "boolean", "default": false},
+            "previous_thought_id": {"type": "string"},
+            "include_feedback": {"type": "boolean", "default": true},
+            "feedback_max_lines": {"type": "integer", "default": 3, "minimum": 1, "maximum": 10}
         },
         "required": ["query"]
     });

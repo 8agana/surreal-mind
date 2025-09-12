@@ -83,10 +83,12 @@ Notes
 - Env lexicons (comma‑sep): `SURR_THINK_LEXICON_DECIDE`, `SURR_THINK_LEXICON_VENT`, `SURR_THINK_LEXICON_CAUSAL`, `SURR_THINK_LEXICON_POS`, `SURR_THINK_LEXICON_NEG`.
 - Logging: 200‑char preview gated behind `SURR_THINK_DEEP_LOG=1`.
 
-### Inner Voice (auto‑extraction)
-- Param: `auto_extract_to_kg` (boolean). Default ON via `SURR_IV_AUTO_EXTRACT_KG=1`.
-- Creates pending candidates in `kg_entity_candidates`/`kg_edge_candidates` with `data.staged_by_thought=<thought_id>`, `origin='inner_voice'`.
-- Moderate via `memories_moderate`.
+### Inner Voice (two-thought chain)
+- Two-thought model: persists synthesis thought (origin='inner_voice') and feedback thought (origin='inner_voice.feedback'), linked for continuity. Inquiry is not persisted.
+- Params: `query` (for retrieval), `auto_extract_to_kg` (boolean, default true), `include_feedback` (boolean, default true), `feedback_max_lines` (integer, default 3), `previous_thought_id` (string, optional).
+- Response: `answer` (synthesized text), `synth_thought_id`, `feedback` (prompt text), `feedback_thought_id`, `sources_compact`, `synth_provider`, `synth_model`, `embedding_dim`, `extracted` (entities/relationships counts).
+- Auto-extraction: stages candidates with `data.staged_by_thought = synth_thought_id`, `origin='inner_voice'`. Moderate via `memories_moderate`.
+- Extractor env precedence: `IV_CLI_*` → `IV_SYNTH_*` (e.g., `IV_CLI_CMD`/`IV_CLI_ARGS_JSON` → `IV_SYNTH_CLI_CMD`/`IV_SYNTH_CLI_ARGS_JSON`).
 
 ### Photography Isolation
 - Auto‑connects to `ns=photography`, `db=work` (URL/user/pass inherited unless overridden by `SURR_PHOTO_*`).
