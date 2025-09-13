@@ -338,9 +338,8 @@ impl SurrealMindServer {
                 std::env::var("IV_SYNTH_CLI_CMD").unwrap_or_else(|_| "gemini".to_string());
             let cli_model =
                 std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-2.5-pro".to_string());
-            let cli_args_json = std::env::var("IV_SYNTH_CLI_ARGS_JSON").unwrap_or_else(|_| {
-                "[\"-m\",\"{model}\"]".to_string()
-            });
+            let cli_args_json = std::env::var("IV_SYNTH_CLI_ARGS_JSON")
+                .unwrap_or_else(|_| "[\"-m\",\"{model}\"]".to_string());
             let cli_timeout_ms: u64 = std::env::var("IV_SYNTH_TIMEOUT_MS")
                 .ok()
                 .and_then(|v| v.parse().ok())

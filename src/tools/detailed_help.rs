@@ -152,7 +152,7 @@ impl SurrealMindServer {
             }),
             "legacymind_search" => json!({
                 "name": "legacymind_search",
-                "description": "Unified search in LegacyMind: searches memories by default and, when include_thoughts=true, also searches thoughts.",
+                "description": "Unified search in LegacyMind: searches memories by default and, when include_thoughts=true, also searches thoughts. Supports continuity field filters for thoughts.",
                 "arguments": {
                     "query": "object — used for memories search (e.g., {name})",
                     "target": "'entity'|'relationship'|'observation'|'mixed' (default 'mixed')",
@@ -160,9 +160,26 @@ impl SurrealMindServer {
                     "thoughts_content": "string — optional explicit query text for thoughts",
                     "top_k_memories": "integer (1-50; default 10)",
                     "top_k_thoughts": "integer (1-50; default 5)",
-                    "sim_thresh": "number (0.0-1.0) — similarity floor for thoughts"
+                    "sim_thresh": "number (0.0-1.0) — similarity floor for thoughts",
+                    "session_id": "string? — filter thoughts by session_id",
+                    "chain_id": "string? — filter thoughts by chain_id",
+                    "previous_thought_id": "string? — filter thoughts by previous_thought_id (record or string)",
+                    "revises_thought": "string? — filter thoughts by revises_thought (record or string)",
+                    "branch_from": "string? — filter thoughts by branch_from (record or string)",
+                    "origin": "string? — filter thoughts by origin",
+                    "confidence_gte": "number? (0.0-1.0) — filter thoughts with confidence >= value",
+                    "confidence_lte": "number? (0.0-1.0) — filter thoughts with confidence <= value",
+                    "date_from": "string? (YYYY-MM-DD) — filter thoughts created_at >= date",
+                    "date_to": "string? (YYYY-MM-DD) — filter thoughts created_at <= date",
+                    "order": "string? ('created_at_asc'|'created_at_desc') — order thoughts by created_at"
                 },
-                "returns": {"memories": {"items": "array"}, "thoughts": {"total": "number", "results": "array"}}
+                "returns": {"memories": {"items": "array"}, "thoughts": {"total": "number", "results": "array"}},
+                "examples": [
+                    {"description": "Search thoughts in a specific session, ordered by creation time", "call": {"include_thoughts": true, "session_id": "session_123"}},
+                    {"description": "Search thoughts in a chain with similarity ordering", "call": {"include_thoughts": true, "chain_id": "chain_456", "thoughts_content": "debug issue"}},
+                    {"description": "Find thoughts that revise a specific thought", "call": {"include_thoughts": true, "revises_thought": "thoughts:789"}},
+                    {"description": "Search thoughts with confidence >= 0.8 in a date range", "call": {"include_thoughts": true, "confidence_gte": 0.8, "date_from": "2024-01-01", "date_to": "2024-12-31"}}
+                ]
             }),
             "memories_create" => json!({
                 "name": "memories_create",
