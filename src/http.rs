@@ -40,6 +40,9 @@ pub struct HttpMetrics {
     pub last_request_unix: u64,
     pub http_active_sessions: usize,
     pub http_total_sessions: u64,
+    pub errors_total: u64,
+    pub latencies: Vec<f64>, // ring buffer for p95
+    pub tools_count: std::collections::HashMap<String, u64>,
 }
 
 impl HttpMetrics {
@@ -52,6 +55,9 @@ impl HttpMetrics {
                 .as_secs(),
             http_active_sessions: 0,
             http_total_sessions: 0,
+            errors_total: 0,
+            latencies: Vec::with_capacity(256),
+            tools_count: std::collections::HashMap::new(),
         }
     }
 }
@@ -141,6 +147,28 @@ pub async fn metrics_handler(State(state): State<HttpState>) -> impl IntoRespons
     // Read active sessions from session manager
     let active_sessions = state.session_mgr.sessions.read().await.len();
 
+    // Compute latency stats
+    let (avg_latency_ms, p95_latency_ms) = if metrics.latencies.is_empty() {
+        (None, None)
+    } else {
+        let sum: f64 = metrics.latencies.iter().sum();
+        let avg = sum / metrics.latencies.len() as f64;
+        let mut sorted = metrics.latencies.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let p95_idx = (sorted.len() as f64 * 0.95) as usize;
+        let p95 = sorted.get(p95_idx).copied();
+        (Some(avg), p95)
+    };
+
+    // Top 5 tools
+    let mut tools_vec: Vec<_> = metrics.tools_count.iter().collect();
+    tools_vec.sort_by(|a, b| b.1.cmp(a.1));
+    let tools_top_5: Vec<_> = tools_vec
+        .into_iter()
+        .take(5)
+        .map(|(k, v)| json!({ "name": k, "count": v }))
+        .collect();
+
     (
         StatusCode::OK,
         [(header::CONTENT_TYPE, "application/json")],
@@ -149,7 +177,76 @@ pub async fn metrics_handler(State(state): State<HttpState>) -> impl IntoRespons
             "total_requests": metrics.total_requests,
             "last_request_unix": metrics.last_request_unix,
             "http_active_sessions": active_sessions,
-            "http_total_sessions": metrics.http_total_sessions
+            "http_total_sessions": metrics.http_total_sessions,
+            "errors_total": metrics.errors_total,
+            "avg_latency_ms": avg_latency_ms,
+            "p95_latency_ms": p95_latency_ms,
+            "tools_top_5": tools_top_5
+        })
+        .to_string(),
+    )
+}
+
+/// DB health endpoint (optional, gated by SURR_DB_STATS=1)
+pub async fn db_health_handler(State(state): State<HttpState>) -> impl IntoResponse {
+    if std::env::var("SURR_DB_STATS").ok().as_deref() != Some("1") {
+        return (
+            StatusCode::NOT_FOUND,
+            [(header::CONTENT_TYPE, "application/json")],
+            json!({"error": "DB stats not enabled"}).to_string(),
+        );
+    }
+
+    let (connected, ping_ms, thoughts_count, recalls_count) =
+        if state.config.system.database_url.is_empty() {
+            (false, None, None, None)
+        } else {
+            // Check cache or ping
+            let ttl_ms = std::env::var("SURR_DB_PING_TTL_MS")
+                .unwrap_or_else(|_| "1500".to_string())
+                .parse::<u64>()
+                .unwrap_or(1500);
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            let mut cache = state.db_ping_cache.lock().await;
+            let (ping_ms, is_cached) = if let Some((ts, p)) = *cache {
+                if now.saturating_sub(ts) < ttl_ms {
+                    (Some(p), true)
+                } else {
+                    (None, false)
+                }
+            } else {
+                (None, false)
+            };
+            drop(cache);
+
+            let ping_result = if ping_ms.is_some() {
+                ping_ms
+            } else {
+                ping_db(&state).await
+            };
+
+            let counts = if ping_result.is_some() {
+                get_db_counts(&state).await
+            } else {
+                (None, None)
+            };
+
+            (ping_result.is_some(), ping_result, counts.0, counts.1)
+        };
+
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/json")],
+        json!({
+            "connected": connected,
+            "ping_ms": ping_ms,
+            "ns": state.config.system.database_ns,
+            "db": state.config.system.database_db,
+            "thoughts_count": thoughts_count,
+            "recalls_count": recalls_count
         })
         .to_string(),
     )
@@ -183,6 +280,7 @@ pub async fn start_http_server(server: SurrealMindServer) -> Result<()> {
         .route("/health", get(health_handler))
         .route("/info", get(info_handler))
         .route("/metrics", get(metrics_handler))
+        .route("/db_health", get(db_health_handler))
         .nest_service(path.as_str(), mcp_service)
         .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any))
         .layer(middleware::from_fn_with_state(
@@ -190,15 +288,32 @@ pub async fn start_http_server(server: SurrealMindServer) -> Result<()> {
             |State((metrics, base)): State<(Arc<Mutex<HttpMetrics>>, String)>,
              req: axum::http::Request<Body>,
              next: axum::middleware::Next| async move {
-                if req.uri().path().starts_with(&base) {
+                let is_mcp = req.uri().path().starts_with(&base);
+                let start = if is_mcp {
+                    Some(std::time::Instant::now())
+                } else {
+                    None
+                };
+                let resp = next.run(req).await;
+                if let Some(start_time) = start {
+                    let latency_ms = start_time.elapsed().as_millis() as f64;
                     let mut m = metrics.lock().await;
+                    if latency_ms > 0.0 {
+                        m.latencies.push(latency_ms);
+                        if m.latencies.len() > 256 {
+                            m.latencies.remove(0);
+                        }
+                    }
+                    if !resp.status().is_success() {
+                        m.errors_total = m.errors_total.saturating_add(1);
+                    }
                     m.total_requests = m.total_requests.saturating_add(1);
                     m.last_request_unix = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_secs();
                 }
-                next.run(req).await
+                resp
             },
         ))
         // Bearer auth layer with explicit state (token + allow_in_url)
@@ -315,4 +430,54 @@ async fn ping_db(state: &HttpState) -> Option<u64> {
         Ok(Ok(_)) => Some(elapsed),
         _ => None,
     }
+}
+
+async fn get_db_counts(state: &HttpState) -> (Option<u64>, Option<u64>) {
+    let timeout = Duration::from_millis(500);
+
+    // Create a temporary DB connection
+    let db_result = surrealdb::Surreal::new::<surrealdb::engine::remote::ws::Ws>(
+        state.config.system.database_url.clone(),
+    )
+    .await;
+
+    let db = match db_result {
+        Ok(db) => db,
+        Err(_) => return (None, None),
+    };
+
+    let use_result = db
+        .use_ns(&state.config.system.database_ns)
+        .use_db(&state.config.system.database_db)
+        .await;
+
+    if use_result.is_err() {
+        return (None, None);
+    }
+
+    // Get counts with LIMIT for fast estimation
+    let thoughts_query = tokio::time::timeout(
+        timeout,
+        db.query("SELECT count() FROM thoughts LIMIT 100000"),
+    )
+    .await;
+    let recalls_query = tokio::time::timeout(
+        timeout,
+        db.query("SELECT count() FROM kg_entities LIMIT 100000"),
+    )
+    .await;
+
+    let thoughts_count = if let Ok(Ok(mut resp)) = thoughts_query {
+        resp.take::<Option<u64>>(0).ok().flatten()
+    } else {
+        None
+    };
+
+    let recalls_count = if let Ok(Ok(mut resp)) = recalls_query {
+        resp.take::<Option<u64>>(0).ok().flatten()
+    } else {
+        None
+    };
+
+    (thoughts_count, recalls_count)
 }

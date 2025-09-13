@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use rmcp::{ServiceExt, transport::stdio};
 mod http;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use surreal_mind::{config::Config, server::SurrealMindServer};
 use tracing::info;
 
@@ -88,6 +90,43 @@ async fn main() -> Result<()> {
         );
     }
 
+    // Write state.json for stdio session discovery if enabled
+    if config.runtime.transport == "stdio"
+        && std::env::var("SURR_WRITE_STATE").as_deref() == Ok("1")
+    {
+        if let Some(data_dir) = dirs::data_dir() {
+            let state_dir = data_dir.join("surreal-mind");
+            if fs::create_dir_all(&state_dir).is_ok() {
+                let state_file = state_dir.join("state.json");
+                let temp_file = state_dir.join("state.json.tmp");
+                let start_unix = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                let pid = std::process::id();
+                let state_data = serde_json::json!({
+                    "start_unix": start_unix,
+                    "transport": "stdio",
+                    "pid": pid,
+                    "client": std::env::var("MCP_CLIENT").unwrap_or_else(|_| "unknown".to_string()),
+                    "sessions": 1
+                });
+                if fs::write(&temp_file, state_data.to_string()).is_ok() {
+                    if fs::rename(&temp_file, &state_file).is_ok() {
+                        let perms = if let Ok(meta) = fs::metadata(&state_file) {
+                            meta.permissions()
+                        } else {
+                            fs::Permissions::from_mode(0o600)
+                        };
+                        let mut perms = perms;
+                        perms.set_mode(0o600);
+                        let _ = fs::set_permissions(&state_file, perms);
+                    }
+                }
+            }
+        }
+    }
+
     // Check transport selection
     if config.runtime.transport == "http" {
         if !config.runtime.mcp_no_log {
@@ -118,6 +157,16 @@ async fn main() -> Result<()> {
                 e
             })?;
         service.waiting().await?;
+    }
+
+    // Clean up state.json on shutdown
+    if config.runtime.transport == "stdio"
+        && std::env::var("SURR_WRITE_STATE").as_deref() == Ok("1")
+    {
+        if let Some(data_dir) = dirs::data_dir() {
+            let state_file = data_dir.join("surreal-mind").join("state.json");
+            let _ = fs::remove_file(state_file);
+        }
     }
 
     Ok(())
