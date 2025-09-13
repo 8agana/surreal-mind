@@ -1,3 +1,4 @@
+use std::fs;
 use std::io;
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -6,6 +7,7 @@ use crossterm::{event, execute, terminal};
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 use reqwest::blocking::Client;
+use serde_json;
 
 #[derive(Default, Clone)]
 enum LogFilter {
@@ -36,6 +38,7 @@ struct Status {
     use_header_auth: bool,
     http_active_sessions: Option<usize>,
     http_total_sessions: Option<u64>,
+    stdio_sessions: Option<usize>,
     db_connected: Option<bool>,
     db_ping_ms: Option<u64>,
     db_ns: Option<String>,
@@ -230,7 +233,11 @@ fn ui(f: &mut Frame, s: &Status) {
             s.http_active_sessions.unwrap_or(0),
             s.http_total_sessions.unwrap_or(0)
         )),
-        Line::raw("Stdio Sessions: –"), // TODO: from state.json
+        Line::raw(if let Some(stdio) = s.stdio_sessions {
+            format!("Stdio Sessions: {}", stdio)
+        } else {
+            "Stdio Sessions: –".to_string()
+        }),
     ])
     .block(Block::default().borders(Borders::ALL).title("Sessions"));
     f.render_widget(sessions_text, row2[0]);
@@ -262,7 +269,17 @@ fn ui(f: &mut Frame, s: &Status) {
         vec![Line::raw("(no logs yet)")]
     } else {
         let h = chunks[3].height as usize;
-        s.combined_log_tail
+        let filtered_logs: Vec<_> = s
+            .combined_log_tail
+            .iter()
+            .filter(|line| match s.log_filter {
+                LogFilter::All => true,
+                LogFilter::Stdout => line.contains("[sm.out]"),
+                LogFilter::Stderr => line.contains("[sm.err]"),
+                LogFilter::Cloudflared => line.contains("[cf.out]") || line.contains("[cf.err]"),
+            })
+            .collect();
+        filtered_logs
             .iter()
             .rev()
             .skip(s.log_scroll as usize)
@@ -428,21 +445,26 @@ fn gather_status(prev: Option<&Status>) -> Status {
 
     // Merge logs
     let logs_dir = format!("{}/Library/Logs", std::env::var("HOME").unwrap_or_default());
-    let mut combined = merge_logs_chrono(
+    st.combined_log_tail = merge_logs_chrono(
         &format!("{}/surreal-mind.out.log", logs_dir),
         &format!("{}/surreal-mind.err.log", logs_dir),
         &format!("{}/cloudflared-tunnel.out.log", logs_dir),
         &format!("{}/cloudflared-tunnel.err.log", logs_dir),
         st.log_tail_limit,
     );
-    // Filter logs based on log_filter
-    combined.retain(|line| match st.log_filter {
-        LogFilter::All => true,
-        LogFilter::Stdout => line.contains("[sm.out]"),
-        LogFilter::Stderr => line.contains("[sm.err]"),
-        LogFilter::Cloudflared => line.contains("[cf.out]") || line.contains("[cf.err]"),
-    });
-    st.combined_log_tail = combined;
+
+    // Read stdio state.json
+    if let Some(data_dir) = dirs::data_dir() {
+        let state_file = data_dir.join("surreal-mind").join("state.json");
+        if let Ok(content) = fs::read_to_string(state_file) {
+            if let Ok(state) = serde_json::from_str::<serde_json::Value>(&content) {
+                st.stdio_sessions = state
+                    .get("sessions")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize);
+            }
+        }
+    }
 
     // Gather resource usage for surreal-mind process
     if let Some(pid) = get_surreal_mind_pid() {
