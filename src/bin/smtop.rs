@@ -38,7 +38,6 @@ struct Status {
     use_header_auth: bool,
     http_active_sessions: Option<usize>,
     http_total_sessions: Option<u64>,
-    stdio_sessions: Option<usize>,
     db_connected: Option<bool>,
     db_ping_ms: Option<u64>,
     db_ns: Option<String>,
@@ -49,6 +48,9 @@ struct Status {
     log_filter: LogFilter,
     log_tail_limit: usize,
     info_cache: Option<(Instant, serde_json::Value)>,
+    stdio_sessions: Option<usize>,
+    tunnel_url: Option<String>,
+    show_detail: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -92,6 +94,9 @@ fn main() -> anyhow::Result<()> {
                     KeyCode::Char('Y') => {
                         let _ = copy_to_clipboard(&status.token);
                     }
+                    KeyCode::Char('u') => {
+                        let _ = copy_to_clipboard(&status.tunnel_url.as_deref().unwrap_or(""));
+                    }
                     KeyCode::Char('a') => {
                         status.use_header_auth = !status.use_header_auth;
                     }
@@ -108,6 +113,9 @@ fn main() -> anyhow::Result<()> {
                             LogFilter::Stderr => LogFilter::Cloudflared,
                             LogFilter::Cloudflared => LogFilter::All,
                         };
+                    }
+                    KeyCode::Char('t') => {
+                        status.show_detail = !status.show_detail;
                     }
                     KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => break,
                     _ => {}
@@ -207,6 +215,11 @@ fn ui(f: &mut Frame, s: &Status) {
             (Some(t), None) => format!("MCP requests: {}", t),
             _ => String::from("MCP requests: –"),
         }),
+        Line::raw(if let Some(url) = &s.tunnel_url {
+            format!("Tunnel: {}", url)
+        } else {
+            "Tunnel: – (if available)".to_string()
+        }),
     ]);
     f.render_widget(cf_text, inner[0]);
 
@@ -302,8 +315,13 @@ fn ui(f: &mut Frame, s: &Status) {
     f.render_widget(logs_p, chunks[3]);
 
     let help = Paragraph::new(vec![
-        Line::raw("Keys: q/Esc quit • r restart server • f/g start/stop cloudflared • y/Y copy URL/token • a toggle auth header • s cycle log filter • e end • b beginning"),
+        Line::raw("Keys: q/Esc quit • r restart server • f/g start/stop cloudflared • y/Y copy URL/token • u copy tunnel URL • a toggle auth header • s cycle log filter • e end • b beginning • t toggle detail"),
         Line::raw(format!("Auth mode: {}", if s.use_header_auth { "Authorization header" } else { "query token" })),
+        Line::raw(if s.show_detail {
+            "Detail mode: ON (showing extended info)".to_string()
+        } else {
+            "Detail mode: OFF".to_string()
+        }),
     ])
     .block(Block::default().borders(Borders::ALL).title("Help"));
     f.render_widget(help, chunks[4]);
@@ -445,13 +463,32 @@ fn gather_status(prev: Option<&Status>) -> Status {
 
     // Merge logs
     let logs_dir = format!("{}/Library/Logs", std::env::var("HOME").unwrap_or_default());
-    st.combined_log_tail = merge_logs_chrono(
+    let combined = merge_logs_chrono(
         &format!("{}/surreal-mind.out.log", logs_dir),
         &format!("{}/surreal-mind.err.log", logs_dir),
         &format!("{}/cloudflared-tunnel.out.log", logs_dir),
         &format!("{}/cloudflared-tunnel.err.log", logs_dir),
         st.log_tail_limit,
     );
+
+    // Parse tunnel URL from cloudflared logs (prefer latest, fallback sources)
+    st.tunnel_url = combined
+        .iter()
+        .rev()
+        .find(|line| {
+            (line.contains("cloudflared-tunnel.out") || line.contains("cloudflared.out"))
+                && line.contains("https://")
+        })
+        .and_then(|line| {
+            if let Some(start) = line.find("https://") {
+                let url_part = &line[start..];
+                url_part.split_whitespace().next().map(|s| s.to_string())
+            } else {
+                None
+            }
+        });
+
+    st.combined_log_tail = combined;
 
     // Read stdio state.json
     if let Some(data_dir) = dirs::data_dir() {
