@@ -20,7 +20,8 @@ use rmcp::transport::streamable_http_server::{
 use serde_json::json;
 use std::{sync::Arc, time::Duration};
 use surreal_mind::{config::Config, error::Result, server::SurrealMindServer};
-use tokio::sync::Mutex;
+use surrealdb::engine::remote::ws::Ws;
+use tokio::{sync::Mutex, time};
 use tower_http::cors::{Any, CorsLayer};
 
 /// Shared state for HTTP server
@@ -28,6 +29,8 @@ use tower_http::cors::{Any, CorsLayer};
 pub struct HttpState {
     pub config: Arc<Config>,
     pub metrics: Arc<Mutex<HttpMetrics>>,
+    pub session_mgr: Arc<LocalSessionManager>,
+    pub db_ping_cache: Arc<Mutex<Option<(u64, u64)>>>,
 }
 
 /// Metrics for HTTP server
@@ -35,6 +38,8 @@ pub struct HttpState {
 pub struct HttpMetrics {
     pub total_requests: u64,
     pub last_request_unix: u64,
+    pub http_active_sessions: usize,
+    pub http_total_sessions: u64,
 }
 
 impl HttpMetrics {
@@ -45,6 +50,8 @@ impl HttpMetrics {
                 .elapsed()
                 .unwrap_or_default()
                 .as_secs(),
+            http_active_sessions: 0,
+            http_total_sessions: 0,
         }
     }
 }
@@ -61,6 +68,48 @@ pub async fn info_handler(State(state): State<HttpState>) -> impl IntoResponse {
     let embedding = &state.config.system;
     let db = &state.config.system;
 
+    // Check DB connection and ping
+    let (db_connected, db_ping_ms) = if state.config.system.database_url.is_empty() {
+        (false, None)
+    } else {
+        // Check cache
+        let ttl_ms = std::env::var("SURR_DB_PING_TTL_MS")
+            .unwrap_or_else(|_| "1500".to_string())
+            .parse::<u64>()
+            .unwrap_or(1500);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let mut cache = state.db_ping_cache.lock().await;
+        if let Some((ts, ping)) = *cache {
+            if now.saturating_sub(ts) < ttl_ms {
+                (true, Some(ping))
+            } else {
+                // Cache expired, ping again
+                drop(cache);
+                let ping_result = ping_db(&state).await;
+                let mut cache = state.db_ping_cache.lock().await;
+                if let Some(p) = ping_result {
+                    *cache = Some((now, p));
+                    (true, Some(p))
+                } else {
+                    (false, None)
+                }
+            }
+        } else {
+            // No cache, ping
+            let ping_result = ping_db(&state).await;
+            let mut cache = state.db_ping_cache.lock().await;
+            if let Some(p) = ping_result {
+                *cache = Some((now, p));
+                (true, Some(p))
+            } else {
+                (false, None)
+            }
+        }
+    };
+
     (
         StatusCode::OK,
         [(header::CONTENT_TYPE, "application/json")],
@@ -73,7 +122,9 @@ pub async fn info_handler(State(state): State<HttpState>) -> impl IntoResponse {
             "db": {
                 "url": db.database_url,
                 "ns": db.database_ns,
-                "db": db.database_db
+                "db": db.database_db,
+                "connected": db_connected,
+                "ping_ms": db_ping_ms
             },
             "server": {
                 "transport": state.config.runtime.transport,
@@ -87,13 +138,18 @@ pub async fn info_handler(State(state): State<HttpState>) -> impl IntoResponse {
 /// Metrics endpoint
 pub async fn metrics_handler(State(state): State<HttpState>) -> impl IntoResponse {
     let metrics = state.metrics.lock().await.clone();
+    // Read active sessions from session manager
+    let active_sessions = state.session_mgr.sessions.read().await.len();
 
     (
         StatusCode::OK,
         [(header::CONTENT_TYPE, "application/json")],
         json!({
+            "metrics_version": "1",
             "total_requests": metrics.total_requests,
-            "last_request_unix": metrics.last_request_unix
+            "last_request_unix": metrics.last_request_unix,
+            "http_active_sessions": active_sessions,
+            "http_total_sessions": metrics.http_total_sessions
         })
         .to_string(),
     )
@@ -102,19 +158,21 @@ pub async fn metrics_handler(State(state): State<HttpState>) -> impl IntoRespons
 /// Start the HTTP server
 pub async fn start_http_server(server: SurrealMindServer) -> Result<()> {
     // Create HTTP state
+    let session_mgr = Arc::new(LocalSessionManager::default());
     let state = HttpState {
         config: server.config.clone(),
         metrics: Arc::new(Mutex::new(HttpMetrics::new())),
+        session_mgr: session_mgr.clone(),
+        db_ping_cache: Arc::new(Mutex::new(None)),
     };
 
     // Build MCP streamable HTTP service mounted at configured path
     let path = server.config.runtime.http_path.clone();
     let keepalive = Duration::from_secs(server.config.runtime.http_sse_keepalive_sec);
-    let session_mgr: LocalSessionManager = Default::default();
     let server_factory = server.clone();
     let mcp_service: StreamableHttpService<SurrealMindServer, _> = StreamableHttpService::new(
         move || Ok(server_factory.clone()),
-        Arc::new(session_mgr),
+        session_mgr.clone(),
         StreamableHttpServerConfig {
             stateful_mode: true,
             sse_keep_alive: Some(keepalive),
@@ -217,4 +275,44 @@ pub async fn start_http_server(server: SurrealMindServer) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("HTTP server error: {}", e))?;
 
     Ok(())
+}
+
+async fn ping_db(state: &HttpState) -> Option<u64> {
+    let timeout_ms = std::env::var("SURR_DB_PING_TIMEOUT_MS")
+        .unwrap_or_else(|_| "250".to_string())
+        .parse::<u64>()
+        .unwrap_or(250);
+    let timeout = Duration::from_millis(timeout_ms);
+
+    // Create a temporary DB connection
+    let db_result = surrealdb::Surreal::new::<surrealdb::engine::remote::ws::Ws>(
+        state.config.system.database_url.clone(),
+    )
+    .await;
+
+    let db = match db_result {
+        Ok(db) => db,
+        Err(_) => return None,
+    };
+
+    // Assume DB is accessible without auth for ping
+
+    let use_result = db
+        .use_ns(&state.config.system.database_ns)
+        .use_db(&state.config.system.database_db)
+        .await;
+
+    if use_result.is_err() {
+        return None;
+    }
+
+    // Ping with SELECT 1
+    let start = std::time::Instant::now();
+    let query_result = tokio::time::timeout(timeout, db.query("SELECT 1")).await;
+    let elapsed = start.elapsed().as_millis() as u64;
+
+    match query_result {
+        Ok(Ok(_)) => Some(elapsed),
+        _ => None,
+    }
 }

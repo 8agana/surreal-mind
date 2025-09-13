@@ -8,6 +8,15 @@ use ratatui::widgets::*;
 use reqwest::blocking::Client;
 
 #[derive(Default, Clone)]
+enum LogFilter {
+    #[default]
+    All,
+    Stdout,
+    Stderr,
+    Cloudflared,
+}
+
+#[derive(Default, Clone)]
 struct Status {
     service_running: bool,
     cloudflared_running: bool,
@@ -25,6 +34,18 @@ struct Status {
     rps_history: Vec<f64>,
     combined_log_tail: Vec<String>,
     use_header_auth: bool,
+    http_active_sessions: Option<usize>,
+    http_total_sessions: Option<u64>,
+    db_connected: Option<bool>,
+    db_ping_ms: Option<u64>,
+    db_ns: Option<String>,
+    db_db: Option<String>,
+    resource_cpu: Option<f64>,
+    resource_rss_mb: Option<f64>,
+    resource_uptime: Option<String>,
+    log_filter: LogFilter,
+    log_tail_limit: usize,
+    info_cache: Option<(Instant, serde_json::Value)>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -73,6 +94,18 @@ fn main() -> anyhow::Result<()> {
                     }
                     KeyCode::PageUp => status.log_scroll = status.log_scroll.saturating_add(10),
                     KeyCode::PageDown => status.log_scroll = status.log_scroll.saturating_sub(10),
+                    KeyCode::Home | KeyCode::Char('b') => {
+                        status.log_scroll = status.combined_log_tail.len() as u16
+                    }
+                    KeyCode::End | KeyCode::Char('e') => status.log_scroll = 0,
+                    KeyCode::Char('s') => {
+                        status.log_filter = match status.log_filter {
+                            LogFilter::All => LogFilter::Stdout,
+                            LogFilter::Stdout => LogFilter::Stderr,
+                            LogFilter::Stderr => LogFilter::Cloudflared,
+                            LogFilter::Cloudflared => LogFilter::All,
+                        };
+                    }
                     KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => break,
                     _ => {}
                 }
@@ -91,7 +124,8 @@ fn ui(f: &mut Frame, s: &Status) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),
-            Constraint::Length(9),
+            Constraint::Length(12),
+            Constraint::Length(6),
             Constraint::Min(8),
             Constraint::Length(3),
         ])
@@ -126,6 +160,22 @@ fn ui(f: &mut Frame, s: &Status) {
         )),
         Line::raw("Bind: 127.0.0.1:8787"),
         Line::raw("Path: /mcp"),
+        Line::raw(format!(
+            "CPU: {}%",
+            s.resource_cpu
+                .map(|c| format!("{:.1}", c))
+                .unwrap_or("–".to_string())
+        )),
+        Line::raw(format!(
+            "RSS: {} MB",
+            s.resource_rss_mb
+                .map(|r| format!("{:.1}", r))
+                .unwrap_or("–".to_string())
+        )),
+        Line::raw(format!(
+            "Uptime: {}",
+            s.resource_uptime.as_deref().unwrap_or("–")
+        )),
     ])
     .block(Block::default().borders(Borders::ALL).title("MCP Service"));
     f.render_widget(svc, row[0]);
@@ -168,11 +218,50 @@ fn ui(f: &mut Frame, s: &Status) {
         .style(Style::default().fg(Color::Green));
     f.render_widget(spark, inner[1]);
 
+    // Row 2: Sessions and DB
+    let row2 = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(chunks[2]);
+
+    let sessions_text = Paragraph::new(vec![
+        Line::raw(format!(
+            "HTTP Sessions: {}/{}",
+            s.http_active_sessions.unwrap_or(0),
+            s.http_total_sessions.unwrap_or(0)
+        )),
+        Line::raw("Stdio Sessions: –"), // TODO: from state.json
+    ])
+    .block(Block::default().borders(Borders::ALL).title("Sessions"));
+    f.render_widget(sessions_text, row2[0]);
+
+    let db_text = Paragraph::new(vec![
+        Line::raw(format!(
+            "Connected: {}",
+            s.db_connected
+                .map(|c| if c { "yes" } else { "no" })
+                .unwrap_or("–")
+        )),
+        Line::raw(format!(
+            "Ping: {} ms",
+            s.db_ping_ms
+                .map(|p| p.to_string())
+                .unwrap_or("–".to_string())
+        )),
+        Line::raw(format!(
+            "NS/DB: {}/{}",
+            s.db_ns.as_deref().unwrap_or("–"),
+            s.db_db.as_deref().unwrap_or("–")
+        )),
+    ])
+    .block(Block::default().borders(Borders::ALL).title("SurrealDB"));
+    f.render_widget(db_text, row2[1]);
+
     // Logs pane
     let logs_lines: Vec<Line> = if s.combined_log_tail.is_empty() {
         vec![Line::raw("(no logs yet)")]
     } else {
-        let h = chunks[2].height as usize;
+        let h = chunks[3].height as usize;
         s.combined_log_tail
             .iter()
             .rev()
@@ -183,20 +272,24 @@ fn ui(f: &mut Frame, s: &Status) {
             .collect()
     };
     let logs_p = Paragraph::new(logs_lines)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Recent Logs (PgUp/PgDn)"),
-        )
+        .block(Block::default().borders(Borders::ALL).title(format!(
+            "Recent Logs ({}) (PgUp/PgDn)",
+            match s.log_filter {
+                LogFilter::All => "all",
+                LogFilter::Stdout => "stdout",
+                LogFilter::Stderr => "stderr",
+                LogFilter::Cloudflared => "cloudflared",
+            }
+        )))
         .wrap(Wrap { trim: true });
-    f.render_widget(logs_p, chunks[2]);
+    f.render_widget(logs_p, chunks[3]);
 
     let help = Paragraph::new(vec![
-        Line::raw("Keys: q/Esc quit • r restart server • f/g start/stop cloudflared • y/Y copy URL/token • a toggle auth header"),
+        Line::raw("Keys: q/Esc quit • r restart server • f/g start/stop cloudflared • y/Y copy URL/token • a toggle auth header • s cycle log filter • e end • b beginning"),
         Line::raw(format!("Auth mode: {}", if s.use_header_auth { "Authorization header" } else { "query token" })),
     ])
     .block(Block::default().borders(Borders::ALL).title("Help"));
-    f.render_widget(help, chunks[3]);
+    f.render_widget(help, chunks[4]);
 }
 
 fn on_off(b: bool) -> String {
@@ -226,6 +319,8 @@ fn gather_status(prev: Option<&Status>) -> Status {
         url: url.clone(),
         token: token.clone(),
         use_header_auth: prev.map(|p| p.use_header_auth).unwrap_or(false),
+        log_filter: prev.map(|p| p.log_filter.clone()).unwrap_or_default(),
+        log_tail_limit: prev.map(|p| p.log_tail_limit).unwrap_or(400),
         ..Default::default()
     };
 
@@ -242,7 +337,7 @@ fn gather_status(prev: Option<&Status>) -> Status {
     st.health_remote = hr;
     st.latency_remote_ms = lr;
 
-    // /metrics for total_requests
+    // /metrics for total_requests and new fields
     if !token.is_empty() {
         if let Some(m) =
             http_json_auth_mode("http://127.0.0.1:8787/metrics", &token, st.use_header_auth)
@@ -250,6 +345,11 @@ fn gather_status(prev: Option<&Status>) -> Status {
             if let Some(t) = m.get("total_requests").and_then(|v| v.as_u64()) {
                 st.total_requests = Some(t);
             }
+            st.http_active_sessions = m
+                .get("http_active_sessions")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize);
+            st.http_total_sessions = m.get("http_total_sessions").and_then(|v| v.as_u64());
             if let Some(prev_t) = prev.and_then(|p| p.total_requests) {
                 if let Some(cur) = st.total_requests {
                     let dt = 2.0_f64;
@@ -264,6 +364,41 @@ fn gather_status(prev: Option<&Status>) -> Status {
                 let _ = rps_hist.drain(0..(rps_hist.len() - 60));
             }
             st.rps_history = rps_hist;
+        }
+
+        // /info with caching
+        let info_ttl_ms = std::env::var("SMTOP_INFO_TTL_MS")
+            .unwrap_or_else(|_| "1000".to_string())
+            .parse::<u64>()
+            .unwrap_or(1000);
+        let now = Instant::now();
+        let should_fetch_info = st
+            .info_cache
+            .as_ref()
+            .map(|(ts, _)| now.duration_since(*ts).as_millis() as u64 > info_ttl_ms)
+            .unwrap_or(true);
+        if should_fetch_info {
+            if let Some(info) =
+                http_json_auth_mode("http://127.0.0.1:8787/info", &token, st.use_header_auth)
+            {
+                st.info_cache = Some((now, info.clone()));
+                if let Some(db) = info.get("db").and_then(|v| v.as_object()) {
+                    st.db_connected = db.get("connected").and_then(|v| v.as_bool());
+                    st.db_ping_ms = db.get("ping_ms").and_then(|v| v.as_u64());
+                    st.db_ns = db.get("ns").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    st.db_db = db.get("db").and_then(|v| v.as_str()).map(|s| s.to_string());
+                }
+            }
+        } else {
+            // Use cached info
+            if let Some((_, info)) = &st.info_cache {
+                if let Some(db) = info.get("db").and_then(|v| v.as_object()) {
+                    st.db_connected = db.get("connected").and_then(|v| v.as_bool());
+                    st.db_ping_ms = db.get("ping_ms").and_then(|v| v.as_u64());
+                    st.db_ns = db.get("ns").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    st.db_db = db.get("db").and_then(|v| v.as_str()).map(|s| s.to_string());
+                }
+            }
         }
     }
 
@@ -285,16 +420,69 @@ fn gather_status(prev: Option<&Status>) -> Status {
         st.lat_remote_hist = v;
     }
 
+    // Set log tail limit from env
+    st.log_tail_limit = std::env::var("SMTOP_LOG_TAIL")
+        .unwrap_or_else(|_| "400".to_string())
+        .parse::<usize>()
+        .unwrap_or(400);
+
     // Merge logs
     let logs_dir = format!("{}/Library/Logs", std::env::var("HOME").unwrap_or_default());
-    st.combined_log_tail = merge_logs_chrono(
+    let mut combined = merge_logs_chrono(
         &format!("{}/surreal-mind.out.log", logs_dir),
         &format!("{}/surreal-mind.err.log", logs_dir),
         &format!("{}/cloudflared-tunnel.out.log", logs_dir),
         &format!("{}/cloudflared-tunnel.err.log", logs_dir),
-        400,
+        st.log_tail_limit,
     );
+    // Filter logs based on log_filter
+    combined.retain(|line| match st.log_filter {
+        LogFilter::All => true,
+        LogFilter::Stdout => line.contains("[sm.out]"),
+        LogFilter::Stderr => line.contains("[sm.err]"),
+        LogFilter::Cloudflared => line.contains("[cf.out]") || line.contains("[cf.err]"),
+    });
+    st.combined_log_tail = combined;
+
+    // Gather resource usage for surreal-mind process
+    if let Some(pid) = get_surreal_mind_pid() {
+        if let Some((cpu, rss_kb, uptime)) = get_process_stats(pid) {
+            st.resource_cpu = Some(cpu);
+            st.resource_rss_mb = Some(rss_kb as f64 / 1024.0);
+            st.resource_uptime = Some(uptime);
+        }
+    }
+
     st
+}
+
+fn get_surreal_mind_pid() -> Option<u32> {
+    let output = Command::new("pgrep")
+        .arg("-x")
+        .arg("surreal-mind")
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8(output.stdout).ok()?;
+    let pid_str = stdout.lines().next()?;
+    pid_str.parse::<u32>().ok()
+}
+
+fn get_process_stats(pid: u32) -> Option<(f64, u64, String)> {
+    let output = Command::new("ps")
+        .args(["-o", "%cpu=,rss=,etime=", "-p"])
+        .arg(pid.to_string())
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8(output.stdout).ok()?;
+    let parts: Vec<&str> = stdout.split_whitespace().collect();
+    if parts.len() >= 3 {
+        let cpu = parts[0].parse::<f64>().ok()?;
+        let rss = parts[1].parse::<u64>().ok()?;
+        let etime = parts[2].to_string();
+        Some((cpu, rss, etime))
+    } else {
+        None
+    }
 }
 
 fn port_listening(port: u16) -> bool {
