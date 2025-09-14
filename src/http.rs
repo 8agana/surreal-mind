@@ -20,8 +20,7 @@ use rmcp::transport::streamable_http_server::{
 use serde_json::json;
 use std::{sync::Arc, time::Duration};
 use surreal_mind::{config::Config, error::Result, server::SurrealMindServer};
-use surrealdb::engine::remote::ws::Ws;
-use tokio::{sync::Mutex, time};
+use tokio::sync::Mutex;
 use tower_http::cors::{Any, CorsLayer};
 
 /// Shared state for HTTP server
@@ -237,6 +236,56 @@ pub async fn db_health_handler(State(state): State<HttpState>) -> impl IntoRespo
             (ping_result.is_some(), ping_result, counts.0, counts.1)
         };
 
+    // Optional photography DB health (if enabled)
+    let mut photo = serde_json::Value::Null;
+    if state.config.runtime.photo_enable {
+        let purl = state
+            .config
+            .runtime
+            .photo_url
+            .clone()
+            .unwrap_or_else(|| state.config.system.database_url.clone());
+        if let (Some(ns), Some(db_name)) = (
+            state.config.runtime.photo_ns.clone(),
+            state.config.runtime.photo_db.clone(),
+        ) {
+            let (p_connected, p_ping_ms) = if let Some(p) =
+                ping_db_params(
+                    &purl,
+                    &ns,
+                    &db_name,
+                    state.config.runtime.photo_user.as_deref().unwrap_or(""),
+                    state.config.runtime.photo_pass.as_deref().unwrap_or(""),
+                )
+                .await
+            {
+                (true, Some(p))
+            } else {
+                (false, None)
+            };
+            let (p_thoughts, p_entities) = if p_connected {
+                get_db_counts_params(
+                    &purl,
+                    &ns,
+                    &db_name,
+                    state.config.runtime.photo_user.as_deref().unwrap_or(""),
+                    state.config.runtime.photo_pass.as_deref().unwrap_or(""),
+                )
+                .await
+            } else {
+                (None, None)
+            };
+            photo = json!({
+                "ns": ns,
+                "db": db_name,
+                "connected": p_connected,
+                "ping_ms": p_ping_ms,
+                "thoughts_count": p_thoughts,
+                "entities_count": p_entities
+            });
+        }
+    }
+
     (
         StatusCode::OK,
         [(header::CONTENT_TYPE, "application/json")],
@@ -246,7 +295,8 @@ pub async fn db_health_handler(State(state): State<HttpState>) -> impl IntoRespo
             "ns": state.config.system.database_ns,
             "db": state.config.system.database_db,
             "thoughts_count": thoughts_count,
-            "recalls_count": recalls_count
+            "recalls_count": recalls_count,
+            "photography": photo
         })
         .to_string(),
     )
@@ -393,6 +443,23 @@ pub async fn start_http_server(server: SurrealMindServer) -> Result<()> {
 }
 
 async fn ping_db(state: &HttpState) -> Option<u64> {
+    ping_db_params(
+        &state.config.system.database_url,
+        &state.config.system.database_ns,
+        &state.config.system.database_db,
+        &state.config.runtime.database_user,
+        &state.config.runtime.database_pass,
+    )
+    .await
+}
+
+async fn ping_db_params(
+    url: &str,
+    ns: &str,
+    db: &str,
+    user: &str,
+    pass: &str,
+) -> Option<u64> {
     let timeout_ms = std::env::var("SURR_DB_PING_TIMEOUT_MS")
         .unwrap_or_else(|_| "250".to_string())
         .parse::<u64>()
@@ -400,84 +467,66 @@ async fn ping_db(state: &HttpState) -> Option<u64> {
     let timeout = Duration::from_millis(timeout_ms);
 
     // Create a temporary DB connection
-    let db_result = surrealdb::Surreal::new::<surrealdb::engine::remote::ws::Ws>(
-        state.config.system.database_url.clone(),
-    )
-    .await;
+    let db_result = surrealdb::Surreal::new::<surrealdb::engine::remote::ws::Ws>(url.to_string()).await;
+    let client = match db_result { Ok(db) => db, Err(_) => return None };
 
-    let db = match db_result {
-        Ok(db) => db,
-        Err(_) => return None,
-    };
-
-    // Assume DB is accessible without auth for ping
-
-    let use_result = db
-        .use_ns(&state.config.system.database_ns)
-        .use_db(&state.config.system.database_db)
-        .await;
-
-    if use_result.is_err() {
-        return None;
+    // Authenticate if credentials are provided (root auth)
+    if !user.is_empty() {
+        let _ = client
+            .signin(surrealdb::opt::auth::Root {
+                username: user,
+                password: pass,
+            })
+            .await
+            .ok()?;
     }
+
+    // Switch NS/DB
+    client.use_ns(ns).use_db(db).await.ok()?;
 
     // Ping with SELECT 1
     let start = std::time::Instant::now();
-    let query_result = tokio::time::timeout(timeout, db.query("SELECT 1")).await;
+    let query_result = tokio::time::timeout(timeout, client.query("SELECT 1")).await;
     let elapsed = start.elapsed().as_millis() as u64;
-
-    match query_result {
-        Ok(Ok(_)) => Some(elapsed),
-        _ => None,
-    }
+    match query_result { Ok(Ok(_)) => Some(elapsed), _ => None }
 }
 
 async fn get_db_counts(state: &HttpState) -> (Option<u64>, Option<u64>) {
+    get_db_counts_params(
+        &state.config.system.database_url,
+        &state.config.system.database_ns,
+        &state.config.system.database_db,
+        &state.config.runtime.database_user,
+        &state.config.runtime.database_pass,
+    )
+    .await
+}
+
+async fn get_db_counts_params(
+    url: &str,
+    ns: &str,
+    db: &str,
+    user: &str,
+    pass: &str,
+) -> (Option<u64>, Option<u64>) {
     let timeout = Duration::from_millis(500);
-
-    // Create a temporary DB connection
-    let db_result = surrealdb::Surreal::new::<surrealdb::engine::remote::ws::Ws>(
-        state.config.system.database_url.clone(),
-    )
-    .await;
-
-    let db = match db_result {
-        Ok(db) => db,
-        Err(_) => return (None, None),
-    };
-
-    let use_result = db
-        .use_ns(&state.config.system.database_ns)
-        .use_db(&state.config.system.database_db)
-        .await;
-
-    if use_result.is_err() {
-        return (None, None);
+    let db_result = surrealdb::Surreal::new::<surrealdb::engine::remote::ws::Ws>(url.to_string()).await;
+    let client = match db_result { Ok(db) => db, Err(_) => return (None, None) };
+    if !user.is_empty() {
+        if client
+            .signin(surrealdb::opt::auth::Root { username: user, password: pass })
+            .await
+            .is_err()
+        {
+            return (None, None);
+        }
     }
+    if client.use_ns(ns).use_db(db).await.is_err() { return (None, None); }
 
-    // Get counts with LIMIT for fast estimation
-    let thoughts_query = tokio::time::timeout(
-        timeout,
-        db.query("SELECT count() FROM thoughts LIMIT 100000"),
-    )
-    .await;
-    let recalls_query = tokio::time::timeout(
-        timeout,
-        db.query("SELECT count() FROM kg_entities LIMIT 100000"),
-    )
-    .await;
+    let thoughts_query = tokio::time::timeout(timeout, client.query("SELECT count() FROM thoughts LIMIT 100000")).await;
+    let recalls_query = tokio::time::timeout(timeout, client.query("SELECT count() FROM kg_entities LIMIT 100000")).await;
 
-    let thoughts_count = if let Ok(Ok(mut resp)) = thoughts_query {
-        resp.take::<Option<u64>>(0).ok().flatten()
-    } else {
-        None
-    };
-
-    let recalls_count = if let Ok(Ok(mut resp)) = recalls_query {
-        resp.take::<Option<u64>>(0).ok().flatten()
-    } else {
-        None
-    };
-
+    let thoughts_count = if let Ok(Ok(mut resp)) = thoughts_query { resp.take::<Option<u64>>(0).ok().flatten() } else { None };
+    let recalls_count = if let Ok(Ok(mut resp)) = recalls_query { resp.take::<Option<u64>>(0).ok().flatten() } else { None };
     (thoughts_count, recalls_count)
 }
