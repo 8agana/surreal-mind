@@ -111,17 +111,16 @@ async fn main() -> Result<()> {
                     "client": std::env::var("MCP_CLIENT").unwrap_or_else(|_| "unknown".to_string()),
                     "sessions": 1
                 });
-                if fs::write(&temp_file, state_data.to_string()).is_ok() {
-                    if fs::rename(&temp_file, &state_file).is_ok() {
-                        let perms = if let Ok(meta) = fs::metadata(&state_file) {
-                            meta.permissions()
-                        } else {
-                            fs::Permissions::from_mode(0o600)
-                        };
-                        let mut perms = perms;
-                        perms.set_mode(0o600);
-                        let _ = fs::set_permissions(&state_file, perms);
-                    }
+                if fs::write(&temp_file, state_data.to_string()).is_ok()
+                    && fs::rename(&temp_file, &state_file).is_ok()
+                {
+                    let mut perms = if let Ok(meta) = fs::metadata(&state_file) {
+                        meta.permissions()
+                    } else {
+                        fs::Permissions::from_mode(0o600)
+                    };
+                    perms.set_mode(0o600);
+                    let _ = fs::set_permissions(&state_file, perms);
                 }
             }
         }

@@ -7,7 +7,7 @@ use crossterm::{event, execute, terminal};
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 use reqwest::blocking::Client;
-use serde_json;
+use serde_json::{Value, from_str};
 
 #[derive(Default, Clone)]
 enum LogFilter {
@@ -47,7 +47,7 @@ struct Status {
     resource_uptime: Option<String>,
     log_filter: LogFilter,
     log_tail_limit: usize,
-    info_cache: Option<(Instant, serde_json::Value)>,
+    info_cache: Option<(Instant, Value)>,
     stdio_sessions: Option<usize>,
     tunnel_url: Option<String>,
     show_detail: bool,
@@ -95,7 +95,7 @@ fn main() -> anyhow::Result<()> {
                         let _ = copy_to_clipboard(&status.token);
                     }
                     KeyCode::Char('u') => {
-                        let _ = copy_to_clipboard(&status.tunnel_url.as_deref().unwrap_or(""));
+                        let _ = copy_to_clipboard(status.tunnel_url.as_deref().unwrap_or(""));
                     }
                     KeyCode::Char('a') => {
                         status.use_header_auth = !status.use_header_auth;
@@ -298,7 +298,7 @@ fn ui(f: &mut Frame, s: &Status) {
             .skip(s.log_scroll as usize)
             .take(h.saturating_sub(2))
             .rev()
-            .map(|l| Line::raw(l.clone()))
+            .map(|l| Line::raw(l.as_str()))
             .collect()
     };
     let logs_p = Paragraph::new(logs_lines)
@@ -494,7 +494,7 @@ fn gather_status(prev: Option<&Status>) -> Status {
     if let Some(data_dir) = dirs::data_dir() {
         let state_file = data_dir.join("surreal-mind").join("state.json");
         if let Ok(content) = fs::read_to_string(state_file) {
-            if let Ok(state) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Ok(state) = from_str::<Value>(&content) {
                 st.stdio_sessions = state
                     .get("sessions")
                     .and_then(|v| v.as_u64())
@@ -572,7 +572,7 @@ fn http_health_latency(url: &str) -> (bool, Option<u128>) {
     (false, None)
 }
 
-fn http_json_auth_mode(url: &str, tok: &str, header: bool) -> Option<serde_json::Value> {
+fn http_json_auth_mode(url: &str, tok: &str, header: bool) -> Option<Value> {
     let client = Client::builder()
         .timeout(Duration::from_millis(1500))
         .danger_accept_invalid_certs(true)
@@ -591,7 +591,7 @@ fn http_json_auth_mode(url: &str, tok: &str, header: bool) -> Option<serde_json:
     if !resp.status().is_success() {
         return None;
     }
-    resp.json::<serde_json::Value>().ok()
+    resp.json::<Value>().ok()
 }
 
 fn restart_sm() -> anyhow::Result<()> {

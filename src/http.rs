@@ -37,7 +37,7 @@ pub struct HttpState {
 pub struct HttpMetrics {
     pub total_requests: u64,
     pub last_request_unix: u64,
-    pub http_active_sessions: usize,
+
     pub http_total_sessions: u64,
     pub errors_total: u64,
     pub latencies: Vec<f64>, // ring buffer for p95
@@ -52,7 +52,6 @@ impl HttpMetrics {
                 .elapsed()
                 .unwrap_or_default()
                 .as_secs(),
-            http_active_sessions: 0,
             http_total_sessions: 0,
             errors_total: 0,
             latencies: Vec::with_capacity(256),
@@ -86,7 +85,7 @@ pub async fn info_handler(State(state): State<HttpState>) -> impl IntoResponse {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64;
-        let mut cache = state.db_ping_cache.lock().await;
+        let cache = state.db_ping_cache.lock().await;
         if let Some((ts, ping)) = *cache {
             if now.saturating_sub(ts) < ttl_ms {
                 (true, Some(ping))
@@ -209,8 +208,8 @@ pub async fn db_health_handler(State(state): State<HttpState>) -> impl IntoRespo
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as u64;
-            let mut cache = state.db_ping_cache.lock().await;
-            let (ping_ms, is_cached) = if let Some((ts, p)) = *cache {
+            let cache = state.db_ping_cache.lock().await;
+            let (ping_ms, _is_cached) = if let Some((ts, p)) = *cache {
                 if now.saturating_sub(ts) < ttl_ms {
                     (Some(p), true)
                 } else {
@@ -249,15 +248,14 @@ pub async fn db_health_handler(State(state): State<HttpState>) -> impl IntoRespo
             state.config.runtime.photo_ns.clone(),
             state.config.runtime.photo_db.clone(),
         ) {
-            let (p_connected, p_ping_ms) = if let Some(p) =
-                ping_db_params(
-                    &purl,
-                    &ns,
-                    &db_name,
-                    state.config.runtime.photo_user.as_deref().unwrap_or(""),
-                    state.config.runtime.photo_pass.as_deref().unwrap_or(""),
-                )
-                .await
+            let (p_connected, p_ping_ms) = if let Some(p) = ping_db_params(
+                &purl,
+                &ns,
+                &db_name,
+                state.config.runtime.photo_user.as_deref().unwrap_or(""),
+                state.config.runtime.photo_pass.as_deref().unwrap_or(""),
+            )
+            .await
             {
                 (true, Some(p))
             } else {
@@ -453,13 +451,7 @@ async fn ping_db(state: &HttpState) -> Option<u64> {
     .await
 }
 
-async fn ping_db_params(
-    url: &str,
-    ns: &str,
-    db: &str,
-    user: &str,
-    pass: &str,
-) -> Option<u64> {
+async fn ping_db_params(url: &str, ns: &str, db: &str, user: &str, pass: &str) -> Option<u64> {
     let timeout_ms = std::env::var("SURR_DB_PING_TIMEOUT_MS")
         .unwrap_or_else(|_| "250".to_string())
         .parse::<u64>()
@@ -467,8 +459,12 @@ async fn ping_db_params(
     let timeout = Duration::from_millis(timeout_ms);
 
     // Create a temporary DB connection
-    let db_result = surrealdb::Surreal::new::<surrealdb::engine::remote::ws::Ws>(url.to_string()).await;
-    let client = match db_result { Ok(db) => db, Err(_) => return None };
+    let db_result =
+        surrealdb::Surreal::new::<surrealdb::engine::remote::ws::Ws>(url.to_string()).await;
+    let client = match db_result {
+        Ok(db) => db,
+        Err(_) => return None,
+    };
 
     // Authenticate if credentials are provided (root auth)
     if !user.is_empty() {
@@ -488,7 +484,10 @@ async fn ping_db_params(
     let start = std::time::Instant::now();
     let query_result = tokio::time::timeout(timeout, client.query("SELECT 1")).await;
     let elapsed = start.elapsed().as_millis() as u64;
-    match query_result { Ok(Ok(_)) => Some(elapsed), _ => None }
+    match query_result {
+        Ok(Ok(_)) => Some(elapsed),
+        _ => None,
+    }
 }
 
 async fn get_db_counts(state: &HttpState) -> (Option<u64>, Option<u64>) {
@@ -510,23 +509,47 @@ async fn get_db_counts_params(
     pass: &str,
 ) -> (Option<u64>, Option<u64>) {
     let timeout = Duration::from_millis(500);
-    let db_result = surrealdb::Surreal::new::<surrealdb::engine::remote::ws::Ws>(url.to_string()).await;
-    let client = match db_result { Ok(db) => db, Err(_) => return (None, None) };
-    if !user.is_empty() {
-        if client
-            .signin(surrealdb::opt::auth::Root { username: user, password: pass })
+    let db_result =
+        surrealdb::Surreal::new::<surrealdb::engine::remote::ws::Ws>(url.to_string()).await;
+    let client = match db_result {
+        Ok(db) => db,
+        Err(_) => return (None, None),
+    };
+    if !user.is_empty()
+        && client
+            .signin(surrealdb::opt::auth::Root {
+                username: user,
+                password: pass,
+            })
             .await
             .is_err()
-        {
-            return (None, None);
-        }
+    {
+        return (None, None);
     }
-    if client.use_ns(ns).use_db(db).await.is_err() { return (None, None); }
+    if client.use_ns(ns).use_db(db).await.is_err() {
+        return (None, None);
+    }
 
-    let thoughts_query = tokio::time::timeout(timeout, client.query("SELECT count() FROM thoughts LIMIT 100000")).await;
-    let recalls_query = tokio::time::timeout(timeout, client.query("SELECT count() FROM kg_entities LIMIT 100000")).await;
+    let thoughts_query = tokio::time::timeout(
+        timeout,
+        client.query("SELECT count() FROM thoughts LIMIT 100000"),
+    )
+    .await;
+    let recalls_query = tokio::time::timeout(
+        timeout,
+        client.query("SELECT count() FROM kg_entities LIMIT 100000"),
+    )
+    .await;
 
-    let thoughts_count = if let Ok(Ok(mut resp)) = thoughts_query { resp.take::<Option<u64>>(0).ok().flatten() } else { None };
-    let recalls_count = if let Ok(Ok(mut resp)) = recalls_query { resp.take::<Option<u64>>(0).ok().flatten() } else { None };
+    let thoughts_count = if let Ok(Ok(mut resp)) = thoughts_query {
+        resp.take::<Option<u64>>(0).ok().flatten()
+    } else {
+        None
+    };
+    let recalls_count = if let Ok(Ok(mut resp)) = recalls_query {
+        resp.take::<Option<u64>>(0).ok().flatten()
+    } else {
+        None
+    };
     (thoughts_count, recalls_count)
 }
