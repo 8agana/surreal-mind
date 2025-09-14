@@ -40,7 +40,7 @@ Knowledge Graph entity nodes.
 - `name`: Basic entity lookup
 - `(name, data.entity_type)`: Composite for type-specific entity searches
 
-### kg_edges
+### kg_relationships
 Relationships between Knowledge Graph entities.
 
 **Fields:**
@@ -130,20 +130,26 @@ Blocked terms for Knowledge Graph extraction.
 
 ## Maintenance Operations
 
-### health_check_indexes
-Use `maintenance_ops` with subcommand `health_check_indexes` to verify index health:
+### health_check_embeddings
+Use `maintenance_ops` with subcommand `health_check_embeddings` to verify embedding dimension coherence across tables:
 
 ```json
 {
   "tool": "maintenance_ops",
   "arguments": {
-    "subcommand": "health_check_indexes",
-    "dry_run": true
+    "subcommand": "health_check_embeddings"
   }
 }
 ```
 
-This returns a report of expected vs. present indexes for each table, highlighting any missing required indexes.
+This returns `expected_dim` and per-table mismatches for `thoughts`, `kg_entities`, and `kg_observations`.
+
+### Re-embedding and Fix Utilities
+- `maintenance_ops { "subcommand": "reembed" }` — re-embed thoughts to the active provider/model/dim
+- `maintenance_ops { "subcommand": "reembed_kg" }` — re-embed KG entities/observations
+- `maintenance_ops { "subcommand": "ensure_continuity_fields" }` — backfill session continuity fields
+
+All operations support `dry_run` where applicable.
 
 ## Index Management
 
