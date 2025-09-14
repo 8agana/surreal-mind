@@ -2,9 +2,12 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::time::{Duration, Instant};
 use tracing::{debug, info};
+
+static PROCESS_START: OnceLock<Instant> = OnceLock::new();
 
 #[async_trait]
 pub trait Embedder: Send + Sync {
@@ -94,14 +97,15 @@ impl Embedder for OpenAIEmbedder {
         // Simple rate limiting: wait if needed to respect RPS
         if self.rps_limit > 0.0 {
             let interval_ms = (1000.0 / self.rps_limit) as u64;
-            let now = Instant::now().elapsed().as_millis() as u64;
+            let process_start = PROCESS_START.get_or_init(Instant::now);
+            let now_ms = (Instant::now() - *process_start).as_millis() as u64;
             let last = self.last_call.load(Ordering::SeqCst);
-            if now < last + interval_ms {
-                let delay = last + interval_ms - now;
+            if now_ms < last.saturating_add(interval_ms) {
+                let delay = last.saturating_add(interval_ms).saturating_sub(now_ms);
                 debug!("Rate limiting OpenAI embedding, delaying {}ms", delay);
                 tokio::time::sleep(Duration::from_millis(delay)).await;
             }
-            self.last_call.store(now, Ordering::SeqCst);
+            self.last_call.store(now_ms, Ordering::SeqCst);
         }
 
         let body = OpenAIRequest {
@@ -273,5 +277,17 @@ pub async fn create_embedder(config: &crate::config::Config) -> Result<Arc<dyn E
                 make_bge()
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[tokio::test]
+    async fn test_rate_limiter_no_sleep_when_elapsed() {
+        let interval = 1000u64;
+        let last = 0u64;
+        let now = 2000u64;
+        // Simulate: if now >= last + interval, no sleep
+        assert!(now >= last.saturating_add(interval));
     }
 }

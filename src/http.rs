@@ -18,7 +18,7 @@ use rmcp::transport::streamable_http_server::{
     tower::{StreamableHttpServerConfig, StreamableHttpService},
 };
 use serde_json::json;
-use std::{sync::Arc, time::Duration};
+use std::{cmp::Ordering, sync::Arc, time::Duration};
 use surreal_mind::{config::Config, error::Result, server::SurrealMindServer};
 use tokio::sync::Mutex;
 use tower_http::cors::{Any, CorsLayer};
@@ -152,7 +152,7 @@ pub async fn metrics_handler(State(state): State<HttpState>) -> impl IntoRespons
         let sum: f64 = metrics.latencies.iter().sum();
         let avg = sum / metrics.latencies.len() as f64;
         let mut sorted = metrics.latencies.clone();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
         let p95_idx = (sorted.len() as f64 * 0.95) as usize;
         let p95 = sorted.get(p95_idx).copied();
         (Some(avg), p95)
@@ -302,6 +302,13 @@ pub async fn db_health_handler(State(state): State<HttpState>) -> impl IntoRespo
 
 /// Start the HTTP server
 pub async fn start_http_server(server: SurrealMindServer) -> Result<()> {
+    // Warn on insecure token usage
+    if server.config.runtime.allow_token_in_url {
+        tracing::warn!(
+            "Token authentication via query parameters is enabled; this can leak tokens in logs/proxies. Consider using Authorization header instead."
+        );
+    }
+
     // Create HTTP state
     let session_mgr = Arc::new(LocalSessionManager::default());
     let state = HttpState {

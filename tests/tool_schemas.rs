@@ -260,5 +260,5 @@ async fn test_actual_server_tool_listing() {
 
     // For now, this is gated behind a feature flag
     // Placeholder: Treat as success when feature is enabled in CI environments.
-    assert!(true);
+    // TODO: Implement actual integration test when db_integration feature is enabled
 }
