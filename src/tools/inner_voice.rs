@@ -334,13 +334,17 @@ impl SurrealMindServer {
 
         // Try Gemini CLI first when requested (even if snippets are empty)
         if provider_pref.eq_ignore_ascii_case("gemini_cli") {
-            let cli_cmd =
-                std::env::var("IV_SYNTH_CLI_CMD").unwrap_or_else(|_| "gemini".to_string());
+            // IV_CLI_* takes precedence over IV_SYNTH_* (e.g., IV_CLI_CMD overrides IV_SYNTH_CLI_CMD)
+            let cli_cmd = std::env::var("IV_CLI_CMD")
+                .or_else(|_| std::env::var("IV_SYNTH_CLI_CMD"))
+                .unwrap_or_else(|_| "gemini".to_string());
             let cli_model =
                 std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-2.5-pro".to_string());
-            let cli_args_json = std::env::var("IV_SYNTH_CLI_ARGS_JSON")
+            let cli_args_json = std::env::var("IV_CLI_ARGS_JSON")
+                .or_else(|_| std::env::var("IV_SYNTH_CLI_ARGS_JSON"))
                 .unwrap_or_else(|_| "[\"-m\",\"{model}\"]".to_string());
-            let cli_timeout_ms: u64 = std::env::var("IV_SYNTH_TIMEOUT_MS")
+            let cli_timeout_ms: u64 = std::env::var("IV_CLI_TIMEOUT_MS")
+                .or_else(|_| std::env::var("IV_SYNTH_TIMEOUT_MS"))
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(20_000);
@@ -645,12 +649,17 @@ impl SurrealMindServer {
 
     /// Generate feedback prompt via CLI
     async fn generate_feedback_via_cli(&self, prompt: &str) -> Result<String> {
-        let cli_cmd = std::env::var("IV_SYNTH_CLI_CMD").unwrap_or_else(|_| "gemini".to_string());
+        // IV_CLI_* takes precedence over IV_SYNTH_*
+        let cli_cmd = std::env::var("IV_CLI_CMD")
+            .or_else(|_| std::env::var("IV_SYNTH_CLI_CMD"))
+            .unwrap_or_else(|_| "gemini".to_string());
         let cli_model =
             std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-2.5-pro".to_string());
-        let cli_args_json = std::env::var("IV_SYNTH_CLI_ARGS_JSON")
+        let cli_args_json = std::env::var("IV_CLI_ARGS_JSON")
+            .or_else(|_| std::env::var("IV_SYNTH_CLI_ARGS_JSON"))
             .unwrap_or_else(|_| "[\"-m\",\"{model}\"]".to_string());
-        let cli_timeout_ms: u64 = std::env::var("IV_SYNTH_TIMEOUT_MS")
+        let cli_timeout_ms: u64 = std::env::var("IV_CLI_TIMEOUT_MS")
+            .or_else(|_| std::env::var("IV_SYNTH_TIMEOUT_MS"))
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(20_000);

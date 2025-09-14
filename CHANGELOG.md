@@ -1,3 +1,11 @@
+## 2025-09-14 - CCR Implementation Complete
+- **Rate Limiter Fix**: Switched to monotonic process epoch using Instant; no unnecessary sleeps.
+- **Startup Tool Log**: Dynamic tool count in startup message.
+- **Inner Voice Updates**: Descriptions reflect synthesis + optional KG auto-extraction; IV_CLI_* overrides IV_SYNTH_*.
+- **HTTP Security**: Warns on query-param token usage.
+- **Schema Enhancements**: Continuity fields and indexes added to initialize_schema.
+- **Tests/Build**: All passing; clippy clean; production binary built.
+
 ## 2025-09-14 - Documentation Refresh
 - Aligned docs with unified thinking tools (`legacymind_think`, `photography_think`) and aliasing of legacy tools
 - Removed submode references from surfaces; emphasized KG-only injection and dimension hygiene

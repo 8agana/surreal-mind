@@ -3,9 +3,9 @@
 use anyhow::Result;
 use surreal_mind::{config::Config, embeddings::create_embedder};
 
-/// Test that no cosine similarity is computed without dimension check
+/// Test that dimension hygiene is maintained in the database
 #[tokio::test]
-async fn test_think_search_dimension_filter() -> Result<()> {
+async fn test_dimension_hygiene_check() -> Result<()> {
     // Only run if RUN_DB_TESTS is set
     if std::env::var("RUN_DB_TESTS").is_err() {
         return Ok(());
@@ -14,20 +14,11 @@ async fn test_think_search_dimension_filter() -> Result<()> {
     let config = Config::load()?;
     let server = surreal_mind::server::SurrealMindServer::new(&config).await?;
 
-    // Execute think_search and capture the generated SQL
-    let query =
-        "SELECT meta::id(id) as id, content, embedding FROM thoughts WHERE embedding_dim = $dim";
-    let generated_sql = server.db.query(query).sql().await?;
-
-    // Verify dimension filter is present and precedes any cosine calculations
-    assert!(
-        generated_sql.contains("embedding_dim ="),
-        "SQL must check dimension match"
-    );
-    assert!(
-        generated_sql.find("embedding_dim =").unwrap()
-            < generated_sql.find("cosine").unwrap_or(usize::MAX),
-        "Dimension check must precede cosine calculation"
+    // Validate via check_embedding_dims (behavior assertion)
+    let mismatches = server.check_embedding_dims().await?;
+    assert_eq!(
+        mismatches.mismatched_or_missing, 0,
+        "No embedding dimension mismatches should exist"
     );
 
     Ok(())
@@ -89,7 +80,7 @@ async fn test_reembed_mismatch_reporting() -> Result<()> {
 
     // Mock thought with wrong dimensions
     let query = format!(
-        r#"CREATE thoughts SET 
+        r#"CREATE thoughts SET
            content = "test content",
            embedding = array::range(1, {}, 1),
            embedding_dim = {},
@@ -106,9 +97,9 @@ async fn test_reembed_mismatch_reporting() -> Result<()> {
     let stats: Vec<serde_json::Value> = server
         .db
         .query(
-            "SELECT embedding_dim as dim, count() as count 
-             FROM thoughts 
-             WHERE embedding_dim != $expected 
+            "SELECT embedding_dim as dim, count() as count
+             FROM thoughts
+             WHERE embedding_dim != $expected
              GROUP BY embedding_dim",
         )
         .bind(("expected", expected_dims as i64))

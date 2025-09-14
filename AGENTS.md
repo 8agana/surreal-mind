@@ -16,33 +16,25 @@ Surreal Mind augments agent thinking with persistent memory backed by SurrealDB 
 - Injection: KG-only (entities + observations). Limits by scale: 1→5, 2→10, 3→20. UNION queries were removed; two SELECTs are merged client-side.
 - Submodes: Removed from storage and tool surfaces; any legacy `submode` input is ignored.
 
-### Status — 2025-09-07 (Unified Thinking Tools + Phase C Complete)
-- **Major Refactor Complete**: Phases A/B/C all implemented and production-ready
-  - Phase A: Router pattern with trigger phrases (8 minutes implementation by Grok)
-  - Phase B: Session continuity fields (6.5 minutes implementation)
-  - Phase C: Hypothesis verification (completed by Grok)
-- **New Tool Architecture**:
-  - `legacymind_think`: Unified development thinking with mode routing
-  - `photography_think`: Photography-specific variant
-  - Automatic mode selection via triggers or heuristics
-  - Session chaining via `session_id` and `previous_thought_id`
-- **Hypothesis Verification**: Deterministic evidence-based validation
-  - Queries KG entities/observations for supporting/contradicting evidence
-  - Confidence scoring and revision suggestions
-  - Configurable via env vars: `SURR_VERIFY_TOPK`, `SURR_VERIFY_MIN_SIM`, `SURR_VERIFY_EVIDENCE_LIMIT`
-- **Tests/Build**: All 52 tests passing; zero clippy warnings; production build successful
+### Status — 2025-09-14 (CCR Implementation Complete)
+- **CCR Fixes Applied**: Targeted fixes for rate limiter, tool descriptions, and hardening.
+  - Rate limiter: Fixed to use monotonic process epoch (Instant); no unnecessary sleeps.
+  - Startup log: Dynamic tool count in startup message.
+  - Inner Voice: Updated descriptions to reflect synthesis + optional KG auto-extraction.
+  - HTTP security: Warns on query-param token usage.
+  - Continuity: Indexes added to fresh DB schemas for session/chain chaining.
+- **Tests/Build**: All tests passing; clippy clean; production binary built.
 
-Acceptance Snapshot — 2025-09-09
-- Tools roster: `legacymind_think`, `photography_think`, `think_convo`, `think_plan`, `think_debug`, `think_build`, `think_stuck`, `memories_create`, `memories_moderate`, `inner_voice`, `legacymind_search`, `photography_search`, `photography_memories`, `maintenance_ops`, `detailed_help` (15 tools total).
-- Injection: KG-only; embedding_dim filter enforced; scales inject 5/10/20; thresholds from config.
-- Embeddings: Single provider per runtime; provider/model/dim/embedded_at stamped on writes; no per-call fallback.
-- Inner Voice: Default ON; persists thought with compact Sources; optional auto-extract to staged KG candidates.
-- Config: Env-first; provider/model/dim coherence checks active; retries clamped; DB URL scheme validated.
+Acceptance Snapshot — 2025-09-14
+- Tools roster unchanged (15 tools).
+- Embeddings: Rate limiter fixed; no per-call fallback.
+- Inner Voice: IV_CLI_* overrides IV_SYNTH_* for CLI config.
+- Schema: Continuity fields/indexes in initialize_schema.
 
 Quick Ops (Post-Restart)
 1) `maintenance_ops { subcommand: "health_check_embeddings" }` → expect `mismatched_or_missing=0` across thoughts/KG.
-2) `think_convo` with `injection_scale=1/2/3` → expect 5/10/20 injected; logs show `embedding_dim` filter.
-3) `tools/list` shows full roster; `detailed_help` reflects 0–3 injection scales.
+2) `tools/list` shows 10 tools loaded message.
+3) `inner_voice` with `auto_extract_to_kg=true` stages candidates.
 4) Logs (if enabled) show `provider=openai`, `model=text-embedding-3-small`, `dims=1536`; UA commit tag present when `SURR_COMMIT_HASH` set.
 
 ## Exposed MCP Tools

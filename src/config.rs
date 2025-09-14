@@ -7,6 +7,7 @@ pub struct Config {
     pub system: SystemConfig,
     pub retrieval: RetrievalConfig,
     pub orbital_mechanics: OrbitalConfig,
+    /// Deprecated: submodes removed from tool surfaces; kept for backward compatibility
     pub submodes: HashMap<String, SubmodeConfig>,
     /// Runtime configuration loaded from environment variables
     #[serde(skip)]
@@ -63,7 +64,7 @@ pub struct OrbitalConfig {
     pub access_weight: f32,
 }
 
-/// Configuration for individual submodes (thinking styles)
+/// Deprecated: Configuration for individual submodes (thinking styles) - no longer used in tool surfaces
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SubmodeConfig {
     pub injection_scale: u8,
@@ -471,7 +472,7 @@ impl Config {
         }
     }
 
-    /// Get submode configuration by name, with fallback to "build" mode
+    /// Deprecated: Get submode configuration by name, with fallback to "build" mode - no longer used
     pub fn get_submode(&self, mode: &str) -> &SubmodeConfig {
         self.submodes.get(mode).unwrap_or_else(|| {
             self.submodes

@@ -53,7 +53,7 @@ impl SurrealMindServer {
                     {"name": "legacymind_search", "one_liner": "Unified LM search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]},
                     {"name": "photography_search", "one_liner": "Unified Photography search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]},
                     {"name": "maintenance_ops", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]},
-                    {"name": "inner_voice", "one_liner": "Retrieve relevant memories and thoughts with optional synthesis", "key_params": ["query", "top_k", "auto_extract_to_kg"]}
+                    {"name": "inner_voice", "one_liner": "Retrieves and synthesizes relevant memories/thoughts into a concise answer; can optionally auto-extract entities/relationships into staged knowledge‑graph candidates for review.", "key_params": ["query", "top_k", "auto_extract_to_kg"]}
                 ]);
                 return Ok(CallToolResult::structured(overview));
             }
@@ -136,7 +136,7 @@ impl SurrealMindServer {
             }),
             "inner_voice" => json!({
                 "name": "inner_voice",
-                "description": "Retrieve relevant memories and thoughts with optional auto-extraction to KG candidates.",
+                "description": "Retrieves and synthesizes relevant memories/thoughts into a concise answer; can optionally auto-extract entities/relationships into staged knowledge‑graph candidates for review.",
                 "arguments": {
                     "query": "string (required) — search query",
                     "top_k": "integer (1-50; default 10) — max snippets",
@@ -148,7 +148,7 @@ impl SurrealMindServer {
                     "exclude_tags": "string[] — exclude thoughts with these tags",
                     "auto_extract_to_kg": "boolean (default false) — stage KG candidates"
                 },
-                "returns": {"snippets": "array", "answer": "string?", "diagnostics": "object"}
+                "returns": {"answer": "string", "synth_thought_id": "string", "feedback": "string?", "feedback_thought_id": "string?", "sources_compact": "string", "synth_provider": "string", "synth_model": "string", "embedding_dim": "number", "extracted": "object"}
             }),
             "legacymind_search" => json!({
                 "name": "legacymind_search",

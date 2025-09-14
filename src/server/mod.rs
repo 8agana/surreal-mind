@@ -249,7 +249,7 @@ impl ServerHandler for SurrealMindServer {
         tools.push(Tool {
             name: "inner_voice".into(),
             description: Some(
-                "Retrieve structured snippets from thoughts and KG for external synthesis".into(),
+                "Retrieves and synthesizes relevant memories/thoughts into a concise answer; can optionally auto-extract entities/relationships into staged knowledge‑graph candidates for review.".into(),
             ),
             input_schema: inner_voice_schema_map,
             annotations: None,
@@ -610,11 +610,21 @@ impl SurrealMindServer {
             DEFINE FIELD embedding_provider ON TABLE thoughts TYPE option<string>;
             DEFINE FIELD embedding_dim ON TABLE thoughts TYPE option<int>;
             DEFINE FIELD embedded_at ON TABLE thoughts TYPE option<datetime>;
+            -- Continuity fields for thought chaining
+            DEFINE FIELD session_id ON TABLE thoughts TYPE option<string>;
+            DEFINE FIELD chain_id ON TABLE thoughts TYPE option<string>;
+            DEFINE FIELD previous_thought_id ON TABLE thoughts TYPE option<record(thoughts) | string>;
+            DEFINE FIELD revises_thought ON TABLE thoughts TYPE option<record(thoughts) | string>;
+            DEFINE FIELD branch_from ON TABLE thoughts TYPE option<record(thoughts) | string>;
+            DEFINE FIELD confidence ON TABLE thoughts TYPE option<float>;
             DEFINE INDEX thoughts_embedding_idx ON TABLE thoughts FIELDS embedding HNSW DIMENSION {dim};
             DEFINE INDEX thoughts_status_idx ON TABLE thoughts FIELDS status;
             DEFINE INDEX idx_thoughts_created ON TABLE thoughts FIELDS created_at;
             DEFINE INDEX idx_thoughts_embedding_model ON TABLE thoughts FIELDS embedding_model;
             DEFINE INDEX idx_thoughts_embedding_dim ON TABLE thoughts FIELDS embedding_dim;
+            -- Continuity indexes
+            DEFINE INDEX idx_thoughts_session ON TABLE thoughts FIELDS session_id, created_at;
+            DEFINE INDEX idx_thoughts_chain ON TABLE thoughts FIELDS chain_id, created_at;
 
             DEFINE TABLE recalls SCHEMALESS;
             DEFINE INDEX idx_recalls_created ON TABLE recalls FIELDS created_at;
