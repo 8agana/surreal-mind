@@ -1,6 +1,6 @@
 # Surreal Mind MCP — Agent Guide
 
-Last updated: 2025-09-07
+Last updated: 2025-09-14
 
 This file is the working guide for operating and extending the Surreal Mind MCP server. It reflects the current design after the major thinking tools refactor (Phases A/B/C) and should be used by Federation members (CC, Codex, Warp, Grok) and contributors.
 

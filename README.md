@@ -4,15 +4,12 @@ A Model Context Protocol (MCP) server implementing bidirectional consciousness p
 
 ## Features
 - **Unified Thinking Tools**: `legacymind_think` and `photography_think` with automatic mode routing
-- **Sequential Thinking**: Session continuity via session_id and previous_thought_id chaining
-- **Hypothesis Verification**: Evidence-based validation against Knowledge Graph (Phase C)
-- **Cognitive Scaffolding**: Structured thinking shapes (OODA, FirstPrinciples, RootCause, Socratic)
-- **Bidirectional Memory Injection**: Thoughts automatically pull relevant memories during storage
-- **Orbital Mechanics**: Memory relevance based on age, access patterns, and significance
-- **Semantic Understanding**: OpenAI text-embedding-3-small (1536 dims) for semantic similarity
-- **Graph Persistence**: SurrealDB service for consciousness graph storage
-- **Injection Scales**: 0-3 controlling memory retrieval (0=none, 1=5, 2=10, 3=20 entities)
-- **Memory Injection**: KG-only retrieval with orbital mechanics (no thought-to-thought injection)
+- **Session Continuity**: `session_id` and `previous_thought_id` chaining
+- **Hypothesis Verification**: Evidence-based validation against the Knowledge Graph
+- **Memory Injection**: KG-only retrieval with injection scales 0–3 (0=none; 1=5, 2=10, 3=20)
+- **Semantic Embeddings**: OpenAI text-embedding-3-small (1536 dims)
+- **SurrealDB Persistence**: Consciousness graph storage (SurrealDB over WebSocket)
+- **Orbital Mechanics**: Memory relevance based on age, access frequency, and significance
 
 ## Setup
 
@@ -139,19 +136,30 @@ cargo test --test tool_schemas
 
 Configure the server via environment variables:
 ```bash
-# Database Configuration (defaults shown)
-export SURR_DB_URL=127.0.0.1:8000
+# Database (WebSocket)
+export SURR_DB_URL=ws://127.0.0.1:8000
 export SURR_DB_USER=root
 export SURR_DB_PASS=root
 export SURR_DB_NS=surreal_mind
 export SURR_DB_DB=consciousness
-export SURR_DB_LIMIT=500  # Cap fallback query size
 
-# Retrieval Tuning
-export SURR_SIM_THRESH=0.5  # Similarity threshold (0.0-1.0)
-export SURR_TOP_K=5         # Max memories to inject
+# Embeddings
+export OPENAI_API_KEY={{YOUR_OPENAI_API_KEY}}        # or set SURR_EMBED_PROVIDER=candle for local dev
+export SURR_EMBED_PROVIDER=openai                    # openai | candle
+export SURR_EMBED_MODEL=text-embedding-3-small       # primary
+# SURR_EMBED_DIM is inferred; avoid overriding unless you know what you're doing
 
-# Feature Flags
+# Retrieval (KG-only injection)
+export SURR_KG_CANDIDATES=500
+export SURR_INJECT_T1=0.6
+export SURR_INJECT_T2=0.4
+export SURR_INJECT_T3=0.25
+export SURR_INJECT_FLOOR=0.15
+
+# Runtime/logging
+export RUST_LOG=surreal_mind=info,rmcp=info
+# Set MCP_NO_LOG=1 to silence logs in stdio MCP mode
+export SURR_TOOL_TIMEOUT_MS=15000
 ```
 
 ## Advanced Configuration
@@ -199,11 +207,11 @@ This adds a small performance cost but ensures stability when the SurrealDB WebS
 
 ### Example: Memory Injection Scales
 Memory retrieval adjusts based on injection scale (1-3):
-- **Scale 1**: 5 entities, 0.8 proximity threshold
-- **Scale 2**: 10 entities, 0.6 proximity threshold  
-- **Scale 3**: 20 entities, 0.4 proximity threshold
+- **Scale 1**: 5 entities, 0.6 proximity threshold
+- **Scale 2**: 10 entities, 0.4 proximity threshold
+- **Scale 3**: 20 entities, 0.25 proximity threshold
 
-Server will read these automatically at startup.
+Server reads thresholds from env: `SURR_INJECT_T1/T2/T3` and `SURR_INJECT_FLOOR`.
 
 ## Usage
 
@@ -214,105 +222,48 @@ cargo run
 ./target/release/surreal-mind
 ```
 
-### MCP Tool: think_convo
-Stores thoughts with KG‑only memory injection and runs a local, deterministic framework enhancement (convo/1) before injection.
-
-**Note:** Memory injection uses KG entities and observations only (no raw thoughts). Framework enhancement is local‑only; no API calls.
+### MCP Tool: legacymind_think
+Unified development thinking with automatic mode routing, session continuity, and optional hypothesis verification. KG-only memory injection.
 
 Parameters:
-- `content` (required): The thought to store
-- `injection_scale`: Memory injection distance (multiple formats supported)
-  - Named presets (case-insensitive):
-    - `"LIGHT"` = 1 (current memories only) 
-    - `"MEDIUM"` = 2 (recent context)
-    - `"DEFAULT"` = 3 (foundational memories) [default]
-  - Numeric: 1-3
-- `significance`: Importance weight (multiple formats supported)
-  - String presets (case-insensitive):
-    - `"low"` = 0.2
-    - `"medium"` = 0.5
-    - `"high"` = 0.9
-  - Integer scale: 2-10 (mapped to 0.2-1.0, note: 1 not supported to avoid ambiguity)
-  - Float: 0.0-1.0 (direct value)
-- `tags`: Additional categorization
- - `verbose_analysis`: boolean (default true) — when false, caps to top 2 insights, 1 question, 1 next step
+- `content` (required): Thought content
+- `hint`: `"debug" | "build" | "plan" | "stuck" | "question"` — optional routing nudge
+- `injection_scale`: 0–3; 0=none, 1=5, 2=10, 3=20
+- `significance`: 0.0–1.0
+- `tags`: string[]
+- `session_id`, `previous_thought_id`, `chain_id`, `branch_from`, `revises_thought`: continuity fields
+- `hypothesis`: string (optional)
+- `needs_verification`: boolean (default false)
+- `verify_top_k`: integer (env default `SURR_VERIFY_TOPK`)
+- `min_similarity`: 0.0–1.0 (env default `SURR_VERIFY_MIN_SIM`)
+- `evidence_limit`: integer (env default `SURR_VERIFY_EVIDENCE_LIMIT`)
+- `verbose_analysis`: boolean (default true)
 
-Example calls:
+Example:
 ```json
-// Using named presets
 {
-  "tool": "think_convo",
+  "tool": "legacymind_think",
   "arguments": {
-    "content": "Building persistence frameworks requires careful architecture",
-    "injection_scale": "DEFAULT",
-    "significance": "high",
-  }
-}
-
-// Using integer scale for significance
-{
-  "tool": "think_convo",
-  "arguments": {
-    "content": "Critical bug found in memory injection",
-    "injection_scale": 3,
-    "significance": 9,
-  }
-}
-
-// Using numeric values (backward compatible)
-{
-  "tool": "think_convo",
-  "arguments": {
-    "content": "Testing new framework enhancements",
-    "injection_scale": 3,
-    "significance": 0.8,
+    "content": "Planning the re-embed SOP for mismatched dims",
+    "hint": "plan",
+    "injection_scale": 2,
+    "hypothesis": "We should filter KG by embedding_dim before cosine to avoid mismatches",
+    "needs_verification": true
   }
 }
 ```
 
 Response includes:
-- `thought_id`: Unique identifier
-- `memories_injected`: Count of related memories found
-- `enriched_content`: Content enhanced with memory context
-- `framework_enhanced`: boolean
-- `framework_analysis`: { framework_version: "convo/1", methodology, data{summary,takeaways,prompts,next_step,tags[]} }
-- `orbital_proximities`: Memory relevance proximities
-- `memory_summary`: Description of injection results
-- `user_friendly`: Additive, human-oriented block with summary, readable memory context (percentages + labels), and conversational analysis
+- `thought_id`
+- `mode_selected` and `reason`
+- `memories_injected`
+- `verification`: `confidence`, `supporting`, `contradicting` (when `needs_verification=true`)
 
-### MCP Tool: think_plan
+Legacy aliases:
+- `think_convo`, `think_plan`, `think_debug`, `think_build`, `think_stuck` route to `legacymind_think`. Prefer `legacymind_think` in new clients.
 
-**Note:** Memory injection uses KG entities and observations only (no raw thoughts).
-Technical reasoning pipeline mirroring `think_convo`, specialized for software workflows.
-
-Parameters:
-- `content` (required)
-- `injection_scale`: same presets and numeric formats as `think_convo` (default: 3)
-- `significance`: same formats as `think_convo`
-- `verbose_analysis`: boolean (default true)
-- `tags`: optional
-
-Examples:
-```json
-{
-  "tool": "think_plan",
-  "arguments": {
-    "content": "Design module A with clear interfaces",
-    "injection_scale": "DEFAULT",
-    "significance": "medium"
-  }
-}
-
-{
-  "tool": "think_plan",
-  "arguments": {
-    "content": "Fix panic in parser when input is empty",
-    "injection_scale": 3,
-    "significance": 10,
-    "verbose_analysis": false
-  }
-}
-```
+### Legacy alias: think_plan
+Routes to `legacymind_think` (plan mode). Prefer `legacymind_think`.
 
 
 
@@ -342,27 +293,6 @@ Example:
 }
 ```
 
-### MCP Tool: memories_create
-Create entities, relationships, and observations in the knowledge graph.
-
-Parameters:
-- `kind`: "entity" | "relationship" | "observation"
-- `data`: Object with entity/relationship/observation data
-- `upsert`: Boolean (default true)
-- `source_thought_id`: String (optional)
-- `confidence`: Number 0-1 (optional)
-
-Example:
-```json
-{
-  "tool": "memories_create",
-  "arguments": {
-    "kind": "entity",
-    "data": {"name": "consciousness", "entity_type": "concept"},
-    "confidence": 0.9
-  }
-}
-```
 
 ### MCP Tool: detailed_help
 Returns deterministic, example-rich documentation for tools and parameters.
@@ -377,7 +307,32 @@ Examples:
 {"tool":"detailed_help","arguments":{"format":"compact"}}
 ```
 
-### MCP Tool: legacymind_search (replaces think_search)
+### MCP Tool: legacymind_search
+Unified search over the Knowledge Graph; optionally include thoughts.
+
+Parameters:
+- `query`: object with text or filters (e.g., { "text": "..." })
+- `include_thoughts`: boolean (default false)
+- `target`: "entity" | "relationship" | "observation" | "mixed" (default "mixed")
+- `sim_thresh`: 0.0–1.0 (optional)
+- `top_k_memories`: 1–50 (default 10)
+- `top_k_thoughts`: 1–50 (default 5)
+- `thoughts_content`: string (optional free-text for thought search)
+
+Example:
+```json
+{
+  "tool": "legacymind_search",
+  "arguments": {
+    "query": { "text": "debug parser issue" },
+    "include_thoughts": true,
+    "top_k_memories": 10,
+    "top_k_thoughts": 5,
+    "sim_thresh": 0.5
+  }
+}
+```
+
 ## Available Tools and Binaries
 
 This project includes:
@@ -390,11 +345,12 @@ This project includes:
 - **Maintenance Tools**: `maintenance_ops`, `detailed_help`
 
 ### Additional Binaries (src/bin/)
-- `cargo run --bin reembed`: CLI for re-embedding thoughts (fixes dimension mismatches, recomputes embeddings)
-- `cargo run --bin check_db_contents`: Utility to inspect DB contents
+- `cargo run --bin reembed`: Re-embed thoughts to the active provider/model/dim
+- `cargo run --bin reembed_kg`: Re-embed KG entities/observations
+- `cargo run --bin fix_dimensions`: Correct thoughts with wrong embedding dimensions
 - `cargo run --bin db_check`: DB connectivity test
-- `cargo run --bin simple_db_test`: Basic DB operations test
-- `cargo run --bin reembed_thoughts`: Script for bulk re-embedding (uses Python wrapper)
+- `cargo run --bin check_db_contents`: Inspect DB contents
+- `cargo run --bin simple_db_test`: Basic DB ops smoke test
 
 Use `cargo build --release` to build all binaries to `./target/release/`.
 
@@ -491,70 +447,3 @@ cargo test --test inner_voice_retrieve
 
 ## License
 Part of the LegacyMind project
-### MCP Tool: legacymind_search (replaces think_search)
-Semantic search over stored thoughts with cache-first retrieval and optional graph expansion via recalls.
-
-Parameters:
-- `content` (required): Query text.
-- `top_k`: 1–50 (default: `SURR_SEARCH_TOP_K` → `SURR_TOP_K` → 10).
-- `offset`: Pagination offset (default 0).
-- `sim_thresh`: 0.0–1.0 (default: `SURR_SEARCH_SIM_THRESH` → `SURR_SIM_THRESH` → 0.5).
-- `min_significance`: 0.0–1.0 (default 0.0).
-- `date_range`: `{ from?: ISO8601, to?: ISO8601 }` (optional).
-- `expand_graph`: boolean (default false) — expand via recalls both directions.
-- `graph_depth`: 0–2 (default 1 when expand_graph=true).
-- `graph_boost`: 0.0–1.0 (default 0.15) — additive boost to neighbors based on edge strength.
-- `min_edge_strength`: 0.0–1.0 (default 0.0) — filter weak edges.
-- `sort_by`: `score|similarity|recency|significance` (default `score`).
-
-Env knobs:
-- `SURR_SEARCH_TOP_K`: default `top_k` (fallback to `SURR_TOP_K`, final default 10).
-- `SURR_SEARCH_SIM_THRESH`: default `sim_thresh` (fallback to `SURR_SIM_THRESH`, final default 0.5).
-- `SURR_RETRIEVE_CANDIDATES`: DB fallback candidate cap (default `SURR_DB_LIMIT`, clamped 50–5000).
-- `SURR_SEARCH_GRAPH_MAX_NEIGHBORS`: cap neighbors per seed (default 20).
-- `SURR_CACHE_WARM`: cache warm-up batch (default 64; clamp 0–1000).
-
-### Knowledge Graph
-Advanced semantic graph connecting thoughts, entities, and observations:
-- **Entities**: Concepts, people, topics (auto-embedded)
-- **Relationships**: Connections between entities with confidence scores
-- **Observations**: Timestamped facts with provenance
-
-Graph expansion in search uses edge strengths and neighbor boosts for deeper context retrieval.
-
-### Re-embedding Script
-Standalone CLI to recompute embeddings outside MCP.
-
-Usage:
-- Build: `cargo build --release`
-- Run: `cargo run --bin reembed` (or `./target/release/reembed`)
-- Dry run: `--dry-run` (or env `REEMBED_DRY_RUN=true`)
-- Re-embed mismatched/missing only: `--batch-size 64`
-- Full re-embed: `--all --batch-size 64`
-- Limits: `--limit 100` to cap total processed
-
-Reads DB/env from `.env`:
-- Database: `SURR_DB_URL`, `SURR_DB_USER`, `SURR_DB_PASS`, `SURR_DB_NS`, `SURR_DB_DB`
-- Embeddings: `OPENAI_API_KEY` (default), `SURR_EMBED_PROVIDER`, `SURR_EMBED_MODEL`, `SURR_EMBED_DIM`
-- Submode: `SURR_SUBMODE_RETRIEVAL` (enable proximity weights)
-- Concurrency: `SURR_DB_MAX_CONCURRENCY` (default 1 = serial)
-- Timeouts: `SURR_DB_TIMEOUT_MS`
-
-Example:
-```json
-{
-  "tool": "think_search",
-  "arguments": {
-    "content": "debug parser issue",
-    "top_k": 10,
-    "offset": 0,
-    "sim_thresh": 0.55,
-    "min_significance": 0.4,
-    "date_range": {"from": "2025-08-01T00:00:00Z"},
-    "sort_by": "recency",
-    "expand_graph": true,
-    "graph_depth": 1,
-    "min_edge_strength": 0.2
-  }
-}
-```

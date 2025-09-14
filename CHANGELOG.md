@@ -1,3 +1,11 @@
+## 2025-09-14 - Documentation Refresh
+- Aligned docs with unified thinking tools (`legacymind_think`, `photography_think`) and aliasing of legacy tools
+- Removed submode references from surfaces; emphasized KG-only injection and dimension hygiene
+- Updated env-first configuration and recommended injection thresholds (`T1=0.6`, `T2=0.4`, `T3=0.25`, `FLOOR=0.15`)
+- Corrected `legacymind_search` schema and examples; removed outdated `think_search` references
+- Consolidated binaries list (`reembed`, `reembed_kg`, `fix_dimensions`) and health checks (`health_check_embeddings`)
+- Cleaned README duplication and outdated examples
+
 ## 2025-09-07 - Major Refactor: Unified Thinking Tools (Phases A/B/C)
 
 ### Phase A - Router Pattern (8 minutes implementation by Grok)
