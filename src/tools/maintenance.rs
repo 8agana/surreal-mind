@@ -3,7 +3,6 @@
 use crate::error::{Result, SurrealMindError};
 use crate::indexes::{IndexHealth, TableInfo, get_expected_indexes};
 use crate::server::SurrealMindServer;
-use anyhow::Context;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde_json::json;
 use std::fs;
@@ -142,10 +141,26 @@ impl SurrealMindServer {
             "reembed" => self.handle_reembed(limit, dry_run).await,
             "reembed_kg" => self.handle_reembed_kg(limit, dry_run).await,
             "ensure_continuity_fields" => self.handle_ensure_continuity_fields(dry_run).await,
+            "echo_config" => self.handle_echo_config().await,
             _ => Err(SurrealMindError::Validation {
                 message: format!("Unknown subcommand: {}", params.subcommand),
             }),
         }
+    }
+
+    /// Return effective runtime configuration (safe subset) for debugging client/DB mismatch
+    async fn handle_echo_config(&self) -> Result<CallToolResult> {
+        let (prov, model, dim) = self.get_embedding_metadata();
+        let rt = &self.config.runtime;
+        let sys = &self.config.system;
+        let out = json!({
+            "db": {"url": sys.database_url, "ns": sys.database_ns, "db": sys.database_db},
+            "embedding": {"provider": prov, "model": model, "dim": dim},
+            "transport": rt.transport,
+            "http": {"bind": rt.http_bind.to_string(), "path": rt.http_path},
+            "mcp_no_log": rt.mcp_no_log,
+        });
+        Ok(CallToolResult::structured(out))
     }
 
     /// Ensure continuity fields and indexes exist on thoughts table
@@ -155,14 +170,15 @@ impl SurrealMindServer {
         let mut existing_fields = vec![];
         let mut existing_indexes = vec![];
 
-        // Fields to ensure exist
-        let fields = vec![
-            "session_id: string NULL",
-            "chain_id: string NULL",
-            "previous_thought_id: record(thoughts) | string NULL",
-            "revises_thought: record(thoughts) | string NULL",
-            "branch_from: record(thoughts) | string NULL",
-            "confidence: float NULL",
+        // Fields to ensure exist (SurrealDB 2.x type syntax)
+        // Use option<...> instead of "NULL" suffix and record<thoughts> for record types.
+        let fields: Vec<(&str, &str)> = vec![
+            ("session_id", "option<string>"),
+            ("chain_id", "option<string>"),
+            ("previous_thought_id", "option<record<thoughts> | string>"),
+            ("revises_thought", "option<record<thoughts> | string>"),
+            ("branch_from", "option<record<thoughts> | string>"),
+            ("confidence", "option<float>"),
         ];
 
         // Indexes to ensure exist
@@ -175,14 +191,10 @@ impl SurrealMindServer {
         let indexes_len = indexes.len();
 
         // Check and create fields
-        for field_def in &fields {
-            let field_name = field_def
-                .split(':')
-                .next()
-                .context("field definition should have ':' separator")?;
+        for (field_name, field_type) in &fields {
             let full_field_def = format!(
                 "DEFINE FIELD {} ON TABLE thoughts TYPE {}",
-                field_def, field_def
+                field_name, field_type
             );
 
             // Check if field exists (simple check - may not catch all cases)
@@ -192,7 +204,7 @@ impl SurrealMindServer {
                     if let Some(table_info) = vec.first() {
                         if let Some(fields_obj) = table_info.get("fields") {
                             if fields_obj.get(field_name).is_some() {
-                                existing_fields.push(field_name.to_string());
+                                existing_fields.push((*field_name).to_string());
                                 continue;
                             }
                         }
@@ -203,7 +215,7 @@ impl SurrealMindServer {
             if !dry_run {
                 match self.db.query(&full_field_def).await {
                     Ok(_) => {
-                        created_fields.push(field_name.to_string());
+                        created_fields.push((*field_name).to_string());
                         tracing::info!("Created continuity field: {}", field_name);
                     }
                     Err(e) => {

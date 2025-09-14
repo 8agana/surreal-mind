@@ -613,9 +613,9 @@ impl SurrealMindServer {
             -- Continuity fields for thought chaining
             DEFINE FIELD session_id ON TABLE thoughts TYPE option<string>;
             DEFINE FIELD chain_id ON TABLE thoughts TYPE option<string>;
-            DEFINE FIELD previous_thought_id ON TABLE thoughts TYPE option<record(thoughts) | string>;
-            DEFINE FIELD revises_thought ON TABLE thoughts TYPE option<record(thoughts) | string>;
-            DEFINE FIELD branch_from ON TABLE thoughts TYPE option<record(thoughts) | string>;
+            DEFINE FIELD previous_thought_id ON TABLE thoughts TYPE option<record<thoughts> | string>;
+            DEFINE FIELD revises_thought ON TABLE thoughts TYPE option<record<thoughts> | string>;
+            DEFINE FIELD branch_from ON TABLE thoughts TYPE option<record<thoughts> | string>;
             DEFINE FIELD confidence ON TABLE thoughts TYPE option<float>;
             DEFINE INDEX thoughts_embedding_idx ON TABLE thoughts FIELDS embedding HNSW DIMENSION {dim};
             DEFINE INDEX thoughts_status_idx ON TABLE thoughts FIELDS status;
