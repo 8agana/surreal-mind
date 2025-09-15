@@ -195,6 +195,9 @@ impl SurrealMindServer {
             .bind(("injection_scale", injection_scale))
             .bind(("significance", significance))
             .bind(("tags", tags.clone()))
+            .bind(("_provider", _provider))
+            .bind(("_model", _model))
+            .bind(("_dim", _dim))
             .await?;
 
         // Step 3: Resolve continuity links
@@ -467,6 +470,9 @@ impl SurrealMindServer {
             ))
             .bind(("branch_from", resolved_continuity.branch_from.clone()))
             .bind(("confidence", resolved_continuity.confidence))
+            .bind(("_provider", _provider))
+            .bind(("_model", _model))
+            .bind(("_dim", _dim))
             .await?;
 
         let tool_name = format!("think_{}", mode);
