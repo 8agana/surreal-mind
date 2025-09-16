@@ -1,262 +1,54 @@
-# Surreal Mind MCP — Agent Guide
+# Repository Guidelines
 
-Last updated: 2025-09-14
+## Project Structure & Module Organization
 
-This file is the working guide for operating and extending the Surreal Mind MCP server. It reflects the current design after the major thinking tools refactor (Phases A/B/C) and should be used by Federation members (CC, Codex, Warp, Grok) and contributors.
+- **Source code**: Located in `src/` directory, with main modules including `main.rs`, `lib.rs`, `config.rs`, `embeddings.rs`, `schemas.rs`, and subdirectories for specific functionality.
+- **Modules**: `bin/` for binaries, `cognitive/` for cognitive processing, `frameworks/` for thinking frameworks, `server/` for MCP server logic, `tools/` for MCP tool implementations, `utils/` for utility functions.
+- **Tests**: Integration and unit tests in `tests/` directory.
+- **Configuration**: Environment variables via `.env` file, with `surreal_mind.toml` as fallback.
+- **Assets**: Local models in `models/`, database data in `surreal_data/`.
 
-— WARP users: `WARP.md` is a symlink to this file.
+## Build, Test, and Development Commands
 
-## Purpose
-Surreal Mind augments agent thinking with persistent memory backed by SurrealDB and a Knowledge Graph (KG). It exposes MCP tools for capturing thoughts, retrieving relevant memories, and running maintenance operations.
+- **Build**: `cargo build` (development) or `cargo build --release` (production binary).
+- **Run MCP server**: `cargo run` (stdio mode).
+- **Test**: `cargo test --workspace --all-features` (includes integration tests).
+- **Format code**: `cargo fmt --all`.
+- **Lint**: `cargo clippy --workspace --all-targets -- -D warnings` (warnings treated as errors).
+- **Check compilation**: `cargo check --workspace --locked --all-targets`.
+- **Example**: After changes, run `cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`.
 
-## Current State
-- Embeddings: OpenAI `text-embedding-3-small` at 1536 dims is primary. Candle BGE-small-en-v1.5 (384 dims) is for local dev/fallback only. No Nomic. No fake/deterministic embedders.
-- Consistency: Provider is selected at startup; there is no per-call fallback. Every write stamps `embedding_provider`, `embedding_model`, `embedding_dim`, `embedded_at`.
-- Dimension hygiene: All search/injection paths filter by `embedding_dim` before cosine.
-- Injection: KG-only (entities + observations). Limits by scale: 1→5, 2→10, 3→20. UNION queries were removed; two SELECTs are merged client-side.
-- Submodes: Removed from storage and tool surfaces; any legacy `submode` input is ignored.
+## Coding Style & Naming Conventions
 
-### Status — 2025-09-14 (CCR Implementation Complete)
-- **CCR Fixes Applied**: Targeted fixes for rate limiter, tool descriptions, and hardening.
-  - Rate limiter: Fixed to use monotonic process epoch (Instant); no unnecessary sleeps.
-  - Startup log: Dynamic tool count in startup message.
-  - Inner Voice: Updated descriptions to reflect synthesis + optional KG auto-extraction.
-  - HTTP security: Warns on query-param token usage.
-  - Continuity: Indexes added to fresh DB schemas for session/chain chaining.
-- **Tests/Build**: All tests passing; clippy clean; production binary built.
+- **Language**: Rust (edition 2024).
+- **Formatting**: Use `cargo fmt` (rustfmt) for consistent indentation (4 spaces) and line wrapping.
+- **Linting**: Clippy rules enforced; treat warnings as errors.
+- **Naming**: snake_case for functions/variables/modules, CamelCase for types/structs, UPPER_SNAKE_CASE for constants.
+- **Imports**: Group by std, external crates, local modules; sort alphabetically.
+- **Documentation**: Use `///` for public items; keep comments concise and actionable.
+- **Examples**: Variable: `embedding_provider`, Struct: `EmbeddingConfig`, Constant: `DEFAULT_DIM`.
 
-Acceptance Snapshot — 2025-09-14
-- Tools roster unchanged (15 tools).
-- Embeddings: Rate limiter fixed; no per-call fallback.
-- Inner Voice: IV_CLI_* overrides IV_SYNTH_* for CLI config.
-- Schema: Continuity fields/indexes in initialize_schema.
+## Testing Guidelines
 
-Quick Ops (Post-Restart)
-1) `maintenance_ops { subcommand: "health_check_embeddings" }` → expect `mismatched_or_missing=0` across thoughts/KG.
-2) `tools/list` shows 10 tools loaded message.
-3) `inner_voice` with `auto_extract_to_kg=true` stages candidates.
-4) Logs (if enabled) show `provider=openai`, `model=text-embedding-3-small`, `dims=1536`; UA commit tag present when `SURR_COMMIT_HASH` set.
+- **Framework**: Built-in Rust tests (`#[test]`).
+- **Coverage**: Aim for unit tests near modules; integration tests in `tests/` for end-to-end.
+- **Isolation**: Mock external dependencies (e.g., DB, embeddings); avoid network calls in unit tests.
+- **Naming**: `test_function_name` or `test_case_description`.
+- **Running tests**: `cargo test --workspace --all-features`; use `RUST_LOG=debug cargo test -- --nocapture` for logs.
+- **CI**: Tests run in GitHub Actions with matrix for different embedders.
 
-## Exposed MCP Tools
+## Commit & Pull Request Guidelines
 
-### Primary Thinking Tools (NEW)
-- `legacymind_think`: Unified development thinking with automatic mode routing
-  - Trigger phrases: "debug time", "building time", "plan time", "i'm stuck", "question time"
-  - Heuristic routing: Keywords like error→debug, implement→build
-  - Session continuity: `session_id`, `previous_thought_id`, `chain_id` for chaining
-  - Hypothesis verification: `hypothesis` + `needs_verification=true` for evidence-based validation
-  - Returns: thought_id, mode_selected, reason, injection count, optional verification results
-- `photography_think`: Photography-specific thinking (auto-connects to ns=photography, db=work)
-  - Same features as legacymind_think but scoped to photography namespace
-  - Injection candidate pool: 500
+- **Commit messages**: Concise, imperative mood, e.g., "Add photography database health check" or "Refactor code for clarity".
+- **PR template**: Include Why, Scope, Safety, Testing checkboxes.
+- **Requirements**: Run `cargo fmt`, `cargo clippy`, `cargo test` before submitting.
+- **Reviews**: Small, focused PRs preferred; link related issues.
+- **Branching**: Feature branches; suggest branch name in PR description.
 
-### Search & Knowledge Graph
-- `legacymind_search`: Unified search — memories by default; `include_thoughts=true` also searches thoughts
-- `photography_search`: Photography-scoped search
-- `photography_memories`: Photography-scoped knowledge graph operations (create/search/moderate)
-- `memories_create` (alias: `knowledgegraph_create`): Create KG entities/observations
-- `memories_moderate` (alias: `knowledgegraph_moderate`): Review/stage KG entries
+## Security & Configuration Tips
 
-### Synthesis & Maintenance
-- `inner_voice`: Retrieval + synthesis with optional auto‑extraction to staged KG candidates
-- `maintenance_ops`: Health checks, re-embedding, archival/export, and cleanup
-- `detailed_help`: Get tool documentation and usage examples
-
-Notes
-- Tools are always listed (no env flag required for visibility). Any gating is enforced inside handlers.
-- See `src/schemas.rs`, `src/server/mod.rs`, and `src/tools/*` for exact parameters. `detailed_help` returns live schema/aliases.
-
-### Frameworks (think_convo)
-- Versioned envelope: `framework_version: "convo/1"`, `methodology: (socratic|first_principles|mirroring|lateral|constraints)`.
-- Data: `{ summary, takeaways[], prompts[], next_step, tags[] }` — all length‑bounded; strict JSON validation.
-- Determinism: seeded template selection via blake3(content_norm) → u64.
-- Timeout: `SURR_THINK_ENHANCE_TIMEOUT_MS` (default 600ms) enforced; fail‑open.
-- Tag policy: merged into thought.tags via `SURR_THINK_TAG_WHITELIST` (default `plan,debug,dx,photography,idea`).
-- Env lexicons (comma‑sep): `SURR_THINK_LEXICON_DECIDE`, `SURR_THINK_LEXICON_VENT`, `SURR_THINK_LEXICON_CAUSAL`, `SURR_THINK_LEXICON_POS`, `SURR_THINK_LEXICON_NEG`.
-- Logging: 200‑char preview gated behind `SURR_THINK_DEEP_LOG=1`.
-
-### Inner Voice (two-thought chain)
-- Two-thought model: persists synthesis thought (origin='inner_voice') and feedback thought (origin='inner_voice.feedback'), linked for continuity. Inquiry is not persisted.
-- Params: `query` (for retrieval), `auto_extract_to_kg` (boolean, default true), `include_feedback` (boolean, default true), `feedback_max_lines` (integer, default 3), `previous_thought_id` (string, optional).
-- Response: `answer` (synthesized text), `synth_thought_id`, `feedback` (prompt text), `feedback_thought_id`, `sources_compact`, `synth_provider`, `synth_model`, `embedding_dim`, `extracted` (entities/relationships counts).
-- Auto-extraction: stages candidates with `data.staged_by_thought = synth_thought_id`, `origin='inner_voice'`. Moderate via `memories_moderate`.
-- Extractor env precedence: `IV_CLI_*` → `IV_SYNTH_*` (e.g., `IV_CLI_CMD`/`IV_CLI_ARGS_JSON` → `IV_SYNTH_CLI_CMD`/`IV_SYNTH_CLI_ARGS_JSON`).
-
-### Photography Isolation
-- Auto‑connects to `ns=photography`, `db=work` (URL/user/pass inherited unless overridden by `SURR_PHOTO_*`).
-- No cross‑pollination with the default repo by default.
-
-### Prompt Registry (AI-driven, discoverability-only)
-- Purpose: Expose stable, named prompt metadata (id, one-liner, purpose, inputs, constraints) for inspection and docs — no runtime auto-switching.
-- Surfaces via the existing `detailed_help` tool:
-  - Roster: `{ "tool": "detailed_help", "arguments": { "prompts": true } }`
-  - Full entry: `{ "tool": "detailed_help", "arguments": { "prompt_id": "think-search-v2", "format": "full" } }`
-- Metadata: `id`, `version`, `checksum`, `one_liner`, `purpose`, `inputs{}`, `constraints{}` (MCP_NO_LOG, no mixed dims, KG-only injection, etc.), `lineage{ parent_id?, created_at, created_by, change_rationale? }`.
-- Optional P3.5 metrics and critiques:
-  - `prompt_invocations`: usage tracking (success/refusal/error rates, latency, tokens).
-  - Critiques: stored as thoughts with `critique_data.prompt_id` linkage; use to generate evolution suggestions.
-- Guardrails: MCP_NO_LOG respected; registry does not change tool behavior; operator action required for updates.
-
-## Embeddings Strategy
-- Primary: `SURR_EMBED_PROVIDER=openai`, `SURR_EMBED_MODEL=text-embedding-3-small`, `SURR_EMBED_DIM=1536` (implicit for this model).
-- Dev/Fallback: `SURR_EMBED_PROVIDER=candle` uses local BGE-small-en-v1.5 (384 dims). Only for development; do not mix dims in the same DB.
-- Selection: Startup picks one provider based on env and keys; no per-call fallback. If `OPENAI_API_KEY` is unset, Candle is used.
-- Guardrails:
-  - Always filter by `embedding_dim` before cosine.
-  - Never write embeddings without stamping provider/model/dim/embedded_at.
-  - Single provider per runtime; re-embed when switching providers/models.
-
-## Memory Injection (KG-only)
-- Scale limits: 1→5, 2→10, 3→20 results.
-- Thresholds (env tunables):
-  - `SURR_INJECT_T1`, `SURR_INJECT_T2`, `SURR_INJECT_T3` control cosine thresholds for scales 1–3.
-  - `SURR_INJECT_FLOOR` acts as a minimal floor if nothing passes the scale threshold.
-- Recommended production values after validation: `T1=0.6`, `T2=0.4`, `T3=0.25`, `FLOOR=0.15`.
-- Candidate pools by tool (defaults):
-  - `think_convo=500`, `think_plan=800`, `think_debug=1000`, `think_build=400`, `think_stuck=600`.
-- Implementation notes:
-  - Two SELECTs against `kg_entities` and `kg_observations`; results are merged in code (no UNION).
-  - Missing KG embeddings are computed on the fly and persisted best-effort if dimensions match.
-
-## Health Checks and Re-embed SOPs
-- Health check: `maintenance_ops { subcommand: "health_check_embeddings" }` → reports `expected_dim` and per-table mismatches across `thoughts`, `kg_entities`, `kg_observations`.
-- Re-embed thoughts (to current dims) — resilient HTTP parsing & stable ids:
-  1) `export OPENAI_API_KEY=...` and `export SURR_EMBED_PROVIDER=openai`
-  2) `cargo run --bin reembed` (HTTP client UA: `surreal-mind/<ver> (component=reembed; ns=<ns>; db=<db>[; commit=<sha>])`)
-  3) Verify: `SELECT array::len(embedding), count() FROM thoughts GROUP BY array::len(embedding);`
-- Re-embed KG: `cargo run --bin reembed_kg` (observes active provider; persists dims and metadata).
-- Fix dimension mismatches: `cargo run --bin fix_dimensions` (corrects thoughts with wrong embedding dimensions to current provider/model, useful after model switches).
-
-## Configuration
-- Env-first; `surreal_mind.toml` mirrors defaults. Key env vars:
-  - Embeddings: `OPENAI_API_KEY`, `SURR_EMBED_PROVIDER` (`openai`|`candle`), `SURR_EMBED_MODEL`, `SURR_EMBED_DIM`.
-  - DB: `SURR_DB_URL`, `SURR_DB_NS`, `SURR_DB_DB`, `SURR_DB_USER`, `SURR_DB_PASS`.
-  - Retrieval: `SURR_KG_CANDIDATES`, `SURR_INJECT_T1/T2/T3`, `SURR_INJECT_FLOOR`.
-  - Runtime/logging: `RUST_LOG`, `MCP_NO_LOG`, `SURR_TOOL_TIMEOUT_MS`.
-  - Maintenance: `SURR_RETENTION_DAYS` for archival.
-
-
-
-## Build & Run
-- Prereqs: Rust toolchain, SurrealDB reachable via WebSocket, `.env` from `.env.example`.
-- Build: `cargo build` (release: `cargo build --release`).
-- Run MCP (stdio): `cargo run`.
-- Logs: `RUST_LOG=surreal_mind=debug,rmcp=info cargo run`.
-- Binary (release): `target/release/surreal-mind`.
-
-## Warp Code Integration (Profiles and Flow)
-Warp Code provides an in-terminal "prompt → diff → review → apply" loop. If the profile picker is not available yet on your account, use the shortcuts below to emulate profiles.
-
-Recommended profiles for this repo
-- Build (Rust MCP): Implement features with guardrails and standards.
-- Debug (Root cause): Investigate first; propose minimal, reversible fixes.
-- Docs/Release: Keep docs/config/tests aligned with behavior.
-
-Guardrails enforced
-- Env-first configuration; do not introduce Docker.
-- No fake/deterministic embedders; respect provider/model/dim stamps.
-- Never compare embeddings across mismatched dimensions.
-- Injection is KG-only; respect scale limits and thresholds.
-- Rust standards: cargo fmt, clippy (treat warnings as errors), cargo check, cargo test before calling work "done".
-
-Shortcuts (profile emulation)
-Use these as slash-style prompts to seed agent behavior until native profile UI is visible:
-
-```yaml path=null start=null
-shortcuts:
-  - name: /build
-    description: Implement features with Rust MCP guardrails
-    prompt: |
-      Act as a Build profile for a Rust MCP project.
-      Requirements:
-      - Propose diffs; do not apply until I accept.
-      - Enforce: cargo fmt, clippy (warnings as errors), cargo check, cargo test.
-      - Env-first configuration; no Docker; no fake/deterministic embeddings.
-      - Maintain embedding_dim hygiene and provider/model/dim stamps.
-      - Suggest a branch name and concise commit message; do not commit without asking.
-      Context focus: src/tools/, src/server/mod.rs, src/schemas.rs, src/config.rs, tests/
-
-  - name: /debug
-    description: Investigate failures and propose minimal fixes
-    prompt: |
-      Act as a Debug profile (root cause first, minimal reversible changes).
-      Requirements:
-      - Read-first; do not apply changes without confirmation.
-      - Prefer logs/repro and minimal blast radius fixes; gate behind flags.
-      - Highlight risky edits and tradeoffs.
-      Priority files: src/embeddings.rs, src/server/, src/tools/, tests/
-
-  - name: /docs
-    description: Update docs/config/tests after code changes
-    prompt: |
-      Act as a Docs/Release profile.
-      Requirements:
-      - Propose diffs to README/WARP.md/config docs/tests when schemas or behavior change.
-      - Document env vars; avoid Docker instructions.
-      - Keep Quick Start and SOPs accurate.
-```
-
-Using profiles in practice
-1) Start with /build, /debug, or /docs.
-2) Describe the task and constraints (e.g., "env-first; update schemas/tests; fix clippy warnings").
-3) Review the proposed diffs; request tweaks until correct; then accept to apply.
-4) Verify in terminal: run fmt, clippy, check, test; iterate if issues are found.
-
-## Testing
-- Unit tests live near modules; integration tests under `tests/`.
-- Avoid external network; mock embeddings/DB where possible.
-- Run: `cargo test` (with logs: `RUST_LOG=debug cargo test -- --nocapture`).
-
-## Operating Principles
-- Truth-first diagnostics: verify embedding dims and candidate counts before tuning.
-- Minimal blast radius: stage changes behind env flags; defaults remain safe.
-- No mixed dims: pick one provider/model per runtime and re-embed on switch.
-- KG-only injection: thoughts are never injected as raw context; only KG entities/observations are.
-- Avoid SurrealQL UNION for combined queries; prefer separate SELECTs.
-- No flag‑gating for tool visibility; defaults should work after rebuild without toggles.
-
-## Quick Start (Post-Restart)
-1) `maintenance_ops { "subcommand": "health_check_embeddings" }` → expect `mismatched_or_missing = 0` across tables.
-2) Spot-check injection: call `think_convo` with `injection_scale=1/2/3` → expect 5/10/20 injected memories.
-3) Confirm logs show `provider=openai`, `model=text-embedding-3-small`, `dims=1536`.
-
-## Roadmap (next focus)
-
-### Completed
-- **[2025-09-07] Unified Thinking Tools**: Major refactor consolidating 5 tools into 2 domain-focused tools
-  - Router pattern with automatic mode selection
-  - Session continuity via thought chaining
-  - Hypothesis verification with evidence-based validation
-  - 14.5 minute implementation by Codex/Grok team
-- **[2025-09-04] First AI-driven Feature**: Self-aware prompt registry with transparency, lineage, and critique capabilities
-  - Transparent prompt metadata via detailed_help
-  - Git-style lineage with parent/child relationships
-  - Critique storage as linked thoughts
-  - MCP_NO_LOG and dimension guardrails
-
-### In Design: Cognitive Shapes (Scaffold Mode)
-- **Concept**: Structured templates for different thinking modes that scaffold reasoning without replacing it
-- **Core Shapes**:
-  - **OODA**: Observe (facts/signals) → Orient (models/constraints) → Decide (options/criteria) → Act (steps/checkpoints)
-  - **FirstPrinciples**: Goal, Constraints, Invariants, KnownTruths[], Assumptions[], Subproblems[]
-  - **RootCause**: Problem, Timeline, 5 Whys with evidence, CandidateCauses[], FixPlan
-  - **Socratic**: Clarify, Assumptions, Evidence For/Against, Alternatives, Implications
-- **Future Shapes**: Inversion, Second-Order Thinking, Game Theory, Analogical Reasoning
-- **Implementation**: structure_only flag, deterministic (no LLM calls), optional injection
-
-### Next
-- Implement scaffold mode for legacymind_think with shape templates
-- Restore injection thresholds to recommended values after validation
-- Light cleanup: confirm DB indexes, drop dead imports, update docs as code stabilizes
-
-## Safety & Guardrails
-- Do not reintroduce fake/deterministic or Nomic embedders.
-- Do not silently change defaults or leak secrets in logs.
-- Do not compare embeddings of different dimensions.
-
-## Reference Paths
-- Binary: `target/release/surreal-mind`
-- Build roots:
-  - Repo: `/Users/samuelatagana/Projects/LegacyMind/surreal-mind`
-  - Local models (BGE): `models/bge-small-en-v1.5`
-- Key sources: `src/main.rs`, `src/server/mod.rs`, `src/embeddings.rs`, `src/tools/*`, `src/schemas.rs`, `src/config.rs`
+- **Environment-first**: Configure via env vars (e.g., `OPENAI_API_KEY`); avoid hardcoding.
+- **Embeddings**: Use OpenAI primary; Candle for dev; maintain dimension hygiene (filter by `embedding_dim`).
+- **Secrets**: Never log API keys; use query-param warnings for HTTP auth.
+- **Guardrails**: No fake/deterministic embedders; KG-only injection; respect provider/model/dim stamps.
+- **DB**: WebSocket connection to SurrealDB; health checks via `maintenance_ops`.

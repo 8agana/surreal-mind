@@ -192,6 +192,16 @@ pub async fn unified_search_inner(
         // Decide query text for thoughts
         let mut content = params.thoughts_content.unwrap_or_default();
         if content.is_empty() {
+            // Prefer explicit text from query if available (common client pattern)
+            if let Some(qjson) = &params.query {
+                if let Some(text) = qjson.get("text").and_then(|v| v.as_str()) {
+                    if !text.is_empty() {
+                        content = text.to_string();
+                    }
+                }
+            }
+        }
+        if content.is_empty() {
             if let Some(ref nl) = name_like {
                 content = nl.clone();
             }
@@ -279,9 +289,11 @@ pub async fn unified_search_inner(
 
         // Build SELECT
         let select_fields = if q_emb.is_some() {
-            "meta::id(id) as id, content, significance, vector::similarity::cosine(embedding, $q) AS similarity"
+            // Include created_at in projection to satisfy SurrealDB 2.x ORDER BY requirements
+            "meta::id(id) as id, content, significance, created_at, vector::similarity::cosine(embedding, $q) AS similarity"
         } else {
-            "meta::id(id) as id, content, significance"
+            // Always project created_at if used for ordering
+            "meta::id(id) as id, content, significance, created_at"
         };
         let sql = format!(
             "SELECT {} FROM thoughts WHERE {} ORDER BY {} LIMIT $k",
