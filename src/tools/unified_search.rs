@@ -89,7 +89,7 @@ pub async fn unified_search_inner(
     let include_thoughts = params.include_thoughts.unwrap_or(false);
     let top_k_mem = params.top_k_memories.unwrap_or(10).clamp(1, 50);
     let top_k_th = params.top_k_thoughts.unwrap_or(5).clamp(1, 50);
-    let sim_thresh = params.sim_thresh.unwrap_or(0.3).clamp(0.0, 1.0);
+    let sim_thresh = params.sim_thresh.unwrap_or(0.5).clamp(0.0, 1.0);
 
     // Clamp confidence bounds to [0,1]
     let confidence_gte = params.confidence_gte.map(|v| v.clamp(0.0, 1.0));
@@ -131,26 +131,98 @@ pub async fn unified_search_inner(
         }
     }
 
+    // Determine content for embedding
+    let mut content = params.thoughts_content.clone().unwrap_or_default();
+    if content.is_empty() {
+        if let Some(qjson) = &params.query {
+            if let Some(text) = qjson.get("text").and_then(|v| v.as_str()) {
+                if !text.is_empty() {
+                    content = text.to_string();
+                }
+            }
+        }
+    }
+    if content.is_empty() {
+        if let Some(ref nl) = name_like {
+            content = nl.clone();
+        }
+    }
+    let has_query = !content.is_empty();
+    let q_emb = if has_query {
+        match server.embedder.embed(&content).await {
+            Ok(emb) => Some(emb),
+            Err(e) => {
+                tracing::warn!("Embedding failed for query {} : {}, falling back to non-semantic search", content, e);
+                None
+            }
+        }
+    } else {
+        None
+    };
     // 1) Memories search: entities/relationships/observations as requested
     let mut items: Vec<serde_json::Value> = Vec::new();
     if target == "entity" || target == "mixed" {
-        let sql = if let Some(ref _nl) = name_like {
-            format!(
+        if let Some(ref q_emb) = q_emb {
+            // Semantic search using embeddings
+            let q_dim = q_emb.len() as i64;
+            let sql = format!(
+                "SELECT meta::id(id) as id, name, data, created_at, embedding
+                 FROM kg_entities WHERE embedding_dim = $dim AND embedding IS NOT NULL
+                 LIMIT {}",
+                top_k_mem * 3 // Get more candidates for similarity filtering
+            );
+
+            #[derive(Debug, serde::Deserialize)]
+            struct EntityRow {
+                id: String,
+                name: String,
+                data: serde_json::Value,
+                created_at: surrealdb::sql::Datetime,
+                embedding: Vec<f32>,
+            }
+
+            let rows: Vec<EntityRow> = server.db.query(sql)
+                .bind(("dim", q_dim))
+                .await?.take(0)?;
+
+            let mut scored_entities: Vec<(f32, serde_json::Value)> = Vec::new();
+            for row in rows {
+                let similarity = crate::utils::cosine_similarity(q_emb, &row.embedding);
+                if similarity >= sim_thresh {
+                    let entity_json = json!({
+                        "id": row.id,
+                        "name": row.name,
+                        "data": row.data,
+                        "created_at": row.created_at,
+                        "similarity": similarity
+                    });
+                    scored_entities.push((similarity, entity_json));
+                }
+            }
+
+            // Sort by similarity descending and take top_k_mem
+            scored_entities.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+            scored_entities.truncate(top_k_mem);
+            items.extend(scored_entities.into_iter().map(|(_, item)| item));
+        } else if let Some(ref nl) = name_like {
+            // Fallback to name pattern matching when no embedding available
+            let sql = format!(
                 "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities WHERE name ~ $name LIMIT {}",
                 top_k_mem
-            )
+            );
+            let rows: Vec<serde_json::Value> = server.db.query(sql)
+                .bind(("name", nl.clone()))
+                .await?.take(0)?;
+            items.extend(rows);
         } else {
-            format!(
-                "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities LIMIT {}",
+            // Fallback to recent items when no query or embedding
+            let sql = format!(
+                "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities ORDER BY created_at DESC LIMIT {}",
                 top_k_mem
-            )
-        };
-        let mut q = server.db.query(sql);
-        if let Some(ref nl) = name_like {
-            q = q.bind(("name", nl.clone()));
+            );
+            let rows: Vec<serde_json::Value> = server.db.query(sql).await?.take(0)?;
+            items.extend(rows);
         }
-        let rows: Vec<serde_json::Value> = q.await?.take(0)?;
-        items.extend(rows);
     }
     if target == "relationship" || target == "mixed" {
         let sql = format!(
@@ -158,30 +230,74 @@ pub async fn unified_search_inner(
                     (IF type::is::record(source) THEN meta::id(source) ELSE string::concat(source) END) as source_id,
                     (IF type::is::record(target) THEN meta::id(target) ELSE string::concat(target) END) as target_id,
                     rel_type, data, created_at
-             FROM kg_edges LIMIT {}",
+             FROM kg_edges ORDER BY created_at DESC LIMIT {}",
             top_k_mem
         );
         let rows: Vec<serde_json::Value> = server.db.query(sql).await?.take(0)?;
         items.extend(rows);
     }
     if target == "observation" || target == "mixed" {
-        let sql = if let Some(ref _nl) = name_like {
-            format!(
+        if let Some(ref q_emb) = q_emb {
+            // Semantic search using embeddings
+            let q_dim = q_emb.len() as i64;
+            let sql = format!(
+                "SELECT meta::id(id) as id, name, data, created_at, embedding
+                 FROM kg_observations WHERE embedding_dim = $dim AND embedding IS NOT NULL
+                 LIMIT {}",
+                top_k_mem * 3 // Get more candidates for similarity filtering
+            );
+
+            #[derive(Debug, serde::Deserialize)]
+            struct ObservationRow {
+                id: String,
+                name: String,
+                data: serde_json::Value,
+                created_at: surrealdb::sql::Datetime,
+                embedding: Vec<f32>,
+            }
+
+            let rows: Vec<ObservationRow> = server.db.query(sql)
+                .bind(("dim", q_dim))
+                .await?.take(0)?;
+
+            let mut scored_observations: Vec<(f32, serde_json::Value)> = Vec::new();
+            for row in rows {
+                let similarity = crate::utils::cosine_similarity(q_emb, &row.embedding);
+                if similarity >= sim_thresh {
+                    let observation_json = json!({
+                        "id": row.id,
+                        "name": row.name,
+                        "data": row.data,
+                        "created_at": row.created_at,
+                        "similarity": similarity
+                    });
+                    scored_observations.push((similarity, observation_json));
+                }
+            }
+
+            // Sort by similarity descending and take top_k_mem
+            scored_observations.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+            scored_observations.truncate(top_k_mem);
+            items.extend(scored_observations.into_iter().map(|(_, item)| item));
+        } else if let Some(ref nl) = name_like {
+            // Fallback to name pattern matching when no embedding available
+            let sql = format!(
                 "SELECT meta::id(id) as id, name, data, created_at FROM kg_observations WHERE name ~ $name LIMIT {}",
                 top_k_mem
-            )
+            );
+            let rows: Vec<serde_json::Value> = server.db.query(sql)
+                .bind(("name", nl.clone()))
+                .await?.take(0)?;
+            items.extend(rows);
         } else {
-            format!(
-                "SELECT meta::id(id) as id, name, data, created_at FROM kg_observations LIMIT {}",
+            // Fallback to recent items when no query or embedding
+            let sql = format!(
+                "SELECT meta::id(id) as id, name, data, created_at FROM kg_observations ORDER BY created_at DESC LIMIT {}",
                 top_k_mem
-            )
-        };
-        let mut q = server.db.query(sql);
-        if let Some(ref nl) = name_like {
-            q = q.bind(("name", nl.clone()));
+            );
+            let rows: Vec<serde_json::Value> = server.db.query(sql).await?.take(0)?;
+            items.extend(rows);
         }
-        let rows: Vec<serde_json::Value> = q.await?.take(0)?;
-        items.extend(rows);
     }
 
     let mut out = serde_json::Map::new();
@@ -190,7 +306,7 @@ pub async fn unified_search_inner(
     // 2) Thoughts search (optional)
     if include_thoughts {
         // Decide query text for thoughts
-        let mut content = params.thoughts_content.unwrap_or_default();
+        let mut content = params.thoughts_content.clone().unwrap_or_default();
         if content.is_empty() {
             // Prefer explicit text from query if available (common client pattern)
             if let Some(qjson) = &params.query {
