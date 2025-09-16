@@ -1,0 +1,28 @@
+    // Determine content for embedding
+    let mut content = params.thoughts_content.unwrap_or_default();
+-e     if content.is_empty() {
+        if let Some(qjson) = &params.query {
+            if let Some(text) = qjson.get("text").and_then(|v| v.as_str()) {
+                if !text.is_empty() {
+                    content = text.to_string();
+                }
+            }
+        }
+    }
+    if content.is_empty() {
+        if let Some(ref nl) = name_like {
+            content = nl.clone();
+        }
+    }
+-e     let has_query = !content.is_empty();
+    let q_emb = if has_query {
+        match server.embedder.embed(&content).await {
+            Ok(emb) => Some(emb),
+            Err(e) => {
+                tracing::warn!("Embedding failed for query {} : {}, falling back to non-semantic search", content, e);
+                None
+            }
+        }
+    } else {
+        None
+    };
