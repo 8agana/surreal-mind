@@ -476,7 +476,7 @@ pub async fn unified_search_inner(
 }
 
 /// Helper function to sort entities by similarity (used by both production and tests)
-fn sort_by_similarity(entities: &mut Vec<serde_json::Value>) {
+fn sort_by_similarity(entities: &mut [serde_json::Value]) {
     entities.sort_by(|a, b| {
         let sim_a = a.get("similarity").and_then(|v| v.as_f64()).unwrap_or(0.0);
         let sim_b = b.get("similarity").and_then(|v| v.as_f64()).unwrap_or(0.0);

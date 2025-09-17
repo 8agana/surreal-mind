@@ -1700,7 +1700,7 @@ pub fn compute_trust_tier(origin: &str, table: &str) -> String {
 
 /// Helper function to check HTTP response status and create appropriate error
 fn check_http_status(status_code: u16, body_text: &str, context: &str) -> Result<()> {
-    if status_code >= 200 && status_code < 300 {
+    if (200..300).contains(&status_code) {
         return Ok(());
     }
 

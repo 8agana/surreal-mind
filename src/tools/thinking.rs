@@ -119,24 +119,31 @@ pub struct ContinuityResult {
     pub links_resolved: serde_json::Value,
 }
 
-/// Helper to resolve a single continuity link ID
-/// Returns (resolved_id, resolution_type)
-/// This is extracted for testability
-pub fn resolve_continuity_id(id: String, record_exists: bool) -> (Option<String>, &'static str) {
-    let resolved_id = if id.starts_with("thoughts:") {
-        id
+/// Process a database query result for continuity link resolution
+/// Takes the original ID and the query result, returns (resolved_id, resolution_type)
+/// When the query result is empty, preserves the ID as a string for future resolution
+pub fn process_continuity_query_result(
+    original_id: String,
+    query_result: Vec<serde_json::Value>,
+) -> (Option<String>, &'static str) {
+    // Normalize the ID format
+    let normalized_id = if original_id.starts_with("thoughts:") {
+        original_id
     } else {
-        format!("thoughts:{}", id)
+        format!("thoughts:{}", original_id)
     };
 
-    if record_exists {
-        (Some(resolved_id), "record")
+    // Check if the record exists based on query result
+    if !query_result.is_empty() {
+        // Record found in database
+        (Some(normalized_id), "record")
     } else {
+        // Record not found - preserve as string for future resolution
         tracing::warn!(
-            "Continuity link {} not found in database, keeping as string",
-            resolved_id
+            "Continuity link {} not found in database, preserving as string for future resolution",
+            normalized_id
         );
-        (Some(resolved_id), "string")
+        (Some(normalized_id), "string")
     }
 }
 
@@ -605,56 +612,32 @@ impl SurrealMindServer {
 
         // Helper function to resolve and validate a thought reference
         let resolve_thought = |id: String| async move {
-            // Check if it's already a Surreal thing format
-            if id.starts_with("thoughts:") {
-                let check_query = "SELECT id FROM type::thing($id) LIMIT 1";
-                match self.db.query(check_query).bind(("id", id.clone())).await {
-                    Ok(mut response) => {
-                        if let Ok(vec) = response.take::<Vec<serde_json::Value>>(0) {
-                            if !vec.is_empty() {
-                                return (Some(id), "record");
-                            } else {
-                                tracing::warn!(
-                                    "Continuity link {} not found in database, keeping as string",
-                                    id
-                                );
-                                return (Some(id), "string");
-                            }
-                        }
-                    }
-                    Err(_) => {}
-                }
+            // Determine the full ID format for querying
+            let full_id = if id.starts_with("thoughts:") {
+                id.clone()
             } else {
-                // Try to find by plain ID
-                let check_query = "SELECT id FROM thoughts WHERE id = $id LIMIT 1";
-                match self
-                    .db
-                    .query(check_query)
-                    .bind(("id", format!("thoughts:{}", id)))
-                    .await
-                {
-                    Ok(mut response) => {
-                        if let Ok(vec) = response.take::<Vec<serde_json::Value>>(0) {
-                            if !vec.is_empty() {
-                                return (Some(format!("thoughts:{}", id)), "record");
-                            } else {
-                                tracing::warn!(
-                                    "Continuity link thoughts:{} not found in database, keeping as string",
-                                    id
-                                );
-                                return (Some(format!("thoughts:{}", id)), "string");
-                            }
-                        }
-                    }
-                    Err(_) => {}
+                format!("thoughts:{}", id)
+            };
+
+            // Query the database to check if the record exists
+            let check_query = "SELECT id FROM type::thing($id) LIMIT 1";
+            let query_result = match self
+                .db
+                .query(check_query)
+                .bind(("id", full_id.clone()))
+                .await
+            {
+                Ok(mut response) => response
+                    .take::<Vec<serde_json::Value>>(0)
+                    .unwrap_or_default(),
+                Err(e) => {
+                    tracing::warn!("Failed to query continuity link {}: {}", full_id, e);
+                    Vec::new()
                 }
-            }
-            // If we couldn't validate it as a record, keep the original string
-            tracing::warn!(
-                "Could not validate continuity link: {}, keeping as string",
-                id
-            );
-            (Some(id), "string")
+            };
+
+            // Process the query result to determine how to handle the ID
+            process_continuity_query_result(id, query_result)
         };
 
         // Resolve each link
@@ -1431,28 +1414,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_resolve_continuity_id_preserves_missing_ids() {
-        // Test the actual resolution helper function
+    fn test_process_continuity_query_result() {
+        // Test the actual behavior: when DB returns empty results, ID is preserved as string
 
-        // Test with existing record
-        let (id, resolution_type) = resolve_continuity_id("existing-id".to_string(), true);
-        assert_eq!(id, Some("thoughts:existing-id".to_string()));
+        // Test with non-empty query result (record exists)
+        let existing_record = vec![serde_json::json!({
+            "id": "thoughts:abc123",
+            "content": "Some thought content"
+        })];
+        let (id, resolution_type) =
+            process_continuity_query_result("abc123".to_string(), existing_record);
+        assert_eq!(id, Some("thoughts:abc123".to_string()));
         assert_eq!(resolution_type, "record");
 
-        // Test with missing record - should preserve as string
-        let (id, resolution_type) = resolve_continuity_id("missing-id".to_string(), false);
+        // Test with empty query result (record doesn't exist) - MUST preserve ID
+        let empty_result = Vec::new();
+        let (id, resolution_type) =
+            process_continuity_query_result("missing-id".to_string(), empty_result);
         assert_eq!(id, Some("thoughts:missing-id".to_string()));
         assert_eq!(resolution_type, "string");
 
         // Test with already-prefixed ID that exists
+        let existing_prefixed = vec![serde_json::json!({"id": "thoughts:xyz789"})];
         let (id, resolution_type) =
-            resolve_continuity_id("thoughts:already-prefixed".to_string(), true);
-        assert_eq!(id, Some("thoughts:already-prefixed".to_string()));
+            process_continuity_query_result("thoughts:xyz789".to_string(), existing_prefixed);
+        assert_eq!(id, Some("thoughts:xyz789".to_string()));
         assert_eq!(resolution_type, "record");
 
-        // Test with already-prefixed ID that doesn't exist
-        let (id, resolution_type) = resolve_continuity_id("thoughts:missing".to_string(), false);
-        assert_eq!(id, Some("thoughts:missing".to_string()));
+        // Test with already-prefixed ID that doesn't exist - MUST preserve
+        let empty_prefixed = Vec::new();
+        let (id, resolution_type) =
+            process_continuity_query_result("thoughts:not-found".to_string(), empty_prefixed);
+        assert_eq!(id, Some("thoughts:not-found".to_string()));
         assert_eq!(resolution_type, "string");
     }
 }
