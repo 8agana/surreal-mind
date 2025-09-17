@@ -10,7 +10,7 @@ mcp-server-*.log
 mcp.log
 
 
-
+/symlinks
 
 CLAUDE.md
 
