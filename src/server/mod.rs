@@ -480,32 +480,6 @@ impl SurrealMindServer {
             .await
             .with_context(|| format!("Failed to select database '{}'", dbname))?;
 
-        // DB connection values from config
-        let url = normalize_ws_url(&config.system.database_url);
-        let user = &config.runtime.database_user;
-        let pass = &config.runtime.database_pass;
-        let ns = &config.system.database_ns;
-        let dbname = &config.system.database_db;
-
-        // Connect to the running SurrealDB service
-        let db = Surreal::new::<surrealdb::engine::remote::ws::Ws>(&url)
-            .await
-            .context("Failed to connect to SurrealDB service")?;
-
-        // Authenticate
-        db.signin(surrealdb::opt::auth::Root {
-            username: user,
-            password: pass,
-        })
-        .await
-        .context("Failed to authenticate with SurrealDB")?;
-
-        // Select namespace and database
-        db.use_ns(ns)
-            .use_db(dbname)
-            .await
-            .context("Failed to select namespace and database")?;
-
         // Initialize embedder
         let embedder = crate::embeddings::create_embedder(config)
             .await

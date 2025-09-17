@@ -589,8 +589,13 @@ impl SurrealMindServer {
                 let check_query = "SELECT id FROM type::thing($id) LIMIT 1";
                 match self.db.query(check_query).bind(("id", id.clone())).await {
                     Ok(mut response) => {
-                        if let Ok(_) = response.take::<Vec<serde_json::Value>>(0) {
-                            return (Some(id), "record");
+                        if let Ok(vec) = response.take::<Vec<serde_json::Value>>(0) {
+                            if !vec.is_empty() {
+                                return (Some(id), "record");
+                            } else {
+                                tracing::warn!("Continuity link {} not found in database", id);
+                                return (None, "invalid");
+                            }
                         }
                     }
                     Err(_) => {}
@@ -608,13 +613,21 @@ impl SurrealMindServer {
                         if let Ok(vec) = response.take::<Vec<serde_json::Value>>(0) {
                             if !vec.is_empty() {
                                 return (Some(format!("thoughts:{}", id)), "record");
+                            } else {
+                                tracing::warn!(
+                                    "Continuity link thoughts:{} not found in database",
+                                    id
+                                );
+                                return (None, "invalid");
                             }
                         }
                     }
                     Err(_) => {}
                 }
             }
-            (Some(id), "string")
+            // If we couldn't validate it as a record, drop it
+            tracing::warn!("Could not validate continuity link: {}", id);
+            (None, "invalid")
         };
 
         // Resolve each link

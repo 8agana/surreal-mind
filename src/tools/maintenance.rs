@@ -117,7 +117,7 @@ impl SurrealMindServer {
 
         let dry_run = params.dry_run.unwrap_or(false);
         let limit = params.limit.unwrap_or(100) as usize;
-        let format = params.format.unwrap_or_else(|| "parquet".to_string());
+        let format = params.format.unwrap_or_else(|| "json".to_string());
         let output_dir = params.output_dir.unwrap_or_else(|| "./archive".to_string());
 
         tracing::info!(
@@ -437,12 +437,9 @@ impl SurrealMindServer {
             output_dir
         );
 
-        if format != "parquet" {
+        if format != "json" {
             return Err(SurrealMindError::Validation {
-                message: format!(
-                    "Unsupported format: {}. Only 'parquet' is supported.",
-                    format
-                ),
+                message: format!("Unsupported format: {}. Only 'json' is supported.", format),
             });
         }
 
@@ -478,10 +475,10 @@ impl SurrealMindServer {
 
         // Generate file path
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-        let filename = format!("thoughts_removal_{}.parquet", timestamp);
+        let filename = format!("thoughts_removal_{}.json", timestamp);
         let file_path = Path::new(output_dir).join(filename);
 
-        // For now, serialize to JSON (placeholder until parquet export is implemented)
+        // Serialize to JSON
         let json_data = serde_json::to_string_pretty(&thoughts).map_err(|e| {
             SurrealMindError::Serialization {
                 message: format!("Failed to serialize thoughts: {}", e),
