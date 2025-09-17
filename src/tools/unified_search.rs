@@ -204,13 +204,7 @@ pub async fn unified_search_inner(
                 }
             }
             // Sort by similarity descending before truncating
-            scored_entities.sort_by(|a, b| {
-                let sim_a = a.get("similarity").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let sim_b = b.get("similarity").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                sim_b
-                    .partial_cmp(&sim_a)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
+            sort_by_similarity(&mut scored_entities);
             scored_entities.truncate(top_k_mem);
             items.extend(scored_entities);
         }
@@ -288,13 +282,7 @@ pub async fn unified_search_inner(
             }
 
             // Sort by similarity descending before truncating
-            scored_observations.sort_by(|a, b| {
-                let sim_a = a.get("similarity").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let sim_b = b.get("similarity").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                sim_b
-                    .partial_cmp(&sim_a)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
+            sort_by_similarity(&mut scored_observations);
             scored_observations.truncate(top_k_mem);
             items.extend(scored_observations);
         } else if let Some(ref nl) = name_like {
@@ -485,4 +473,77 @@ pub async fn unified_search_inner(
     }
 
     Ok(CallToolResult::structured(serde_json::Value::Object(out)))
+}
+
+/// Helper function to sort entities by similarity (used by both production and tests)
+fn sort_by_similarity(entities: &mut Vec<serde_json::Value>) {
+    entities.sort_by(|a, b| {
+        let sim_a = a.get("similarity").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let sim_b = b.get("similarity").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        sim_b
+            .partial_cmp(&sim_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_similarity_ordering_keeps_high_similarity_old_items() {
+        // Create test entities with varying similarities and ages
+        let mut scored_entities = vec![
+            json!({
+                "id": "old-high-sim",
+                "name": "Old but high similarity",
+                "created_at": "2023-01-01T00:00:00Z",
+                "similarity": 0.95
+            }),
+            json!({
+                "id": "new-low-sim",
+                "name": "New but low similarity",
+                "created_at": "2025-01-01T00:00:00Z",
+                "similarity": 0.60
+            }),
+            json!({
+                "id": "mid-mid-sim",
+                "name": "Middle age and similarity",
+                "created_at": "2024-06-01T00:00:00Z",
+                "similarity": 0.75
+            }),
+            json!({
+                "id": "newer-high-sim",
+                "name": "Newer high similarity",
+                "created_at": "2025-06-01T00:00:00Z",
+                "similarity": 0.92
+            }),
+            json!({
+                "id": "oldest-med-sim",
+                "name": "Oldest medium similarity",
+                "created_at": "2022-01-01T00:00:00Z",
+                "similarity": 0.70
+            }),
+        ];
+
+        // Use the actual production sorting function
+        sort_by_similarity(&mut scored_entities);
+
+        // Truncate to top 3
+        scored_entities.truncate(3);
+
+        // Verify the top 3 are the highest similarity ones regardless of age
+        let ids: Vec<&str> = scored_entities
+            .iter()
+            .map(|e| e.get("id").unwrap().as_str().unwrap())
+            .collect();
+
+        assert_eq!(ids[0], "old-high-sim"); // 0.95 - oldest but highest similarity
+        assert_eq!(ids[1], "newer-high-sim"); // 0.92 - newer, second highest
+        assert_eq!(ids[2], "mid-mid-sim"); // 0.75 - middle age, third highest
+
+        // Verify that new-low-sim (0.60) and oldest-med-sim (0.70) were dropped
+        assert_eq!(scored_entities.len(), 3);
+    }
 }

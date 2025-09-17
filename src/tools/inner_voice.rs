@@ -1444,15 +1444,8 @@ async fn call_planner_grok(base: &str, api_key: &str, query: &str) -> Result<Pla
             .text()
             .await
             .unwrap_or_else(|_| "Unable to read response body".to_string());
-        if status.as_u16() == 429 {
-            tracing::warn!("Grok planner rate limited (429): {}", body_text);
-        }
-        return Err(SurrealMindError::Internal {
-            message: format!(
-                "Grok planner request failed with status {}: {}",
-                status, body_text
-            ),
-        });
+        check_http_status(status.as_u16(), &body_text, "Grok planner")?;
+        unreachable!(); // check_http_status always returns an error for non-success
     }
 
     let val: serde_json::Value = resp.json().await.map_err(|e| SurrealMindError::Internal {
@@ -1527,15 +1520,8 @@ async fn call_grok(
             .text()
             .await
             .unwrap_or_else(|_| "Unable to read response body".to_string());
-        if status.as_u16() == 429 {
-            tracing::warn!("Grok synthesis rate limited (429): {}", body_text);
-        }
-        return Err(SurrealMindError::Internal {
-            message: format!(
-                "Grok synthesis request failed with status {}: {}",
-                status, body_text
-            ),
-        });
+        check_http_status(status.as_u16(), &body_text, "Grok synthesis")?;
+        unreachable!(); // check_http_status always returns an error for non-success
     }
 
     let val: serde_json::Value = resp.json().await.map_err(|e| SurrealMindError::Internal {
@@ -1709,5 +1695,88 @@ pub fn compute_trust_tier(origin: &str, table: &str) -> String {
             "tool" => "amber".to_string(),
             _ => "red".to_string(),
         }
+    }
+}
+
+/// Helper function to check HTTP response status and create appropriate error
+fn check_http_status(status_code: u16, body_text: &str, context: &str) -> Result<()> {
+    if status_code >= 200 && status_code < 300 {
+        return Ok(());
+    }
+
+    if status_code == 429 {
+        tracing::warn!("{} rate limited (429): {}", context, body_text);
+    }
+
+    Err(SurrealMindError::Internal {
+        message: format!(
+            "{} request failed with status {}: {}",
+            context, status_code, body_text
+        ),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_http_status_checking() {
+        // Test successful status
+        assert!(check_http_status(200, "OK", "Test").is_ok());
+        assert!(check_http_status(201, "Created", "Test").is_ok());
+        assert!(check_http_status(299, "Custom", "Test").is_ok());
+
+        // Test 429 rate limit error
+        let result_429 = check_http_status(429, "Rate limit exceeded", "Grok planner");
+        assert!(result_429.is_err());
+        match result_429.unwrap_err() {
+            SurrealMindError::Internal { message } => {
+                assert!(message.contains("429"));
+                assert!(message.contains("Rate limit exceeded"));
+                assert!(message.contains("Grok planner"));
+            }
+            _ => panic!("Expected Internal error variant"),
+        }
+
+        // Test 500 internal server error
+        let result_500 = check_http_status(500, "Internal server error", "Grok synthesis");
+        assert!(result_500.is_err());
+        match result_500.unwrap_err() {
+            SurrealMindError::Internal { message } => {
+                assert!(message.contains("500"));
+                assert!(message.contains("Internal server error"));
+                assert!(message.contains("Grok synthesis"));
+            }
+            _ => panic!("Expected Internal error variant"),
+        }
+
+        // Test 404 not found
+        let result_404 = check_http_status(404, "Not found", "API");
+        assert!(result_404.is_err());
+        match result_404.unwrap_err() {
+            SurrealMindError::Internal { message } => {
+                assert!(message.contains("404"));
+                assert!(message.contains("Not found"));
+            }
+            _ => panic!("Expected Internal error variant"),
+        }
+    }
+
+    #[test]
+    fn test_compute_trust_tier() {
+        // Test KG tables get green tier
+        assert_eq!(compute_trust_tier("any", "kg_entities"), "green");
+        assert_eq!(compute_trust_tier("any", "kg_edges"), "green");
+
+        // Test human/logged origin gets green tier
+        assert_eq!(compute_trust_tier("human", "thoughts"), "green");
+        assert_eq!(compute_trust_tier("logged", "thoughts"), "green");
+
+        // Test tool origin gets amber tier
+        assert_eq!(compute_trust_tier("tool", "thoughts"), "amber");
+
+        // Test unknown origin gets red tier
+        assert_eq!(compute_trust_tier("unknown", "thoughts"), "red");
     }
 }

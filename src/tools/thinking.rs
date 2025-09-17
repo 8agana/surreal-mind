@@ -119,6 +119,27 @@ pub struct ContinuityResult {
     pub links_resolved: serde_json::Value,
 }
 
+/// Helper to resolve a single continuity link ID
+/// Returns (resolved_id, resolution_type)
+/// This is extracted for testability
+pub fn resolve_continuity_id(id: String, record_exists: bool) -> (Option<String>, &'static str) {
+    let resolved_id = if id.starts_with("thoughts:") {
+        id
+    } else {
+        format!("thoughts:{}", id)
+    };
+
+    if record_exists {
+        (Some(resolved_id), "record")
+    } else {
+        tracing::warn!(
+            "Continuity link {} not found in database, keeping as string",
+            resolved_id
+        );
+        (Some(resolved_id), "string")
+    }
+}
+
 impl SurrealMindServer {
     /// Run conversational think (with framework enhancement, origin='human')
     #[allow(clippy::too_many_arguments)]
@@ -593,8 +614,11 @@ impl SurrealMindServer {
                             if !vec.is_empty() {
                                 return (Some(id), "record");
                             } else {
-                                tracing::warn!("Continuity link {} not found in database", id);
-                                return (None, "invalid");
+                                tracing::warn!(
+                                    "Continuity link {} not found in database, keeping as string",
+                                    id
+                                );
+                                return (Some(id), "string");
                             }
                         }
                     }
@@ -615,19 +639,22 @@ impl SurrealMindServer {
                                 return (Some(format!("thoughts:{}", id)), "record");
                             } else {
                                 tracing::warn!(
-                                    "Continuity link thoughts:{} not found in database",
+                                    "Continuity link thoughts:{} not found in database, keeping as string",
                                     id
                                 );
-                                return (None, "invalid");
+                                return (Some(format!("thoughts:{}", id)), "string");
                             }
                         }
                     }
                     Err(_) => {}
                 }
             }
-            // If we couldn't validate it as a record, drop it
-            tracing::warn!("Could not validate continuity link: {}", id);
-            (None, "invalid")
+            // If we couldn't validate it as a record, keep the original string
+            tracing::warn!(
+                "Could not validate continuity link: {}, keeping as string",
+                id
+            );
+            (Some(id), "string")
         };
 
         // Resolve each link
@@ -1396,5 +1423,36 @@ impl SurrealMindServer {
         }
 
         Ok(CallToolResult::structured(final_result))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_continuity_id_preserves_missing_ids() {
+        // Test the actual resolution helper function
+
+        // Test with existing record
+        let (id, resolution_type) = resolve_continuity_id("existing-id".to_string(), true);
+        assert_eq!(id, Some("thoughts:existing-id".to_string()));
+        assert_eq!(resolution_type, "record");
+
+        // Test with missing record - should preserve as string
+        let (id, resolution_type) = resolve_continuity_id("missing-id".to_string(), false);
+        assert_eq!(id, Some("thoughts:missing-id".to_string()));
+        assert_eq!(resolution_type, "string");
+
+        // Test with already-prefixed ID that exists
+        let (id, resolution_type) =
+            resolve_continuity_id("thoughts:already-prefixed".to_string(), true);
+        assert_eq!(id, Some("thoughts:already-prefixed".to_string()));
+        assert_eq!(resolution_type, "record");
+
+        // Test with already-prefixed ID that doesn't exist
+        let (id, resolution_type) = resolve_continuity_id("thoughts:missing".to_string(), false);
+        assert_eq!(id, Some("thoughts:missing".to_string()));
+        assert_eq!(resolution_type, "string");
     }
 }

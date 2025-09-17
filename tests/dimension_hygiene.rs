@@ -15,11 +15,17 @@ async fn test_dimension_hygiene_check() -> Result<()> {
     let server = surreal_mind::server::SurrealMindServer::new(&config).await?;
 
     // Validate via check_embedding_dims (behavior assertion)
-    let mismatches = server.check_embedding_dims().await?;
-    assert_eq!(
-        mismatches.mismatched_or_missing, 0,
-        "No embedding dimension mismatches should exist"
-    );
+    // This will return an error if dimensions are mismatched
+    // The function returns Ok(()) if all dimensions match, or an error with details if they don't
+    match server.check_embedding_dims().await {
+        Ok(()) => {
+            // All embedding dimensions are consistent
+        }
+        Err(e) => {
+            // This means there are mismatched dimensions
+            panic!("Embedding dimension mismatch detected: {}", e);
+        }
+    }
 
     Ok(())
 }
