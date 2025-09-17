@@ -1,9 +1,10 @@
-## 2025-09-17 - CCR Defect Fixes
+## 2025-09-17 - CCR Defect Fixes & Continuity Improvements
 - **Fixed SurrealDB Bootstrap Regression**: Removed duplicate connection after successful retry-protected connection
-- **Fixed Continuity Link Validation**: Added proper record existence checking for previous_thought_id, revises_thought, and branch_from
+- **Restored Safe Continuity Fallback**: Missing thought IDs are now preserved as strings instead of being dropped
 - **Fixed Unified Search Ordering**: Sort entities and observations by similarity before truncation
 - **Improved HTTP Error Handling**: Added proper status checking and rate limit warnings for Grok API calls
 - **Fixed Maintenance Export Format**: Changed from misleading "parquet" to actual "json" format
+- **Added Regression Tests**: Coverage for continuity fallback, search ordering, and HTTP error handling
 
 ## 2025-09-16 - Semantic Search Fix & Infrastructure Updates
 - **Fixed Semantic Search**: Replaced client-side similarity calculations with SurrealDB's `vector::similarity::cosine()` for KG queries
