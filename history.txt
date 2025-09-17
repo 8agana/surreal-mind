@@ -72,3 +72,12 @@ SELECT meta::id(id) as id, content, created_at FROM thoughts WHERE created_at >=
 SELECT meta::id(id) as id, content, created_at FROM thoughts WHERE meta::id(id) = 'b839c3be-fbb1-4cb7-ba22-ccdfe621d23e';
 SELECT meta::id(id) as id, content, created_at FROM thoughts WHERE created_at >= '2025-09-14T20:00:00Z' ORDER BY created_at DESC LIMIT 5;
 SELECT * FROM kg_entity_candidates WHERE meta::id(id) = 'kyvpuptw2ei1kauz1zn8';
+SELECT count() FROM kg_entities GROUP ALL;
+SELECT count() FROM kg_entities WHERE embedding IS NOT NULL GROUP ALL;
+SELECT meta::id(id) as id, name, embedding_dim, array::len(embedding) as actual_dim FROM kg_entities WHERE embedding IS NOT NULL LIMIT 1;
+SELECT count() FROM kg_observations GROUP ALL;
+SELECT count() FROM kg_observations WHERE embedding IS NOT NULL GROUP ALL;
+SELECT meta::id(id) as id, name, embedding_dim, array::len(embedding) as actual_dim FROM kg_observations WHERE embedding IS NOT NULL LIMIT 1;
+SELECT count() FROM thoughts GROUP ALL;
+SELECT count() FROM thoughts WHERE embedding IS NOT NULL GROUP ALL;
+SELECT meta::id(id) as id, embedding_dim, array::len(embedding) as actual_dim FROM thoughts WHERE embedding IS NOT NULL LIMIT 3;
