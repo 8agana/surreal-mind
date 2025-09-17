@@ -1436,6 +1436,25 @@ async fn call_planner_grok(base: &str, api_key: &str, query: &str) -> Result<Pla
         .map_err(|e| SurrealMindError::Internal {
             message: e.to_string(),
         })?;
+
+    // Check response status before parsing
+    let status = resp.status();
+    if !status.is_success() {
+        let body_text = resp
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unable to read response body".to_string());
+        if status.as_u16() == 429 {
+            tracing::warn!("Grok planner rate limited (429): {}", body_text);
+        }
+        return Err(SurrealMindError::Internal {
+            message: format!(
+                "Grok planner request failed with status {}: {}",
+                status, body_text
+            ),
+        });
+    }
+
     let val: serde_json::Value = resp.json().await.map_err(|e| SurrealMindError::Internal {
         message: e.to_string(),
     })?;
@@ -1500,6 +1519,25 @@ async fn call_grok(
         .map_err(|e| SurrealMindError::Internal {
             message: e.to_string(),
         })?;
+
+    // Check response status before parsing
+    let status = resp.status();
+    if !status.is_success() {
+        let body_text = resp
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unable to read response body".to_string());
+        if status.as_u16() == 429 {
+            tracing::warn!("Grok synthesis rate limited (429): {}", body_text);
+        }
+        return Err(SurrealMindError::Internal {
+            message: format!(
+                "Grok synthesis request failed with status {}: {}",
+                status, body_text
+            ),
+        });
+    }
+
     let val: serde_json::Value = resp.json().await.map_err(|e| SurrealMindError::Internal {
         message: e.to_string(),
     })?;

@@ -203,6 +203,14 @@ pub async fn unified_search_inner(
                     }
                 }
             }
+            // Sort by similarity descending before truncating
+            scored_entities.sort_by(|a, b| {
+                let sim_a = a.get("similarity").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let sim_b = b.get("similarity").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                sim_b
+                    .partial_cmp(&sim_a)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
             scored_entities.truncate(top_k_mem);
             items.extend(scored_entities);
         }
@@ -279,6 +287,14 @@ pub async fn unified_search_inner(
                 }
             }
 
+            // Sort by similarity descending before truncating
+            scored_observations.sort_by(|a, b| {
+                let sim_a = a.get("similarity").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let sim_b = b.get("similarity").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                sim_b
+                    .partial_cmp(&sim_a)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
             scored_observations.truncate(top_k_mem);
             items.extend(scored_observations);
         } else if let Some(ref nl) = name_like {
