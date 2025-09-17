@@ -1,3 +1,49 @@
+## 2025-09-17 - CCR Defect Fixes
+- **Fixed SurrealDB Bootstrap Regression**: Removed duplicate connection after successful retry-protected connection
+- **Fixed Continuity Link Validation**: Added proper record existence checking for previous_thought_id, revises_thought, and branch_from
+- **Fixed Unified Search Ordering**: Sort entities and observations by similarity before truncation
+- **Improved HTTP Error Handling**: Added proper status checking and rate limit warnings for Grok API calls
+- **Fixed Maintenance Export Format**: Changed from misleading "parquet" to actual "json" format
+
+## 2025-09-16 - Semantic Search Fix & Infrastructure Updates
+- **Fixed Semantic Search**: Replaced client-side similarity calculations with SurrealDB's `vector::similarity::cosine()` for KG queries
+- **Embedding Verification**: Added `check_embedding_dims.sh` script to verify embedding consistency across collections
+- **Query Improvements**: Added fallback logic for query embedding content extraction
+- **Repository Cleanup**: Removed roadmap, refined search implementation, replaced legacy AGENTS.md with repository guidelines
+- **Gitignore Updates**: Added symlinks directory to prevent accidental commits
+
+## 2025-09-15 - Inner Voice CLI Extractor & Stability Improvements
+- **CLI-Based KG Extraction**: Added Node.js-based extractor pipeline for inner_voice tool
+  - Preflight node check with deterministic IDs for kg_candidates
+  - Robust JSON repair with brace matching
+  - AJV schema validation support
+  - Improved error handling and fallback mechanisms
+- **rmcp Upgrade**: Updated to 0.6.4 with stdio persistence workaround
+- **Echo Config Command**: Added for debugging configuration issues
+- **Continuity Fields**: Refined handling across all tools
+- **Photography Database**: Added health check functionality
+- **System Monitoring**: Added smtop TUI dashboard with:
+  - Real-time DB health monitoring
+  - System metrics display
+  - Stdio session tracking
+  - Tunnel URL display with detail toggle
+- **Code Quality**: Refactored code for clarity and efficiency across multiple modules
+
+## 2025-09-14 - Inner Voice Enhancements & Search Improvements
+- **Advanced Search Filtering**: Added continuity field filtering to legacymind_search
+- **Inner Voice Improvements**:
+  - Simplified default CLI arguments for synthesis
+  - Implemented two-thought chain with feedback mechanism
+  - Added Gemini CLI and Grok synthesis support without snippets
+  - Enabled CLI by default with IV_USE_CLI_EXTRACTOR override
+- **Script Improvements**:
+  - Added minimal package.json with ajv for schema validation
+  - Conditional config and env loading in run script
+- **Tool Cleanup**:
+  - Removed legacy think tools
+  - Added photography_memories tool
+  - Removed GitHub workflows for PR guards
+
 ## 2025-09-14 - CCR Implementation Complete
 - **Rate Limiter Fix**: Switched to monotonic process epoch using Instant; no unnecessary sleeps.
 - **Startup Tool Log**: Dynamic tool count in startup message.
@@ -13,6 +59,27 @@
 - Corrected `legacymind_search` schema and examples; removed outdated `think_search` references
 - Consolidated binaries list (`reembed`, `reembed_kg`, `fix_dimensions`) and health checks (`health_check_embeddings`)
 - Cleaned README duplication and outdated examples
+
+## 2025-09-09 to 2025-09-12 - Infrastructure & Reliability Improvements
+- **Embedding Consistency**:
+  - Added embedding dimension hygiene check
+  - Implemented rate limiting with governor crate for API requests
+  - Added test_fix_dimensions binary for dimension mismatch fixes
+- **Database Enhancements**:
+  - Enhanced validation and reconnection logic
+  - Added protoc installation for lance-encoding dependency
+  - Removed Git LFS tracking and hooks
+- **Documentation Updates**:
+  - Added Quick Start guide
+  - Updated tool roster and env vars documentation
+  - Improved error messages and categorization
+- **CI/CD Improvements**:
+  - Fixed cargo-audit installation with rustup update
+  - Set PROTOC env var for macOS CI
+  - Updated CI runner from Ubuntu to macOS
+- **Legacy Storage**:
+  - Added LanceDB and SQLite dependencies for migration support
+  - Reverted to stable commit 2fb3ec1 for MCP toolset stability
 
 ## 2025-09-07 - Major Refactor: Unified Thinking Tools (Phases A/B/C)
 
@@ -43,6 +110,32 @@
 - **Team**: Codex (design), Grok Code Fast 1 (implementation), CC (testing/feedback)
 
 ## 2025-09-06 - Production Ready (cc-fixes-20250906 branch)
+
+### Early September Features & Fixes (2025-09-01 to 2025-09-05)
+- **Document Ingestion Pipeline**:
+  - Added real KG verification for ingested documents
+  - Implemented markdown parser for README/CHANGELOG
+  - Added kg_inspect tool for hypothesis verification
+  - Enhanced document processing with TagEnd handling
+- **TUI Dashboard**:
+  - Created interactive dashboard for monitoring
+  - Added thought continuity fields display
+  - Enhanced session tracking capabilities
+- **HTTP Transport**:
+  - Implemented Axum server with bearer authentication
+  - Added run-http.sh script for HTTP configuration
+  - Removed session tracking from HTTP server for cleaner separation
+- **Inner Voice Tool Evolution**:
+  - Added Grok synthesis integration
+  - Implemented query planner stage
+  - Created prompt registry and metrics modules
+  - Added self-aware prompt system
+  - Integrated NLQ (Natural Language Query) processing
+- **Architecture Improvements**:
+  - Added user agent headers to HTTP clients
+  - Implemented conversation analysis framework with methodology selection
+  - Added index health checks
+  - Removed legacy tool aliases
 
 ### Code Consistency Review Fixes
 - **Fixed clippy warnings** in tests/inner_voice_retrieve.rs

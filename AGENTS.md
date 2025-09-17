@@ -1,5 +1,8 @@
 # Repository Guidelines
 
+## File Organization
+- **Test Files**: All test files should go into the `/tests` folder 
+
 ## Project Structure & Module Organization
 
 - **Source code**: Located in `src/` directory, with main modules including `main.rs`, `lib.rs`, `config.rs`, `embeddings.rs`, `schemas.rs`, and subdirectories for specific functionality.
