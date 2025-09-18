@@ -21,6 +21,8 @@ use std::time::{Duration, Instant};
 use tokio::process::Command;
 use unicode_normalization::UnicodeNormalization;
 
+pub mod providers;
+
 /// Parameters for the inner_voice tool
 #[derive(Debug, serde::Deserialize, serde::Serialize, Clone)]
 pub struct InnerVoiceRetrieveParams {
@@ -397,48 +399,6 @@ impl SurrealMindServer {
             p
         }
 
-        // Provider hooks module: centralize external calls
-        mod providers {
-            use super::*;
-            pub async fn cli_call(
-                _server: &SurrealMindServer,
-                cmd: &str,
-                args: &[String],
-                prompt: &str,
-                timeout_ms: u64,
-            ) -> Result<String> {
-                SurrealMindServer::synth_via_cli(cmd, args, prompt, timeout_ms).await
-            }
-            pub async fn grok_call(
-                base: &str,
-                model: &str,
-                key: &str,
-                messages: &serde_json::Value,
-            ) -> Result<String> {
-                super::call_grok(base, model, key, messages).await
-            }
-            pub fn allow_grok() -> bool {
-                std::env::var("IV_ALLOW_GROK").unwrap_or_else(|_| "true".to_string()) != "false"
-            }
-            pub fn fallback_from_snippets(snippets: &[Snippet]) -> String {
-                if !snippets.is_empty() {
-                    let joined = snippets
-                        .iter()
-                        .take(3)
-                        .map(|s| s.text.trim())
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    let summary: String = joined.chars().take(440).collect();
-                    format!("Based on what I could find: {}", summary)
-                } else {
-                    "Based on what I could find, there wasn’t enough directly relevant material in the corpus to answer confidently.".to_string()
-                }
-            }
-            pub fn compute_auto_extract(params_auto: Option<bool>, default_auto: bool) -> bool {
-                params_auto.unwrap_or(default_auto)
-            }
-        }
-
         // Try Gemini CLI first when requested (even if snippets are empty)
         if provider_pref.eq_ignore_ascii_case("gemini_cli") {
             // IV_CLI_* takes precedence over IV_SYNTH_* (e.g., IV_CLI_CMD overrides IV_SYNTH_CLI_CMD)
@@ -464,7 +424,7 @@ impl SurrealMindServer {
                 .collect();
 
             // Spawn CLI and feed prompt via stdin
-            match providers::cli_call(
+            match crate::tools::inner_voice::providers::cli_call(
                 self,
                 &cli_cmd,
                 &args,
@@ -490,8 +450,12 @@ impl SurrealMindServer {
                 std::env::var("GROK_MODEL").unwrap_or_else(|_| "grok-code-fast-1".to_string());
             let grok_key = std::env::var("GROK_API_KEY").unwrap_or_default();
             let messages = build_synthesis_messages(&params.query, &snippets);
-            if providers::allow_grok() && !grok_key.is_empty() {
-                if let Ok(ans) = providers::grok_call(&base, &model, &grok_key, &messages).await {
+            if crate::tools::inner_voice::providers::allow_grok() && !grok_key.is_empty() {
+                if let Ok(ans) = crate::tools::inner_voice::providers::grok_call(
+                    &base, &model, &grok_key, &messages,
+                )
+                .await
+                {
                     synthesized = ans;
                     synth_provider = "grok".to_string();
                     synth_model = model;
@@ -501,7 +465,7 @@ impl SurrealMindServer {
 
         if synthesized.trim().is_empty() {
             // Last-resort fallback: minimal grounded summary style, no refusals
-            synthesized = providers::fallback_from_snippets(&snippets);
+            synthesized = crate::tools::inner_voice::providers::fallback_from_snippets(&snippets);
             if synth_provider.is_empty() {
                 synth_provider = "fallback".into();
             }
@@ -585,10 +549,13 @@ impl SurrealMindServer {
                 "Propose the single highest-impact next question that would improve the answer above. Keep it under 2 short lines. No bullets, no preamble.\n\nAnswer:\n{}",
                 synthesized
             );
-            let feedback_content = match self.generate_feedback_via_cli(&feedback_prompt).await {
-                Ok(f) => f.trim().to_string(),
-                Err(_) => "No feedback generated.".to_string(),
-            };
+            let feedback_content =
+                match crate::tools::inner_voice::providers::feedback_cli(self, &feedback_prompt)
+                    .await
+                {
+                    Ok(f) => f.trim().to_string(),
+                    Err(_) => "No feedback generated.".to_string(),
+                };
             // Truncate to feedback_max_lines
             let truncated_feedback = feedback_content
                 .lines()
@@ -641,7 +608,7 @@ impl SurrealMindServer {
         };
 
         // Optional auto-extraction to KG candidates using Grok JSON extraction
-        let auto_extract = providers::compute_auto_extract(
+        let auto_extract = crate::tools::inner_voice::providers::compute_auto_extract(
             params.auto_extract_to_kg,
             self.config.runtime.inner_voice.auto_extract_default,
         );
@@ -741,33 +708,6 @@ impl SurrealMindServer {
         });
 
         Ok(CallToolResult::structured(result))
-    }
-
-    /// Generate feedback prompt via CLI
-    async fn generate_feedback_via_cli(&self, prompt: &str) -> Result<String> {
-        // IV_CLI_* takes precedence over IV_SYNTH_*
-        let cli_cmd = std::env::var("IV_CLI_CMD")
-            .or_else(|_| std::env::var("IV_SYNTH_CLI_CMD"))
-            .unwrap_or_else(|_| "gemini".to_string());
-        let cli_model =
-            std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-2.5-pro".to_string());
-        let cli_args_json = std::env::var("IV_CLI_ARGS_JSON")
-            .or_else(|_| std::env::var("IV_SYNTH_CLI_ARGS_JSON"))
-            .unwrap_or_else(|_| "[\"-m\",\"{model}\"]".to_string());
-        let cli_timeout_ms: u64 = std::env::var("IV_CLI_TIMEOUT_MS")
-            .or_else(|_| std::env::var("IV_SYNTH_TIMEOUT_MS"))
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(20_000);
-        let cli_args: Vec<String> = serde_json::from_str(&cli_args_json)
-            .unwrap_or_else(|_| vec!["-m".into(), "{model}".into()]);
-
-        let args: Vec<String> = cli_args
-            .into_iter()
-            .map(|a| if a == "{model}" { cli_model.clone() } else { a })
-            .collect();
-
-        Self::synth_via_cli(&cli_cmd, &args, prompt, cli_timeout_ms).await
     }
 
     /// HeuristicExtractor fallback
@@ -1580,7 +1520,7 @@ async fn call_planner_grok(base: &str, api_key: &str, query: &str) -> Result<Pla
 }
 
 /// Call Grok chat/completions
-async fn call_grok(
+pub(super) async fn call_grok(
     base: &str,
     model: &str,
     api_key: &str,
@@ -1795,7 +1735,7 @@ pub fn compute_trust_tier(origin: &str, table: &str) -> String {
 }
 
 /// Helper function to check HTTP response status and create appropriate error
-fn check_http_status(status_code: u16, body_text: &str, context: &str) -> Result<()> {
+pub(super) fn check_http_status(status_code: u16, body_text: &str, context: &str) -> Result<()> {
     if (200..300).contains(&status_code) {
         return Ok(());
     }
