@@ -1,9 +1,9 @@
 #![cfg(feature = "db_integration")]
 
-use rmcp::{
-    model::CallToolRequestParam,
-    ServerHandler,
-};
+// Integration tests focused on direct handler + DB checks.
+// For full MCP protocol coverage (JSON-RPC over sink/stream), see tests/mcp_protocol.rs.
+
+use rmcp::{ServerHandler, model::CallToolRequestParam};
 use serde_json::json;
 use surreal_mind::{config::Config, server::SurrealMindServer};
 
@@ -96,9 +96,14 @@ async fn test_legacymind_think_handler() {
     // Test with valid params
     let request = CallToolRequestParam {
         name: "legacymind_think".into(),
-        arguments: Some(json!({
-            "content": "Test thought content"
-        }).as_object().unwrap().clone()),
+        arguments: Some(
+            json!({
+                "content": "Test thought content"
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        ),
     };
 
     // Call the internal handler directly
@@ -122,10 +127,15 @@ async fn test_legacymind_think_with_continuity() {
     let non_existent_id = "non_existent_thought_id_12345";
     let request = CallToolRequestParam {
         name: "legacymind_think".into(),
-        arguments: Some(json!({
-            "content": "Test thought with non-existent previous_thought_id",
-            "previous_thought_id": non_existent_id
-        }).as_object().unwrap().clone()),
+        arguments: Some(
+            json!({
+                "content": "Test thought with non-existent previous_thought_id",
+                "previous_thought_id": non_existent_id
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        ),
     };
 
     // Call the internal handler directly
@@ -150,8 +160,8 @@ async fn test_legacymind_think_with_continuity() {
                             // The ID may be prefixed with "thoughts:" when processed
                             let expected_with_prefix = format!("thoughts:{}", non_existent_id);
                             assert!(
-                                prev_id.as_str() == Some(non_existent_id) ||
-                                prev_id.as_str() == Some(&expected_with_prefix),
+                                prev_id.as_str() == Some(non_existent_id)
+                                    || prev_id.as_str() == Some(&expected_with_prefix),
                                 "Previous thought ID should be preserved (got: {:?})",
                                 prev_id.as_str()
                             );
@@ -175,19 +185,21 @@ async fn test_legacymind_think_invalid_params() {
     // Test with invalid params (missing required 'content' field)
     let request = CallToolRequestParam {
         name: "legacymind_think".into(),
-        arguments: Some(json!({
-            "invalid_param": "this parameter doesn't exist"
-        }).as_object().unwrap().clone()),
+        arguments: Some(
+            json!({
+                "invalid_param": "this parameter doesn't exist"
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        ),
     };
 
     // Call the internal handler directly
     let result = server.handle_legacymind_think(request).await;
 
     // Should return an error for missing required field
-    assert!(
-        result.is_err(),
-        "Should fail with invalid parameters"
-    );
+    assert!(result.is_err(), "Should fail with invalid parameters");
 
     if let Err(err) = result {
         let err_msg = err.to_string();
