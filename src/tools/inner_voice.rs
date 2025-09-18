@@ -397,6 +397,48 @@ impl SurrealMindServer {
             p
         }
 
+        // Provider hooks module: centralize external calls
+        mod providers {
+            use super::*;
+            pub async fn cli_call(
+                _server: &SurrealMindServer,
+                cmd: &str,
+                args: &[String],
+                prompt: &str,
+                timeout_ms: u64,
+            ) -> Result<String> {
+                SurrealMindServer::synth_via_cli(cmd, args, prompt, timeout_ms).await
+            }
+            pub async fn grok_call(
+                base: &str,
+                model: &str,
+                key: &str,
+                messages: &serde_json::Value,
+            ) -> Result<String> {
+                super::call_grok(base, model, key, messages).await
+            }
+            pub fn allow_grok() -> bool {
+                std::env::var("IV_ALLOW_GROK").unwrap_or_else(|_| "true".to_string()) != "false"
+            }
+            pub fn fallback_from_snippets(snippets: &[Snippet]) -> String {
+                if !snippets.is_empty() {
+                    let joined = snippets
+                        .iter()
+                        .take(3)
+                        .map(|s| s.text.trim())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    let summary: String = joined.chars().take(440).collect();
+                    format!("Based on what I could find: {}", summary)
+                } else {
+                    "Based on what I could find, there wasn’t enough directly relevant material in the corpus to answer confidently.".to_string()
+                }
+            }
+            pub fn compute_auto_extract(params_auto: Option<bool>, default_auto: bool) -> bool {
+                params_auto.unwrap_or(default_auto)
+            }
+        }
+
         // Try Gemini CLI first when requested (even if snippets are empty)
         if provider_pref.eq_ignore_ascii_case("gemini_cli") {
             // IV_CLI_* takes precedence over IV_SYNTH_* (e.g., IV_CLI_CMD overrides IV_SYNTH_CLI_CMD)
@@ -422,7 +464,8 @@ impl SurrealMindServer {
                 .collect();
 
             // Spawn CLI and feed prompt via stdin
-            match SurrealMindServer::synth_via_cli(
+            match providers::cli_call(
+                self,
                 &cli_cmd,
                 &args,
                 &build_cli_prompt(&params.query, &snippets),
@@ -446,11 +489,9 @@ impl SurrealMindServer {
             let model =
                 std::env::var("GROK_MODEL").unwrap_or_else(|_| "grok-code-fast-1".to_string());
             let grok_key = std::env::var("GROK_API_KEY").unwrap_or_default();
-            let allow_grok =
-                std::env::var("IV_ALLOW_GROK").unwrap_or_else(|_| "true".to_string()) != "false";
             let messages = build_synthesis_messages(&params.query, &snippets);
-            if allow_grok && !grok_key.is_empty() {
-                if let Ok(ans) = call_grok(&base, &model, &grok_key, &messages).await {
+            if providers::allow_grok() && !grok_key.is_empty() {
+                if let Ok(ans) = providers::grok_call(&base, &model, &grok_key, &messages).await {
                     synthesized = ans;
                     synth_provider = "grok".to_string();
                     synth_model = model;
@@ -460,18 +501,7 @@ impl SurrealMindServer {
 
         if synthesized.trim().is_empty() {
             // Last-resort fallback: minimal grounded summary style, no refusals
-            if !snippets.is_empty() {
-                let joined = snippets
-                    .iter()
-                    .take(3)
-                    .map(|s| s.text.trim())
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                let summary: String = joined.chars().take(440).collect();
-                synthesized = format!("Based on what I could find: {}", summary);
-            } else {
-                synthesized = "Based on what I could find, there wasn’t enough directly relevant material in the corpus to answer confidently.".to_string();
-            }
+            synthesized = providers::fallback_from_snippets(&snippets);
             if synth_provider.is_empty() {
                 synth_provider = "fallback".into();
             }
@@ -611,9 +641,10 @@ impl SurrealMindServer {
         };
 
         // Optional auto-extraction to KG candidates using Grok JSON extraction
-        let auto_extract = params
-            .auto_extract_to_kg
-            .unwrap_or(self.config.runtime.inner_voice.auto_extract_default);
+        let auto_extract = providers::compute_auto_extract(
+            params.auto_extract_to_kg,
+            self.config.runtime.inner_voice.auto_extract_default,
+        );
         let mut extracted_entities = 0usize;
         let mut extracted_rels = 0usize;
         if auto_extract {
