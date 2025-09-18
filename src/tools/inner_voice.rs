@@ -84,6 +84,63 @@ pub struct InnerVoiceContext {
     pub hooks: InnerVoiceHooks,
 }
 
+impl SurrealMindServer {
+    /// Build a runtime snapshot for inner_voice from current config/env (no behavior change)
+    pub fn build_inner_voice_runtime(&self) -> InnerVoiceRuntime {
+        let cfg = &self.config.runtime.inner_voice;
+        let planner_enabled = cfg.plan;
+        let topk_default = cfg.topk_default;
+        let mix_default = cfg.mix;
+        let floor_default = cfg.min_floor;
+        let max_candidates_per_source = cfg.max_candidates_per_source;
+        let include_private_default = cfg.include_private_default;
+
+        // Provider/env snapshot (preserve existing defaults and precedence)
+        let grok_base = std::env::var("GROK_BASE_URL")
+            .unwrap_or_else(|_| "https://api.x.ai/v1".to_string());
+        let grok_model = std::env::var("GROK_MODEL")
+            .unwrap_or_else(|_| "grok-code-fast-1".to_string());
+        let grok_allow = std::env::var("IV_ALLOW_GROK")
+            .unwrap_or_else(|_| "true".to_string())
+            != "false";
+
+        let cli_cmd = std::env::var("IV_CLI_CMD")
+            .or_else(|_| std::env::var("IV_SYNTH_CLI_CMD"))
+            .unwrap_or_else(|_| "gemini".to_string());
+        let cli_args_json = std::env::var("IV_CLI_ARGS_JSON")
+            .or_else(|_| std::env::var("IV_SYNTH_CLI_ARGS_JSON"))
+            .unwrap_or_else(|_| "[\"-m\",\"{model}\"]".to_string());
+        let cli_timeout_ms: u64 = std::env::var("IV_CLI_TIMEOUT_MS")
+            .or_else(|_| std::env::var("IV_SYNTH_TIMEOUT_MS"))
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(20_000);
+        let cli_args: Vec<String> = serde_json::from_str(&cli_args_json)
+            .unwrap_or_else(|_| vec!["-m".into(), "{model}".into()]);
+
+        let provider_pref = std::env::var("IV_SYNTH_PROVIDER")
+            .unwrap_or_else(|_| "gemini_cli".to_string());
+        let allow_cli = provider_pref.eq_ignore_ascii_case("gemini_cli");
+
+        InnerVoiceRuntime {
+            planner_enabled,
+            topk_default,
+            mix_default,
+            floor_default,
+            max_candidates_per_source,
+            include_private_default,
+            grok_base,
+            grok_model,
+            grok_allow,
+            cli_cmd,
+            cli_args,
+            cli_timeout_ms,
+            provider_pref,
+            allow_cli,
+        }
+    }
+}
+
 /// Reusable entrypoint for inner_voice, preserving behavior by delegating to the handler.
 /// Other namespaces can call this with typed params without duplicating logic.
 pub async fn run_inner_voice(
