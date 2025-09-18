@@ -983,7 +983,7 @@ impl SurrealMindServer {
             message: "Missing parameters".into(),
         })?;
         let params: LegacymindThinkParams = serde_json::from_value(serde_json::Value::Object(args))
-            .map_err(|e| SurrealMindError::Serialization {
+            .map_err(|e| SurrealMindError::InvalidParams {
                 message: format!("Invalid parameters: {}", e),
             })?;
 
