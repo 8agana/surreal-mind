@@ -1,4 +1,9 @@
 //! inner_voice tool handler for retrieval-only semantic search
+//!
+//! This module now exposes a reusable entrypoint `run_inner_voice` that allows
+//! other namespaces to call the inner_voice workflow with typed parameters
+//! without duplicating handler logic. Behavior is preserved by delegating to the
+//! existing handler.
 
 use crate::error::{Result, SurrealMindError};
 use crate::schemas::Snippet;
@@ -17,7 +22,7 @@ use tokio::process::Command;
 use unicode_normalization::UnicodeNormalization;
 
 /// Parameters for the inner_voice tool
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, serde::Serialize, Clone)]
 pub struct InnerVoiceRetrieveParams {
     pub query: String,
     #[serde(default)]
@@ -40,6 +45,66 @@ pub struct InnerVoiceRetrieveParams {
     pub include_feedback: Option<bool>,
     #[serde(default)]
     pub feedback_max_lines: Option<usize>,
+}
+
+/// Runtime snapshot and hooks to support reuse while preserving behavior
+#[derive(Clone)]
+pub struct InnerVoiceRuntime {
+    pub planner_enabled: bool,
+    pub topk_default: usize,
+    pub mix_default: f32,
+    pub floor_default: f32,
+    pub max_candidates_per_source: usize,
+    pub include_private_default: bool,
+
+    // Provider configuration
+    pub grok_base: String,
+    pub grok_model: String,
+    pub grok_allow: bool,
+    pub cli_cmd: String,
+    pub cli_args: Vec<String>,
+    pub cli_timeout_ms: u64,
+    pub provider_pref: String,
+    pub allow_cli: bool,
+}
+
+#[derive(Clone)]
+pub struct InnerVoiceHooks {
+    pub planner_call: fn(base: &str, api_key: &str, query: &str) -> Result<PlannerResponse>,
+    pub grok_call:
+        fn(base: &str, model: &str, api_key: &str, messages: &serde_json::Value) -> Result<String>,
+    pub cli_call: fn(cmd: &str, args: &[String], prompt: &str, timeout_ms: u64) -> Result<String>,
+}
+
+#[derive(Clone)]
+pub struct InnerVoiceContext {
+    pub runtime: InnerVoiceRuntime,
+    pub hooks: InnerVoiceHooks,
+}
+
+/// Reusable entrypoint for inner_voice, preserving behavior by delegating to the handler.
+/// Other namespaces can call this with typed params without duplicating logic.
+pub async fn run_inner_voice(
+    server: &SurrealMindServer,
+    params: &InnerVoiceRetrieveParams,
+    _ctx: &InnerVoiceContext,
+) -> Result<CallToolResult> {
+    // Convert typed params into the handler's expected CallToolRequestParam
+    let args_value =
+        serde_json::to_value(params.clone()).map_err(|e| SurrealMindError::Internal {
+            message: e.to_string(),
+        })?;
+    let args_map = args_value
+        .as_object()
+        .cloned()
+        .ok_or_else(|| SurrealMindError::Internal {
+            message: "Failed to convert params to object".into(),
+        })?;
+    let request = CallToolRequestParam {
+        name: "inner_voice".into(),
+        arguments: Some(args_map),
+    };
+    server.handle_inner_voice_retrieve(request).await
 }
 
 /// Planner response from Grok
