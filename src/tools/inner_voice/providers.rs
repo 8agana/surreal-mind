@@ -101,6 +101,10 @@ pub fn allow_grok() -> bool {
     std::env::var("IV_ALLOW_GROK").unwrap_or_else(|_| "true".to_string()) != "false"
 }
 
+pub fn allow_grok_from(iv_allow: Option<&str>) -> bool {
+    iv_allow.unwrap_or("true") != "false"
+}
+
 pub fn fallback_from_snippets(snippets: &[Snippet]) -> String {
     if !snippets.is_empty() {
         let joined = snippets
