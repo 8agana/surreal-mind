@@ -18,7 +18,7 @@ use serde::Deserialize;
 use serde_json::json;
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
-use tokio::process::Command;
+
 use unicode_normalization::UnicodeNormalization;
 
 pub mod providers;
@@ -63,11 +63,7 @@ pub struct InnerVoiceRuntime {
     pub grok_base: String,
     pub grok_model: String,
     pub grok_allow: bool,
-    pub cli_cmd: String,
-    pub cli_args: Vec<String>,
-    pub cli_timeout_ms: u64,
-    pub provider_pref: String,
-    pub allow_cli: bool,
+    pub local_fallback: bool,
 }
 
 #[derive(Clone, Default)]
@@ -113,23 +109,44 @@ impl SurrealMindServer {
         let grok_allow =
             std::env::var("IV_ALLOW_GROK").unwrap_or_else(|_| "true".to_string()) != "false";
 
-        let cli_cmd = std::env::var("IV_CLI_CMD")
-            .or_else(|_| std::env::var("IV_SYNTH_CLI_CMD"))
-            .unwrap_or_else(|_| "gemini".to_string());
-        let cli_args_json = std::env::var("IV_CLI_ARGS_JSON")
-            .or_else(|_| std::env::var("IV_SYNTH_CLI_ARGS_JSON"))
-            .unwrap_or_else(|_| "[\"-m\",\"{model}\"]".to_string());
-        let cli_timeout_ms: u64 = std::env::var("IV_CLI_TIMEOUT_MS")
-            .or_else(|_| std::env::var("IV_SYNTH_TIMEOUT_MS"))
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(20_000);
-        let cli_args: Vec<String> = serde_json::from_str(&cli_args_json)
-            .unwrap_or_else(|_| vec!["-m".into(), "{model}".into()]);
-
+        // Check for deprecated CLI env vars and warn
+        if std::env::var("IV_CLI_CMD").is_ok() {
+            tracing::warn!(
+                "CLI configuration (IV_CLI_CMD, IV_CLI_ARGS_JSON, etc.) is deprecated and will be removed. Defaulting to Grok (if key present) or local fallback."
+            );
+        }
+        if std::env::var("IV_SYNTH_CLI_CMD").is_ok() {
+            tracing::warn!("IV_SYNTH_CLI_CMD is deprecated. Defaulting to Grok or local fallback.");
+        }
+        if std::env::var("IV_CLI_ARGS_JSON").is_ok() {
+            tracing::warn!("IV_CLI_ARGS_JSON is deprecated. Defaulting to Grok or local fallback.");
+        }
+        if std::env::var("IV_SYNTH_CLI_ARGS_JSON").is_ok() {
+            tracing::warn!(
+                "IV_SYNTH_CLI_ARGS_JSON is deprecated. Defaulting to Grok or local fallback."
+            );
+        }
+        if std::env::var("IV_CLI_TIMEOUT_MS").is_ok() {
+            tracing::warn!(
+                "IV_CLI_TIMEOUT_MS is deprecated. Defaulting to Grok or local fallback."
+            );
+        }
+        if std::env::var("IV_SYNTH_TIMEOUT_MS").is_ok() {
+            tracing::warn!(
+                "IV_SYNTH_TIMEOUT_MS is deprecated. Defaulting to Grok or local fallback."
+            );
+        }
         let provider_pref =
-            std::env::var("IV_SYNTH_PROVIDER").unwrap_or_else(|_| "gemini_cli".to_string());
-        let allow_cli = provider_pref.eq_ignore_ascii_case("gemini_cli");
+            std::env::var("IV_SYNTH_PROVIDER").unwrap_or_else(|_| "grok".to_string());
+        if provider_pref.eq_ignore_ascii_case("gemini_cli") {
+            tracing::warn!(
+                "IV_SYNTH_PROVIDER='gemini_cli' is deprecated. Defaulting to Grok (if key present) or local fallback."
+            );
+        }
+
+        let local_fallback = std::env::var("INNER_VOICE_LOCAL_FALLBACK")
+            .map(|v| v.trim() != "false")
+            .unwrap_or(true);
 
         InnerVoiceRuntime {
             planner_enabled,
@@ -141,11 +158,7 @@ impl SurrealMindServer {
             grok_base,
             grok_model,
             grok_allow,
-            cli_cmd,
-            cli_args,
-            cli_timeout_ms,
-            provider_pref,
-            allow_cli,
+            local_fallback,
         }
     }
 }
@@ -446,75 +459,12 @@ impl SurrealMindServer {
             })
             .collect();
 
-        // Synthesize answer — prefer Gemini CLI when configured, else Grok HTTP.
+        // Synthesize answer — default to Grok, then local fallback.
         let mut synthesized = String::new();
         let mut synth_provider = String::new();
         let mut synth_model = String::new();
 
-        let provider_pref =
-            std::env::var("IV_SYNTH_PROVIDER").unwrap_or_else(|_| "gemini_cli".to_string());
-
-        // Helper: build a single-text prompt for CLI models from snippets
-        fn build_cli_prompt(user_query: &str, snippets: &[Snippet]) -> String {
-            let mut p = String::new();
-            p.push_str("You are a precise synthesis engine.\n");
-            p.push_str("Answer the user's question using ONLY the snippets.\n");
-            p.push_str("Constraints: <=3 sentences; no hedging; no requests for more context; cite nothing.\n\n");
-            p.push_str(&format!("Question: {}\n\n", user_query.trim()));
-            p.push_str("Snippets:\n");
-            for (i, s) in snippets.iter().enumerate() {
-                let mut text = s.text.clone();
-                cap_text(&mut text, 800);
-                p.push_str(&format!("[{}] {}\n", i + 1, text));
-            }
-            p.push_str("\nAnswer:\n");
-            p
-        }
-
-        // Try Gemini CLI first when requested (even if snippets are empty)
-        if provider_pref.eq_ignore_ascii_case("gemini_cli") {
-            // IV_CLI_* takes precedence over IV_SYNTH_* (e.g., IV_CLI_CMD overrides IV_SYNTH_CLI_CMD)
-            let cli_cmd = std::env::var("IV_CLI_CMD")
-                .or_else(|_| std::env::var("IV_SYNTH_CLI_CMD"))
-                .unwrap_or_else(|_| "gemini".to_string());
-            let cli_model =
-                std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-2.5-pro".to_string());
-            let cli_args_json = std::env::var("IV_CLI_ARGS_JSON")
-                .or_else(|_| std::env::var("IV_SYNTH_CLI_ARGS_JSON"))
-                .unwrap_or_else(|_| "[\"-m\",\"{model}\"]".to_string());
-            let cli_timeout_ms: u64 = std::env::var("IV_CLI_TIMEOUT_MS")
-                .or_else(|_| std::env::var("IV_SYNTH_TIMEOUT_MS"))
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(20_000);
-            let cli_args: Vec<String> = serde_json::from_str(&cli_args_json)
-                .unwrap_or_else(|_| vec!["-m".into(), "{model}".into()]);
-
-            let args: Vec<String> = cli_args
-                .into_iter()
-                .map(|a| if a == "{model}" { cli_model.clone() } else { a })
-                .collect();
-
-            // Spawn CLI and feed prompt via stdin
-            match crate::tools::inner_voice::providers::cli_call(
-                self,
-                &cli_cmd,
-                &args,
-                &build_cli_prompt(&params.query, &snippets),
-                cli_timeout_ms,
-            )
-            .await
-            {
-                Ok(out) if !out.trim().is_empty() => {
-                    synthesized = out.trim().to_string();
-                    synth_provider = "gemini_cli".to_string();
-                    synth_model = cli_model;
-                }
-                _ => { /* fall back to Grok below */ }
-            }
-        }
-
-        // Grok HTTP fallback or primary if provider_pref != gemini_cli
+        // Try Grok first if allowed and key present
         if synthesized.trim().is_empty() {
             let base = std::env::var("GROK_BASE_URL")
                 .unwrap_or_else(|_| "https://api.x.ai/v1".to_string());
@@ -539,7 +489,7 @@ impl SurrealMindServer {
             // Last-resort fallback: minimal grounded summary style, no refusals
             synthesized = crate::tools::inner_voice::providers::fallback_from_snippets(&snippets);
             if synth_provider.is_empty() {
-                synth_provider = "fallback".into();
+                synth_provider = "local".into();
             }
             if synth_model.is_empty() {
                 synth_model = "n/a".into();
@@ -612,72 +562,8 @@ impl SurrealMindServer {
             .bind(("prev", prev_thought_id))
             .await?;
 
-        // Generate feedback prompt if enabled
-        let include_feedback = params.include_feedback.unwrap_or(true);
-        let feedback_max_lines = params.feedback_max_lines.unwrap_or(3);
-        let (feedback_text, feedback_thought_id) = if include_feedback {
-            // Generate feedback via Gemini CLI
-            let feedback_prompt = format!(
-                "Propose the single highest-impact next question that would improve the answer above. Keep it under 2 short lines. No bullets, no preamble.\n\nAnswer:\n{}",
-                synthesized
-            );
-            let feedback_content =
-                match crate::tools::inner_voice::providers::feedback_cli(self, &feedback_prompt)
-                    .await
-                {
-                    Ok(f) => f.trim().to_string(),
-                    Err(_) => "No feedback generated.".to_string(),
-                };
-            // Truncate to feedback_max_lines
-            let truncated_feedback = feedback_content
-                .lines()
-                .take(feedback_max_lines)
-                .collect::<Vec<_>>()
-                .join("\n");
-            // Persist feedback thought (Thought B)
-            let feedback_embedding =
-                self.embedder
-                    .embed(&truncated_feedback)
-                    .await
-                    .map_err(|e| SurrealMindError::Embedding {
-                        message: e.to_string(),
-                    })?;
-            let feedback_id = uuid::Uuid::new_v4().to_string();
-            self.db
-                .query(
-                    "CREATE type::thing('thoughts', $id) CONTENT {
-                        content: $content,
-                        created_at: time::now(),
-                        embedding: $embedding,
-                        injected_memories: [],
-                        enriched_content: NONE,
-                        injection_scale: 0,
-                        significance: 0.5,
-                        access_count: 0,
-                        last_accessed: NONE,
-                        submode: NONE,
-                        framework_enhanced: NONE,
-                        framework_analysis: NONE,
-                        origin: 'inner_voice.feedback',
-                        embedding_provider: $provider,
-                        embedding_model: $model,
-                        embedding_dim: $dim,
-                        embedded_at: time::now(),
-                        previous_thought_id: $prev
-                    } RETURN NONE;",
-                )
-                .bind(("id", feedback_id.clone()))
-                .bind(("content", truncated_feedback.clone()))
-                .bind(("embedding", feedback_embedding))
-                .bind(("provider", provider))
-                .bind(("model", model_name))
-                .bind(("dim", dim))
-                .bind(("prev", synth_thought_id.clone()))
-                .await?;
-            (truncated_feedback, Some(feedback_id))
-        } else {
-            (String::new(), None)
-        };
+        // Feedback dropped for CLI paths (no replacement)
+        let (feedback_text, feedback_thought_id) = (String::new(), None::<String>);
 
         // Optional auto-extraction to KG candidates using Grok JSON extraction
         let auto_extract = crate::tools::inner_voice::providers::compute_auto_extract(
@@ -687,8 +573,7 @@ impl SurrealMindServer {
         let mut extracted_entities = 0usize;
         let mut extracted_rels = 0usize;
         if auto_extract {
-            // Prefer CLI extractor when enabled; fall back to Grok when allowed
-            // Default: CLI extractor enabled, but allow override via env
+            // Extract entities/relationships using Grok if allowed
             let allow_grok =
                 std::env::var("IV_ALLOW_GROK").unwrap_or_else(|_| "true".to_string()) != "false";
 
@@ -829,56 +714,6 @@ impl SurrealMindServer {
         Ok((ecount, rcount))
     }
 
-    /// Spawn a local CLI (e.g., `gemini`) to synthesize an answer from grounded snippets
-    async fn synth_via_cli(
-        cmd: &str,
-        args: &[String],
-        prompt: &str,
-        timeout_ms: u64,
-    ) -> Result<String> {
-        use tokio::io::AsyncWriteExt;
-        use tokio::time::{Duration, timeout};
-
-        let mut child = Command::new(cmd)
-            .args(args)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|e| SurrealMindError::Internal {
-                message: format!("failed to spawn CLI '{}': {}", cmd, e),
-            })?;
-
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin
-                .write_all(prompt.as_bytes())
-                .await
-                .map_err(|e| SurrealMindError::Internal {
-                    message: format!("failed to write prompt to CLI: {}", e),
-                })?;
-        }
-
-        let out = timeout(Duration::from_millis(timeout_ms), child.wait_with_output())
-            .await
-            .map_err(|_| SurrealMindError::Timeout {
-                operation: "cli_synthesis".into(),
-                timeout_ms,
-            })
-            .and_then(|r| {
-                r.map_err(|e| SurrealMindError::Internal {
-                    message: format!("CLI synthesis failed: {}", e),
-                })
-            })?;
-
-        if !out.status.success() {
-            return Err(SurrealMindError::Internal {
-                message: format!("CLI exited with status {}", out.status),
-            });
-        }
-
-        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-        Ok(stdout)
-    }
     async fn fetch_thought_candidates(
         &self,
         cap: usize,

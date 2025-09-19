@@ -1,3 +1,8 @@
+## 2025-09-18 - Inner Voice CLI Removal
+- **Removed Gemini CLI from inner_voice**: Simplified provider chain to Grok → local fallback. Deprecated CLI envs warn and default appropriately.
+- **Feedback Generation**: Dropped CLI-based feedback, set to None for consistency.
+- **Auto-extraction**: Now uses Grok exclusively for KG candidate extraction.
+
 ## 2025-09-17 - CCR Defect Fixes & Continuity Improvements
 - **Fixed SurrealDB Bootstrap Regression**: Removed duplicate connection after successful retry-protected connection
 - **Restored Safe Continuity Fallback**: Missing thought IDs are now preserved as strings instead of being dropped
