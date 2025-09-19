@@ -29,11 +29,12 @@ fn test_list_tools_returns_expected_tools() {
         "photography_search",
         "photography_voice",
         "photography_moderate",
+        "brain_store",
     ];
     assert_eq!(
         expected_tools.len(),
-        12,
-        "Tool roster should list 12 entries with unified tools and photography support"
+        13,
+        "Tool roster should list 13 entries with unified tools, photography, and brain store support"
     );
 }
 
@@ -111,7 +112,7 @@ fn test_detailed_help_schema_structure() {
     let expected_schema = json!({
         "type": "object",
         "properties": {
-            "tool": {"type": "string", "enum": ["legacymind_think", "photography_think", "photography_memories", "memories_create", "memories_moderate", "legacymind_search", "photography_search", "maintenance_ops", "inner_voice", "detailed_help", "photography_voice", "photography_moderate"]},
+            "tool": {"type": "string", "enum": ["legacymind_think", "photography_think", "photography_memories", "memories_create", "memories_moderate", "legacymind_search", "photography_search", "maintenance_ops", "inner_voice", "detailed_help", "photography_voice", "photography_moderate", "brain_store"]},
             "format": {"type": "string", "enum": ["compact", "full"], "default": "full"},
             "prompts": {"type": "boolean"}
         }
@@ -178,6 +179,25 @@ fn test_convo_think_accepts_valid_params() {
             );
         }
     }
+}
+
+#[test]
+fn test_brain_store_schema_structure() {
+    let expected_schema = json!({
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["get", "set"], "default": "get"},
+            "agent": {"type": "string"},
+            "section": {"type": "string"},
+            "content": {"type": "string"}
+        },
+        "required": ["agent", "section"]
+    });
+
+    assert!(schema_has_property(&expected_schema, "agent"));
+    assert!(schema_has_property(&expected_schema, "section"));
+    assert!(schema_has_property(&expected_schema, "action"));
+    assert_eq!(expected_schema["required"].as_array().unwrap().len(), 2);
 }
 
 #[test]

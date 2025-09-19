@@ -55,7 +55,8 @@ impl SurrealMindServer {
                     {"name": "maintenance_ops", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]},
                     {"name": "inner_voice", "one_liner": "Retrieves and synthesizes relevant memories/thoughts into a concise answer; can optionally auto-extract entities/relationships into staged knowledge‑graph candidates for review.", "key_params": ["query", "top_k", "auto_extract_to_kg"]},
                     {"name": "photography_voice", "one_liner": "Retrieves and synthesizes relevant photography memories/thoughts into a concise answer; can optionally auto-extract entities/relationships (photography namespace)", "key_params": ["query", "top_k", "auto_extract_to_kg"]},
-                    {"name": "photography_moderate", "one_liner": "Review/decide on photography knowledge-graph candidates (photography namespace)", "key_params": ["action", "target", "status", "items", "dry_run"]}
+                    {"name": "photography_moderate", "one_liner": "Review/decide on photography knowledge-graph candidates (photography namespace)", "key_params": ["action", "target", "status", "items", "dry_run"]},
+                    {"name": "brain_store", "one_liner": "Get or set persistent brain sections for agents", "key_params": ["action", "agent", "section", "content"]}
                 ]);
                 return Ok(CallToolResult::structured(overview));
             }
@@ -111,6 +112,27 @@ impl SurrealMindServer {
                     "candidates": "array — candidate list (if action='get_candidates')",
                     "dry_run": "boolean — whether this was a dry run"
                 }
+            }),
+            "brain_store" => json!({
+                "name": "brain_store",
+                "description": "Retrieve or update persistent brain sections stored in the brains namespace.",
+                "arguments": {
+                    "action": "string — 'get'|'set' (default: 'get')",
+                    "agent": "string (required) — agent identifier (e.g., 'codex')",
+                    "section": "string (required) — section name (e.g., 'mcp_reference')",
+                    "content": "string — new content when action='set'"
+                },
+                "returns": {
+                    "agent": "string",
+                    "section": "string",
+                    "content": "string",
+                    "found": "boolean",
+                    "updated_at": "string?"
+                },
+                "notes": [
+                    "Uses the dedicated brains namespace configured via SURR_ENABLE_BRAIN/SURR_BRAIN_* env vars",
+                    "'set' will create the section if it does not exist"
+                ]
             }),
             "legacymind_think" => json!({
                 "name": "legacymind_think",

@@ -170,7 +170,8 @@ pub fn detailed_help_schema() -> Arc<Map<String, Value>> {
                 "legacymind_think", "photography_think", "photography_memories",
                 "memories_create", "memories_moderate",
                 "legacymind_search", "photography_search",
-                "maintenance_ops", "inner_voice", "detailed_help"
+                "maintenance_ops", "inner_voice", "photography_voice",
+                "photography_moderate", "brain_store", "detailed_help"
             ]},
             "format": {"type": "string", "enum": ["compact", "full"], "default": "full"}
         }
@@ -205,6 +206,20 @@ pub fn photography_memories_schema() -> Arc<Map<String, Value>> {
             "dry_run": {"type": "boolean"}
         },
         "required": ["mode"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn brain_store_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["get", "set"], "default": "get"},
+            "agent": {"type": "string"},
+            "section": {"type": "string"},
+            "content": {"type": "string"}
+        },
+        "required": ["agent", "section"]
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }

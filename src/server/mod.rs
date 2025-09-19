@@ -151,6 +151,8 @@ pub struct SurrealMindServer {
     pub db: Arc<Surreal<Client>>,
     /// Optional secondary database handle for photography namespace/db
     pub db_photo: Option<Arc<Surreal<Client>>>,
+    /// Optional brain datastore handle (separate namespace/db)
+    pub db_brain: Option<Arc<Surreal<Client>>>,
     pub thoughts: Arc<RwLock<LruCache<String, Thought>>>, // Bounded in-memory cache (LRU)
     pub embedder: Arc<dyn Embedder>,
     pub config: Arc<crate::config::Config>, // Retain config to avoid future env reads
@@ -203,6 +205,7 @@ impl ServerHandler for SurrealMindServer {
         let maintenance_ops_schema_map = crate::schemas::maintenance_ops_schema();
         let kg_create_schema_map = crate::schemas::kg_create_schema();
         let kg_moderate_schema_map = crate::schemas::kg_moderate_schema();
+        let brain_store_schema_map = crate::schemas::brain_store_schema();
         let detailed_help_schema_map = crate::schemas::detailed_help_schema();
         let inner_voice_schema_map = crate::schemas::inner_voice_schema();
 
@@ -341,6 +344,15 @@ impl ServerHandler for SurrealMindServer {
             annotations: None,
             output_schema: None,
         });
+        tools.push(Tool {
+            name: "brain_store".into(),
+            title: Some("Brain Store".into()),
+            description: Some("Get or set persistent brain sections for agents".into()),
+            input_schema: brain_store_schema_map,
+            icons: None,
+            annotations: None,
+            output_schema: None,
+        });
         // (removed) photography_thoughts_search and photography_memories_search in favor of unified photography_search
 
         Ok(ListToolsResult {
@@ -413,6 +425,7 @@ impl ServerHandler for SurrealMindServer {
                 .handle_photography_moderate(request)
                 .await
                 .map_err(|e| e.into()),
+            "brain_store" => self.handle_brain_store(request).await.map_err(|e| e.into()),
             // (removed) photography_thoughts_search and photography_memories_search
             _ => Err(McpError {
                 code: rmcp::model::ErrorCode::METHOD_NOT_FOUND,
@@ -576,9 +589,56 @@ impl SurrealMindServer {
             None
         };
 
+        // Optional brain datastore handle
+        let db_brain: Option<Arc<Surreal<Client>>> = if config.runtime.brain_enable {
+            let b_url = config
+                .runtime
+                .brain_url
+                .as_ref()
+                .map(|s| normalize_ws_url(s))
+                .unwrap_or_else(|| url.clone());
+            let b_user = config
+                .runtime
+                .brain_user
+                .as_ref()
+                .unwrap_or(user)
+                .to_string();
+            let b_pass = config
+                .runtime
+                .brain_pass
+                .as_ref()
+                .unwrap_or(pass)
+                .to_string();
+            let b_ns = config.runtime.brain_ns.as_ref().unwrap_or(ns).to_string();
+            let b_db = config
+                .runtime
+                .brain_db
+                .as_ref()
+                .unwrap_or(dbname)
+                .to_string();
+
+            let dbb = Surreal::new::<surrealdb::engine::remote::ws::Ws>(&b_url)
+                .await
+                .context("Failed to connect to SurrealDB (brain)")?;
+            dbb.signin(surrealdb::opt::auth::Root {
+                username: &b_user,
+                password: &b_pass,
+            })
+            .await
+            .context("Failed to authenticate with SurrealDB (brain)")?;
+            dbb.use_ns(&b_ns)
+                .use_db(&b_db)
+                .await
+                .context("Failed to select brain NS/DB")?;
+            Some(Arc::new(dbb))
+        } else {
+            None
+        };
+
         let server = Self {
             db: Arc::new(db),
             db_photo,
+            db_brain,
             thoughts: Arc::new(RwLock::new(thoughts_cache)),
             embedder,
             config: Arc::new(config.clone()),
@@ -599,6 +659,15 @@ impl SurrealMindServer {
                 .await
                 .map_err(|e| SurrealMindError::Mcp {
                     message: format!("(photography) {}", e.message),
+                })?;
+        }
+
+        if let Some(brain_db) = &server.db_brain {
+            server
+                .initialize_brain_schema(brain_db)
+                .await
+                .map_err(|e| SurrealMindError::Mcp {
+                    message: format!("(brain) {}", e.message),
                 })?;
         }
 
@@ -697,15 +766,45 @@ impl SurrealMindServer {
         Ok(())
     }
 
+    async fn initialize_brain_schema(
+        &self,
+        brain_db: &Arc<Surreal<Client>>,
+    ) -> std::result::Result<(), McpError> {
+        info!("Initializing brain datastore schema");
+
+        let schema_sql = r#"
+            DEFINE TABLE brain_sections SCHEMALESS;
+            DEFINE FIELD agent ON TABLE brain_sections TYPE string;
+            DEFINE FIELD section ON TABLE brain_sections TYPE string;
+            DEFINE FIELD content ON TABLE brain_sections TYPE string;
+            DEFINE FIELD updated_at ON TABLE brain_sections TYPE datetime;
+            DEFINE INDEX idx_brain_agent_section ON TABLE brain_sections FIELDS agent, section UNIQUE;
+        "#;
+
+        brain_db.query(schema_sql).await.map_err(|e| McpError {
+            code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+            message: format!("Brain schema init failed: {}", e).into(),
+            data: None,
+        })?;
+
+        Ok(())
+    }
+
     /// Clone this server but swap the DB handle
     pub fn clone_with_db(&self, db: Arc<Surreal<Client>>) -> Self {
         Self {
             db,
             db_photo: self.db_photo.clone(),
+            db_brain: self.db_brain.clone(),
             thoughts: self.thoughts.clone(),
             embedder: self.embedder.clone(),
             config: self.config.clone(),
         }
+    }
+
+    /// Return a cloned handle to the brain datastore if enabled
+    pub fn brain_db(&self) -> Option<Arc<Surreal<Client>>> {
+        self.db_brain.clone()
     }
 
     /// Connect to the photography database using runtime env or sensible defaults.
