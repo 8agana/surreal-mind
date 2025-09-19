@@ -1,5 +1,6 @@
 //! Tool handlers for the surreal-mind MCP server
 
+pub mod brain_store;
 pub mod convo_think;
 pub mod detailed_help;
 pub mod inner_voice;

@@ -235,19 +235,6 @@ impl SurrealMindServer {
                                     .bind(("fb", feedback_s.clone()))
                                     .bind(("pid", final_id.clone()))
                                     .await?;
-                                // Embed new entity if it was created (not found existing)
-                                if found.is_empty() {
-                                    if let Err(e) = self
-                                        .ensure_kg_embedding("kg_entities", &final_id, &name, &data)
-                                        .await
-                                    {
-                                        tracing::warn!(
-                                            "kg_embedding: failed to auto-embed moderated entity {}: {}",
-                                            final_id,
-                                            e
-                                        );
-                                    }
-                                }
                                 results.push(json!({"id": id_s, "kind": "entity", "decision": "approved", "promoted_id": final_id}));
                             }
                         }
@@ -885,12 +872,11 @@ impl SurrealMindServer {
         let embedding = self.embedder.embed(&text).await?;
 
         // Update record with embedding metadata
-        let q = format!(
-            "UPDATE type::thing('{}', $id) SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = time::now()",
-            table
-        );
         self.db
-            .query(q)
+            .query(
+                "UPDATE type::thing($tb, $id) SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = time::now()",
+            )
+            .bind(("tb", table.to_string()))
             .bind(("id", id.to_string()))
             .bind(("emb", embedding))
             .bind(("prov", provider))

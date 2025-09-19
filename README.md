@@ -341,7 +341,7 @@ This project includes:
 - `cargo run` or `./target/release/surreal-mind`: Starts the MCP server with stdio transport
 - **Unified Thinking Tools**: `legacymind_think` (with automatic mode routing), `photography_think`
 - **Legacy Tool Aliases** (forward to `legacymind_think`): `think_convo`, `think_plan`, `think_debug`, `think_build`, `think_stuck`
-- **Memory & Knowledge Tools**: `memories_create`, `memories_moderate`, `inner_voice`, `legacymind_search`, `photography_search`, `photography_memories`, `photography_voice`, `photography_moderate`
+- **Memory & Knowledge Tools**: `memories_create`, `memories_moderate`, `inner_voice`, `legacymind_search`, `photography_search`, `photography_memories`, `photography_voice`, `photography_moderate`, `brain_store`
 - **Maintenance Tools**: `maintenance_ops`, `detailed_help`
 
 ### Inner Voice Tool
@@ -360,6 +360,12 @@ The `photography_moderate` tool reviews and decides on photography knowledge-gra
 - **Actions**: Accept, reject, or get candidates
 - **Namespace Isolation**: Targets photography KG candidates
 - **Auto-extraction**: Uses Grok for KG candidate extraction if enabled.
+
+### Brain Store Tool
+The `brain_store` tool provides persistent storage for agent brain sections in the dedicated `brains` namespace.
+- **Actions**: `get` (fetch content) or `set` (create/update content)
+- **Parameters**: `agent`, `section`, and optional `content` when setting values
+- **Use Cases**: Centralize MCP reference data, shared prompts, or agent-specific notes without duplicating markdown files
 
 ### Additional Binaries (src/bin/)
 - `cargo run --bin reembed`: Re-embed thoughts to the active provider/model/dim

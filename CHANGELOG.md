@@ -1,3 +1,9 @@
+## 2025-09-19 - Brain Store & Automatic KG Embeddings
+- **Brain datastore support**: Optional `brains` namespace connection with new schema initialization (SURR_ENABLE_BRAIN + SURR_BRAIN_* envs).
+- **New brain_store tool**: MCP interface to get/set agent brain sections directly in SurrealDB.
+- **Automatic KG embeddings**: Newly created or moderated KG entities/observations now auto-embed with provider/model metadata.
+- **Docs & Schemas**: Updated README, detailed help, and tool schemas/tests for the new capabilities.
+
 ## 2025-09-18 - Photography Voice & Moderation Parity
 - **Added photography_voice tool**: Isolated synthesis tool mirroring inner_voice for photography namespace (`ns=photography`, `db=work`).
 - **Added photography_moderate tool**: Dedicated moderation for photography KG candidates, improving UX over multiplexed photography_memories(mode="moderate").
@@ -254,4 +260,3 @@ All notable changes to this project will be documented in this file.
   - initial formatting/clippy/test compile cleanups
 - aeba2f2 feat(db): default to SurrealDB service (Ws) with env config
   - env-driven DB config, input validation, cosine fix, bidirectional edges, access metadata updates, Nomic timeout, test gating
-
