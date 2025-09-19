@@ -242,7 +242,7 @@ impl ServerHandler for SurrealMindServer {
                 name: "memories_moderate".into(),
                 title: Some("Moderate Memories".into()),
                 description: Some("Review and/or decide on memory graph candidates".into()),
-                input_schema: kg_moderate_schema_map,
+                input_schema: kg_moderate_schema_map.clone(),
                 icons: None,
                 annotations: None,
                 output_schema: None,
@@ -265,7 +265,7 @@ impl ServerHandler for SurrealMindServer {
             description: Some(
                 "Retrieves and synthesizes relevant memories/thoughts into a concise answer; can optionally auto-extract entities/relationships into staged knowledge‑graph candidates for review.".into(),
             ),
-            input_schema: inner_voice_schema_map,
+            input_schema: inner_voice_schema_map.clone(),
             icons: None,
             annotations: None,
             output_schema: None,
@@ -314,6 +314,29 @@ impl ServerHandler for SurrealMindServer {
                 "Unified photography search: memories (default) + optional thoughts".into(),
             ),
             input_schema: unified_schema,
+            icons: None,
+            annotations: None,
+            output_schema: None,
+        });
+        tools.push(Tool {
+            name: "photography_voice".into(),
+            title: Some("Photography Voice".into()),
+            description: Some(
+                "Retrieves and synthesizes relevant photography memories/thoughts into a concise answer (photography namespace)".into(),
+            ),
+            input_schema: inner_voice_schema_map,
+            icons: None,
+            annotations: None,
+            output_schema: None,
+        });
+        tools.push(Tool {
+            name: "photography_moderate".into(),
+            title: Some("Photography Moderate".into()),
+            description: Some(
+                "Review/decide on photography knowledge-graph candidates (photography namespace)"
+                    .into(),
+            ),
+            input_schema: kg_moderate_schema_map,
             icons: None,
             annotations: None,
             output_schema: None,
