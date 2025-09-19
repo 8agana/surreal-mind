@@ -235,6 +235,32 @@ impl SurrealMindServer {
                                     .bind(("fb", feedback_s.clone()))
                                     .bind(("pid", final_id.clone()))
                                     .await?;
+                                // Embed new entity if it was created (not found existing)
+                                if found.is_empty() {
+                                    if let Err(e) = self
+                                        .ensure_kg_embedding("kg_entities", &final_id, &name, &data)
+                                        .await
+                                    {
+                                        tracing::warn!(
+                                            "kg_embedding: failed to auto-embed moderated entity {}: {}",
+                                            final_id,
+                                            e
+                                        );
+                                    }
+                                }
+                                // Embed new entity if it was created (not found existing)
+                                if found.is_empty() {
+                                    if let Err(e) = self
+                                        .ensure_kg_embedding("kg_entities", &final_id, &name, &data)
+                                        .await
+                                    {
+                                        tracing::warn!(
+                                            "kg_embedding: failed to auto-embed moderated entity {}: {}",
+                                            final_id,
+                                            e
+                                        );
+                                    }
+                                }
                                 results.push(json!({"id": id_s, "kind": "entity", "decision": "approved", "promoted_id": final_id}));
                             }
                         }
@@ -486,7 +512,12 @@ impl SurrealMindServer {
         // Determine upsert behavior (default true)
         let upsert = args.get("upsert").and_then(|v| v.as_bool()).unwrap_or(true);
 
-        let id: String = match kind_s.as_str() {
+        #[allow(unused_assignments)]
+        let mut id: String = "".to_string();
+        #[allow(unused_assignments)]
+        let mut name: String = "".to_string();
+
+        match kind_s.as_str() {
             "entity" => {
                 let name_s: String = data
                     .get("name")
@@ -530,12 +561,14 @@ impl SurrealMindServer {
                     .bind(("data", data.clone()))
                     .await?
                     .take(0)?;
-                created_raw
+                let entity_id = created_raw
                     .first()
                     .and_then(|v| v.get("id"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
-                    .to_string()
+                    .to_string();
+                id = entity_id;
+                name = name_s;
             }
             "relationship" => {
                 // Accept both {source,target,rel_type} and {from_id,to_id,relationship_type}
@@ -580,7 +613,6 @@ impl SurrealMindServer {
                         });
                     }
                 };
-
                 // Build Thing records for bind parameters
                 let src_thing =
                     surrealdb::sql::Thing::from_str(&format!("kg_entities:{}", src_bare)).map_err(
@@ -601,84 +633,76 @@ impl SurrealMindServer {
                         },
                     )?;
 
-                // Upsert: check for existing triplet using resolved Things in kg_edges
-                if upsert {
-                    let found: Vec<serde_json::Value> = self
-                        .db
-                        .query("SELECT meta::id(id) as id FROM kg_edges WHERE source = $src AND target = $dst AND rel_type = $kind LIMIT 1")
-                        .bind(("src", src_thing.clone()))
-                        .bind(("dst", dst_thing.clone()))
-                        .bind(("kind", rel_kind_s.clone()))
-                        .await?
-                        .take(0)?;
+                let existing_rel: Vec<serde_json::Value> = self
+                    .db
+                    .query("SELECT meta::id(id) as id FROM kg_edges WHERE source = $src AND target = $dst AND rel_type = $rel LIMIT 1")
+                    .bind(("src", src_thing.clone()))
+                    .bind(("dst", dst_thing.clone()))
+                    .bind(("rel", rel_kind_s.clone()))
+                    .await?
+                    .take(0)?;
 
-                    if let Some(idv) = found
-                        .first()
-                        .and_then(|v| v.get("id"))
-                        .and_then(|v| v.as_str())
-                    {
-                        let result = json!({"kind": kind_s, "id": idv, "created": false});
+                if let Some(rel_row) = existing_rel.first() {
+                    if let Some(rel_id) = rel_row.get("id").and_then(|v| v.as_str()) {
+                        let result = json!({"kind": kind_s, "id": rel_id, "created": false});
                         return Ok(CallToolResult::structured(result));
                     }
                 }
 
-                // 2. Use RELATE with bound Things; persist source/target automatically
-                let created_raw: Vec<serde_json::Value> = self
+                // 3. Create new relationship
+                let created_rel: Vec<serde_json::Value> = self
                     .db
-                    .query("RELATE $src->kg_edges->$dst SET rel_type = $kind, source = $src, target = $dst, created_at = time::now(), data = $data RETURN meta::id(id) as id;")
+                    .query("CREATE kg_edges SET created_at = time::now(), source = $src, target = $dst, rel_type = $rel, data = $data RETURN meta::id(id) as id, rel_type, created_at;")
                     .bind(("src", src_thing))
                     .bind(("dst", dst_thing))
-                    .bind(("kind", rel_kind_s))
+                    .bind(("rel", rel_kind_s))
                     .bind(("data", data.clone()))
                     .await?
                     .take(0)?;
-
-                let maybe_id = created_raw
+                let rel_id = created_rel
                     .first()
                     .and_then(|v| v.get("id"))
-                    .and_then(|v| v.as_str());
-
-                if let Some(id) = maybe_id {
-                    id.to_string()
-                } else {
-                    return Err(SurrealMindError::Mcp {
-                        message: "Failed to create relationship edge in kg_edges".into(),
-                    });
-                }
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                // Relationships don't need embedding
+                id = rel_id;
+                name = "".to_string();
             }
             "observation" => {
+                let source_thought_id_s: String = data
+                    .get("source_thought_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let confidence_f = data
+                    .get("confidence")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.5)
+                    .clamp(0.0, 1.0);
                 let name_s: String = data
                     .get("name")
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                let source_thought_id_s: String = args
-                    .get("source_thought_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let confidence_f: f64 = args
-                    .get("confidence")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0f64);
-                // Upsert: name + source_thought_id
-                if upsert && !name_s.is_empty() && !source_thought_id_s.is_empty() {
-                    let found: Vec<serde_json::Value> = self
+
+                // Upsert: if name and source_thought_id match, update instead of create
+                if upsert {
+                    let existing_obs: Vec<serde_json::Value> = self
                         .db
-                        .query("SELECT meta::id(id) as id FROM kg_observations WHERE name = $name AND source_thought_id = $src LIMIT 1")
+                        .query("SELECT meta::id(id) as id FROM kg_observations WHERE name = $name AND data.source_thought_id = $src LIMIT 1")
                         .bind(("name", name_s.clone()))
                         .bind(("src", source_thought_id_s.clone()))
                         .await?
                         .take(0)?;
-                    if let Some(idv) = found
-                        .first()
-                        .and_then(|v| v.get("id"))
-                        .and_then(|v| v.as_str())
-                    {
-                        let result = json!({"kind": kind_s, "id": idv, "created": false});
-                        return Ok(CallToolResult::structured(result));
+                    if let Some(obs_row) = existing_obs.first() {
+                        if let Some(obs_id) = obs_row.get("id").and_then(|v| v.as_str()) {
+                            let result = json!({"kind": kind_s, "id": obs_id, "created": false});
+                            return Ok(CallToolResult::structured(result));
+                        }
                     }
                 }
+
                 let created_raw: Vec<serde_json::Value> = self
                     .db
                     .query("CREATE kg_observations SET created_at = time::now(), name = $name, data = $data, source_thought_id = $src, confidence = $conf RETURN meta::id(id) as id, name, data, created_at;")
@@ -688,19 +712,46 @@ impl SurrealMindServer {
                     .bind(("conf", confidence_f))
                     .await?
                     .take(0)?;
-                created_raw
+                let obs_id = created_raw
                     .first()
                     .and_then(|v| v.get("id"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
-                    .to_string()
+                    .to_string();
+                id = obs_id;
+                name = name_s;
             }
             _ => {
                 return Err(SurrealMindError::Validation {
                     message: format!("Unsupported KG kind: {}", kind_s),
                 });
             }
-        };
+        }
+
+        // Auto-embed newly created entities/observations
+        if kind_s == "entity" {
+            if let Err(e) = self
+                .ensure_kg_embedding("kg_entities", &id, &name, &data)
+                .await
+            {
+                tracing::warn!(
+                    "kg_embedding: failed to auto-embed created entity {}: {}",
+                    id,
+                    e
+                );
+            }
+        } else if kind_s == "observation" {
+            if let Err(e) = self
+                .ensure_kg_embedding("kg_observations", &id, &name, &data)
+                .await
+            {
+                tracing::warn!(
+                    "kg_embedding: failed to auto-embed created observation {}: {}",
+                    id,
+                    e
+                );
+            }
+        }
 
         let result = json!({
             "kind": kind_s,
@@ -809,6 +860,47 @@ impl SurrealMindServer {
             "items": items
         });
         Ok(CallToolResult::structured(result))
+    }
+
+    /// Helper to ensure KG entities/observations have embedding vectors
+    async fn ensure_kg_embedding(
+        &self,
+        table: &str,
+        id: &str,
+        name: &str,
+        data: &serde_json::Value,
+    ) -> Result<()> {
+        let (provider, model, dim) = self.get_embedding_metadata();
+
+        // Build embedding text based on table and data
+        let mut text = name.to_string();
+        if table == "kg_entities" {
+            if let Some(entity_type) = data.get("entity_type").and_then(|v| v.as_str()) {
+                text.push_str(&format!(" ({})", entity_type));
+            }
+        } else if table == "kg_observations" {
+            if let Some(description) = data.get("description").and_then(|v| v.as_str()) {
+                text.push_str(&format!(" - {}", description));
+            }
+        }
+
+        // Generate embedding
+        let embedding = self.embedder.embed(&text).await?;
+
+        // Update record with embedding metadata
+        let q = format!(
+            "UPDATE type::thing({}, $id) SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = time::now()",
+            table
+        );
+        self.db
+            .query(q)
+            .bind(("id", id.to_string()))
+            .bind(("emb", embedding))
+            .bind(("prov", provider))
+            .bind(("model", model))
+            .bind(("dim", dim))
+            .await?;
+        Ok(())
     }
 
     /// Handle the knowledgegraph_review tool call
@@ -991,7 +1083,20 @@ impl SurrealMindServer {
                             .bind(("fb", feedback_s.clone()))
                             .bind(("pid", final_id.clone()))
                             .await?;
-                        results.push(json!({"id": id_s, "kind": "entity", "decision": "approved", "promoted_id": final_id}));
+                        // Embed new observation if it was created (not found existing)
+                        if found.is_empty() {
+                            if let Err(e) = self
+                                .ensure_kg_embedding("kg_observations", &final_id, &name, &data)
+                                .await
+                            {
+                                tracing::warn!(
+                                    "kg_embedding: failed to auto-embed moderated observation {}: {}",
+                                    final_id,
+                                    e
+                                );
+                            }
+                        }
+                        results.push(json!({"id": id_s, "kind": "observation", "decision": "approved", "promoted_id": final_id}));
                     }
                 }
                 ("entity", "reject") => {
