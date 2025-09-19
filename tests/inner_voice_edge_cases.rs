@@ -1,7 +1,7 @@
 //! Edge-case tests for inner_voice providers and planner parsing
 
-use surreal_mind::tools::inner_voice::providers::allow_grok_from;
 use surreal_mind::tools::inner_voice::parse_planner_json;
+use surreal_mind::tools::inner_voice::providers::allow_grok_from;
 
 #[cfg(test)]
 mod tests {
