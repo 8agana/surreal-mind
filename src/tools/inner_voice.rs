@@ -106,13 +106,12 @@ impl SurrealMindServer {
         let include_private_default = cfg.include_private_default;
 
         // Provider/env snapshot (preserve existing defaults and precedence)
-        let grok_base = std::env::var("GROK_BASE_URL")
-            .unwrap_or_else(|_| "https://api.x.ai/v1".to_string());
-        let grok_model = std::env::var("GROK_MODEL")
-            .unwrap_or_else(|_| "grok-code-fast-1".to_string());
-        let grok_allow = std::env::var("IV_ALLOW_GROK")
-            .unwrap_or_else(|_| "true".to_string())
-            != "false";
+        let grok_base =
+            std::env::var("GROK_BASE_URL").unwrap_or_else(|_| "https://api.x.ai/v1".to_string());
+        let grok_model =
+            std::env::var("GROK_MODEL").unwrap_or_else(|_| "grok-code-fast-1".to_string());
+        let grok_allow =
+            std::env::var("IV_ALLOW_GROK").unwrap_or_else(|_| "true".to_string()) != "false";
 
         let cli_cmd = std::env::var("IV_CLI_CMD")
             .or_else(|_| std::env::var("IV_SYNTH_CLI_CMD"))
@@ -128,8 +127,8 @@ impl SurrealMindServer {
         let cli_args: Vec<String> = serde_json::from_str(&cli_args_json)
             .unwrap_or_else(|_| vec!["-m".into(), "{model}".into()]);
 
-        let provider_pref = std::env::var("IV_SYNTH_PROVIDER")
-            .unwrap_or_else(|_| "gemini_cli".to_string());
+        let provider_pref =
+            std::env::var("IV_SYNTH_PROVIDER").unwrap_or_else(|_| "gemini_cli".to_string());
         let allow_cli = provider_pref.eq_ignore_ascii_case("gemini_cli");
 
         InnerVoiceRuntime {
@@ -165,8 +164,10 @@ pub async fn run_inner_voice(
     let _ = &ctx.hooks;
 
     // Convert typed params into the handler's expected CallToolRequestParam
-    let args_value = serde_json::to_value(params.clone())
-        .map_err(|e| SurrealMindError::Internal { message: e.to_string() })?;
+    let args_value =
+        serde_json::to_value(params.clone()).map_err(|e| SurrealMindError::Internal {
+            message: e.to_string(),
+        })?;
     let args_map = args_value
         .as_object()
         .cloned()
@@ -1497,6 +1498,23 @@ fn build_synthesis_messages(query: &str, snippets: &[Snippet]) -> serde_json::Va
     ])
 }
 
+/// Parse planner JSON into PlannerResponse with validation
+pub fn parse_planner_json(s: &str) -> Result<PlannerResponse> {
+    match serde_json::from_str::<PlannerResponse>(s) {
+        Ok(planner) => {
+            if planner.rewritten_query.trim().is_empty() {
+                return Err(SurrealMindError::Internal {
+                    message: "Planner returned empty rewritten_query".into(),
+                });
+            }
+            Ok(planner)
+        }
+        Err(e) => Err(SurrealMindError::Internal {
+            message: format!("Failed to parse planner JSON: {}", e),
+        }),
+    }
+}
+
 /// Call Grok for planner constraints
 async fn call_planner_grok(base: &str, api_key: &str, query: &str) -> Result<PlannerResponse> {
     let system_prompt = "You are a query planner. Convert the user's request into explicit retrieval constraints. Output strict JSON matching the provided schema. Use concrete ISO-8601 dates. Do not include any text outside JSON.";
@@ -1566,23 +1584,8 @@ async fn call_planner_grok(base: &str, api_key: &str, query: &str) -> Result<Pla
             .and_then(|c| c.as_str())
         {
             let trimmed = content.trim();
-            // Try to parse as JSON
-            match serde_json::from_str::<PlannerResponse>(trimmed) {
-                Ok(planner) => {
-                    // Validate required field
-                    if planner.rewritten_query.trim().is_empty() {
-                        return Err(SurrealMindError::Internal {
-                            message: "Planner returned empty rewritten_query".into(),
-                        });
-                    }
-                    return Ok(planner);
-                }
-                Err(e) => {
-                    return Err(SurrealMindError::Internal {
-                        message: format!("Failed to parse planner JSON: {}", e),
-                    });
-                }
-            }
+            // Try to parse as JSON via helper
+            return parse_planner_json(trimmed);
         }
     }
     Err(SurrealMindError::Internal {
