@@ -248,19 +248,6 @@ impl SurrealMindServer {
                                         );
                                     }
                                 }
-                                // Embed new entity if it was created (not found existing)
-                                if found.is_empty() {
-                                    if let Err(e) = self
-                                        .ensure_kg_embedding("kg_entities", &final_id, &name, &data)
-                                        .await
-                                    {
-                                        tracing::warn!(
-                                            "kg_embedding: failed to auto-embed moderated entity {}: {}",
-                                            final_id,
-                                            e
-                                        );
-                                    }
-                                }
                                 results.push(json!({"id": id_s, "kind": "entity", "decision": "approved", "promoted_id": final_id}));
                             }
                         }
@@ -425,9 +412,9 @@ impl SurrealMindServer {
                                 let created: Vec<serde_json::Value> = self
                                     .db
                                     .query("CREATE kg_entities SET created_at = time::now(), name = $name, entity_type = $etype, data = { ...$data, is_alias: true, canonical_id: $canonical_id }, embedding = $embedding RETURN meta::id(id) as id")
-                                    .bind(("name", name))
+                                    .bind(("name", name.clone()))
                                     .bind(("etype", etype))
-                                    .bind(("data", data))
+                                    .bind(("data", data.clone()))
                                     .bind(("canonical_id", canonical_id.clone()))
                                     .bind(("embedding", candidate.get("embedding").cloned().unwrap_or(json!(null))))
                                     .await?
@@ -443,13 +430,23 @@ impl SurrealMindServer {
                                 // Mark candidate as aliased
                                 let _ = self
                                     .db
-                                    .query("UPDATE type::thing($tb, $id) SET status = 'aliased', reviewed_at = time::now(), feedback = $fb, promoted_id = $pid RETURN meta::id(id) as id")
-                                    .bind(("tb", "kg_entity_candidates"))
+                                    .query("UPDATE type::thing($tb, $id) SET status = 'approved', reviewed_at = time::now(), feedback = $fb, promoted_id = $pid RETURN meta::id(id) as id")
+                                    .bind(("tb", "kg_observation_candidates"))
                                     .bind(("id", id_s.clone()))
                                     .bind(("fb", feedback_s.clone()))
                                     .bind(("pid", final_id.clone()))
                                     .await?;
-
+                                // Embed new aliased entity (always new)
+                                if let Err(e) = self
+                                    .ensure_kg_embedding("kg_entities", &final_id, &name, &data)
+                                    .await
+                                {
+                                    tracing::warn!(
+                                        "kg_embedding: failed to auto-embed moderated entity {}: {}",
+                                        final_id,
+                                        e
+                                    );
+                                }
                                 results.push(json!({"id": id_s, "kind": "entity", "decision": "aliased", "promoted_id": final_id}));
                             }
                         }
@@ -889,7 +886,7 @@ impl SurrealMindServer {
 
         // Update record with embedding metadata
         let q = format!(
-            "UPDATE type::thing({}, $id) SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = time::now()",
+            "UPDATE type::thing('{}', $id) SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = time::now()",
             table
         );
         self.db
@@ -1078,23 +1075,21 @@ impl SurrealMindServer {
                         let _ = self
                             .db
                             .query("UPDATE type::thing($tb, $id) SET status = 'approved', reviewed_at = time::now(), feedback = $fb, promoted_id = $pid RETURN meta::id(id) as id")
-                            .bind(("tb", "kg_entity_candidates"))
+                            .bind(("tb", "kg_observation_candidates"))
                             .bind(("id", id_s.clone()))
                             .bind(("fb", feedback_s.clone()))
                             .bind(("pid", final_id.clone()))
                             .await?;
-                        // Embed new observation if it was created (not found existing)
-                        if found.is_empty() {
-                            if let Err(e) = self
-                                .ensure_kg_embedding("kg_observations", &final_id, &name, &data)
-                                .await
-                            {
-                                tracing::warn!(
-                                    "kg_embedding: failed to auto-embed moderated observation {}: {}",
-                                    final_id,
-                                    e
-                                );
-                            }
+                        // Embed new observation (check for existing not implemented in decide, assume new)
+                        if let Err(e) = self
+                            .ensure_kg_embedding("kg_observations", &final_id, &name, &data)
+                            .await
+                        {
+                            tracing::warn!(
+                                "kg_embedding: failed to auto-embed moderated observation {}: {}",
+                                final_id,
+                                e
+                            );
                         }
                         results.push(json!({"id": id_s, "kind": "observation", "decision": "approved", "promoted_id": final_id}));
                     }
