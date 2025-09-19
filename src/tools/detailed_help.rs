@@ -53,7 +53,9 @@ impl SurrealMindServer {
                     {"name": "legacymind_search", "one_liner": "Unified LM search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]},
                     {"name": "photography_search", "one_liner": "Unified Photography search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]},
                     {"name": "maintenance_ops", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]},
-                    {"name": "inner_voice", "one_liner": "Retrieves and synthesizes relevant memories/thoughts into a concise answer; can optionally auto-extract entities/relationships into staged knowledge‑graph candidates for review.", "key_params": ["query", "top_k", "auto_extract_to_kg"]}
+                    {"name": "inner_voice", "one_liner": "Retrieves and synthesizes relevant memories/thoughts into a concise answer; can optionally auto-extract entities/relationships into staged knowledge‑graph candidates for review.", "key_params": ["query", "top_k", "auto_extract_to_kg"]},
+                    {"name": "photography_voice", "one_liner": "Retrieves and synthesizes relevant photography memories/thoughts into a concise answer; can optionally auto-extract entities/relationships (photography namespace)", "key_params": ["query", "top_k", "auto_extract_to_kg"]},
+                    {"name": "photography_moderate", "one_liner": "Review/decide on photography knowledge-graph candidates (photography namespace)", "key_params": ["action", "target", "status", "items", "dry_run"]}
                 ]);
                 return Ok(CallToolResult::structured(overview));
             }
@@ -61,6 +63,55 @@ impl SurrealMindServer {
         };
 
         let help = match tool {
+            "photography_voice" => json!({
+                "name": "photography_voice",
+                "description": "Retrieves and synthesizes relevant photography memories/thoughts into a concise answer; can optionally auto-extract entities/relationships into staged knowledge‑graph candidates (photography namespace).",
+                "arguments": {
+                    "query": "string (required) — the query text",
+                    "top_k": "integer (1-50) — max candidates to retrieve (default 10)",
+                    "floor": "number (0.0-1.0) — similarity floor for retrieval",
+                    "mix": "number (0.0-1.0) — mix ratio for retrieval (default 0.6)",
+                    "include_private": "boolean — include private items (default false)",
+                    "include_tags": "string[] — tags to include",
+                    "exclude_tags": "string[] — tags to exclude",
+                    "auto_extract_to_kg": "boolean — auto-extract KG candidates (default false)",
+                    "previous_thought_id": "string — reference to previous thought",
+                    "include_feedback": "boolean — include feedback generation (default true)",
+                    "feedback_max_lines": "integer (1-10) — max lines for feedback (default 3)"
+                },
+                "returns": {
+                    "answer": "string — synthesized response",
+                    "synth_thought_id": "string — ID of synthesized thought",
+                    "feedback": "string? — feedback if enabled",
+                    "feedback_thought_id": "string? — ID of feedback thought",
+                    "sources_compact": "string — compact source listing",
+                    "synth_provider": "string — synthesis provider used ('grok', 'local')",
+                    "synth_model": "string — model used",
+                    "embedding_dim": "integer — embedding dimension",
+                    "extracted": {
+                        "entities": "integer — entities extracted",
+                        "relationships": "integer — relationships extracted"
+                    }
+                }
+            }),
+            "photography_moderate" => json!({
+                "name": "photography_moderate",
+                "description": "Review/decide on photography knowledge-graph candidates (photography namespace).",
+                "arguments": {
+                    "action": "string (required) — 'accept', 'reject', or 'get_candidates'",
+                    "target": "string — optional specific table ('kg_entity_candidates', 'kg_edge_candidates')",
+                    "status": "string — optional filter by status ('pending', 'accepted', 'rejected')",
+                    "items": "integer (1-100) — max items to return (default 20)",
+                    "dry_run": "boolean — perform action as dry-run (default false)"
+                },
+                "returns": {
+                    "action_performed": "string — action taken",
+                    "target": "string — target table affected",
+                    "updated": "integer — items updated",
+                    "candidates": "array — candidate list (if action='get_candidates')",
+                    "dry_run": "boolean — whether this was a dry run"
+                }
+            }),
             "legacymind_think" => json!({
                 "name": "legacymind_think",
                 "description": "Unified thinking tool that routes to appropriate mode based on triggers, hint, or heuristics.",

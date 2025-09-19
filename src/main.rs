@@ -86,7 +86,7 @@ async fn main() -> Result<()> {
     if !config.runtime.mcp_no_log {
         info!("✅ Server initialized successfully");
         info!(
-            "🛠️  Loaded 10 MCP tools: legacymind_think, maintenance_ops, memories_create, memories_moderate, detailed_help, inner_voice, photography_think, photography_memories, legacymind_search, photography_search"
+            "🛠️  Loaded 12 MCP tools: legacymind_think, maintenance_ops, memories_create, memories_moderate, detailed_help, inner_voice, photography_think, photography_memories, legacymind_search, photography_search, photography_voice, photography_moderate"
         );
     }
 

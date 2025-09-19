@@ -27,11 +27,13 @@ fn test_list_tools_returns_expected_tools() {
         "photography_memories",
         "legacymind_search",
         "photography_search",
+        "photography_voice",
+        "photography_moderate",
     ];
     assert_eq!(
         expected_tools.len(),
-        10,
-        "Tool roster should list 10 entries with unified tools and photography support"
+        12,
+        "Tool roster should list 12 entries with unified tools and photography support"
     );
 }
 
@@ -109,7 +111,7 @@ fn test_detailed_help_schema_structure() {
     let expected_schema = json!({
         "type": "object",
         "properties": {
-            "tool": {"type": "string", "enum": ["legacymind_think", "photography_think", "photography_memories", "memories_create", "memories_moderate", "legacymind_search", "photography_search", "maintenance_ops", "inner_voice", "detailed_help"]},
+            "tool": {"type": "string", "enum": ["legacymind_think", "photography_think", "photography_memories", "memories_create", "memories_moderate", "legacymind_search", "photography_search", "maintenance_ops", "inner_voice", "detailed_help", "photography_voice", "photography_moderate"]},
             "format": {"type": "string", "enum": ["compact", "full"], "default": "full"},
             "prompts": {"type": "boolean"}
         }

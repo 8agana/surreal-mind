@@ -382,6 +382,14 @@ impl ServerHandler for SurrealMindServer {
                 .handle_photography_unified_search(request)
                 .await
                 .map_err(|e| e.into()),
+            "photography_voice" => self
+                .handle_photography_voice(request)
+                .await
+                .map_err(|e| e.into()),
+            "photography_moderate" => self
+                .handle_photography_moderate(request)
+                .await
+                .map_err(|e| e.into()),
             // (removed) photography_thoughts_search and photography_memories_search
             _ => Err(McpError {
                 code: rmcp::model::ErrorCode::METHOD_NOT_FOUND,

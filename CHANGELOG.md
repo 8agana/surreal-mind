@@ -1,3 +1,9 @@
+## 2025-09-18 - Photography Voice & Moderation Parity
+- **Added photography_voice tool**: Isolated synthesis tool mirroring inner_voice for photography namespace (`ns=photography`, `db=work`).
+- **Added photography_moderate tool**: Dedicated moderation for photography KG candidates, improving UX over multiplexed photography_memories(mode="moderate").
+- **Refactored inner_voice logic**: Extracted core workflow into reusable helper for namespace isolation without regressions.
+- **Updated docs and tests**: Added tools to help, schemas, and README; all tests passing.
+
 ## 2025-09-18 - Inner Voice CLI Removal
 - **Removed Gemini CLI from inner_voice**: Simplified provider chain to Grok → local fallback. Deprecated CLI envs warn and default appropriately.
 - **Feedback Generation**: Dropped CLI-based feedback, set to None for consistency.
