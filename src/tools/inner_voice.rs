@@ -70,18 +70,28 @@ pub struct InnerVoiceRuntime {
     pub allow_cli: bool,
 }
 
-#[derive(Clone)]
-pub struct InnerVoiceHooks {
-    pub planner_call: fn(base: &str, api_key: &str, query: &str) -> Result<PlannerResponse>,
-    pub grok_call:
-        fn(base: &str, model: &str, api_key: &str, messages: &serde_json::Value) -> Result<String>,
-    pub cli_call: fn(cmd: &str, args: &[String], prompt: &str, timeout_ms: u64) -> Result<String>,
+#[derive(Clone, Default)]
+pub struct InnerVoiceHooks;
+
+impl InnerVoiceHooks {
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 #[derive(Clone)]
 pub struct InnerVoiceContext {
     pub runtime: InnerVoiceRuntime,
     pub hooks: InnerVoiceHooks,
+}
+
+impl InnerVoiceContext {
+    pub fn from_server(server: &SurrealMindServer) -> Self {
+        Self {
+            runtime: server.build_inner_voice_runtime(),
+            hooks: InnerVoiceHooks::new(),
+        }
+    }
 }
 
 impl SurrealMindServer {
@@ -146,13 +156,17 @@ impl SurrealMindServer {
 pub async fn run_inner_voice(
     server: &SurrealMindServer,
     params: &InnerVoiceRetrieveParams,
-    _ctx: &InnerVoiceContext,
+    ctx: &InnerVoiceContext,
 ) -> Result<CallToolResult> {
+    // Currently behavior is preserved by delegating to the handler. We still accept
+    // a context so callers can pass a runtime snapshot and hooks for future reuse.
+    // Touch the fields to avoid dead-code lints while keeping behavior unchanged.
+    let _ = &ctx.runtime;
+    let _ = &ctx.hooks;
+
     // Convert typed params into the handler's expected CallToolRequestParam
-    let args_value =
-        serde_json::to_value(params.clone()).map_err(|e| SurrealMindError::Internal {
-            message: e.to_string(),
-        })?;
+    let args_value = serde_json::to_value(params.clone())
+        .map_err(|e| SurrealMindError::Internal { message: e.to_string() })?;
     let args_map = args_value
         .as_object()
         .cloned()
