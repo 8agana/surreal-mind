@@ -341,13 +341,24 @@ This project includes:
 - `cargo run` or `./target/release/surreal-mind`: Starts the MCP server with stdio transport
 - **Unified Thinking Tools**: `legacymind_think` (with automatic mode routing), `photography_think`
 - **Legacy Tool Aliases** (forward to `legacymind_think`): `think_convo`, `think_plan`, `think_debug`, `think_build`, `think_stuck`
-- **Memory & Knowledge Tools**: `memories_create`, `memories_moderate`, `inner_voice`, `legacymind_search`, `photography_search`, `photography_memories`
+- **Memory & Knowledge Tools**: `memories_create`, `memories_moderate`, `inner_voice`, `legacymind_search`, `photography_search`, `photography_memories`, `photography_voice`, `photography_moderate`
 - **Maintenance Tools**: `maintenance_ops`, `detailed_help`
 
 ### Inner Voice Tool
 The `inner_voice` tool provides RAG-based synthesis and optional KG extraction.
 - **Provider Chain**: Now Grok-primary with existing local fallback. CLI removed for simplicity; legacy envs warn and default to Grok (if key present) or local fallback. Update configs if needed.
 - **Local Fallback Response**: "Based on what I could find: [summary of top snippets]"
+
+### Photography Voice Tool
+The `photography_voice` tool provides RAG-based synthesis for photography memories/thoughts in an isolated namespace, with optional KG extraction.
+- **Provider Chain**: Same as inner_voice (Grok-primary with local fallback)
+- **Namespace Isolation**: Operates on photography database (`ns=photography`, `db=work`)
+- **Local Fallback Response**: "Based on what I could find: [summary of photography snippets]"
+
+### Photography Moderate Tool
+The `photography_moderate` tool reviews and decides on photography knowledge-graph candidates (entities/relationships) in the isolated photography namespace.
+- **Actions**: Accept, reject, or get candidates
+- **Namespace Isolation**: Targets photography KG candidates
 - **Auto-extraction**: Uses Grok for KG candidate extraction if enabled.
 
 ### Additional Binaries (src/bin/)
