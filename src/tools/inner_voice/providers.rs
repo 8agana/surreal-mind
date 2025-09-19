@@ -7,44 +7,8 @@ use serde_json::Value;
 
 use crate::error::{Result, SurrealMindError};
 use crate::schemas::Snippet;
-use crate::server::SurrealMindServer;
 
 use super::check_http_status;
-
-pub async fn cli_call(
-    _server: &SurrealMindServer,
-    cmd: &str,
-    args: &[String],
-    prompt: &str,
-    timeout_ms: u64,
-) -> Result<String> {
-    SurrealMindServer::synth_via_cli(cmd, args, prompt, timeout_ms).await
-}
-
-pub async fn feedback_cli(server: &SurrealMindServer, prompt: &str) -> Result<String> {
-    // IV_CLI_* takes precedence over IV_SYNTH_*
-    let cli_cmd = std::env::var("IV_CLI_CMD")
-        .or_else(|_| std::env::var("IV_SYNTH_CLI_CMD"))
-        .unwrap_or_else(|_| "gemini".to_string());
-    let cli_model = std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-2.5-pro".to_string());
-    let cli_args_json = std::env::var("IV_CLI_ARGS_JSON")
-        .or_else(|_| std::env::var("IV_SYNTH_CLI_ARGS_JSON"))
-        .unwrap_or_else(|_| "[\"-m\",\"{model}\"]".to_string());
-    let cli_timeout_ms: u64 = std::env::var("IV_CLI_TIMEOUT_MS")
-        .or_else(|_| std::env::var("IV_SYNTH_TIMEOUT_MS"))
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(20_000);
-    let cli_args: Vec<String> = serde_json::from_str(&cli_args_json)
-        .unwrap_or_else(|_| vec!["-m".into(), "{model}".into()]);
-
-    let args: Vec<String> = cli_args
-        .into_iter()
-        .map(|a| if a == "{model}" { cli_model.clone() } else { a })
-        .collect();
-
-    cli_call(server, &cli_cmd, &args, prompt, cli_timeout_ms).await
-}
 
 pub async fn grok_call(base: &str, model: &str, api_key: &str, messages: &Value) -> Result<String> {
     let url = format!("{}/chat/completions", base.trim_end_matches('/'));

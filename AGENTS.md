@@ -55,3 +55,4 @@
 - **Secrets**: Never log API keys; use query-param warnings for HTTP auth.
 - **Guardrails**: No fake/deterministic embedders; KG-only injection; respect provider/model/dim stamps.
 - **DB**: WebSocket connection to SurrealDB; health checks via `maintenance_ops`.
+- **Inner Voice Provider Chain**: Grok → local fallback; CLI removed (deprecated envs warn and default to Grok if key present, else local).

@@ -344,6 +344,12 @@ This project includes:
 - **Memory & Knowledge Tools**: `memories_create`, `memories_moderate`, `inner_voice`, `legacymind_search`, `photography_search`, `photography_memories`
 - **Maintenance Tools**: `maintenance_ops`, `detailed_help`
 
+### Inner Voice Tool
+The `inner_voice` tool provides RAG-based synthesis and optional KG extraction.
+- **Provider Chain**: Now Grok-primary with existing local fallback. CLI removed for simplicity; legacy envs warn and default to Grok (if key present) or local fallback. Update configs if needed.
+- **Local Fallback Response**: "Based on what I could find: [summary of top snippets]"
+- **Auto-extraction**: Uses Grok for KG candidate extraction if enabled.
+
 ### Additional Binaries (src/bin/)
 - `cargo run --bin reembed`: Re-embed thoughts to the active provider/model/dim
 - `cargo run --bin reembed_kg`: Re-embed KG entities/observations
