@@ -370,6 +370,7 @@ The `brain_store` tool provides persistent storage for agent brain sections in t
 ### Additional Binaries (src/bin/)
 - `cargo run --bin reembed`: Re-embed thoughts to the active provider/model/dim
 - `cargo run --bin reembed_kg`: Re-embed KG entities/observations
+- `cargo run --bin reembed_photography_kg -- --dry-run --limit 10`: Re-embed photography KG entities/observations (requires SURR_ENABLE_PHOTOGRAPHY)
 - `cargo run --bin fix_dimensions`: Correct thoughts with wrong embedding dimensions
 - `cargo run --bin db_check`: DB connectivity test
 - `cargo run --bin check_db_contents`: Inspect DB contents

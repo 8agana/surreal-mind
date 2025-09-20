@@ -10,6 +10,9 @@
 - **Refactored inner_voice logic**: Extracted core workflow into reusable helper for namespace isolation without regressions.
 - **Updated docs and tests**: Added tools to help, schemas, and README; all tests passing.
 
+## 2025-09-18 - Photography KG Re-Embedding Binary
+- **Added `reembed_photography_kg` binary**: Dedicated tool for re-embedding KG entities/observations in photography namespace (`ns=photography`, `db=work`). Supports CLI flags (`--dry-run`, `--limit`), aligns with env vars (`SURR_ENABLE_PHOTOGRAPHY`). No main namespace interference.
+
 ## 2025-09-18 - Inner Voice CLI Removal
 - **Removed Gemini CLI from inner_voice**: Simplified provider chain to Grok → local fallback. Deprecated CLI envs warn and default appropriately.
 - **Feedback Generation**: Dropped CLI-based feedback, set to None for consistency.
