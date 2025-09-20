@@ -418,7 +418,7 @@ impl SurrealMindServer {
                                 let _ = self
                                     .db
                                     .query("UPDATE type::thing($tb, $id) SET status = 'approved', reviewed_at = time::now(), feedback = $fb, promoted_id = $pid RETURN meta::id(id) as id")
-                                    .bind(("tb", "kg_observation_candidates"))
+                                    .bind(("tb", "kg_entity_candidates"))
                                     .bind(("id", id_s.clone()))
                                     .bind(("fb", feedback_s.clone()))
                                     .bind(("pid", final_id.clone()))
