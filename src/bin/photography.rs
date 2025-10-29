@@ -197,6 +197,8 @@ async fn import_roster(
         let skater_id = format!("{}_{}", last_name.to_lowercase(), first_name.to_lowercase());
 
         // Create skater
+        let skater_id =
+            format!("{}_{}", last_name.to_lowercase(), first_name.to_lowercase()).replace('-', "_");
         let _ = db
             .query(&format!(
                 "CREATE skater SET id = '{}', first_name = '{}', last_name = '{}'",
@@ -339,12 +341,19 @@ fn competition_to_id(competition: &str) -> String {
         .to_lowercase()
         .replace(" ", "_")
         .replace(",", "")
+        .replace("-", "_")
 }
 
 fn parse_skater_name(name: &str) -> Result<(String, String)> {
-    let parts: Vec<&str> = name.split(',').map(|s| s.trim()).collect();
-    if parts.len() != 2 {
-        return Err(anyhow::anyhow!("Invalid skater name format: {}", name));
+    let parts: Vec<&str> = name.split_whitespace().collect();
+    match parts.len() {
+        0 => Err(anyhow::anyhow!("Empty skater name")),
+        1 => Ok(("Synchro".to_string(), parts[0].to_string())),
+        2 => Ok((parts[0].to_string(), parts[1].to_string())),
+        _ => {
+            let first = parts[0].to_string();
+            let last = parts[1..].join("-");
+            Ok((first, last))
+        }
     }
-    Ok((parts[0].to_string(), parts[1].to_string()))
 }
