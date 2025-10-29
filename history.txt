@@ -92,3 +92,5 @@ SELECT * FROM event:e24;
 INFO FOR TABLE event;
 CREATE event:e10 SET competition = competition:fall_fling_2025, event_number = 10;
 SELECT id, event_number, split_ice, time_slot FROM event;
+SELECT id, event_number, split_ice FROM event;
+SELECT in.first_name, in.last_name, out.event_number, out.split_ice, skate_order, request_status FROM competed_in WHERE in.last_name = 'Ruiz Peace';
