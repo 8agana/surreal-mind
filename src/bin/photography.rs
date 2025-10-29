@@ -175,7 +175,7 @@ async fn import_roster(
     println!("Importing roster for competition: {}", competition);
     println!("From file: {}", file_path);
 
-    // Create competition if not exists
+    // Create/update competition
     let comp_id = competition_to_id(competition);
     let _ = db
         .query(&format!(
@@ -193,12 +193,11 @@ async fn import_roster(
         println!("Processing: {:?}", row);
 
         // Parse skater name
-        let (last_name, first_name) = parse_skater_name(&row.skater_name)?;
-        let skater_id = format!("{}_{}", last_name.to_lowercase(), first_name.to_lowercase());
-
-        // Create skater
+        let (first_name, last_name) = parse_skater_name(&row.skater_name)?;
         let skater_id =
             format!("{}_{}", last_name.to_lowercase(), first_name.to_lowercase()).replace('-', "_");
+
+        // Create/update skater
         let _ = db
             .query(&format!(
                 "CREATE skater SET id = '{}', first_name = '{}', last_name = '{}'",
@@ -206,7 +205,7 @@ async fn import_roster(
             ))
             .await?;
 
-        // Create event
+        // Create/update event
         let event_id = format!(
             "{}_{}{}",
             comp_id,
@@ -236,11 +235,10 @@ async fn import_roster(
             _ => "unrequested",
         };
 
-        // Create competed_in relation
-        let skate_order = row.skate_order.unwrap_or(0);
+        // Create competed_in relation (RELATE creates if doesn't exist)
         let _ = db.query(&format!(
             "RELATE skater:{}->competed_in->event:{} SET skate_order = {}, request_status = '{}', gallery_status = 'pending'",
-            skater_id, event_id, skate_order, request_status
+            skater_id, event_id, row.skate_order.unwrap_or(0), request_status
         )).await?;
     }
 
@@ -253,10 +251,10 @@ async fn list_skaters(
     status: &str,
 ) -> Result<()> {
     let query = if status == "all" {
-        "SELECT skater.first_name, skater.last_name, competed_in.event.event_number, competed_in.request_status, competed_in.gallery_status FROM competed_in FETCH skater, event".to_string()
+        "SELECT in.first_name AS first_name, in.last_name AS last_name, out.event_number AS event_number, request_status, gallery_status FROM competed_in".to_string()
     } else {
         format!(
-            "SELECT skater.first_name, skater.last_name, competed_in.event.event_number, competed_in.request_status, competed_in.gallery_status FROM competed_in WHERE competed_in.request_status = '{}' FETCH skater, event",
+            "SELECT in.first_name AS first_name, in.last_name AS last_name, out.event_number AS event_number, request_status, gallery_status FROM competed_in WHERE request_status = '{}'",
             status
         )
     };
@@ -271,7 +269,7 @@ async fn list_events(
     competition: &str,
 ) -> Result<()> {
     let result: Vec<Value> = db.query(&format!(
-        "SELECT id, event_number, split_ice, level, discipline FROM event WHERE competition.name = '{}'",
+        "SELECT event_number, split_ice, level, discipline, time_slot FROM event WHERE competition.name = '{}'",
         competition
     )).await?.take(0)?;
     println!("{}", serde_json::to_string_pretty(&result)?);
@@ -285,12 +283,12 @@ async fn show_event(
 ) -> Result<()> {
     let query = if let Some(split_val) = split {
         format!(
-            "SELECT id, event_number, split_ice, level, discipline, time_slot, notes FROM event WHERE event_number = {} AND split_ice = '{}'",
+            "SELECT event_number, split_ice, level, discipline, time_slot, notes FROM event WHERE event_number = {} AND split_ice = '{}'",
             event_number, split_val
         )
     } else {
         format!(
-            "SELECT id, event_number, split_ice, level, discipline, time_slot, notes FROM event WHERE event_number = {}",
+            "SELECT event_number, split_ice, level, discipline, time_slot, notes FROM event WHERE event_number = {}",
             event_number
         )
     };
@@ -309,7 +307,7 @@ async fn update_gallery(
     amount: Option<f64>,
 ) -> Result<()> {
     // Parse skater name
-    let (last_name, first_name) = parse_skater_name(skater)?;
+    let (first_name, last_name) = parse_skater_name(skater)?;
     let skater_id = format!("{}_{}", last_name.to_lowercase(), first_name.to_lowercase());
 
     // Find the competed_in relation
