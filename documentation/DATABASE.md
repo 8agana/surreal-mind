@@ -72,83 +72,102 @@ Timestamped facts associated with entities.
 
 ## Photography Namespace
 
-The `photography` namespace contains the `ops` database for managing photography business operations, including client tracking, competitions, events, and shot logging. This schema supports Sam Atagana Photography's workflow for organizing family photography sessions, competitions, and sales.
+The `photography` namespace contains the `ops` database for managing skate photography operations, supporting Sam Atagana Photography's workflow for figure skating competitions. The schema separates clients (payers) from skaters (athletes), tracks families for grouped delivery, and centers around the `competed_in` relation for per-skater-per-event status and purchases.
 
 ### client
-Stores client information.
+The person who requests/pays for photos (typically parent/guardian).
 
 **Fields:**
-- `id`: Unique client identifier
 - `first_name`: Client's first name
 - `last_name`: Client's last name
-- `preferred_name`: Preferred name for addressing
+- `preferred_name`: Preferred name for addressing (optional)
 - `email`: Contact email
-- `phone`: Contact phone number
-- `notes`: Additional notes
+- `phone`: Contact phone number (optional)
+- `notes`: Additional notes (optional)
+- `created_at`: Creation timestamp (auto-generated)
+
+### skater
+The athlete who competes (may be minor or adult).
+
+**Fields:**
+- `first_name`: Skater's first name
+- `last_name`: Skater's last name
+- `birth_date`: Skater's birth date (optional)
+- `notes`: Additional notes (optional)
 - `created_at`: Creation timestamp (auto-generated)
 
 ### family
-Groups related clients (e.g., family units).
+Grouping for shared gallery delivery (e.g., Ruiz Peace = 1 family, 3 skaters).
 
 **Fields:**
-- `id`: Unique family identifier
 - `name`: Family group name
 - `primary_contact`: Reference to primary contact client
-- `email`: Group email
-- `phone`: Group phone number
-- `notes`: Additional notes
+- `delivery_email`: Email for gallery delivery
+- `notes`: Additional notes (optional)
 
 ### competition
-Competition or event series information.
+The competition (e.g., Fall Fling, Pony Express).
 
 **Fields:**
-- `id`: Unique competition identifier
 - `name`: Competition name
 - `venue`: Event location
 - `start_date`: Competition start date/time
 - `end_date`: Competition end date/time
-- `notes`: Additional notes
+- `notes`: Additional notes (optional)
 
 ### event
-Individual events within competitions.
+Specific event within competition (e.g., Event 23, Event 31-L).
 
 **Fields:**
-- `id`: Unique event identifier
 - `competition`: Reference to parent competition
 - `event_number`: Sequential event number
-- `level`: Competition level (e.g., novice, expert)
-- `discipline`: Photography discipline (e.g., portrait, landscape)
-- `notes`: Additional notes
-
-### membership
-Relations linking clients to families (many-to-many).
-
-**Fields:**
-- `role`: Client's role in family (default "parent/guardian")
-- `created_at`: Membership creation timestamp (auto-generated)
-
-### registration
-Relations linking clients to events with registration status.
-
-**Fields:**
-- `status`: Registration status (Unrequested, Requested, Sent, Purchased)
-- `gallery_url`: Link to online gallery
-- `gallery_sent_at`: When gallery was sent (optional)
-- `purchase_amount`: Sale amount (default 0)
-- `notes`: Additional notes
+- `split_ice`: Split ice designation ("L" or "Z", optional)
+- `level`: Competition level (optional)
+- `discipline`: Discipline type (optional)
+- `time_slot`: Time slot (optional)
+- `notes`: Additional notes (optional)
 
 ### shotlog
-Tracks photo counts per event for clients.
+Photo counts per skater per event.
 
 **Fields:**
-- `id`: Unique shot log entry
+- `skater`: Reference to skater
 - `event`: Reference to event
-- `client`: Reference to client
-- `raw_count`: Total raw photos taken
-- `picked_count`: Selected photos
-- `creative_count`: Creative/edited versions
-- `notes`: Additional notes
+- `raw_count`: Total raw photos taken (default 0)
+- `picked_count`: Selected photos (default 0)
+- `borderline_count`: Borderline photos (default 0)
+- `creative_count`: Creative/edited versions (default 0)
+- `notes`: Additional notes (optional)
 - `updated_at`: Last update timestamp (auto-generated)
+
+### Relations
+
+#### parent_of
+Client is parent/guardian of skater.
+
+**Fields:**
+- `relationship`: Relationship type (default "parent/guardian")
+- `created_at`: Creation timestamp (auto-generated)
+
+#### family_member
+Skater is member of family unit (for grouped delivery).
+
+**Fields:**
+- `created_at`: Creation timestamp (auto-generated)
+
+#### competed_in
+Skater competed in event (core workflow relation).
+
+**Fields:**
+- `skate_order`: Skate order in event (optional)
+- `request_status`: Request status ("requested", "vip", "unrequested"; default "unrequested")
+- `gallery_status`: Gallery delivery status ("pending", "culling", "processing", "sent", "purchased"; default "pending")
+- `gallery_url`: Link to online gallery (optional)
+- `gallery_sent_at`: When gallery was sent (optional)
+- `purchase_amount`: Sale amount (optional)
+- `purchase_date`: Purchase date (optional)
+- `notes`: Additional notes (optional)
+- `created_at`: Creation timestamp (auto-generated)
 
 ## Extended Tables
 
