@@ -19,6 +19,7 @@ candle-transformers = { version = "0.9.1", features = ["metal"] }
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.9.0"
 clap = { version = "4.0", features = ["derive"] }
+csv = "1.1"
 # TUI dashboard
 crossterm = "0.27"
 # Cross-platform directories
