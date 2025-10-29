@@ -81,3 +81,14 @@ SELECT meta::id(id) as id, name, embedding_dim, array::len(embedding) as actual_
 SELECT count() FROM thoughts GROUP ALL;
 SELECT count() FROM thoughts WHERE embedding IS NOT NULL GROUP ALL;
 SELECT meta::id(id) as id, embedding_dim, array::len(embedding) as actual_dim FROM thoughts WHERE embedding IS NOT NULL LIMIT 3;
+-- Test 1: Get all skaters with their events
+SELECT * FROM skater;
+SELECT * FROM competed_in WHERE in = skater:carrico_harlee;
+SELECT * FROM family_member;
+SELECT out.event_number, out.split_ice, skate_order FROM competed_in WHERE in = skater:ruiz_peace_cecilia;
+SELECT * FROM event WHERE event_number = 23 OR event_number = 33;
+SELECT * FROM event;
+SELECT * FROM event:e24;
+INFO FOR TABLE event;
+CREATE event:e10 SET competition = competition:fall_fling_2025, event_number = 10;
+SELECT id, event_number, split_ice, time_slot FROM event;
