@@ -1,3 +1,9 @@
+## 2025-09-20 - Photography Schema Extension
+- **Added photography namespace and ops database**: New SCHEMAFULL schema for photography business operations including client management, family groups, competitions, events, registrations, and shot logging.
+- **Created photography_schema binary**: Dedicated tool to initialize the photography ops database with proper relations, types, and defaults.
+- **Updated DATABASE.md documentation**: Added comprehensive photography schema documentation including all tables, fields, and relationships.
+- **Verified schema**: Successfully applied to running SurrealDB instance with INFO FOR DB confirmation.
+
 ## 2025-09-19 - Brain Store & Automatic KG Embeddings
 - **Brain datastore support**: Optional `brains` namespace connection with new schema initialization (SURR_ENABLE_BRAIN + SURR_BRAIN_* envs).
 - **New brain_store tool**: MCP interface to get/set agent brain sections directly in SurrealDB.

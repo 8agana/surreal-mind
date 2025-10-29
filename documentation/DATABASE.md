@@ -70,6 +70,86 @@ Timestamped facts associated with entities.
 - `name`: Basic observation lookup
 - `(name, source_thought_id)`: Linking observations to source thoughts
 
+## Photography Namespace
+
+The `photography` namespace contains the `ops` database for managing photography business operations, including client tracking, competitions, events, and shot logging. This schema supports Sam Atagana Photography's workflow for organizing family photography sessions, competitions, and sales.
+
+### client
+Stores client information.
+
+**Fields:**
+- `id`: Unique client identifier
+- `first_name`: Client's first name
+- `last_name`: Client's last name
+- `preferred_name`: Preferred name for addressing
+- `email`: Contact email
+- `phone`: Contact phone number
+- `notes`: Additional notes
+- `created_at`: Creation timestamp (auto-generated)
+
+### family
+Groups related clients (e.g., family units).
+
+**Fields:**
+- `id`: Unique family identifier
+- `name`: Family group name
+- `primary_contact`: Reference to primary contact client
+- `email`: Group email
+- `phone`: Group phone number
+- `notes`: Additional notes
+
+### competition
+Competition or event series information.
+
+**Fields:**
+- `id`: Unique competition identifier
+- `name`: Competition name
+- `venue`: Event location
+- `start_date`: Competition start date/time
+- `end_date`: Competition end date/time
+- `notes`: Additional notes
+
+### event
+Individual events within competitions.
+
+**Fields:**
+- `id`: Unique event identifier
+- `competition`: Reference to parent competition
+- `event_number`: Sequential event number
+- `level`: Competition level (e.g., novice, expert)
+- `discipline`: Photography discipline (e.g., portrait, landscape)
+- `notes`: Additional notes
+
+### membership
+Relations linking clients to families (many-to-many).
+
+**Fields:**
+- `role`: Client's role in family (default "parent/guardian")
+- `created_at`: Membership creation timestamp (auto-generated)
+
+### registration
+Relations linking clients to events with registration status.
+
+**Fields:**
+- `status`: Registration status (Unrequested, Requested, Sent, Purchased)
+- `gallery_url`: Link to online gallery
+- `gallery_sent_at`: When gallery was sent (optional)
+- `purchase_amount`: Sale amount (default 0)
+- `notes`: Additional notes
+
+### shotlog
+Tracks photo counts per event for clients.
+
+**Fields:**
+- `id`: Unique shot log entry
+- `event`: Reference to event
+- `client`: Reference to client
+- `raw_count`: Total raw photos taken
+- `picked_count`: Selected photos
+- `creative_count`: Creative/edited versions
+- `notes`: Additional notes
+- `updated_at`: Last update timestamp (auto-generated)
+
 ## Extended Tables
 
 ### recalls

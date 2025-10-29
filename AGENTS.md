@@ -15,6 +15,7 @@
 
 - **Build**: `cargo build` (development) or `cargo build --release` (production binary).
 - **Run MCP server**: `cargo run` (stdio mode).
+- **Initialize Photography Schema**: `cargo run --bin photography_schema` (requires running SurrealDB).
 - **Test**: `cargo test --workspace --all-features` (includes integration tests).
 - **Format code**: `cargo fmt --all`.
 - **Lint**: `cargo clippy --workspace --all-targets -- -D warnings` (warnings treated as errors).
