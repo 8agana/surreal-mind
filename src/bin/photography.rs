@@ -1,7 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use serde_json::Value;
-use std::collections::HashMap;
 use std::fs::File;
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::Ws;
@@ -175,14 +174,19 @@ async fn import_roster(
     println!("Importing roster for competition: {}", competition);
     println!("From file: {}", file_path);
 
-    // Create/update competition
+    // Upsert competition record
     let comp_id = competition_to_id(competition);
-    let _ = db
-        .query(&format!(
-            "CREATE competition SET id = '{}', name = '{}'",
-            comp_id, competition
-        ))
+    let comp_resp = db
+        .query(
+            "INSERT INTO competition (id, name, venue, start_date, end_date)
+             VALUES ($id, $name, $venue, time::now(), time::now())
+             ON DUPLICATE KEY UPDATE name = $name",
+        )
+        .bind(("id", comp_id.clone()))
+        .bind(("name", competition.to_string()))
+        .bind(("venue", ""))
         .await?;
+    comp_resp.check()?;
 
     // Read CSV
     let file = File::open(file_path)?;
@@ -194,18 +198,23 @@ async fn import_roster(
 
         // Parse skater name
         let (first_name, last_name) = parse_skater_name(&row.skater_name)?;
-        let skater_id =
-            format!("{}_{}", last_name.to_lowercase(), first_name.to_lowercase()).replace('-', "_");
+        let skater_id = format!("{}_{}", last_name.to_lowercase(), first_name.to_lowercase())
+            .replace('-', "_");
 
-        // Create/update skater
-        let _ = db
-            .query(&format!(
-                "CREATE skater SET id = '{}', first_name = '{}', last_name = '{}'",
-                skater_id, first_name, last_name
-            ))
+        // Upsert skater
+        let skater_resp = db
+            .query(
+                "INSERT INTO skater (id, first_name, last_name, created_at)
+                 VALUES ($id, $first, $last, time::now())
+                 ON DUPLICATE KEY UPDATE first_name = $first, last_name = $last",
+            )
+            .bind(("id", skater_id.clone()))
+            .bind(("first", first_name.clone()))
+            .bind(("last", last_name.clone()))
             .await?;
+        skater_resp.check()?;
 
-        // Create/update event
+        // Upsert event
         let event_id = format!(
             "{}_{}{}",
             comp_id,
@@ -215,18 +224,23 @@ async fn import_roster(
                 .map(|s| format!("_{}", s))
                 .unwrap_or_default()
         );
-        let event_query = if let Some(split) = &row.split_ice {
-            format!(
-                "CREATE event SET id = '{}', competition = competition:{}, event_number = {}, split_ice = '{}'",
-                event_id, comp_id, row.event, split
+        let event_resp = db
+            .query(
+                "INSERT INTO event (id, competition, event_number, split_ice, time_slot)
+                 VALUES ($id, type::thing('competition', $comp), $event_number, $split, $time)
+                 ON DUPLICATE KEY UPDATE 
+                    competition = type::thing('competition', $comp),
+                    event_number = $event_number,
+                    split_ice = $split,
+                    time_slot = $time",
             )
-        } else {
-            format!(
-                "CREATE event SET id = '{}', competition = competition:{}, event_number = {}",
-                event_id, comp_id, row.event
-            )
-        };
-        let _ = db.query(&event_query).await?;
+            .bind(("id", event_id.clone()))
+            .bind(("comp", comp_id.clone()))
+            .bind(("event_number", row.event))
+            .bind(("split", row.split_ice.clone()))
+            .bind(("time", row.time.clone()))
+            .await?;
+        event_resp.check()?;
 
         // Determine request status
         let request_status = match row.signup.as_deref() {
@@ -236,10 +250,21 @@ async fn import_roster(
         };
 
         // Create competed_in relation (RELATE creates if doesn't exist)
-        let _ = db.query(&format!(
-            "RELATE skater:{}->competed_in->event:{} SET skate_order = {}, request_status = '{}', gallery_status = 'pending'",
-            skater_id, event_id, row.skate_order.unwrap_or(0), request_status
-        )).await?;
+        let relation_resp = db
+            .query(
+                "RELATE (type::thing('skater', $skater_id))->competed_in->(type::thing('event', $event_id))
+                 CONTENT {
+                    skate_order: $skate_order,
+                    request_status: $request_status,
+                    gallery_status: 'pending'
+                 }",
+            )
+            .bind(("skater_id", skater_id.clone()))
+            .bind(("event_id", event_id.clone()))
+            .bind(("skate_order", row.skate_order.unwrap_or(0)))
+            .bind(("request_status", request_status.to_string()))
+            .await?;
+        relation_resp.check()?;
     }
 
     println!("Import completed successfully!");
@@ -250,16 +275,36 @@ async fn list_skaters(
     db: &Surreal<surrealdb::engine::remote::ws::Client>,
     status: &str,
 ) -> Result<()> {
-    let query = if status == "all" {
-        "SELECT in.first_name AS first_name, in.last_name AS last_name, out.event_number AS event_number, request_status, gallery_status FROM competed_in".to_string()
-    } else {
-        format!(
-            "SELECT in.first_name AS first_name, in.last_name AS last_name, out.event_number AS event_number, request_status, gallery_status FROM competed_in WHERE request_status = '{}'",
-            status
+    let mut resp = if status == "all" {
+        db.query(
+            "SELECT
+                in.first_name AS first_name,
+                in.last_name AS last_name,
+                out.event_number AS event_number,
+                out.split_ice AS split_ice,
+                request_status,
+                gallery_status
+             FROM competed_in FETCH in, out",
         )
+        .await?
+    } else {
+        db.query(
+            "SELECT
+                in.first_name AS first_name,
+                in.last_name AS last_name,
+                out.event_number AS event_number,
+                out.split_ice AS split_ice,
+                request_status,
+                gallery_status
+             FROM competed_in
+             WHERE request_status = $status
+             FETCH in, out",
+        )
+        .bind(("status", status.to_string()))
+        .await?
     };
 
-    let result: Vec<Value> = db.query(&query).await?.take(0)?;
+    let result: Vec<Value> = resp.take(0)?;
     println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(())
 }
@@ -268,10 +313,15 @@ async fn list_events(
     db: &Surreal<surrealdb::engine::remote::ws::Client>,
     competition: &str,
 ) -> Result<()> {
-    let result: Vec<Value> = db.query(&format!(
-        "SELECT event_number, split_ice, level, discipline, time_slot FROM event WHERE competition.name = '{}'",
-        competition
-    )).await?.take(0)?;
+    let mut resp = db
+        .query(
+            "SELECT event_number, split_ice, level, discipline, time_slot
+             FROM event
+             WHERE competition = type::thing('competition', $comp)",
+        )
+        .bind(("comp", competition_to_id(competition)))
+        .await?;
+    let result: Vec<Value> = resp.take(0)?;
     println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(())
 }
