@@ -29,73 +29,85 @@ async fn main() -> Result<()> {
 
     // Test 1: List all skaters
     println!("=== Test 1: All Skaters ===");
-    let mut response = db.query("SELECT id, first_name, last_name FROM skater").await?;
+    let mut response = db
+        .query("SELECT id, first_name, last_name FROM skater")
+        .await?;
     let result: Vec<Value> = response.take(0)?;
     println!("{}", serde_json::to_string_pretty(&result)?);
 
     // Test 2: Ruiz Peace family members
     println!("\n=== Test 2: Ruiz Peace Family Members ===");
-    let mut response = db.query(
-        "SELECT
+    let mut response = db
+        .query(
+            "SELECT
             skater.first_name AS first_name,
             skater.last_name AS last_name
         FROM family_member
-        WHERE out = family:ruiz_peace"
-    ).await?;
+        WHERE out = family:ruiz_peace",
+        )
+        .await?;
     let result: Vec<Value> = response.take(0)?;
     println!("{}", serde_json::to_string_pretty(&result)?);
 
     // Test 3: Carrico's events
     println!("\n=== Test 3: Harlee Carrico's Events ===");
-    let mut response = db.query(
-        "SELECT
+    let mut response = db
+        .query(
+            "SELECT
             event.event_number,
             event.time_slot,
             request_status,
             gallery_status
         FROM competed_in
-        WHERE in = skater:carrico_harlee"
-    ).await?;
+        WHERE in = skater:carrico_harlee",
+        )
+        .await?;
     let result: Vec<Value> = response.take(0)?;
     println!("{}", serde_json::to_string_pretty(&result)?);
 
     // Test 4: All requested/VIP skaters
     println!("\n=== Test 4: Requested/VIP Skaters ===");
-    let mut response = db.query(
-        "SELECT
+    let mut response = db
+        .query(
+            "SELECT
             skater.first_name AS first_name,
             skater.last_name AS last_name,
             request_status
         FROM competed_in
-        WHERE request_status IN ['requested', 'vip']"
-    ).await?;
+        WHERE request_status IN ['requested', 'vip']",
+        )
+        .await?;
     let result: Vec<Value> = response.take(0)?;
     println!("{}", serde_json::to_string_pretty(&result)?);
 
     // Test 5: Event 23 participants
     println!("\n=== Test 5: Event 23 Participants ===");
-    let mut response = db.query(
-        "SELECT
+    let mut response = db
+        .query(
+            "SELECT
             skater.first_name AS first_name,
             skater.last_name AS last_name,
             skate_order,
             request_status
         FROM competed_in
-        WHERE out = event:e23"
-    ).await?;
+        WHERE out = event:e23",
+        )
+        .await?;
     let result: Vec<Value> = response.take(0)?;
     println!("{}", serde_json::to_string_pretty(&result)?);
 
     // Test 6: Cecilia's events (should show 2: e23 and e33_z)
     println!("\n=== Test 6: Cecilia Ruiz Peace Events ===");
-    let mut response = db.query(
-        "SELECT
+    let mut response = db
+        .query(
+            "SELECT
             event.event_number AS event_number,
             event.split_ice AS split_ice,
             skate_order
         FROM competed_in
-        WHERE in = skater:ruiz_peace_cecilia"
-    ).await?;
+        WHERE in = skater:ruiz_peace_cecilia",
+        )
+        .await?;
     let result: Vec<Value> = response.take(0)?;
     println!("{}", serde_json::to_string_pretty(&result)?);
 

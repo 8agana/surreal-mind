@@ -1,10 +1,10 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use prettytable::{Cell, Row, Table};
 use serde_json::Value;
 use std::fs::File;
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::Ws;
-use surrealdb::opt::auth::Root;
 
 #[derive(Parser)]
 #[command(name = "photography")]
@@ -39,6 +39,34 @@ enum Commands {
     Update {
         #[command(subcommand)]
         update_command: UpdateCommands,
+    },
+    /// Query skater by name
+    QuerySkater {
+        /// Skater name (partial match on first or last)
+        name: String,
+        /// Optional competition name
+        #[arg(long)]
+        competition: Option<String>,
+    },
+    /// List pending galleries
+    PendingGalleries {
+        /// Optional competition name
+        #[arg(long)]
+        competition: Option<String>,
+    },
+    /// List events for skater
+    ListEventsForSkater {
+        /// Skater last name
+        #[arg(long)]
+        skater: String,
+        /// Optional competition name
+        #[arg(long)]
+        competition: Option<String>,
+    },
+    /// Show competition statistics
+    CompetitionStats {
+        /// Competition name
+        comp_name: String,
     },
 }
 
@@ -121,7 +149,7 @@ async fn main() -> Result<()> {
 
     // Connect to SurrealDB
     let db = Surreal::new::<Ws>(url).await?;
-    db.signin(Root {
+    db.signin(surrealdb::opt::auth::Root {
         username: &user,
         password: &pass,
     })
@@ -161,6 +189,21 @@ async fn main() -> Result<()> {
                 update_gallery(&db, &skater, event, &status, url.as_deref(), amount).await?;
             }
         },
+        Commands::QuerySkater { name, competition } => {
+            query_skater(&db, &name, competition.as_deref()).await?;
+        }
+        Commands::PendingGalleries { competition } => {
+            pending_galleries(&db, competition.as_deref()).await?;
+        }
+        Commands::ListEventsForSkater {
+            skater,
+            competition,
+        } => {
+            list_events_for_skater(&db, &skater, competition.as_deref()).await?;
+        }
+        Commands::CompetitionStats { comp_name } => {
+            competition_stats(&db, &comp_name).await?;
+        }
     }
 
     Ok(())
@@ -198,8 +241,8 @@ async fn import_roster(
 
         // Parse skater name
         let (first_name, last_name) = parse_skater_name(&row.skater_name)?;
-        let skater_id = format!("{}_{}", last_name.to_lowercase(), first_name.to_lowercase())
-            .replace('-', "_");
+        let skater_id =
+            format!("{}_{}", last_name.to_lowercase(), first_name.to_lowercase()).replace('-', "_");
 
         // Upsert skater
         let skater_resp = db
@@ -228,7 +271,7 @@ async fn import_roster(
             .query(
                 "INSERT INTO event (id, competition, event_number, split_ice, time_slot)
                  VALUES ($id, type::thing('competition', $comp), $event_number, $split, $time)
-                 ON DUPLICATE KEY UPDATE 
+                 ON DUPLICATE KEY UPDATE
                     competition = type::thing('competition', $comp),
                     event_number = $event_number,
                     split_ice = $split,
@@ -390,6 +433,254 @@ fn competition_to_id(competition: &str) -> String {
         .replace(" ", "_")
         .replace(",", "")
         .replace("-", "_")
+}
+
+async fn query_skater(
+    db: &Surreal<surrealdb::engine::remote::ws::Client>,
+    name: &str,
+    comp: Option<&str>,
+) -> Result<()> {
+    let query = if let Some(c) = comp {
+        format!(
+            "SELECT in.first_name, in.last_name, out.competition.name, out.event_number, request_status, gallery_status
+             FROM competed_in
+             WHERE (in.first_name CONTAINS '{}' OR in.last_name CONTAINS '{}')
+               AND out.competition.name CONTAINS '{}'
+             FETCH in, out, out.competition",
+            name, name, c
+        )
+    } else {
+        format!(
+            "SELECT in.first_name, in.last_name, out.competition.name, out.event_number, request_status, gallery_status
+             FROM competed_in
+             WHERE in.first_name CONTAINS '{}' OR in.last_name CONTAINS '{}'
+             FETCH in, out, out.competition",
+            name, name
+        )
+    };
+    let mut resp = db.query(&query).await?;
+    let results: Vec<Value> = resp.take(0)?;
+    let mut table = Table::new();
+    table.add_row(Row::new(vec![
+        Cell::new("Last Name"),
+        Cell::new("First Name"),
+        Cell::new("Competition"),
+        Cell::new("Event #"),
+        Cell::new("Request Status"),
+        Cell::new("Gallery Status"),
+    ]));
+    for r in results {
+        table.add_row(Row::new(vec![
+            Cell::new(r["in"]["last_name"].as_str().unwrap_or("")),
+            Cell::new(r["in"]["first_name"].as_str().unwrap_or("")),
+            Cell::new(r["out"]["competition"]["name"].as_str().unwrap_or("")),
+            Cell::new(&r["out"]["event_number"].to_string()),
+            Cell::new(r["request_status"].as_str().unwrap_or("")),
+            Cell::new(r["gallery_status"].as_str().unwrap_or("")),
+        ]));
+    }
+    table.printstd();
+    Ok(())
+}
+
+async fn pending_galleries(
+    db: &Surreal<surrealdb::engine::remote::ws::Client>,
+    comp: Option<&str>,
+) -> Result<()> {
+    let query = if let Some(c) = comp {
+        format!(
+            "SELECT in.first_name, in.last_name, out.competition.name, out.event_number, request_status
+             FROM competed_in
+             WHERE gallery_status = 'pending' AND out.competition.name CONTAINS '{}'
+             FETCH in, out, out.competition",
+            c
+        )
+    } else {
+        "SELECT in.first_name, in.last_name, out.competition.name, out.event_number, request_status
+         FROM competed_in
+         WHERE gallery_status = 'pending'
+         FETCH in, out, out.competition"
+            .to_string()
+    };
+    let mut resp = db.query(&query).await?;
+    let results: Vec<Value> = resp.take(0)?;
+    let mut table = Table::new();
+    table.add_row(Row::new(vec![
+        Cell::new("Last Name"),
+        Cell::new("First Name"),
+        Cell::new("Competition"),
+        Cell::new("Event #"),
+        Cell::new("Request Status"),
+    ]));
+    for r in results {
+        table.add_row(Row::new(vec![
+            Cell::new(r["in"]["last_name"].as_str().unwrap_or("")),
+            Cell::new(r["in"]["first_name"].as_str().unwrap_or("")),
+            Cell::new(r["out"]["competition"]["name"].as_str().unwrap_or("")),
+            Cell::new(&r["out"]["event_number"].to_string()),
+            Cell::new(r["request_status"].as_str().unwrap_or("")),
+        ]));
+    }
+    table.printstd();
+    Ok(())
+}
+
+async fn list_events_for_skater(
+    db: &Surreal<surrealdb::engine::remote::ws::Client>,
+    last_name: &str,
+    comp: Option<&str>,
+) -> Result<()> {
+    let query = if let Some(c) = comp {
+        format!(
+            "SELECT out.competition.name, out.event_number, request_status, gallery_status, purchase_amount
+             FROM competed_in
+             WHERE in.last_name = '{}' AND out.competition.name CONTAINS '{}'
+             FETCH in, out, out.competition",
+            last_name, c
+        )
+    } else {
+        format!(
+            "SELECT out.competition.name, out.event_number, request_status, gallery_status, purchase_amount
+             FROM competed_in
+             WHERE in.last_name = '{}'
+             FETCH in, out, out.competition",
+            last_name
+        )
+    };
+    let mut resp = db.query(&query).await?;
+    let results: Vec<Value> = resp.take(0)?;
+    let mut table = Table::new();
+    table.add_row(Row::new(vec![
+        Cell::new("Competition"),
+        Cell::new("Event #"),
+        Cell::new("Request Status"),
+        Cell::new("Gallery Status"),
+        Cell::new("Purchase Amount"),
+    ]));
+    for r in results {
+        table.add_row(Row::new(vec![
+            Cell::new(r["out"]["competition"]["name"].as_str().unwrap_or("")),
+            Cell::new(&r["out"]["event_number"].to_string()),
+            Cell::new(r["request_status"].as_str().unwrap_or("")),
+            Cell::new(r["gallery_status"].as_str().unwrap_or("")),
+            Cell::new(&r["purchase_amount"].to_string()),
+        ]));
+    }
+    table.printstd();
+    Ok(())
+}
+
+async fn competition_stats(
+    db: &Surreal<surrealdb::engine::remote::ws::Client>,
+    comp_name: &str,
+) -> Result<()> {
+    let lower_comp = comp_name.to_lowercase();
+    let condition = format!("LOWER(out.competition.name) CONTAINS '{}'", lower_comp);
+
+    // Total distinct skaters
+    let mut total_skaters_resp = db
+        .query(format!(
+            "SELECT count(DISTINCT in) FROM competed_in WHERE {} FETCH out.competition",
+            condition
+        ))
+        .await?;
+    let total_skaters_results: Vec<Value> = total_skaters_resp.take(0)?;
+    let total_skaters = total_skaters_results
+        .first()
+        .and_then(|v| v.get("count"))
+        .and_then(|c| c.as_i64())
+        .unwrap_or(0i64);
+
+    // Total competed_in relations
+    let mut total_competed_resp = db
+        .query(format!(
+            "SELECT count() FROM competed_in WHERE {}",
+            condition
+        ))
+        .await?;
+    let total_competed_results: Vec<Value> = total_competed_resp.take(0)?;
+    let total_competed = total_competed_results
+        .first()
+        .and_then(|v| v.get("count"))
+        .and_then(|c| c.as_i64())
+        .unwrap_or(0i64);
+
+    // Requested (vip or requested)
+    let mut requested_resp = db
+        .query(format!("SELECT count() FROM competed_in WHERE {} AND (request_status = 'requested' OR request_status = 'vip')", condition))
+        .await?;
+    let requested_results: Vec<Value> = requested_resp.take(0)?;
+    let requested = requested_results
+        .first()
+        .and_then(|v| v.get("count"))
+        .and_then(|c| c.as_i64())
+        .unwrap_or(0i64);
+
+    // Unrequested
+    let mut unrequested_resp = db
+        .query(format!(
+            "SELECT count() FROM competed_in WHERE {} AND request_status = 'unrequested'",
+            condition
+        ))
+        .await?;
+    let unrequested_results: Vec<Value> = unrequested_resp.take(0)?;
+    let unrequested = unrequested_results
+        .first()
+        .and_then(|v| v.get("count"))
+        .and_then(|c| c.as_i64())
+        .unwrap_or(0i64);
+
+    // Pending galleries
+    let mut pending_galleries_resp = db
+        .query(format!(
+            "SELECT count() FROM competed_in WHERE {} AND gallery_status = 'pending'",
+            condition
+        ))
+        .await?;
+    let pending_galleries_results: Vec<Value> = pending_galleries_resp.take(0)?;
+    let pending_galleries = pending_galleries_results
+        .first()
+        .and_then(|v| v.get("count"))
+        .and_then(|c| c.as_i64())
+        .unwrap_or(0i64);
+
+    // Sent galleries
+    let mut sent_galleries_resp = db
+        .query(format!(
+            "SELECT count() FROM competed_in WHERE {} AND gallery_status = 'sent'",
+            condition
+        ))
+        .await?;
+    let sent_galleries_results: Vec<Value> = sent_galleries_resp.take(0)?;
+    let sent_galleries = sent_galleries_results
+        .first()
+        .and_then(|v| v.get("count"))
+        .and_then(|c| c.as_i64())
+        .unwrap_or(0i64);
+
+    // Purchased galleries
+    let mut purchased_galleries_resp = db
+        .query(format!(
+            "SELECT count() FROM competed_in WHERE {} AND gallery_status = 'purchased'",
+            condition
+        ))
+        .await?;
+    let purchased_galleries_results: Vec<Value> = purchased_galleries_resp.take(0)?;
+    let purchased_galleries = purchased_galleries_results
+        .first()
+        .and_then(|v| v.get("count"))
+        .and_then(|c| c.as_i64())
+        .unwrap_or(0i64);
+
+    println!("Statistics for competition '{}':", comp_name);
+    println!("Total skaters: {}", total_skaters);
+    println!("Total competed_in relations: {}", total_competed);
+    println!("Requested relations: {}", requested);
+    println!("Unrequested relations: {}", unrequested);
+    println!("Pending galleries: {}", pending_galleries);
+    println!("Sent galleries: {}", sent_galleries);
+    println!("Purchased galleries: {}", purchased_galleries);
+    Ok(())
 }
 
 fn parse_skater_name(name: &str) -> Result<(String, String)> {
