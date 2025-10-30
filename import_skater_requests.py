@@ -76,15 +76,15 @@ def parse_markdown(filepath: str, section: str = 'Requested') -> list[dict]:
 
     Args:
         filepath: Path to SkaterRequests.md
-        section: Section to parse ('Requested' or 'Unrequested')
+        section: Section to parse ('Requested', 'Unrequested', or 'All')
 
     Returns:
         List of dicts with keys: first_name, last_name, events, email,
-                                 gallery_status, gross_amount, net_amount, notes
+                                 gallery_status, gross_amount, net_amount, notes, section
     """
     skaters = []
     current_skater = None
-    in_target_section = False
+    current_section_name = None
 
     with open(filepath, 'r') as f:
         for line in f:
@@ -93,10 +93,11 @@ def parse_markdown(filepath: str, section: str = 'Requested') -> list[dict]:
             # Section detection
             if line.startswith('##'):
                 section_name = line.replace('##', '').strip()
-                in_target_section = (section_name == section)
+                current_section_name = section_name
                 continue
 
-            if not in_target_section:
+            # Skip if not in target section (unless section='All')
+            if section != 'All' and current_section_name != section:
                 continue
 
             # Skater name line (starts with capital, not indented)
@@ -115,7 +116,8 @@ def parse_markdown(filepath: str, section: str = 'Requested') -> list[dict]:
                     'gallery_status': 'pending',
                     'gross_amount': None,
                     'net_amount': None,
-                    'notes': []
+                    'notes': [],
+                    'section': current_section_name
                 }
 
             # Event line
@@ -147,102 +149,126 @@ def parse_markdown(filepath: str, section: str = 'Requested') -> list[dict]:
     return skaters
 
 
-async def import_to_surrealdb(skaters: list[dict], competition_name: str):
+def import_to_surrealdb(skaters: list[dict], competition_name: str):
     """
     Import skaters to SurrealDB photography database.
 
     Uses INSERT...ON DUPLICATE KEY UPDATE pattern from Codex's fix.
     """
-    async with Surreal("ws://127.0.0.1:8000") as db:
-        await db.signin({"user": "root", "pass": "root"})
-        await db.use("photography", "ops")
+    db = Surreal("ws://127.0.0.1:8000")
+    db.signin({"username": "root", "password": "root"})
+    db.use("photography", "ops")
 
-        # Create competition record
-        comp_id = competition_name.lower().replace(' ', '_')
-        await db.query(f"""
-            INSERT INTO competition (id, name, venue, start_date, end_date, created_at)
-            VALUES ('{comp_id}', '{competition_name}', '', time::now(), time::now(), time::now())
-            ON DUPLICATE KEY UPDATE name = '{competition_name}'
-        """)
+    # Create competition record (schema: name, venue, start_date, end_date, notes)
+    comp_id = competition_name.lower().replace(' ', '_')
+    db.query(f"""
+        INSERT INTO competition (id, name, venue)
+        VALUES ('{comp_id}', '{competition_name}', '')
+        ON DUPLICATE KEY UPDATE name = '{competition_name}'
+    """)
 
-        total_relations = 0
+    total_relations = 0
 
-        for skater in skaters:
-            # Create skater record ID
-            skater_id = f"{skater['last_name']}_{skater['first_name']}".lower().replace('-', '_').replace(' ', '_')
+    for idx, skater in enumerate(skaters, 1):
+        print(f"  [{idx}/{len(skaters)}] Processing {skater['first_name']} {skater['last_name']}...")
 
-            # Insert skater
-            await db.query(f"""
-                INSERT INTO skater (id, first_name, last_name, email, created_at)
+        # Create skater record ID
+        skater_id = f"{skater['last_name']}_{skater['first_name']}".lower().replace('-', '_').replace(' ', '_')
+
+        # Insert skater (schema: first_name, last_name, birth_date, notes, created_at)
+        # Note: email goes in family table, not skater table
+        try:
+            db.query(f"""
+                INSERT INTO skater (id, first_name, last_name, created_at)
                 VALUES (
                     '{skater_id}',
                     '{skater['first_name']}',
                     '{skater['last_name']}',
-                    {f"'{skater['email']}'" if skater['email'] else 'NULL'},
                     time::now()
                 )
                 ON DUPLICATE KEY UPDATE
                     first_name = '{skater['first_name']}',
-                    last_name = '{skater['last_name']}',
-                    email = {f"'{skater['email']}'" if skater['email'] else 'NULL'}
+                    last_name = '{skater['last_name']}'
             """)
+        except Exception as e:
+            print(f"    ERROR creating skater: {e}")
 
-            # Create competed_in relations for each event
-            for event_num in skater['events']:
-                event_id = f"{comp_id}_{event_num}"
+        # Create competed_in relations for each event
+        for event_num in skater['events']:
+            event_id = f"{comp_id}_{event_num}"
 
-                # Create event record (no time_slot since MD doesn't have it)
-                await db.query(f"""
-                    INSERT INTO event (id, competition, event_number, split_ice, time_slot, created_at)
+            # Create event record (matches schema: competition, event_number, split_ice, time_slot)
+            # Note: Use NONE for option types, not NULL
+            try:
+                resp = db.query(f"""
+                    INSERT INTO event (id, competition, event_number, split_ice, time_slot)
                     VALUES (
                         '{event_id}',
                         type::thing('competition', '{comp_id}'),
                         {event_num},
-                        NULL,
-                        '',
-                        time::now()
+                        NONE,
+                        NONE
                     )
                     ON DUPLICATE KEY UPDATE event_number = {event_num}
                 """)
+            except Exception as e:
+                print(f"    ERROR creating event {event_num}: {e}")
+                continue
 
-                # Create competed_in relation
-                # Note: request_status always 'requested' from Requested section
-                # gallery_status from parsed status
-                await db.query(f"""
-                    RELATE type::thing('skater', '{skater_id}')->competed_in->type::thing('event', '{event_id}')
+            # Create competed_in relation
+            # Schema: skate_order, request_status, gallery_status, gallery_url, gallery_sent_at,
+            #         purchase_amount, purchase_date, notes, created_at
+            # Note: Using net_amount for purchase_amount (what Sam actually received)
+            # Map section to request_status: Requested→requested, Unrequested→unrequested
+            try:
+                purchase_amt = skater['net_amount'] if skater['net_amount'] else 'NONE'
+                purchase_date = "time::now()" if skater['gallery_status'] == 'purchased' else 'NONE'
+
+                # Determine request_status from section
+                section = skater.get('section', 'Requested')
+                if section == 'Unrequested':
+                    request_status = 'unrequested'
+                else:
+                    request_status = 'requested'  # Requested or On-Deck both = requested
+
+                db.query(f"""
+                    RELATE (type::thing('skater', '{skater_id}'))->competed_in->(type::thing('event', '{event_id}'))
                     CONTENT {{
-                        skate_order: NULL,
-                        request_status: 'requested',
+                        skate_order: NONE,
+                        request_status: '{request_status}',
                         gallery_status: '{skater['gallery_status']}',
-                        gross_amount: {skater['gross_amount'] if skater['gross_amount'] else 'NULL'},
-                        net_amount: {skater['net_amount'] if skater['net_amount'] else 'NULL'}
+                        purchase_amount: {purchase_amt},
+                        purchase_date: {purchase_date}
                     }}
                 """)
-
                 total_relations += 1
+            except Exception as e:
+                print(f"    ERROR creating relation for event {event_num}: {e}")
 
-        print(f"✅ Imported {len(skaters)} skaters with {total_relations} event relationships")
+    db.close()
+    print(f"✅ Imported {len(skaters)} skaters with {total_relations} event relationships")
 
 
-async def main():
+def main():
     if len(sys.argv) < 3:
-        print("Usage: ./import_skater_requests.py <path_to_SkaterRequests.md> <competition_name>")
-        print("Example: ./import_skater_requests.py '/Volumes/4TB-Sandisk/2025 Pony Express/SkaterRequests.md' '2025 Pony Express'")
+        print("Usage: ./import_skater_requests.py <path_to_SkaterRequests.md> <competition_name> [section]")
+        print("Example: ./import_skater_requests.py '/Volumes/4TB-Sandisk/2025 Pony Express/SkaterRequests.md' '2025 Pony Express' All")
+        print("Section options: 'Requested', 'Unrequested', 'All' (default: All)")
         sys.exit(1)
 
     filepath = sys.argv[1]
     competition_name = sys.argv[2]
+    section = sys.argv[3] if len(sys.argv) > 3 else 'All'
 
-    print(f"📖 Parsing {filepath}...")
-    skaters = parse_markdown(filepath, section='Requested')
-    print(f"   Found {len(skaters)} requested skaters")
+    print(f"📖 Parsing {filepath} (section: {section})...")
+    skaters = parse_markdown(filepath, section=section)
+    print(f"   Found {len(skaters)} skaters")
 
     print(f"\n💾 Importing to SurrealDB (competition: {competition_name})...")
-    await import_to_surrealdb(skaters, competition_name)
+    import_to_surrealdb(skaters, competition_name)
 
     print("\n✨ Import complete!")
 
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    main()
