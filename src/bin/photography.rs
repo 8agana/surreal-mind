@@ -136,6 +136,20 @@ struct RosterRow {
     signup: Option<String>,
 }
 
+#[derive(Debug)]
+struct ParsedSkater {
+    first_name: String,
+    last_name: String,
+    family_email: Option<String>,
+}
+
+#[derive(Debug)]
+struct ParsedName {
+    skaters: Vec<ParsedSkater>,
+    is_family: bool,
+    is_synchro: bool,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Load environment variables
@@ -239,25 +253,31 @@ async fn import_roster(
         let row: RosterRow = result?;
         println!("Processing: {:?}", row);
 
-        // Parse skater name
-        let (first_name, last_name) = parse_skater_name(&row.skater_name)?;
-        let skater_id =
-            format!("{}_{}", last_name.to_lowercase(), first_name.to_lowercase()).replace('-', "_");
+        // Parse skater names
+        let parsed = parse_skater_names(&row.skater_name)?;
 
-        // Upsert skater
-        let skater_resp = db
-            .query(
-                "INSERT INTO skater (id, first_name, last_name, created_at)
-                 VALUES ($id, $first, $last, time::now())
-                 ON DUPLICATE KEY UPDATE first_name = $first, last_name = $last",
-            )
-            .bind(("id", skater_id.clone()))
-            .bind(("first", first_name.clone()))
-            .bind(("last", last_name.clone()))
-            .await?;
-        skater_resp.check()?;
+        // If family, upsert family
+        let family_id = if parsed.is_family {
+            let family_id = format!(
+                "family:{}",
+                parsed.skaters[0].last_name.to_lowercase().replace(" ", "_")
+            );
+            let family_resp = db
+                .query(
+                    "INSERT INTO family (id, first_name, last_name, created_at)
+                     VALUES ($id, 'Family', $last, time::now())
+                     ON DUPLICATE KEY UPDATE first_name = 'Family', last_name = $last",
+                )
+                .bind(("id", family_id.clone()))
+                .bind(("last", parsed.skaters[0].last_name.clone()))
+                .await?;
+            family_resp.check()?;
+            Some(family_id)
+        } else {
+            None
+        };
 
-        // Upsert event
+        // Upsert event (once per row)
         let event_id = format!(
             "{}_{}{}",
             comp_id,
@@ -292,22 +312,58 @@ async fn import_roster(
             _ => "unrequested",
         };
 
-        // Create competed_in relation (RELATE creates if doesn't exist)
-        let relation_resp = db
-            .query(
-                "RELATE (type::thing('skater', $skater_id))->competed_in->(type::thing('event', $event_id))
-                 CONTENT {
-                    skate_order: $skate_order,
-                    request_status: $request_status,
-                    gallery_status: 'pending'
-                 }",
+        // For each skater
+        for skater in &parsed.skaters {
+            let skater_id = format!(
+                "{}_{}",
+                skater.last_name.to_lowercase(),
+                skater.first_name.to_lowercase()
             )
-            .bind(("skater_id", skater_id.clone()))
-            .bind(("event_id", event_id.clone()))
-            .bind(("skate_order", row.skate_order.unwrap_or(0)))
-            .bind(("request_status", request_status.to_string()))
-            .await?;
-        relation_resp.check()?;
+            .replace('-', "_");
+
+            // Upsert skater
+            let skater_resp = db
+                .query(
+                    "INSERT INTO skater (id, first_name, last_name, created_at)
+                     VALUES ($id, $first, $last, time::now())
+                     ON DUPLICATE KEY UPDATE first_name = $first, last_name = $last",
+                )
+                .bind(("id", skater_id.clone()))
+                .bind(("first", skater.first_name.clone()))
+                .bind(("last", skater.last_name.clone()))
+                .await?;
+            skater_resp.check()?;
+
+            // If family, create belongs_to
+            if let Some(ref family_id) = family_id {
+                let belongs_resp = db
+                    .query(
+                        "RELATE (type::thing('skater', $skater_id))->belongs_to->(type::thing('family', $family_id))
+                         CONTENT { created_at: time::now() }",
+                    )
+                    .bind(("skater_id", skater_id.clone()))
+                    .bind(("family_id", family_id.clone()))
+                    .await?;
+                belongs_resp.check()?;
+            }
+
+            // Create competed_in relation
+            let relation_resp = db
+                .query(
+                    "RELATE (type::thing('skater', $skater_id))->competed_in->(type::thing('event', $event_id))
+                     CONTENT {
+                        skate_order: $skate_order,
+                        request_status: $request_status,
+                        gallery_status: 'pending'
+                     }",
+                )
+                .bind(("skater_id", skater_id.clone()))
+                .bind(("event_id", event_id.clone()))
+                .bind(("skate_order", row.skate_order.unwrap_or(0)))
+                .bind(("request_status", request_status.to_string()))
+                .await?;
+            relation_resp.check()?;
+        }
     }
 
     println!("Import completed successfully!");
@@ -399,8 +455,16 @@ async fn update_gallery(
     url: Option<&str>,
     amount: Option<f64>,
 ) -> Result<()> {
-    // Parse skater name
-    let (first_name, last_name) = parse_skater_name(skater)?;
+    // Parse skater names
+    let parsed = parse_skater_names(skater)?;
+    if parsed.skaters.len() != 1 {
+        return Err(anyhow::anyhow!(
+            "Update gallery requires exactly one skater"
+        ));
+    }
+    let skater_data = &parsed.skaters[0];
+    let first_name = skater_data.first_name.clone();
+    let last_name = skater_data.last_name.clone();
     let skater_id = format!("{}_{}", last_name.to_lowercase(), first_name.to_lowercase());
 
     // Find the competed_in relation
@@ -683,16 +747,66 @@ async fn competition_stats(
     Ok(())
 }
 
-fn parse_skater_name(name: &str) -> Result<(String, String)> {
-    let parts: Vec<&str> = name.split_whitespace().collect();
-    match parts.len() {
-        0 => Err(anyhow::anyhow!("Empty skater name")),
-        1 => Ok(("Synchro".to_string(), parts[0].to_string())),
-        2 => Ok((parts[0].to_string(), parts[1].to_string())),
-        _ => {
-            let first = parts[0].to_string();
-            let last = parts[1..].join("-");
-            Ok((first, last))
-        }
+fn parse_skater_names(name: &str) -> Result<ParsedName> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(anyhow::anyhow!("Empty skater name"));
     }
+
+    // Check if it's synchro
+    if name.to_lowercase().starts_with("synchro ") {
+        let team = name[8..].trim();
+        let skater = ParsedSkater {
+            first_name: "Synchro".to_string(),
+            last_name: team.to_string(),
+            family_email: None,
+        };
+        return Ok(ParsedName {
+            skaters: vec![skater],
+            is_family: false,
+            is_synchro: true,
+        });
+    }
+
+    // Split into words
+    let words: Vec<&str> = name.split_whitespace().collect();
+    if words.is_empty() {
+        return Err(anyhow::anyhow!("Empty skater name"));
+    }
+
+    // Last word is last_name
+    let last_name = words.last().unwrap().to_string();
+
+    // First part is all except last word
+    let first_part = &name[..name.len() - last_name.len()].trim();
+
+    // Parse first_part
+    let first_names: Vec<String> = first_part
+        .split(',')
+        .flat_map(|s| s.split(" and "))
+        .map(|s| s.trim().trim_end_matches(','))
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect();
+
+    if first_names.is_empty() {
+        return Err(anyhow::anyhow!("No first names found"));
+    }
+
+    let skaters: Vec<ParsedSkater> = first_names
+        .into_iter()
+        .map(|first| ParsedSkater {
+            first_name: first,
+            last_name: last_name.clone(),
+            family_email: None,
+        })
+        .collect();
+
+    let is_family = skaters.len() > 1;
+
+    Ok(ParsedName {
+        skaters,
+        is_family,
+        is_synchro: false,
+    })
 }
