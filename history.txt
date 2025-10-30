@@ -1,20 +1,4 @@
 #V2
-USE DB consciousness;
-SELECT id, array::len(embedding) as embed_dim FROM thoughts LIMIT 10;
-SELECT * FROM entities;
-SELECT COUNT() FROM entities;
-SELECT id, content FROM thoughts LIMIT 1;
-SELECT count() FROM thoughts GROUP ALL;
-DELETE thoughts;
-SELECT id, array::len(embedding) as dims FROM thoughts;
-SELECT count() FROM thoughts WHERE embedding != NONE GROUP ALL;
-SELECT meta::id(id) as id FROM thoughts LIMIT 3;
-SELECT meta::id(id) as id, array::len(embedding) as emb_len FROM thoughts LIMIT 5;
-SELECT embedding[0..10] as first_10, array::len(embedding) as len FROM thoughts WHERE meta::id(id) = 'e1eb15a0-d79b-40ec-8c2a-29865c5d1d40';
-SELECT embedding FROM thoughts WHERE meta::id(id) = 'e1eb15a0-d79b-40ec-8c2a-29865c5d1d40';
-SELECT meta::id(id) as id, content FROM thoughts WHERE content CONTAINS 'test' LIMIT 5;
-SELECT embedding FROM thoughts WHERE meta::id(id) = '004640a9-2486-499c-8115-e1ef0741eb99';
-SELECT embedding FROM thoughts WHERE meta::id(id) = '018abf73-b96c-4ffe-b370-a2900114f816';
 SELECT embedding FROM thoughts WHERE meta::id(id) = '27faf840-8357-4250-8d8b-59e2d4e7523f';
 SELECT meta::id(id) as id FROM thoughts LIMIT 5;
 SELECT embedding FROM thoughts WHERE meta::id(id) = '004640a9-2486-499c-8115-e1ef0741eb99';
@@ -99,3 +83,19 @@ REMOVE TABLE event;
 REMOVE TABLE skater;
 REMOVE TABLE competition;
 SELECT id, name, start_date, end_date FROM competition;
+SELECT * FROM skater WHERE last_name = 'Akin' LIMIT 1;
+SELECT * FROM competed_in WHERE in.last_name = 'Akin' LIMIT 3;
+SELECT * FROM event WHERE competition = competition:2025_pony_express LIMIT 5;
+SELECT * FROM event WHERE id = 'test_1';
+SELECT * FROM event WHERE competition = competition:2025_pony_express LIMIT 5;
+DELETE FROM competed_in WHERE out.competition = competition:2025_pony_express; DELETE FROM event WHERE competition = competition:2025_pony_express; DELETE FROM skater WHERE created_at > d'2025-10-30T03:00:00Z'; DELETE FROM competition WHERE id = '2025_pony_express';
+SELECT * FROM event WHERE competition = competition:2025_pony_express LIMIT 3;
+SELECT * FROM competed_in WHERE out.competition = competition:2025_pony_express LIMIT 3;
+SELECT count() FROM event WHERE competition = competition:2025_pony_express GROUP ALL; SELECT count() FROM competed_in WHERE out.competition = competition:2025_pony_express GROUP ALL;
+-- Find skaters who competed in Pony Express with unsent galleries
+LET $pony_pending = (    SELECT in AS skater FROM competed_in     WHERE out.competition = competition:2025_pony_express     AND gallery_status IN ['pending', 'culling', 'processing']);
+-- Find those same skaters in Fall Fling
+SELECT gallery_status, count() FROM competed_in WHERE out.competition = competition:2025_pony_express GROUP BY gallery_status;
+SELECT * FROM competed_in WHERE out.competition = competition:2025_pony_express AND gallery_status = 'pending' LIMIT 10;
+SELECT * FROM competed_in WHERE out.competition = competition:2025_fall_fling AND in IN [skater:woods_corinne, skater:woods_adeline];
+SELECT * FROM competed_in WHERE out.competition = competition:2025_pony_express AND in.last_name = 'Boise';
