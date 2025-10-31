@@ -4,27 +4,25 @@ use serde::Deserialize;
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::Ws;
 use surrealdb::opt::auth::Root;
+use surrealdb::sql::Thing;
 
 #[derive(Debug, Deserialize)]
 struct Skater {
-    id: String,
+    id: Thing,
     first_name: String,
     last_name: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct CompeteIn {
-    id: String,
-    out: String,
+    id: Thing,
+    out: Thing,
     skate_order: Option<u32>,
     request_status: String,
     gallery_status: String,
     gallery_url: Option<String>,
-    gallery_sent_at: Option<String>,
     purchase_amount: Option<f64>,
-    purchase_date: Option<String>,
     notes: Option<String>,
-    created_at: String,
 }
 
 #[derive(Debug)]
@@ -158,11 +156,8 @@ async fn main() -> Result<()> {
                             request_status: $request_status,
                             gallery_status: $gallery_status,
                             gallery_url: $gallery_url,
-                            gallery_sent_at: $gallery_sent_at,
                             purchase_amount: $purchase_amount,
-                            purchase_date: $purchase_date,
-                            notes: $notes,
-                            created_at: $created_at
+                            notes: $notes
                          }",
                     )
                     .bind(("new_skater_id", new_skater_id.clone()))
@@ -171,11 +166,8 @@ async fn main() -> Result<()> {
                     .bind(("request_status", comp.request_status.clone()))
                     .bind(("gallery_status", comp.gallery_status.clone()))
                     .bind(("gallery_url", comp.gallery_url.clone()))
-                    .bind(("gallery_sent_at", comp.gallery_sent_at.clone()))
                     .bind(("purchase_amount", comp.purchase_amount))
-                    .bind(("purchase_date", comp.purchase_date.clone()))
                     .bind(("notes", comp.notes.clone()))
-                    .bind(("created_at", comp.created_at.clone()))
                     .await?;
                 new_relation_resp.check()?;
             }
