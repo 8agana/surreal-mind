@@ -249,7 +249,18 @@ pub fn unified_search_schema() -> Arc<Map<String, Value>> {
             "thoughts_content": {"type": "string"},
             "top_k_memories": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 50, "default": 10},
             "top_k_thoughts": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 50, "default": 5},
-            "sim_thresh": {"type": "number", "minimum": 0.0, "maximum": 1.0}
+            "sim_thresh": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "session_id": {"type": "string"},
+            "chain_id": {"type": "string"},
+            "previous_thought_id": {"type": "string"},
+            "revises_thought": {"type": "string"},
+            "branch_from": {"type": "string"},
+            "origin": {"type": "string"},
+            "confidence_gte": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "confidence_lte": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "date_from": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+            "date_to": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+            "order": {"type": "string", "enum": ["created_at_asc", "created_at_desc"]}
         }
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
