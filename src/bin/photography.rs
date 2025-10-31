@@ -68,6 +68,11 @@ enum Commands {
         /// Competition name
         comp_name: String,
     },
+    /// Get email for skater/family
+    GetEmail {
+        /// Last name to lookup
+        last_name: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -217,6 +222,9 @@ async fn main() -> Result<()> {
         }
         Commands::CompetitionStats { comp_name } => {
             competition_stats(&db, &comp_name).await?;
+        }
+        Commands::GetEmail { last_name } => {
+            get_email(&db, &last_name).await?;
         }
     }
 
@@ -543,6 +551,43 @@ async fn query_skater(
             Cell::new(r["gallery_status"].as_str().unwrap_or("")),
         ]));
     }
+    table.printstd();
+    Ok(())
+}
+
+async fn get_email(
+    db: &Surreal<surrealdb::engine::remote::ws::Client>,
+    last_name: &str,
+) -> Result<()> {
+    // First try to find family by last name
+    let query = format!(
+        "SELECT last_name, email FROM family WHERE last_name CONTAINS '{}'",
+        last_name
+    );
+    let mut resp = db.query(&query).await?;
+    let families: Vec<Value> = resp.take(0)?;
+
+    if families.is_empty() {
+        println!("No family found with last name containing: {}", last_name);
+        return Ok(());
+    }
+
+    // Display results
+    let mut table = Table::new();
+    table.add_row(Row::new(vec![
+        Cell::new("Last Name"),
+        Cell::new("Email"),
+    ]));
+
+    for family in families {
+        let name = family["last_name"].as_str().unwrap_or("N/A");
+        let email = family["email"].as_str().unwrap_or("No email on file");
+        table.add_row(Row::new(vec![
+            Cell::new(name),
+            Cell::new(email),
+        ]));
+    }
+
     table.printstd();
     Ok(())
 }
