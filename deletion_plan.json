@@ -1,0 +1,3662 @@
+[
+  {
+    "id": "competed_in:lsjzjq2mpndm19we60r4",
+    "skater": "Aboudara, Grace",
+    "event": "2025 Fall Fling #21",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:m0qcnv3lwmap363xwsv1",
+    "skater": "Aboudara, Grace",
+    "event": "2025 Fall Fling #28",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:mbf9bik6jpa1qier54he",
+    "skater": "Adair, Avery",
+    "event": "2025 Pony Express #15",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:t27ql3mg7ur0z10jxkdg",
+    "skater": "Adair, Avery",
+    "event": "2025 Pony Express #18",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:8477plwk5vj6807sfj71",
+    "skater": "Adair, Avery",
+    "event": "2025 Pony Express #51",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:celssru5xoomcei32jp3",
+    "skater": "Akin, Corinne",
+    "event": "2025 Pony Express #6",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:05folzywnmwk855e8ulw",
+    "skater": "Akin, Corinne",
+    "event": "2025 Pony Express #6",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:atkmmr78t4oz1xi2tfrs",
+    "skater": "Allen, Roxy",
+    "event": "2025 Fall Fling #22",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:zmmuo684dw1wapfo3mlt",
+    "skater": "Allen, Roxy",
+    "event": "2025 Fall Fling #42",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ko1qezmhgeakiye6xped",
+    "skater": "Allen, Roxy",
+    "event": "2025 Pony Express #28",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:0ynrbj0ym71eyz9yr58x",
+    "skater": "Allen, Roxy",
+    "event": "2025 Pony Express #6",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:6rowg0otn6nkb0brp6mo",
+    "skater": "Allen, Simone",
+    "event": "2025 Fall Fling #45",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:wdvvo62dfplo9fjiy1os",
+    "skater": "Allen, Simone",
+    "event": "2025 Fall Fling #8",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:czyaherh8kbpgd5c24qq",
+    "skater": "Allen, Simone",
+    "event": "2025 Pony Express #116",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:fw9xehskcodmsrh8h3i7",
+    "skater": "Allen, Simone",
+    "event": "2025 Pony Express #81",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:3nynd632zs0yanvj34kh",
+    "skater": "Anderson, Erin",
+    "event": "2025 Fall Fling #19",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:bk3q6vth2zyutlh0msh8",
+    "skater": "Anderson, Erin",
+    "event": "2025 Fall Fling #6",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:3z2gilt2vxjgdmkuttwx",
+    "skater": "Appleby-Leo, Ziva",
+    "event": "2025 Pony Express #65",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:lua1z9cw0nans5nklush",
+    "skater": "Appleby-Leo, Ziva",
+    "event": "2025 Pony Express #67",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:s1p2ieope369h543t75l",
+    "skater": "Appleby-Leo, Ziva",
+    "event": "2025 Pony Express #72",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:geldm9zky6hgwav3jaom",
+    "skater": "Appleby-Leo, Ziva",
+    "event": "2025 Pony Express #88",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:izqyj10d6whmihkli7zc",
+    "skater": "Bair, Healey",
+    "event": "2025 Pony Express #42",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:6p3vkfovq98um5atyao7",
+    "skater": "Bair, Healey",
+    "event": "2025 Pony Express #52",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:44ac3rq2xzafgvedjkgs",
+    "skater": "Baldwin, Kiera",
+    "event": "2025 Fall Fling #19",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:mkidkhp12ed0xf7mpg50",
+    "skater": "Baldwin, Kiera",
+    "event": "2025 Fall Fling #33",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:h82v7kioija1af18qncc",
+    "skater": "Baldwin, Kiera",
+    "event": "2025 Pony Express #68",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:3c4iqyi24chay5su8das",
+    "skater": "Baldwin, Kiera",
+    "event": "2025 Pony Express #89",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:8thi2n13mhg0qba5p23c",
+    "skater": "Basgall, Elizabeth",
+    "event": "2025 Pony Express #42",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:sj3a0nlz5xi9a4dmt1ds",
+    "skater": "Benson, Holland",
+    "event": "2025 Pony Express #64",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:5im7f6a7uusf9dckst6f",
+    "skater": "Benson, Holland",
+    "event": "2025 Pony Express #71",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:mc6zih0091bm287ktg56",
+    "skater": "Benson, Holland",
+    "event": "2025 Pony Express #81",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:rx7huwvb6pcb7o4js520",
+    "skater": "Benson, Kaitlyn",
+    "event": "2025 Pony Express #23",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:bstpo4rp0zehrg50wd1i",
+    "skater": "Benson, Kaitlyn",
+    "event": "2025 Pony Express #23",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:04bswuvboxvbg8nu3wi8",
+    "skater": "Benson, Kaitlyn",
+    "event": "2025 Pony Express #51",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:o4eh3j8n1u73fd11m6fo",
+    "skater": "Benson, Kaitlyn",
+    "event": "2025 Pony Express #51",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:os24j9xrkbuhp3zc5p2k",
+    "skater": "Bentley, Ava",
+    "event": "2025 Fall Fling #19",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:u5o2q8lylg1hyipp1529",
+    "skater": "Bentley, Ava",
+    "event": "2025 Fall Fling #40",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:chhc8f8api20xamqk7yx",
+    "skater": "Berlanga, Hadassah",
+    "event": "2025 Pony Express #85",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:xdbgfyuqcjaddygzjk7u",
+    "skater": "Bertron, Charlie",
+    "event": "2025 Fall Fling #16",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:s0whmultdcfozd67uriz",
+    "skater": "Bertron, Charlie",
+    "event": "2025 Fall Fling #32",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:xna9zzvlc2md7ix1x7k8",
+    "skater": "Bertron, Charlie",
+    "event": "2025 Pony Express #111",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:eu36ga1bwlgmvjnwua2s",
+    "skater": "Bertron, Charlie",
+    "event": "2025 Pony Express #99",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:w8tg2ja0s463919i8zz7",
+    "skater": "Bess, Paige",
+    "event": "2025 Fall Fling #15",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:9lr0gp06kkpe3q4wxkew",
+    "skater": "Bittner, Olivia",
+    "event": "2025 Pony Express #26",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:6nng6fs0wa5rk354wpze",
+    "skater": "Boise, Macey",
+    "event": "2025 Fall Fling #20",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:b0p2jygxrfdpy34cz8j5",
+    "skater": "Boise, Macey",
+    "event": "2025 Fall Fling #42",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:t59i9dpqbnv4h5ug7fdp",
+    "skater": "Boise, Macey",
+    "event": "2025 Fall Fling #46",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:h252j65wl5bm6i6tlwpn",
+    "skater": "Boise, Macey",
+    "event": "2025 Pony Express #28",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:33vvowy8y0lbin0jfumw",
+    "skater": "Boise, Macey",
+    "event": "2025 Pony Express #46",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:7w0n5dnjdvrh5fsjwxu3",
+    "skater": "Boise, Macey",
+    "event": "2025 Pony Express #63",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:x7pvvqvic9pcijtzkd52",
+    "skater": "Boise, Macey",
+    "event": "2025 Pony Express #67",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:044xhsdv9one8vtasc6d",
+    "skater": "Boise, Malina",
+    "event": "2025 Fall Fling #18",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:cts4srhf11xlwwc5v7f9",
+    "skater": "Boise, Malina",
+    "event": "2025 Fall Fling #40",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:77ay4s5yd4w1rsvm65wi",
+    "skater": "Boise, Malina",
+    "event": "2025 Fall Fling #44",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:lwrkoh6pe1wjmiizwznx",
+    "skater": "Boise, Malina",
+    "event": "2025 Pony Express #116",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:yhhlb0o0j8xwm8veggc9",
+    "skater": "Boise, Malina",
+    "event": "2025 Pony Express #65",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:9treblu8pc4qsy6gevq3",
+    "skater": "Boise, Malina",
+    "event": "2025 Pony Express #70",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:mmz2xnht0ar7vnh3oyg1",
+    "skater": "Boise, Malina",
+    "event": "2025 Pony Express #90",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:l83lcw6vonces0dhwnsk",
+    "skater": "Boucher, Lillian",
+    "event": "2025 Pony Express #83",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:kaftpe1xces1qdi5ddbo",
+    "skater": "Bowen, Sophie",
+    "event": "2025 Pony Express #1",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:7bvaob1gfx33zuhq5h3e",
+    "skater": "Bowen, Sophie",
+    "event": "2025 Pony Express #38",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:4psjs6y16odi4752pe3l",
+    "skater": "Bowen, Sophie",
+    "event": "2025 Pony Express #56",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:1h1pa6c55i6lbtuj23bo",
+    "skater": "Bowen, Sophie",
+    "event": "2025 Pony Express #7",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:imif0jdn7bnigc7ufgab",
+    "skater": "Bowen, Sophie",
+    "event": "2025 Pony Express #77",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:2gp8umv37ezxgd7hh8ym",
+    "skater": "Bray, Miryea",
+    "event": "2025 Pony Express #37",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:50gr52xa91oe98om79en",
+    "skater": "Bray, Miryea",
+    "event": "2025 Pony Express #8",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:m3uyjh7vzisv3yj8otr2",
+    "skater": "Bray, Stephanie",
+    "event": "2025 Pony Express #43",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:c4ojv2lyvx8ack3r4btq",
+    "skater": "Brennan, Charly",
+    "event": "2025 Fall Fling #27",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:j9ygvnqvbhuzlj6yt6z4",
+    "skater": "Brixey, Opal",
+    "event": "2025 Pony Express #110",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:0uvvadf4wj442343q1fi",
+    "skater": "Brixey, Otto",
+    "event": "2025 Pony Express #114",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:43msx6ocqkl7rgacosh8",
+    "skater": "Brown, Ella",
+    "event": "2025 Fall Fling #23",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:8ups5ipclx3fz105frf9",
+    "skater": "Brown, Ella",
+    "event": "2025 Fall Fling #36",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:5gfacian83grhcbte6j5",
+    "skater": "Brown, Ella",
+    "event": "2025 Pony Express #75",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ldh2uvptz5y914wa47t9",
+    "skater": "Brown, Ella",
+    "event": "2025 Pony Express #85",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:pk4omuaaphve5cwssp5x",
+    "skater": "Brown, Karsyn",
+    "event": "2025 Fall Fling #14",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ttet5or8vy3et3mlll9o",
+    "skater": "Brown, Karsyn",
+    "event": "2025 Pony Express #113",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:es8hu8e4eflqrbzdonlf",
+    "skater": "Brown, Karsyn",
+    "event": "2025 Pony Express #113",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:8i62k1gm1yl4qmzzhn9l",
+    "skater": "Brown, Kraiylee",
+    "event": "2025 Pony Express #89",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:nhfvip5jkzm5gmxb5q7b",
+    "skater": "Brown, Kraiylee",
+    "event": "2025 Pony Express #89",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:k9g2z9qm79cybyhw7ii9",
+    "skater": "Brown, Kraiylee",
+    "event": "2025 Pony Express #95",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:iqyasgp2mm4hmlrjphke",
+    "skater": "Brown, Kraiylee",
+    "event": "2025 Pony Express #95",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:fwg0c1gxudqw3epf38xd",
+    "skater": "Brown, Michaela",
+    "event": "2025 Pony Express #22",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:lszarxh66xfeyjznib85",
+    "skater": "Brown, Michaela",
+    "event": "2025 Pony Express #22",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:w457fsi3xretorwr76c9",
+    "skater": "Brown, Michaela",
+    "event": "2025 Pony Express #78",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:v9wj100meu54mahup223",
+    "skater": "Brown, Michaela",
+    "event": "2025 Pony Express #78",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:n3dg3d44uoczr69ywtd0",
+    "skater": "Buchholz, Zoe",
+    "event": "2025 Pony Express #90",
+    "reason": "Lower data completeness score (1/8 vs 1/8)"
+  },
+  {
+    "id": "competed_in:c0gzssbvhwnq9w0x7gxt",
+    "skater": "Burns, Silas",
+    "event": "2025 Pony Express #108",
+    "reason": "Lower data completeness score (1/8 vs 1/8)"
+  },
+  {
+    "id": "competed_in:w0082yzdhoxungypr9xj",
+    "skater": "Burns, Theo",
+    "event": "2025 Pony Express #115",
+    "reason": "Lower data completeness score (1/8 vs 1/8)"
+  },
+  {
+    "id": "competed_in:w7ovraaezf1ofkrjfflr",
+    "skater": "Burns, Theo",
+    "event": "2025 Pony Express #99",
+    "reason": "Lower data completeness score (1/8 vs 1/8)"
+  },
+  {
+    "id": "competed_in:6rjn7n7dq8l9sjjpffo4",
+    "skater": "Buse, Bailey",
+    "event": "2025 Pony Express #57",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:bm8r8fq7rq5m20m4urrl",
+    "skater": "Buse, Bailey",
+    "event": "2025 Pony Express #57",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:04eivll9hixz1ccrzti9",
+    "skater": "Butler, Millie",
+    "event": "2025 Fall Fling #23",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:136diph5dbchti8xeum6",
+    "skater": "Butler, Millie",
+    "event": "2025 Fall Fling #44",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:6266sm1m9ej2mydbxx1d",
+    "skater": "Butler, Millie",
+    "event": "2025 Pony Express #84",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:g0on94040jblb4vrkrmf",
+    "skater": "Campbell, Violet",
+    "event": "2025 Pony Express #48",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:hnjice7not64kmyczrva",
+    "skater": "Carrico, Harlee",
+    "event": "2025 Fall Fling #24",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ox7nr2o5wsaf2234792t",
+    "skater": "Carroll, Elsa",
+    "event": "2025 Pony Express #22",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:vc3ga2er5qkawlwaz7dw",
+    "skater": "Carroll, Elsa",
+    "event": "2025 Pony Express #78",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:hmvefh8zvckkax0qdmol",
+    "skater": "Castilon, Lyla",
+    "event": "2025 Pony Express #48",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:i6e5zw3bi65imu46ue5j",
+    "skater": "Castilon, Lyla",
+    "event": "2025 Pony Express #48",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:9fwv2ohdhmp1lie817i1",
+    "skater": "Chauhan, Gabriella",
+    "event": "2025 Fall Fling #12",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:1inungcp8afz0aqyar8l",
+    "skater": "Chauhan, Gabriella",
+    "event": "2025 Pony Express #109",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:amuiu273vbal8umq4ynw",
+    "skater": "Chauhan, Gabriella",
+    "event": "2025 Pony Express #109",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:obiusm1tqm35pp9ev3gj",
+    "skater": "Chen, Leah",
+    "event": "2025 Pony Express #111",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:jk9d489bv5f1uz3xxc9r",
+    "skater": "Clements, Finn",
+    "event": "2025 Fall Fling #25",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:3v2xnm616zlkjt1t2ipp",
+    "skater": "Clements, Finn",
+    "event": "2025 Pony Express #79",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:039cad2826ief4qm2l74",
+    "skater": "Clements, Finn",
+    "event": "2025 Pony Express #79",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:zw74j9oi3lmsnozfupic",
+    "skater": "Clements, Finn",
+    "event": "2025 Pony Express #79",
+    "reason": "Lower data completeness score (0/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:pdl8ifnbn2ekvuq5pyfb",
+    "skater": "Clements, Finn",
+    "event": "2025 Pony Express #79",
+    "reason": "Lower data completeness score (0/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:fndzhjz1o8yaj6y4bzbn",
+    "skater": "Clements, Sloane",
+    "event": "2025 Pony Express #86",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:lblo0gw6nk5n45orqlmz",
+    "skater": "Clements, Sloane",
+    "event": "2025 Pony Express #86",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:jqlt1bhmtpj89esqm9av",
+    "skater": "Clements, Sloane",
+    "event": "2025 Pony Express #86",
+    "reason": "Lower data completeness score (0/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:37555a0m8lzse43foom1",
+    "skater": "Clements, Sloane",
+    "event": "2025 Pony Express #86",
+    "reason": "Lower data completeness score (0/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:ozg018gru94kzeia57el",
+    "skater": "Clements, William",
+    "event": "2025 Fall Fling #30",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:508irfelx0r27o0b2drp",
+    "skater": "Clements, William",
+    "event": "2025 Pony Express #13",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:b2yytqj60uw70mcwv7nr",
+    "skater": "Clements, William",
+    "event": "2025 Pony Express #13",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:ul5x49h7gz0j9bqfvf8w",
+    "skater": "Clements, William",
+    "event": "2025 Pony Express #13",
+    "reason": "Lower data completeness score (0/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:yvswsod050valngqkwpo",
+    "skater": "Clements, William",
+    "event": "2025 Pony Express #13",
+    "reason": "Lower data completeness score (0/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:ndah1bhx0yka8qp8j5ie",
+    "skater": "Clements, William",
+    "event": "2025 Pony Express #43",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:qevdf5mhkrr7wbam7ftr",
+    "skater": "Clements, William",
+    "event": "2025 Pony Express #43",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:1vajhnjqz3ltgb2pxqqr",
+    "skater": "Clements, William",
+    "event": "2025 Pony Express #43",
+    "reason": "Lower data completeness score (0/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:4r36asqyctj1ps4lshbo",
+    "skater": "Clements, William",
+    "event": "2025 Pony Express #43",
+    "reason": "Lower data completeness score (0/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:nifhwmoi8qpm3hhxqwuh",
+    "skater": "Clough, Lily",
+    "event": "2025 Fall Fling #26",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:7be091pq8vexzjksgldt",
+    "skater": "Clough, Lily",
+    "event": "2025 Fall Fling #45",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:pw3camj1beoc500pnsi8",
+    "skater": "Clough, Lily",
+    "event": "2025 Fall Fling #7",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:15x1r7l6lmwtx3kwa0ag",
+    "skater": "Cooper, Paisley",
+    "event": "2025 Pony Express #80",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:0mphm56t5mqcivub1ns4",
+    "skater": "Cooper, Paisley",
+    "event": "2025 Pony Express #80",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:8szgz34owg2ipxbttwtn",
+    "skater": "Cooper, Paisley",
+    "event": "2025 Pony Express #93",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:sngveuk9cqlpg1n8ro80",
+    "skater": "Cooper, Paisley",
+    "event": "2025 Pony Express #93",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:wubksr6ke0yicem304nh",
+    "skater": "Cordry, Isabella",
+    "event": "2025 Pony Express #8",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:k0m9ofawdr266utosnnf",
+    "skater": "Cowger, Avery",
+    "event": "2025 Pony Express #37",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:1m0iefk0l0m6awmb23hr",
+    "skater": "Crews, Charlotte",
+    "event": "2025 Pony Express #84",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:wnw687hu06qn4vnr2ctu",
+    "skater": "Crooks, Faith",
+    "event": "2025 Pony Express #39",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:s0ru9amn9u7vs7dwoaog",
+    "skater": "Crooks, Faith",
+    "event": "2025 Pony Express #5",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:gnkq85qjpqu75zfng9hb",
+    "skater": "Dahlgren, Benjamin",
+    "event": "2025 Pony Express #70",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:vfs9xthbj9qff8jzv5hp",
+    "skater": "Dahlgren, Benjamin",
+    "event": "2025 Pony Express #91",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:l9iwqtc2n90dza7m605u",
+    "skater": "Dahlgren, Izabella",
+    "event": "2025 Pony Express #46",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:vj02wqq9wgxrrv9tg2sb",
+    "skater": "Dahlgren, Izabella",
+    "event": "2025 Pony Express #66",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:yhitzhs9xdgh8e0wxpx7",
+    "skater": "Davis, Kendall",
+    "event": "2025 Pony Express #87",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:wozke4xj41pwqx9r87p3",
+    "skater": "Davis, Kendall",
+    "event": "2025 Pony Express #87",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:bm003vi9hsic6odr1wyw",
+    "skater": "Davis, Mirah",
+    "event": "2025 Fall Fling #24",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ut1n9ti5w4z6zkpz37fd",
+    "skater": "Davis, Mirah",
+    "event": "2025 Fall Fling #41",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:mzwlsbno4vpej91t293i",
+    "skater": "Delaney, Remy",
+    "event": "2025 Fall Fling #14",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:3y6l9hst8uy4h1k7q2ye",
+    "skater": "Dobbins, Shiloh",
+    "event": "2025 Pony Express #28",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:lk4n38unn07iw7nidi63",
+    "skater": "Dobbins, Shiloh",
+    "event": "2025 Pony Express #28",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:0fwch0hmr6t2f0wz232a",
+    "skater": "Dobbins, Shiloh",
+    "event": "2025 Pony Express #6",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:b0satojt0dqhak6q7ceh",
+    "skater": "Dobbins, Shiloh",
+    "event": "2025 Pony Express #6",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:mq3lz0r0s60mqxxkms8j",
+    "skater": "Dobbins, Shiloh",
+    "event": "2025 Pony Express #74",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:je6hc9sq42czfnnoe2ja",
+    "skater": "Dobbins, Shiloh",
+    "event": "2025 Pony Express #74",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:k9ia92993s8463n6qy0e",
+    "skater": "Donnelson, Jenna",
+    "event": "2025 Pony Express #36",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:0do3tgm30kcvs3nhnsf0",
+    "skater": "Donnelson, Jenna",
+    "event": "2025 Pony Express #51",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ry268wz8vhrwcm0nhv69",
+    "skater": "Downing, Jayliana",
+    "event": "2025 Fall Fling #7",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:wauk4cayqavpoho5ou62",
+    "skater": "Downing, Jayliana",
+    "event": "2025 Pony Express #100",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:qc8g89uq97gawktwalty",
+    "skater": "Downing, Jovalee",
+    "event": "2025 Fall Fling #9",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:m18yt6g3fn0qgohbs3ag",
+    "skater": "Downing, Jovalee",
+    "event": "2025 Pony Express #100",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:atir4zsalbfuse3df52o",
+    "skater": "Dreamers, Desert",
+    "event": "2025 Pony Express #11",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:9um6ch755dsaem7jfv7h",
+    "skater": "Duo, Dynamic",
+    "event": "2025 Pony Express #105",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:q0woa9qups9ssp0p5xi1",
+    "skater": "Durham, Aniyah",
+    "event": "2025 Pony Express #46",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:yjh7sm51xwvufwkdd7ep",
+    "skater": "Durrer, Tegan",
+    "event": "2025 Fall Fling #24",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:dgx38x774zargk8gk1br",
+    "skater": "Edmonds, Adalynn",
+    "event": "2025 Fall Fling #27",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:tso2vnpc1jv7buzk6qo9",
+    "skater": "Edson, Zoey",
+    "event": "2025 Pony Express #108",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:snazh22w9eo9s5ebx980",
+    "skater": "Edwards, Ethan",
+    "event": "2025 Pony Express #58",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:vg9t69ukwv06f7yibwyx",
+    "skater": "Edwards, William",
+    "event": "2025 Pony Express #47",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:s9v3q4s2rzqav7c797d0",
+    "skater": "Elifrits, Daryn",
+    "event": "2025 Fall Fling #26",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:lijhwkx3m2u4hlisv0ry",
+    "skater": "Elifrits, Daryn",
+    "event": "2025 Pony Express #80",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:p1fvgozpglmm5hgpy4p3",
+    "skater": "Ellis, Payton",
+    "event": "2025 Pony Express #89",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:dx7yicvfej5gx4a2my95",
+    "skater": "Erickson, Vera",
+    "event": "2025 Pony Express #65",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:7lzy952kkj7luvyir1u4",
+    "skater": "Erickson, Vera",
+    "event": "2025 Pony Express #65",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:jxbitxdvhg6oegk0p1df",
+    "skater": "Erickson, Vera",
+    "event": "2025 Pony Express #67",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:agvgi8pryefbcehzeve7",
+    "skater": "Erickson, Vera",
+    "event": "2025 Pony Express #67",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:882erznsqdu9uq5p2o4r",
+    "skater": "Erickson, Vera",
+    "event": "2025 Pony Express #72",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:s88552t8h8o0uprixg2f",
+    "skater": "Erickson, Vera",
+    "event": "2025 Pony Express #72",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:23cosbqs0j263x7j6ckc",
+    "skater": "Erickson, Vera",
+    "event": "2025 Pony Express #92",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:3wlvbo8rkuu9ojvfk0ny",
+    "skater": "Erickson, Vera",
+    "event": "2025 Pony Express #92",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:7chglah9gqssm6hljjc3",
+    "skater": "Eslinger, Zoe",
+    "event": "2025 Pony Express #57",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:mljpcdkwl3qf2q74qm1k",
+    "skater": "Ferguson, Natalie",
+    "event": "2025 Pony Express #73",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:y6af5r9raogwtkv66nyg",
+    "skater": "Ferguson, Natalie",
+    "event": "2025 Pony Express #73",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:v7txruzrt0tbrw06q9qw",
+    "skater": "Ferguson, Natalie",
+    "event": "2025 Pony Express #8",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:hiapja0vcz2hks5p7nvc",
+    "skater": "Ferguson, Natalie",
+    "event": "2025 Pony Express #8",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:wa9pcnqpu77gz0xovm8c",
+    "skater": "Fetrow, Sawyer",
+    "event": "2025 Fall Fling #27",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:guv9qcreeh8qzfp9yw4m",
+    "skater": "Fetrow, Sawyer",
+    "event": "2025 Fall Fling #8",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:vyspueev0400ctw25t71",
+    "skater": "Finney, Avery",
+    "event": "2025 Pony Express #113",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:499rl1axphj6ym0n8is2",
+    "skater": "Finney, Avery",
+    "event": "2025 Pony Express #98",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:b5ml419ubynw8l3me0ei",
+    "skater": "Finucane, Kate",
+    "event": "2025 Fall Fling #21",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:w90zjcwecq3rp2lbh8qt",
+    "skater": "Finucane, Kate",
+    "event": "2025 Fall Fling #42",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:iyqe7y3y4bjzubph30m9",
+    "skater": "Finucane, Kate",
+    "event": "2025 Pony Express #22",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ghmtajispolbolwkephv",
+    "skater": "Finucane, Kate",
+    "event": "2025 Pony Express #63",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:k88lxqbn2v56iowl4smr",
+    "skater": "Fixley, Grace",
+    "event": "2025 Pony Express #5",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:xd07uqmdaj9b6r3knwdn",
+    "skater": "Fixley, Grace",
+    "event": "2025 Pony Express #5",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:8o33qclbrkxahtmc7yf3",
+    "skater": "Fixley, Grace",
+    "event": "2025 Pony Express #60",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ehteeqo6drfj278574pf",
+    "skater": "Fixley, Grace",
+    "event": "2025 Pony Express #60",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:pq3659av23rulqg75r6w",
+    "skater": "Ford, Addiline",
+    "event": "2025 Fall Fling #13",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:wtnrzat3ecg2i4prnffc",
+    "skater": "Ford, Addiline",
+    "event": "2025 Pony Express #112",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:hpsnicw7rym923g1brp3",
+    "skater": "Ford, Darrel",
+    "event": "2025 Fall Fling #14",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:nvaib2g7s3c9b7v9mepe",
+    "skater": "Ford, Darrel",
+    "event": "2025 Pony Express #114",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:2x9z4jysx3g765oo1cgo",
+    "skater": "Gan, Ethan",
+    "event": "2025 Pony Express #9",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:leo3eireg6wl2sj4bhdz",
+    "skater": "Garcia, Hannah",
+    "event": "2025 Pony Express #108",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:hdtj5o4medoaeelg1sbr",
+    "skater": "Gerwitz, Chloe",
+    "event": "2025 Pony Express #64",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:29fwhefgmij4320iutqc",
+    "skater": "Gerwitz, Chloe",
+    "event": "2025 Pony Express #64",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:y1zzzdq0qdt82n3qdeum",
+    "skater": "Gerwitz, Chloe",
+    "event": "2025 Pony Express #71",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:kguxp17iyn2op868qso6",
+    "skater": "Gerwitz, Chloe",
+    "event": "2025 Pony Express #71",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:hev8zstsvncy0je6fe02",
+    "skater": "Gerwitz, Chloe",
+    "event": "2025 Pony Express #81",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:6bat6jkngoiu2dx5zcog",
+    "skater": "Gerwitz, Chloe",
+    "event": "2025 Pony Express #81",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:mthnp2k311cjo151u7aa",
+    "skater": "Gift, Sienna",
+    "event": "2025 Pony Express #49",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:jxjnzjd7om0qsdule738",
+    "skater": "Gift, Sienna",
+    "event": "2025 Pony Express #49",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:ukhirbvyz25xt8ywq8c0",
+    "skater": "Gift, Sienna",
+    "event": "2025 Pony Express #66",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:hkwuh012jwhlxf1v4kvj",
+    "skater": "Gift, Sienna",
+    "event": "2025 Pony Express #66",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:tkca87ro4ipmor7d42xd",
+    "skater": "Gift, Sienna",
+    "event": "2025 Pony Express #76",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:yeaabc7msebuv9vrv2iy",
+    "skater": "Gift, Sienna",
+    "event": "2025 Pony Express #76",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:be49ta3knanxq28i6h9y",
+    "skater": "Glover, Katie",
+    "event": "2025 Pony Express #89",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:4i0uz7rh9bb0nhhvjsu4",
+    "skater": "Glover, Katie",
+    "event": "2025 Pony Express #89",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:hw6jjls2hljvim4dry4j",
+    "skater": "Gold, Alivia",
+    "event": "2025 Pony Express #115",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ldxmd0zktb287bgfrx0t",
+    "skater": "Gold, Alivia",
+    "event": "2025 Pony Express #99",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:svq5mh9kvsrne5bm6siv",
+    "skater": "Goodwin, Carolyn",
+    "event": "2025 Pony Express #43",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:b72mwxsz1c5v32d47889",
+    "skater": "Goodwin, Geneva",
+    "event": "2025 Pony Express #38",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:i26ez51430i3qzm40g82",
+    "skater": "Goodwin, Geneva",
+    "event": "2025 Pony Express #77",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:7cxyxc142qsv1t3dbgs2",
+    "skater": "Grable, Addison",
+    "event": "2025 Pony Express #103",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:dogj6sm03213oghy3zhq",
+    "skater": "Grable, Addison",
+    "event": "2025 Pony Express #92",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:41ta7l082diks552x4ds",
+    "skater": "Grable, Andi",
+    "event": "2025 Pony Express #62",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:s732xkgru2msdaqf8qpm",
+    "skater": "Grable, Andi",
+    "event": "2025 Pony Express #78",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:pdesvrtg5fzmqak75ov9",
+    "skater": "Grable, Makayla",
+    "event": "2025 Pony Express #24",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:pffkyd2fwgur6ssup4pl",
+    "skater": "Grable, Makayla",
+    "event": "2025 Pony Express #63",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:2eenat4ic6ub2zynowwz",
+    "skater": "Green, Jaylah",
+    "event": "2025 Pony Express #64",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:lshuk2jgo9qd4qurswyz",
+    "skater": "Green, Jaylah",
+    "event": "2025 Pony Express #71",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:351gncujls9jydo5omee",
+    "skater": "Green, Jaylah",
+    "event": "2025 Pony Express #80",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ge7rp0rbetvl6syr1m2h",
+    "skater": "GriffonGliders, Synchro",
+    "event": "2025 Fall Fling #1",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:81y5ldcyirhq1ripcqnp",
+    "skater": "GriffonGliders, Synchro",
+    "event": "2025 Fall Fling #4",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:000a6vzmmvzzfarb2kpo",
+    "skater": "Grinberg-Keene, Willow",
+    "event": "2025 Fall Fling #26",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:8yt515e3xxjmgv90c3lr",
+    "skater": "Grinberg-Keene, Willow",
+    "event": "2025 Fall Fling #8",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:eseloday49vdvo4ohni3",
+    "skater": "Grinberg-Keene, Willow",
+    "event": "2025 Pony Express #82",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:l4f29uopy6v0ywf7b5k2",
+    "skater": "Grinberg-Keene, Willow",
+    "event": "2025 Pony Express #93",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:hk8nya0ne8va7z2l71bp",
+    "skater": "Grinberg-Keene, Winter",
+    "event": "2025 Fall Fling #25",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:np8l3nlwbo6s64w47yw6",
+    "skater": "Grinberg-Keene, Winter",
+    "event": "2025 Fall Fling #34",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:3ngq922dex4n6flilg0g",
+    "skater": "Grinnell, Sadie",
+    "event": "2025 Pony Express #71",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:1zs40q0zpjyffuns5ra2",
+    "skater": "Grinnell, Sadie",
+    "event": "2025 Pony Express #71",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:53okp3w8fcq4av530uke",
+    "skater": "Grinnell, Sadie",
+    "event": "2025 Pony Express #83",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:7uve0l4d5u4vlzlhftih",
+    "skater": "Grinnell, Sadie",
+    "event": "2025 Pony Express #83",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:9d2jy87onxj8tkavlary",
+    "skater": "Groneman, Layla",
+    "event": "2025 Pony Express #24",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:j65p0djmnzdw4w8usxi7",
+    "skater": "Grooms, Ever",
+    "event": "2025 Pony Express #48",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:sbx1kfinlnioyq6cdvab",
+    "skater": "Guoluo, Peach",
+    "event": "2025 Pony Express #115",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:t1rjadww4o9caiyjk3gm",
+    "skater": "Guoluo, Peach",
+    "event": "2025 Pony Express #99",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:vz2mksx8ikqqr5ror2w8",
+    "skater": "Haines, Chloe",
+    "event": "2025 Pony Express #62",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:a4aecdn923jk4gyqggvq",
+    "skater": "Haines, Chloe",
+    "event": "2025 Pony Express #8",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:s1iojxb19f8xr1qhr9rm",
+    "skater": "Halksworth, Sophie",
+    "event": "2025 Pony Express #8",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:lu3217junqoiu6jovk0u",
+    "skater": "Hambrick, Korey",
+    "event": "2025 Pony Express #86",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:mcbv55ygt1oumfaoo9gc",
+    "skater": "Hambrick, Korey",
+    "event": "2025 Pony Express #86",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:m0h7r2vc7w5l7qonvgu9",
+    "skater": "Hamlett, Harley",
+    "event": "2025 Pony Express #43",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:3maxbarzj8fwzvhr8vce",
+    "skater": "Han, Chanel",
+    "event": "2025 Pony Express #91",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:2v1it64tl84ma415na8h",
+    "skater": "Han, Tiffany",
+    "event": "2025 Pony Express #91",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:mn48sje7l3xwkwi55qmt",
+    "skater": "Han, Victoria",
+    "event": "2025 Pony Express #115",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:3tcluwe8shmjyqvo4zld",
+    "skater": "Hart, Piper",
+    "event": "2025 Fall Fling #11",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:m9hxhioka9ire50sqpm4",
+    "skater": "Hart, Piper",
+    "event": "2025 Pony Express #109",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:f1ckq2g2136l65qrxsbk",
+    "skater": "Hart, Piper",
+    "event": "2025 Pony Express #109",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:pegtl1th2s837g81noml",
+    "skater": "He, Eason",
+    "event": "2025 Pony Express #114",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:r5qyqz03ocplb30pdzdu",
+    "skater": "He, Eason",
+    "event": "2025 Pony Express #98",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:r8262dg5o1uyfqr1alg9",
+    "skater": "Hedden, Jacqueline",
+    "event": "2025 Pony Express #25",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:fmb521hqylpmrg1edac8",
+    "skater": "Hedden, Jacqueline",
+    "event": "2025 Pony Express #3",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:6myvfenz66rph0thh76x",
+    "skater": "Heidi, Harper and",
+    "event": "2025 Pony Express #106",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:u8370hktzh5mmmzycxwu",
+    "skater": "Herdzina, Heidi",
+    "event": "2025 Pony Express #82",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:bat12uiwdkzgb635f5g6",
+    "skater": "Hesser, Harper",
+    "event": "2025 Pony Express #88",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:kbotiutp5nsfw52gz6to",
+    "skater": "Highstrom, Annika",
+    "event": "2025 Pony Express #33",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:n8w5fo1j4xvm30jkcvvy",
+    "skater": "Highstrom, Annika",
+    "event": "2025 Pony Express #43",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:w4mafeg33onit5jtpk8k",
+    "skater": "Hillsman, Ellie",
+    "event": "2025 Fall Fling #18",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:m9e7336by94ux1455hdl",
+    "skater": "Hillsman, Ellie",
+    "event": "2025 Fall Fling #33",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:yazcxw0s2u5u7yq01m8a",
+    "skater": "Hillsman, Ellie",
+    "event": "2025 Fall Fling #40",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:a2ar06l22ia6nkzilem7",
+    "skater": "Hinton, Harper",
+    "event": "2025 Fall Fling #6",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:5o3p29h4v9snwdiiprif",
+    "skater": "Hinton, Harper",
+    "event": "2025 Pony Express #101",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:6bcsal3kqxv1fu8adzgr",
+    "skater": "Hinton, Harper",
+    "event": "2025 Pony Express #101",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:hy0un52il0zu0yrwn5lo",
+    "skater": "Hinton, Harper",
+    "event": "2025 Pony Express #116",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:7cw7i4x089nk9rgibs33",
+    "skater": "Hinton, Harper",
+    "event": "2025 Pony Express #116",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:7u89m04w5prqe2u90e0o",
+    "skater": "Hinton, Harper",
+    "event": "2025 Pony Express #88",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:pp2cnwhshse78a7ae1ci",
+    "skater": "Hinton, Harper",
+    "event": "2025 Pony Express #88",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:c7b2wsooqu0oc9734zb2",
+    "skater": "Hinton, Layla",
+    "event": "2025 Fall Fling #19",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:m1g488cl8ig5l0uclrx7",
+    "skater": "Hinton, Layla",
+    "event": "2025 Fall Fling #45",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:bya8bcp5iavnn8fmaonz",
+    "skater": "Hinton, Layla",
+    "event": "2025 Pony Express #101",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:7eap1pnb3xm2x9wmxsbs",
+    "skater": "Hinton, Layla",
+    "event": "2025 Pony Express #101",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:aqi13hxywpkgpdcmk9zw",
+    "skater": "Hinton, Layla",
+    "event": "2025 Pony Express #116",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:jv5hi8likw66f3dbnvb5",
+    "skater": "Hinton, Layla",
+    "event": "2025 Pony Express #116",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:fsn5m558608qyarugzw7",
+    "skater": "Hinton, Layla",
+    "event": "2025 Pony Express #88",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:6hdwtcxn63nq4hh65r7r",
+    "skater": "Hinton, Layla",
+    "event": "2025 Pony Express #88",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:6nixxxug2yvfwbsscv7e",
+    "skater": "Holtmeier, Addison",
+    "event": "2025 Pony Express #83",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:cx0eaynywn1d7dzwveg3",
+    "skater": "Hough, Kynzley",
+    "event": "2025 Pony Express #111",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:5wz8184vowmpehttzaxv",
+    "skater": "Hudgins, Gabby",
+    "event": "2025 Pony Express #20",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:dkh035gfq31ud9jqr6nz",
+    "skater": "Hudgins, Gabby",
+    "event": "2025 Pony Express #20",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:p46dracgoeh4svxd3m7x",
+    "skater": "Hudgins, Gabby",
+    "event": "2025 Pony Express #26",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:xfxpzx314b8s12ue7gw8",
+    "skater": "Hudgins, Gabby",
+    "event": "2025 Pony Express #26",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:z4qdkpuiavnx3758il2y",
+    "skater": "Huskamp, Chloe",
+    "event": "2025 Fall Fling #17",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:0is0xywzqg9e33str6gj",
+    "skater": "Huskamp, Chloe",
+    "event": "2025 Fall Fling #38",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:mblbbxyppiuk2w0umk5m",
+    "skater": "Huskamp, Chloe",
+    "event": "2025 Pony Express #23",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:lj0yheyc9v3jff0xrjqt",
+    "skater": "Hutchings, Hathaway",
+    "event": "2025 Pony Express #5",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:ijr35apbh2uccym2ucjp",
+    "skater": "Igarashi, Hisayuki",
+    "event": "2025 Pony Express #42",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:n05u86f5qze2aj7c5md9",
+    "skater": "Igarashi, Hisayuki",
+    "event": "2025 Pony Express #42",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:xhily4qri175icoxuwyd",
+    "skater": "Isaacson, Madison",
+    "event": "2025 Fall Fling #23",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:dlljpc03p4d569f25v1c",
+    "skater": "Isaacson, Madison",
+    "event": "2025 Fall Fling #44",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:e65c6fm60geeurqhvrww",
+    "skater": "Isaacson, Madison",
+    "event": "2025 Fall Fling #7",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:r0jws6tkg05ar7o7t69v",
+    "skater": "Isaacson, Madison",
+    "event": "2025 Pony Express #116",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:pkr4qxkwz35usrxsl23g",
+    "skater": "Isaacson, Madison",
+    "event": "2025 Pony Express #116",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:m8sbw5u0mqe7vfl2kkm3",
+    "skater": "Isaacson, Madison",
+    "event": "2025 Pony Express #84",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:wo16xxta6stvvusyerhn",
+    "skater": "Isaacson, Madison",
+    "event": "2025 Pony Express #84",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:h1b4jpzhb46h32xwcryt",
+    "skater": "Isaacson, Madison",
+    "event": "2025 Pony Express #94",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:lxjqpge7sw647yiarp8a",
+    "skater": "Isaacson, Madison",
+    "event": "2025 Pony Express #94",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:vz44ceelgmokur1mmvd6",
+    "skater": "Johnson, Lauren",
+    "event": "2025 Pony Express #41",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:xru2mssu1w1dlga4sbv7",
+    "skater": "Johnson, Lauren",
+    "event": "2025 Pony Express #41",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:wyfxgc4zjz9x1zlcvovo",
+    "skater": "Johnson, Lauren",
+    "event": "2025 Pony Express #69",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:wy2ijze432oas0eqzj1r",
+    "skater": "Johnson, Lauren",
+    "event": "2025 Pony Express #69",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:3j0s7bji54lsk8x4jyc5",
+    "skater": "Johnson, Ruby",
+    "event": "2025 Pony Express #50",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:wjsoffg97kcg2zxlz8lv",
+    "skater": "Jones, Charlotte",
+    "event": "2025 Fall Fling #11",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:vdbryc7gbqdq5r4ujems",
+    "skater": "Jones, Charlotte",
+    "event": "2025 Fall Fling #31",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:qsnob2gsms25pyh5qh0w",
+    "skater": "Jones, Charlotte",
+    "event": "2025 Pony Express #109",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:tip2syv7sn9ypm5w8qc6",
+    "skater": "Jones, Charlotte",
+    "event": "2025 Pony Express #97",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:32oryxj1csm6avbvcj9b",
+    "skater": "Kane, Camille",
+    "event": "2025 Pony Express #32",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:4zvgc674lfjg7cn89apc",
+    "skater": "Kane, Camille",
+    "event": "2025 Pony Express #5",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:t8327i97shiz1ho54u0n",
+    "skater": "Katzir, Emma",
+    "event": "2025 Pony Express #84",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:xgvb8mky0i3b4qv84zpq",
+    "skater": "KCMomentum, Synchro",
+    "event": "2025 Fall Fling #1",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:jqmh0wulz42xhsykzqxl",
+    "skater": "KCMomentum, Synchro",
+    "event": "2025 Fall Fling #2",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:35yacx2194f00ps9oiay",
+    "skater": "KCMomentum, Synchro",
+    "event": "2025 Fall Fling #3",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:o7bro9aonl1gfes5ujvt",
+    "skater": "KCMomentum, Synchro",
+    "event": "2025 Fall Fling #4",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:vvh2zrn9dbyjyj5nx9on",
+    "skater": "Kessler, Logan",
+    "event": "2025 Pony Express #115",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ix8bmasqjxt6s710vwt4",
+    "skater": "Kessler, Logan",
+    "event": "2025 Pony Express #99",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:rf46ljxdv9m9jmpy5utj",
+    "skater": "Kessler, Riese",
+    "event": "2025 Pony Express #68",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:4e2vkno7u2uru35yy1o5",
+    "skater": "Kessler, Riese",
+    "event": "2025 Pony Express #87",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:z0mqx982viutvqkh8dkx",
+    "skater": "Ketcherside, River",
+    "event": "2025 Pony Express #46",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:dkubvcs1uo3zvq56f7k7",
+    "skater": "Kloeckner, Ophelia",
+    "event": "2025 Pony Express #113",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:pzfnpy7oknnlh0qwdc97",
+    "skater": "Knox, Addie",
+    "event": "2025 Fall Fling #21",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:omwk1n8w31v6hbu5rijq",
+    "skater": "Knox, Addie",
+    "event": "2025 Fall Fling #28",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:qexnmxcvsywjply5smou",
+    "skater": "Knox, Addie",
+    "event": "2025 Fall Fling #42",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:7zaj732fo5z9kmrpuacz",
+    "skater": "Knox, Addie",
+    "event": "2025 Pony Express #22",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ylx442w2hn5roo19py0f",
+    "skater": "Knox, Addie",
+    "event": "2025 Pony Express #36",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:0pa9rl84y3sr66r4mhei",
+    "skater": "Knox, Addie",
+    "event": "2025 Pony Express #78",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:vlo62lc8acvsoig09b0p",
+    "skater": "Koenig, Lily",
+    "event": "2025 Pony Express #64",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:2pfh8gl0ptp1p7555k0r",
+    "skater": "Koenig, Lily",
+    "event": "2025 Pony Express #71",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:shhc7obsqjlgcuhahye5",
+    "skater": "Koenig, Lily",
+    "event": "2025 Pony Express #83",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:4ss2uj4acioakrnrg0ei",
+    "skater": "Koren, Zoe",
+    "event": "2025 Pony Express #110",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:gxix37wfgd2ibalx45z3",
+    "skater": "Krug, Emily",
+    "event": "2025 Fall Fling #45",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:2fznkgpl401co39g9k33",
+    "skater": "Krug, Emily",
+    "event": "2025 Fall Fling #6",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:2rnzfr1c8abzeo18zve2",
+    "skater": "Krug, Emily",
+    "event": "2025 Pony Express #101",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:7b6ux3pwx49d4bx2gvi3",
+    "skater": "Krug, Emily",
+    "event": "2025 Pony Express #116",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:jsstfi6ak4czqwhs9t8y",
+    "skater": "Krug, Emily",
+    "event": "2025 Pony Express #92",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:v2ln5pacsb5jw0cncacj",
+    "skater": "Krutina, Elayna",
+    "event": "2025 Pony Express #2",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:0rfzloy0ogwmri2fc2oz",
+    "skater": "Krutina, Elayna",
+    "event": "2025 Pony Express #2",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:zshx0sjn8ho6ydcyb6i6",
+    "skater": "Krutina, Elayna",
+    "event": "2025 Pony Express #48",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:52l0ctqwih6uz8t0ik5h",
+    "skater": "Krutina, Elayna",
+    "event": "2025 Pony Express #48",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:8vhba4nk6w88p5zdp02c",
+    "skater": "Landers, Dorothy",
+    "event": "2025 Fall Fling #24",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:j5wulu2yq04m3oinis4p",
+    "skater": "Landers, Dorothy",
+    "event": "2025 Fall Fling #8",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:3avj3b1dxryqtj9eavta",
+    "skater": "Landers, Dorothy",
+    "event": "2025 Pony Express #85",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ybx1jflm6t5gpd9mxpjx",
+    "skater": "Landers, Dorothy",
+    "event": "2025 Pony Express #85",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:902xymy7921w6c3owvc8",
+    "skater": "Landers, Dorothy",
+    "event": "2025 Pony Express #94",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:0k7exc5vlb2lnlwrz4fe",
+    "skater": "Landers, Dorothy",
+    "event": "2025 Pony Express #94",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:6whgbbgfbkd7bcyvhokj",
+    "skater": "Laney-Sauter, Hazel",
+    "event": "2025 Fall Fling #27",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:f567f2dma1w0rvajnobt",
+    "skater": "Laney-Sauter, Hazel",
+    "event": "2025 Pony Express #82",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:8hqxmh5m032da0qdykhm",
+    "skater": "Lanham, Ellis",
+    "event": "2025 Fall Fling #10",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:wgcqizyk21xzmzrxotx9",
+    "skater": "Larkin, Bianca",
+    "event": "2025 Pony Express #22",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:rl46cfjoybpi1fz2hh2g",
+    "skater": "Larkin, Bianca",
+    "event": "2025 Pony Express #76",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:j3uca0q756lm6oo1iwk9",
+    "skater": "Lauer, Raven",
+    "event": "2025 Pony Express #64",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ylxo5lguvdpqqdl4y9nt",
+    "skater": "Lauer, Raven",
+    "event": "2025 Pony Express #71",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:91y48k91gebi3qgr0qrd",
+    "skater": "Lauer, Raven",
+    "event": "2025 Pony Express #82",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:bs3669ti51p73rl6inu7",
+    "skater": "Liakos, Eleanor",
+    "event": "2025 Pony Express #22",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:uv72zi7pa5mivc6zpupw",
+    "skater": "Liakos, Eleanor",
+    "event": "2025 Pony Express #28",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:op7ay1dwqm5583ntqxa5",
+    "skater": "Liakos, Eleanor",
+    "event": "2025 Pony Express #63",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:yqmj5zhhpba4vtb2nqhp",
+    "skater": "Liakos, Eleanor",
+    "event": "2025 Pony Express #67",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:g3jpevk04zd3r8mx1pac",
+    "skater": "Liakos, Eleanor",
+    "event": "2025 Pony Express #78",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:qzg48xxcnat7qrblmusx",
+    "skater": "Liakos, Mallory",
+    "event": "2025 Pony Express #31",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:6ecbwke8jdi03c01cmku",
+    "skater": "Liakos, Mallory",
+    "event": "2025 Pony Express #4",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:mdr53034cr73k2k69s6f",
+    "skater": "Lindell, Elayne",
+    "event": "2025 Fall Fling #10",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:yi51xhycs4dda2soesuw",
+    "skater": "Linnane, Aisling",
+    "event": "2025 Fall Fling #14",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:z645dr5m0k8qdrorcbog",
+    "skater": "Luthra, Maya",
+    "event": "2025 Pony Express #68",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:4y2w0kv8jpeic5dr8jpo",
+    "skater": "Luthra, Maya",
+    "event": "2025 Pony Express #91",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:hqtwonljqoxm8gujy7xa",
+    "skater": "Magliacano, Izabella",
+    "event": "2025 Fall Fling #24",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:8v52orj86pm631udafnm",
+    "skater": "Magliacano, Izabella",
+    "event": "2025 Fall Fling #33",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:lspnnjafin9j4vuk9y3s",
+    "skater": "Magliacano, Izabella",
+    "event": "2025 Fall Fling #40",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:olocsvmhejg1c2bnn5ip",
+    "skater": "Magliacano, Izabella",
+    "event": "2025 Fall Fling #45",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:og8145v4xsu0xz0kaq4n",
+    "skater": "Maloney, Zoe",
+    "event": "2025 Pony Express #93",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:aucno9ohwkcwqtgcq09k",
+    "skater": "Maloney, Zoe",
+    "event": "2025 Pony Express #93",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:zih0osinsan2efumpcrk",
+    "skater": "Mascarello, Elise",
+    "event": "2025 Pony Express #102",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:hax718c9u675v23xzq5v",
+    "skater": "Mascarello, Elise",
+    "event": "2025 Pony Express #92",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:j23950xq1fcjf592x85c",
+    "skater": "Masters, Raelee",
+    "event": "2025 Pony Express #24",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:w82u4zhhhx0x1hfr39k6",
+    "skater": "Masters, Raelee",
+    "event": "2025 Pony Express #24",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:4i44ftfm2dpi7t7te8vo",
+    "skater": "Maynard, Evelyn",
+    "event": "2025 Pony Express #76",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:t6hlw5q21owo1vs7i1ea",
+    "skater": "McClintick, Paisley",
+    "event": "2025 Pony Express #107",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:p3v78g13ztxothdq9ifm",
+    "skater": "McCracken, Zoey",
+    "event": "2025 Fall Fling #18",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:8enavjel57dg7mbrp7f9",
+    "skater": "McCracken, Zoey",
+    "event": "2025 Fall Fling #37",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:px1fo1lvap6hf58uz6aj",
+    "skater": "McCracken, Zoey",
+    "event": "2025 Fall Fling #42",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:p3x3vy5yk811162jeijg",
+    "skater": "McCracken, Zoey",
+    "event": "2025 Pony Express #72",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:prm63xwqyqcllibm0cez",
+    "skater": "McCracken, Zoey",
+    "event": "2025 Pony Express #91",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:baujy4zgzg6gwiqu83ei",
+    "skater": "Mellender, Mary",
+    "event": "2025 Pony Express #2",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:csbbbj2xmf9n5d2gfdsn",
+    "skater": "Mellender, Mary",
+    "event": "2025 Pony Express #24",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:z0inybji9uefwkift00i",
+    "skater": "Mellender, Mary",
+    "event": "2025 Pony Express #51",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:qlph8024zile7infupij",
+    "skater": "Merwald, Samantha",
+    "event": "2025 Fall Fling #22",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:427s1vhrmtyyckk067mx",
+    "skater": "Merwald, Samantha",
+    "event": "2025 Fall Fling #28",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:hxmzl2atvwe99z23x8d2",
+    "skater": "Merwald, Samantha",
+    "event": "2025 Fall Fling #35",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:mui4syt18cdb9b8e6hkr",
+    "skater": "Merwald, Samantha",
+    "event": "2025 Fall Fling #46",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:km9f60h9dzavcatt5gp8",
+    "skater": "Merwald, Samantha",
+    "event": "2025 Pony Express #28",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:tncsqeu07rk2h8oo9hjw",
+    "skater": "Merwald, Samantha",
+    "event": "2025 Pony Express #6",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:rolf2yw6zzmmilex3mny",
+    "skater": "Merwald, Samantha",
+    "event": "2025 Pony Express #78",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:pzymhw7dh5u8ah9yh0xa",
+    "skater": "Meythaler, Hallie-Len",
+    "event": "2025 Fall Fling #13",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:6egcq70lbefuis43pwg2",
+    "skater": "Meythaler, Hallie-Len",
+    "event": "2025 Fall Fling #43",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:49roswjhfp5c2lwjsr2e",
+    "skater": "Meythaler, Hallie-Len",
+    "event": "2025 Pony Express #112",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:htnu6y550m2dxqcb70z6",
+    "skater": "Mia, Paolo and",
+    "event": "2025 Pony Express #35",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:38ysmi3zatgbmjfh0wz7",
+    "skater": "Michaud, Mercury",
+    "event": "2025 Pony Express #49",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:3ef9lvkx0cxchw98k7zi",
+    "skater": "Michaud, Mercury",
+    "event": "2025 Pony Express #49",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:cq7nsub4s9pvu6t3g0l6",
+    "skater": "Michaud, Mercury",
+    "event": "2025 Pony Express #66",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ux2fgimt2ncl252u47pd",
+    "skater": "Michaud, Mercury",
+    "event": "2025 Pony Express #66",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:zldwv811ztwzac1mapi9",
+    "skater": "Milbourne, Arya",
+    "event": "2025 Pony Express #81",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:wfss5z170l8h44p6cqnu",
+    "skater": "Milbourne, Arya",
+    "event": "2025 Pony Express #81",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ho2vf15mhsdsegbyqlst",
+    "skater": "Millen, Zoe",
+    "event": "2025 Pony Express #68",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:yqjkpmvibfnb2mr571ig",
+    "skater": "Millen, Zoe",
+    "event": "2025 Pony Express #86",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:3d4yr887vc5z2c1okkzu",
+    "skater": "Miller, Chloe",
+    "event": "2025 Fall Fling #22",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:2igfdvms4bboth8fznle",
+    "skater": "Miller, Chloe",
+    "event": "2025 Fall Fling #28",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:uzkcjk3hw0e0nbb67eud",
+    "skater": "Miller, Chloe",
+    "event": "2025 Fall Fling #35",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ibhsvnhiz9qrhmr3hvp6",
+    "skater": "Miller, Chloe",
+    "event": "2025 Pony Express #14",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:jlfj4riqwfdiocc3hlzy",
+    "skater": "Miller, Chloe",
+    "event": "2025 Pony Express #6",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:f6j7oykn839nd9udh0zn",
+    "skater": "Miller, Chloe",
+    "event": "2025 Pony Express #78",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:pqkutrs1gi3pptyge7hm",
+    "skater": "Milner, Eva",
+    "event": "2025 Pony Express #23",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:tvaq9zd7exals3m6p5bd",
+    "skater": "Milner, Eva",
+    "event": "2025 Pony Express #65",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:28wuk27tglguknn7khal",
+    "skater": "Milner, Eva",
+    "event": "2025 Pony Express #70",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:1n7dy27mdczkbyo9crd2",
+    "skater": "Milner, Eva",
+    "event": "2025 Pony Express #72",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:bdbnjy27wx36uf3v596c",
+    "skater": "Moran, Shannon",
+    "event": "2025 Fall Fling #15",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:wui1rgzrd3hqonct3o7i",
+    "skater": "Moritz, Arabella",
+    "event": "2025 Pony Express #7",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ljwc51y4dxtw6n3u53gp",
+    "skater": "Morris, Natalya",
+    "event": "2025 Pony Express #33",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:5131t7k4hlgdb38cg0mi",
+    "skater": "Morris, Natalya",
+    "event": "2025 Pony Express #43",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:pa9r2l2ff7gnnmjzbbdp",
+    "skater": "Morris, Natalya",
+    "event": "2025 Pony Express #52",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ruv12d3w0k7i9jk2ore1",
+    "skater": "Morris, Taleyna",
+    "event": "2025 Pony Express #41",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:u1slqrqh2ck1g253ymqz",
+    "skater": "Mulcahy, Aidan",
+    "event": "2025 Pony Express #37",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:zffwgm9uv2xvjsr9g5ok",
+    "skater": "Mulcahy, Aidan",
+    "event": "2025 Pony Express #55",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:qgp4tr3241z1hlb1w8sf",
+    "skater": "Nagel, Willow",
+    "event": "2025 Fall Fling #12",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:smm2trbgfks9xdl1tmm2",
+    "skater": "Nguyen, Victoria",
+    "event": "2025 Pony Express #70",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:7rztt40mjlo47pa5j3r0",
+    "skater": "Nguyen, Victoria",
+    "event": "2025 Pony Express #90",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:rgx4ihe067rq9dwqbhn2",
+    "skater": "Nigus, Leah",
+    "event": "2025 Pony Express #44",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:3dkr71jct90fsygg7yy3",
+    "skater": "Nigus, Leah",
+    "event": "2025 Pony Express #44",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:11ozkjm55nwvum7qqu8s",
+    "skater": "Paisley, Mary and",
+    "event": "2025 Pony Express #61",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ec5b25wyia0ncmin1q5f",
+    "skater": "Patterson, Amy",
+    "event": "2025 Pony Express #34",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:j940tit4b2fjmvx4ricb",
+    "skater": "Pfeifer, Charlotte",
+    "event": "2025 Pony Express #49",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:e42gxqh313x9spy3srtb",
+    "skater": "Pfeifer, Charlotte",
+    "event": "2025 Pony Express #49",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:k82e99he0mif3e344fsd",
+    "skater": "Pichler, Natalie",
+    "event": "2025 Pony Express #85",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:4qawmimlu8j24mlwmlyl",
+    "skater": "Pichler, Natalie",
+    "event": "2025 Pony Express #94",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:xdtwm8s0sa7tw1ilr1js",
+    "skater": "Plowman, Lizzie",
+    "event": "2025 Fall Fling #27",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:aigp9mzx15dk6ne1da9a",
+    "skater": "Plowman, Lizzie",
+    "event": "2025 Pony Express #83",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:8i9hu5fvs6cwnfhv0r9p",
+    "skater": "Plum, Bella",
+    "event": "2025 Pony Express #16",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:w2lqhx6se0uic157p4y9",
+    "skater": "Plum, Bella",
+    "event": "2025 Pony Express #19",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:rs0m2ag5myiqbh3uco0a",
+    "skater": "Plum, Bella",
+    "event": "2025 Pony Express #53",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:h9398o5mus5fyh7i8zzq",
+    "skater": "Plum, Bella",
+    "event": "2025 Pony Express #8",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:dudmrvxd02ne2dkdaxot",
+    "skater": "Plum, Patricia",
+    "event": "2025 Pony Express #17",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:8335qkb01ew4exi35enu",
+    "skater": "Plum, Patricia",
+    "event": "2025 Pony Express #21",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ettatpf2hpjufsfhowzp",
+    "skater": "Plum, Patricia",
+    "event": "2025 Pony Express #40",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:9h6qzw3q4c6ssuqcmrep",
+    "skater": "Polovina, Shannon",
+    "event": "2025 Pony Express #43",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:v2z4ipgqw7ow2akb5wga",
+    "skater": "Polsen, Molly",
+    "event": "2025 Pony Express #43",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:rgdbsyn92z56x4sb81gp",
+    "skater": "Polsen, Molly",
+    "event": "2025 Pony Express #43",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:sxk1wjnhtqioz9wptypl",
+    "skater": "Powers, Matilda",
+    "event": "2025 Fall Fling #12",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:f52ggq2a2w8qwd9mzw2a",
+    "skater": "Powers, Matilda",
+    "event": "2025 Fall Fling #31",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:fpqbymtpmdyht0oj6xjm",
+    "skater": "Powers, Matilda",
+    "event": "2025 Pony Express #109",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:1czac2xn8byg312c6e33",
+    "skater": "Powers, Matilda",
+    "event": "2025 Pony Express #97",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:ggie2znw3o716pm8h0jt",
+    "skater": "Qiu, Jessica",
+    "event": "2025 Fall Fling #18",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ssxbha4azdqtfzkl0j93",
+    "skater": "Qiu, Jessica",
+    "event": "2025 Fall Fling #38",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:e3zyc81afkuveawsdmln",
+    "skater": "Qiu, Jessica",
+    "event": "2025 Pony Express #68",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:nxb2umz003org1gp9k5q",
+    "skater": "Qiu, Jessica",
+    "event": "2025 Pony Express #88",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:vp1isip80vbvkzbo0k06",
+    "skater": "Qiu, Lucy",
+    "event": "2025 Fall Fling #23",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:8ll9oxibgvivpn839izo",
+    "skater": "Qiu, Lucy",
+    "event": "2025 Pony Express #85",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:wueu3jw9ms97bzi1c20g",
+    "skater": "Ramos, Athena",
+    "event": "2025 Pony Express #44",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:rc8olfmbv7nk1zmwo16a",
+    "skater": "Ramos, Italia Sanchez",
+    "event": "2025 Pony Express #103",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:3yefctwzsr01ypivwxwx",
+    "skater": "Ramos, Italia Sanchez",
+    "event": "2025 Pony Express #67",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:dz9oto18n70eypb5l9o5",
+    "skater": "Ramos, Italia Sanchez",
+    "event": "2025 Pony Express #92",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:mxyqo8wmyrllgxxnfdiu",
+    "skater": "Rash, Samantha",
+    "event": "2025 Pony Express #109",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:b7n6v37rpajkgdi98zg0",
+    "skater": "Reinhart, Anya",
+    "event": "2025 Pony Express #57",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:ifia4b5chverefbjwidi",
+    "skater": "Reinhart, Anya",
+    "event": "2025 Pony Express #57",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:wv2co020qnh7ohiy4ajt",
+    "skater": "Rice, Madelyn",
+    "event": "2025 Fall Fling #24",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:wcx0vvsg3zp7jeqw9nt9",
+    "skater": "Rice, Madelyn",
+    "event": "2025 Pony Express #86",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:swtfdd3kf3tsloj9ljbv",
+    "skater": "Riggs, Joslyn",
+    "event": "2025 Pony Express #68",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:yuyynkmc5b6pw6gbtvw7",
+    "skater": "Riggs, Joslyn",
+    "event": "2025 Pony Express #86",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:96xvlz0nf4bnjvmc0wri",
+    "skater": "Riggs, Joslyn",
+    "event": "2025 Pony Express #94",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:mm2qxzych357ytrf6dwt",
+    "skater": "Robinson, Sophie",
+    "event": "2025 Pony Express #68",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:kma5hhixkyj361vfeogx",
+    "skater": "Robinson, Sophie",
+    "event": "2025 Pony Express #68",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:hbaeww4tjejeq0nne86x",
+    "skater": "Robinson, Sophie",
+    "event": "2025 Pony Express #72",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:hw6zb4priuknmym54vjt",
+    "skater": "Robinson, Sophie",
+    "event": "2025 Pony Express #72",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:lxlqd1w22je7onsw35gf",
+    "skater": "Robinson, Sophie",
+    "event": "2025 Pony Express #88",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:gccnq6xjkjvv9zeglm2d",
+    "skater": "Robinson, Sophie",
+    "event": "2025 Pony Express #88",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:g6p6ix0g3qfokf5oakxy",
+    "skater": "Robinson, Sophie",
+    "event": "2025 Pony Express #95",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:59g0txq434vjve9dylse",
+    "skater": "Robinson, Sophie",
+    "event": "2025 Pony Express #95",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:15i9ke85kqvtt5v00p8l",
+    "skater": "Rock, Gabrielle",
+    "event": "2025 Pony Express #29",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:48j8odna373b5chcg9ch",
+    "skater": "Rock, Gabrielle",
+    "event": "2025 Pony Express #39",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:z7n8j2nx22kpo2or6pa5",
+    "skater": "Rodriguez, Paisley",
+    "event": "2025 Pony Express #70",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:auakkg7bll2d5ltklgru",
+    "skater": "Rodriguez, Paisley",
+    "event": "2025 Pony Express #87",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:gezar1mjfzikwz3uola2",
+    "skater": "Rollie, Fiona",
+    "event": "2025 Fall Fling #21",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:f7zjsdd04knkdtplbgaa",
+    "skater": "Roth, Hadley",
+    "event": "2025 Fall Fling #16",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:hwhlxp9rybh1bpecy0oa",
+    "skater": "Ruiz-Peace, Cecilia",
+    "event": "2025 Fall Fling #23",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:689v49e08rxa7fkr0a3b",
+    "skater": "Ruiz-Peace, Cecilia",
+    "event": "2025 Fall Fling #33",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:2xm2iw7fmihilruyqyqh",
+    "skater": "Ruiz-Peace, Celeste",
+    "event": "2025 Fall Fling #31",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:hl8lwfadtv6dl94oztvs",
+    "skater": "Ruiz-Peace, Corinne",
+    "event": "2025 Fall Fling #10",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:tebfvfbe32nmhwdeof5n",
+    "skater": "Satter, Leah",
+    "event": "2025 Fall Fling #17",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:dhlzr53rhxawwzzs2tmd",
+    "skater": "Satter, Leah",
+    "event": "2025 Fall Fling #42",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:uguw5w2kdvs6t0m7d46h",
+    "skater": "Satter, Leah",
+    "event": "2025 Pony Express #23",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:vxsawc34yhnzs1z6fqte",
+    "skater": "Savoy, Mia",
+    "event": "2025 Pony Express #29",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:kqgst65ygb0hmnbsww3a",
+    "skater": "Scarle, Savanna",
+    "event": "2025 Pony Express #10",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:5a6tjw2fda26slvvcml6",
+    "skater": "Scarle, Savanna",
+    "event": "2025 Pony Express #53",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ew18aqockmycxj3my9om",
+    "skater": "Schommer, Claire",
+    "event": "2025 Pony Express #108",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:iwg46h1jgkfpdxzoltqg",
+    "skater": "Schommer, Claire",
+    "event": "2025 Pony Express #108",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:k6aakxyzpsgg7doof4gg",
+    "skater": "Schommer, Claire",
+    "event": "2025 Pony Express #70",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:8na8sj6la72cxzhy86jo",
+    "skater": "Schommer, Claire",
+    "event": "2025 Pony Express #70",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:ke0f988psq9ozvbj944x",
+    "skater": "Schommer, Claire",
+    "event": "2025 Pony Express #90",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:fk8h5pu0gobwdmahdnwv",
+    "skater": "Schommer, Claire",
+    "event": "2025 Pony Express #90",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:cnpu9jgq0ie5u0p7per5",
+    "skater": "Schommer, Harper",
+    "event": "2025 Pony Express #108",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:uw8tqa7w0ofx69v0lkkk",
+    "skater": "Schommer, Harper",
+    "event": "2025 Pony Express #108",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:xw2bbpelatwbmale4q47",
+    "skater": "Schommer, Harper",
+    "event": "2025 Pony Express #70",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:gsq3vsz531dhgypzd3o0",
+    "skater": "Schommer, Harper",
+    "event": "2025 Pony Express #70",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:jlrpb1vxyz1v6s2cy3g1",
+    "skater": "Schommer, Harper",
+    "event": "2025 Pony Express #90",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:14i06uc8nqs02kx959c8",
+    "skater": "Schommer, Harper",
+    "event": "2025 Pony Express #90",
+    "reason": "Lower data completeness score (3/8 vs 3/8)"
+  },
+  {
+    "id": "competed_in:gw628z72pbms0jceoc8y",
+    "skater": "Segars, Tinley",
+    "event": "2025 Fall Fling #26",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:mlm3qquqqwtpq1yyqtxx",
+    "skater": "Segars, Tinley",
+    "event": "2025 Pony Express #81",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:m7okdrj5bk459rwp7fbe",
+    "skater": "Shafer, Bailey",
+    "event": "2025 Pony Express #115",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:9p22szrf5pq8zu3rs8wz",
+    "skater": "Shafer, Bailey",
+    "event": "2025 Pony Express #115",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ginhm1ecgf2ne74ww4eu",
+    "skater": "Shawhan, Maddisen",
+    "event": "2025 Pony Express #8",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:vnsha064zvbvdgkq3l2q",
+    "skater": "Shawhan, Stella",
+    "event": "2025 Pony Express #36",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:d9tp397042if4u8gz747",
+    "skater": "Shawhan, Stella",
+    "event": "2025 Pony Express #8",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:uhs69el7gjmsb9mhs08g",
+    "skater": "Sheptor, Olivia",
+    "event": "2025 Fall Fling #23",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:jxu8bpmnxn937b0cakvk",
+    "skater": "Sickmyre, Kali",
+    "event": "2025 Pony Express #111",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:gjbm98dikv5b35fdsm2u",
+    "skater": "Sickmyre, Kali",
+    "event": "2025 Pony Express #111",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:07hg3l8b3c6v1hgnsngg",
+    "skater": "Song, Yuxuan",
+    "event": "2025 Pony Express #56",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:l858he8r092hc3mi2mss",
+    "skater": "Soppe, Camryn",
+    "event": "2025 Fall Fling #12",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:p0opzeusuueojid4t6ja",
+    "skater": "Soppe, Camryn",
+    "event": "2025 Fall Fling #31",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:4hg44sdszlm4m2bdqhot",
+    "skater": "Stark, Lucia",
+    "event": "2025 Pony Express #89",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:tp7hp5c89jtwanc4ejxq",
+    "skater": "Stephens, Everley",
+    "event": "2025 Pony Express #27",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ap9lejyzk4f5jl1a4hun",
+    "skater": "Stephens, Everley",
+    "event": "2025 Pony Express #30",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:upf2gtej9pgsen2380v6",
+    "skater": "Stephens, Everley",
+    "event": "2025 Pony Express #4",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ar247outsay4poa8bvry",
+    "skater": "Stephens, Everley",
+    "event": "2025 Pony Express #59",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:dr7wcswqo1nemugamaya",
+    "skater": "Stewart, Hana",
+    "event": "2025 Pony Express #46",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:7k6omcnbxudnd3myeuha",
+    "skater": "Stewart, Hana",
+    "event": "2025 Pony Express #67",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:lbceb0m6uhyv3h11m249",
+    "skater": "Strodtman, Saige",
+    "event": "2025 Pony Express #42",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:6lqsgqsu0u0uxrm194mw",
+    "skater": "Strodtman, Saige",
+    "event": "2025 Pony Express #52",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:v9d3hatai0vc58ufweg6",
+    "skater": "STUART, Savannah",
+    "event": "2025 Pony Express #82",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:prekkufahntegay7s3oc",
+    "skater": "Toland, Betsy",
+    "event": "2025 Fall Fling #17",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:12fashvg8t6uhffzq2bj",
+    "skater": "Toland, Betsy",
+    "event": "2025 Fall Fling #33",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:i5p83es8icuq3ryhbbg2",
+    "skater": "Toland, Betsy",
+    "event": "2025 Fall Fling #40",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:5vkw5o5vx1fyltcixzxa",
+    "skater": "Toland, Betsy",
+    "event": "2025 Pony Express #24",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:6sdra8c3zv3fifz6uvcc",
+    "skater": "Toland, Betsy",
+    "event": "2025 Pony Express #24",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:wkvlnh2yvyos0flcrdfi",
+    "skater": "Toland, Betsy",
+    "event": "2025 Pony Express #68",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:x5aqhzhn4d5pj0aoujht",
+    "skater": "Toland, Betsy",
+    "event": "2025 Pony Express #68",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:284q5wuizuuhfddzm0zq",
+    "skater": "Tota, Gianna",
+    "event": "2025 Fall Fling #26",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:fiage7o7a1rztjt5au83",
+    "skater": "Tota, Gianna",
+    "event": "2025 Fall Fling #34",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:6fh3d4wls2prj3bjo4ux",
+    "skater": "Tota, Gianna",
+    "event": "2025 Fall Fling #44",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:muq4zmj1w1l86amyv7k3",
+    "skater": "Tota, Gianna",
+    "event": "2025 Pony Express #116",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:ztgdpxkio3vihsetjasx",
+    "skater": "Tota, Gianna",
+    "event": "2025 Pony Express #71",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:3gxd26c7hdkguaeuvt31",
+    "skater": "Tota, Gianna",
+    "event": "2025 Pony Express #80",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:wdbrnfj57njwwzwpppcj",
+    "skater": "Tresch, Adeline",
+    "event": "2025 Fall Fling #13",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:r27f1o9xyg85oxi106d2",
+    "skater": "Tresch, Adeline",
+    "event": "2025 Pony Express #112",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:t24k10gisq9qri48fc2k",
+    "skater": "Um, Olivia",
+    "event": "2025 Pony Express #48",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:fkr8ydvs698b0lz72zax",
+    "skater": "Um, Olivia",
+    "event": "2025 Pony Express #66",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:rl86h5uoc5lh27916vne",
+    "skater": "Vaiciulis, Lindsey",
+    "event": "2025 Fall Fling #30",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:g0fv4erlw6xs8i99lrak",
+    "skater": "Vaiciulis, Lindsey",
+    "event": "2025 Pony Express #33",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:0241wy11odgd2rx9ouv9",
+    "skater": "Vaiciulis, Lindsey",
+    "event": "2025 Pony Express #54",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:cjnuc65obhkemmqe6jhx",
+    "skater": "Vallesillo, Aaliyah",
+    "event": "2025 Pony Express #49",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:gh3u8op24k0e5e7y47xy",
+    "skater": "Vallesillo, Aaliyah",
+    "event": "2025 Pony Express #66",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:9362namyv6sv3b29j1hg",
+    "skater": "Walters, Jenna",
+    "event": "2025 Pony Express #19",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:x5xnktb166fz32stk7gr",
+    "skater": "Walters, Jenna",
+    "event": "2025 Pony Express #19",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:du42tazpr6nrzcn8skmr",
+    "skater": "Walters, Jenna",
+    "event": "2025 Pony Express #19",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:esanqgdvi8s9puffzz9p",
+    "skater": "Walters, Jenna",
+    "event": "2025 Pony Express #19",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:isi3xmxzujlgmkbqg1vy",
+    "skater": "Walters, Jenna",
+    "event": "2025 Pony Express #3",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:brtd21ju9by2d0wzp2zx",
+    "skater": "Walters, Jenna",
+    "event": "2025 Pony Express #3",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:59mpfur68oo0gp8sj2pz",
+    "skater": "Walters, Jenna",
+    "event": "2025 Pony Express #3",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:n6bmcnrx4bxnyih6jnqr",
+    "skater": "Walters, Jenna",
+    "event": "2025 Pony Express #3",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:rxma4skufcsgvlzs0zu1",
+    "skater": "Wambold, Gwenna",
+    "event": "2025 Fall Fling #17",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:smxbjbk8830nyj54v4z8",
+    "skater": "Wambold, Gwenna",
+    "event": "2025 Fall Fling #28",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:eoh4wd6r8focafh8wriz",
+    "skater": "Wambold, Gwenna",
+    "event": "2025 Fall Fling #39",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:cop1515zpft5we9zct9v",
+    "skater": "Wambold, Gwenna",
+    "event": "2025 Fall Fling #46",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:lfpqlzrir8n7ubbhi2d3",
+    "skater": "Wambold, Gwenna",
+    "event": "2025 Fall Fling #5",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:lzm57vquklbb8vr3llx9",
+    "skater": "Whatcott, Meghan",
+    "event": "2025 Pony Express #42",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:hlleku3cyk56ulbegwty",
+    "skater": "Wheeler, Theia",
+    "event": "2025 Fall Fling #16",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:fpgce7bb5hf9cr0oz50y",
+    "skater": "White, Anna",
+    "event": "2025 Pony Express #45",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:bj417ux4fqyg11n6yxrq",
+    "skater": "White, Anna",
+    "event": "2025 Pony Express #45",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:1xjzuu7ictr9fq1chtmd",
+    "skater": "Whittington, Rebekah",
+    "event": "2025 Fall Fling #29",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:gxbwefuubh9jpzfk779x",
+    "skater": "Wilkerson, Amy",
+    "event": "2025 Pony Express #15",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:vy2ju5hnrpj9dmcvdtu9",
+    "skater": "Wilkerson, Amy",
+    "event": "2025 Pony Express #18",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:iu59xyyjubdan6tfxs5j",
+    "skater": "Wilkerson, Amy",
+    "event": "2025 Pony Express #43",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:kaxht1i2fwlr669ljvip",
+    "skater": "William, Harper and",
+    "event": "2025 Pony Express #61",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:7hhnjbdi2k8rx28iz3jd",
+    "skater": "Williams, Skye",
+    "event": "2025 Pony Express #66",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:wm23rzn8a5buht5flazf",
+    "skater": "Williams, Skye",
+    "event": "2025 Pony Express #76",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:n6ftr4z1xdofuflvm2p7",
+    "skater": "Wood, Doris",
+    "event": "2025 Fall Fling #11",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:cbkr5esr6q2nnslqlqa6",
+    "skater": "Wood, Doris",
+    "event": "2025 Pony Express #108",
+    "reason": "Lower data completeness score (4/8 vs 4/8)"
+  },
+  {
+    "id": "competed_in:2bp5kohtilbaupbnyp34",
+    "skater": "Woods, Adeline",
+    "event": "2025 Pony Express #111",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:x8zdfu5pfwkrrlhw0u9n",
+    "skater": "Woods, Adeline",
+    "event": "2025 Pony Express #111",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:pxcnl22koy37bm67pfmq",
+    "skater": "Woods, Adeline",
+    "event": "2025 Pony Express #117",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:6hlh89hjhwi4aszrzpdu",
+    "skater": "Woods, Adeline",
+    "event": "2025 Pony Express #117",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:wjx2ljprc2ginndapp20",
+    "skater": "Woods, Adeline",
+    "event": "2025 Pony Express #96",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:46c3me7q2i54vrtx3926",
+    "skater": "Woods, Adeline",
+    "event": "2025 Pony Express #99",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:s97buevxudtfpp9y6zn8",
+    "skater": "Woods, Adeline",
+    "event": "2025 Pony Express #99",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:9lsob3fzyw8psqgcg26i",
+    "skater": "Woods, Corinne",
+    "event": "2025 Pony Express #110",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:c31c7mteizbipfixa21w",
+    "skater": "Woods, Corinne",
+    "event": "2025 Pony Express #110",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:4x70g1pqxg0u37ckvxyu",
+    "skater": "Woods, Corinne",
+    "event": "2025 Pony Express #117",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:46guoxe7p2bxf8ztv8ck",
+    "skater": "Woods, Corinne",
+    "event": "2025 Pony Express #117",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:acapzj6i4iontasecntb",
+    "skater": "Woods, Corinne",
+    "event": "2025 Pony Express #96",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:0n7chcas3mmdbceav93z",
+    "skater": "Woods, Taylor",
+    "event": "2025 Pony Express #111",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:m8az4sz5639qrtj2mfq4",
+    "skater": "Woods, Taylor",
+    "event": "2025 Pony Express #111",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:0npntygejukknfp3uoyc",
+    "skater": "Xing, Joanna",
+    "event": "2025 Pony Express #109",
+    "reason": "Lower data completeness score (1/8 vs 1/8)"
+  },
+  {
+    "id": "competed_in:a654hgbs52c2j5n7rcjc",
+    "skater": "Xing, Joanna",
+    "event": "2025 Pony Express #97",
+    "reason": "Lower data completeness score (1/8 vs 1/8)"
+  },
+  {
+    "id": "competed_in:1p3bp9l2wc01qjognytv",
+    "skater": "YANG, CHLOE",
+    "event": "2025 Pony Express #112",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:t1o8n7eq9htge6hftt1j",
+    "skater": "YANG, CHLOE",
+    "event": "2025 Pony Express #98",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:zx321298vpdj4i21x97z",
+    "skater": "Yang, Nathan",
+    "event": "2025 Pony Express #71",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:da28f6vwzqtbff09jr47",
+    "skater": "Yang, Nathan",
+    "event": "2025 Pony Express #79",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:dbfd6ld39qfnk7i3uh7w",
+    "skater": "Zeller, Lenox",
+    "event": "2025 Fall Fling #22",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:mm3m512e9tuub0ngokb3",
+    "skater": "Zeller, Lenox",
+    "event": "2025 Fall Fling #46",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:zg1hvbzcwyvg7gcjc364",
+    "skater": "Zeller, Lenox",
+    "event": "2025 Pony Express #6",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:4bufgjs8en37lpfh9r90",
+    "skater": "Zeller, Lenox",
+    "event": "2025 Pony Express #6",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:q92ocg7jlhde16gzz1ip",
+    "skater": "Zeller, Lenox",
+    "event": "2025 Pony Express #62",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:1tdkdnfucx2ip6ebmq83",
+    "skater": "Zeller, Lenox",
+    "event": "2025 Pony Express #62",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:02uc9b2laaslt9ca46z8",
+    "skater": "Zeller, Lenox",
+    "event": "2025 Pony Express #73",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:hf4g04s08na13mlv5nj1",
+    "skater": "Zeller, Lenox",
+    "event": "2025 Pony Express #73",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:qnyabuwlhr3lrshqw4t6",
+    "skater": "Zhou, Emma",
+    "event": "2025 Pony Express #23",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:uhqppqn5m9k9ckfztoko",
+    "skater": "Zhou, Ivy",
+    "event": "2025 Pony Express #6",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:5sl1yjxx9dk2owilgmt3",
+    "skater": "Zolinski, Arah",
+    "event": "2025 Pony Express #104",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:znwzvhelyvp5pgmfpini",
+    "skater": "Zolinski, Arah",
+    "event": "2025 Pony Express #12",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:enkx7xo8w8gx0dsfw7gx",
+    "skater": "Zolinski, Arah",
+    "event": "2025 Pony Express #2",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  },
+  {
+    "id": "competed_in:xmytz1wn3r6hbajgk058",
+    "skater": "Zolinski, Arah",
+    "event": "2025 Pony Express #87",
+    "reason": "Lower data completeness score (0/8 vs 0/8)"
+  }
+]
