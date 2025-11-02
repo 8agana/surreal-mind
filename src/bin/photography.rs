@@ -559,9 +559,9 @@ async fn get_email(
     db: &Surreal<surrealdb::engine::remote::ws::Client>,
     last_name: &str,
 ) -> Result<()> {
-    // First try to find family by last name
+    // First try to find family by last name (case-insensitive)
     let query = format!(
-        "SELECT last_name, email FROM family WHERE last_name CONTAINS '{}'",
+        "SELECT last_name, email FROM family WHERE string::lowercase(last_name) CONTAINS string::lowercase('{}')",
         last_name
     );
     let mut resp = db.query(&query).await?;
