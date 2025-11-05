@@ -85,6 +85,11 @@ pub async fn unified_search_inner(
             message: format!("Invalid parameters: {}", e),
         })?;
 
+    // Debug logging for chain_id search
+    if let Some(ref cid) = params.chain_id {
+        tracing::info!("🔍 Unified search requested with chain_id: {}", cid);
+    }
+
     let target = params.target.unwrap_or_else(|| "mixed".to_string());
     let include_thoughts = params.include_thoughts.unwrap_or(false);
     let top_k_mem = params.top_k_memories.unwrap_or(10).clamp(1, 50);
@@ -171,9 +176,8 @@ pub async fn unified_search_inner(
             let q_dim = q_emb_val.len() as i64;
             let mut sql = "SELECT meta::id(id) as id, name, data, created_at, vector::similarity::cosine(embedding, $q) AS similarity
                  FROM kg_entities WHERE embedding_dim = $dim AND embedding IS NOT NULL".to_string();
-            #[allow(unused_variables)]
             if let Some(ref cid) = params.chain_id {
-                sql.push_str(" AND data.source_thought_id IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid)");
+                sql.push_str(" AND (data.source_thought_id IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid) OR data.staged_by_thought IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid))");
             }
             sql.push_str(&format!(
                 " ORDER BY created_at DESC LIMIT {}",
@@ -219,9 +223,8 @@ pub async fn unified_search_inner(
         let mut sql =
             "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities WHERE name ~ $name"
                 .to_string();
-        #[allow(unused_variables)]
         if let Some(ref cid) = params.chain_id {
-            sql.push_str(" AND data.source_thought_id IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid)");
+            sql.push_str(" AND (data.source_thought_id IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid) OR data.staged_by_thought IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid))");
         }
         sql.push_str(&format!(" LIMIT {}", top_k_mem));
         let mut query = server.db.query(sql).bind(("name", nl.clone()));
@@ -234,9 +237,8 @@ pub async fn unified_search_inner(
         // Fallback to recent items when no query or embedding
         let mut sql =
             "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities".to_string();
-        #[allow(unused_variables)]
         if let Some(ref cid) = params.chain_id {
-            sql.push_str(" WHERE data.source_thought_id IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid)");
+            sql.push_str(" WHERE (data.source_thought_id IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid) OR data.staged_by_thought IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid))");
         }
         sql.push_str(&format!(" ORDER BY created_at DESC LIMIT {}", top_k_mem));
         let mut query = server.db.query(sql);
@@ -253,9 +255,8 @@ pub async fn unified_search_inner(
                     (IF type::is::record(target) THEN meta::id(target) ELSE string::concat(target) END) as target_id,
                     rel_type, data, created_at
              FROM kg_edges".to_string();
-        #[allow(unused_variables)]
         if let Some(ref cid) = params.chain_id {
-            sql.push_str(" WHERE data.source_thought_id IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid)");
+            sql.push_str(" WHERE (data.source_thought_id IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid) OR data.staged_by_thought IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid))");
         }
         sql.push_str(&format!(" ORDER BY created_at DESC LIMIT {}", top_k_mem));
         let mut query = server.db.query(sql);
@@ -350,6 +351,7 @@ pub async fn unified_search_inner(
 
     let mut out = serde_json::Map::new();
     out.insert("memories".into(), json!({"items": items}));
+    tracing::debug!("🔍 Unified search found {} memory items", items.len());
 
     // 2) Thoughts search (optional)
     if include_thoughts {
@@ -381,8 +383,17 @@ pub async fn unified_search_inner(
             None
         };
 
-        // Build WHERE clauses
-        let mut where_clauses = vec!["embedding_dim = $dim AND embedding IS NOT NULL".to_string()];
+        // Debug logging for thoughts search
+        tracing::debug!(
+            "🔍 Thoughts search with chain_id present: {}",
+            params.chain_id.is_some()
+        );
+
+        // Build WHERE clauses - only require embeddings if doing semantic search
+        let mut where_clauses = vec![];
+        if q_emb.is_some() {
+            where_clauses.push("embedding_dim = $dim AND embedding IS NOT NULL".to_string());
+        }
         let mut binds = serde_json::Map::new();
 
         if let Some(sid) = &params.session_id {
@@ -466,6 +477,15 @@ pub async fn unified_search_inner(
             order_by
         );
 
+        // Debug the thoughts query
+        tracing::info!("🔍 Thoughts SQL: {}", sql);
+        tracing::info!("🔍 Thoughts binds: {:?}", binds);
+        tracing::info!(
+            "🔍 Thoughts has_query: {}, chain_id: {:?}",
+            has_query,
+            params.chain_id
+        );
+
         let mut query = server.db.query(sql).bind(("k", top_k_th as i64));
         if let Some(ref q_emb_val) = q_emb {
             query = query.bind(("q", q_emb_val.clone()));
@@ -480,6 +500,7 @@ pub async fn unified_search_inner(
         for (k, v) in binds {
             query = query.bind((k, v));
         }
+
         let mut resp = query.await?;
 
         #[derive(Debug, Deserialize)]
