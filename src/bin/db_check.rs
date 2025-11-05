@@ -82,5 +82,51 @@ async fn main() -> Result<()> {
         println!("Recalls count: {:?}", recalls_count);
     }
 
+    // Check chain_id usage in thoughts
+    let thoughts_with_chain_id: Vec<serde_json::Value> = db
+        .query("SELECT count() FROM thoughts WHERE chain_id IS NOT NULL GROUP ALL")
+        .await?
+        .take(0)?;
+
+    println!("Thoughts with chain_id: {:?}", thoughts_with_chain_id);
+
+    let chain_id_samples: Vec<serde_json::Value> = db
+        .query("SELECT chain_id FROM thoughts WHERE chain_id IS NOT NULL LIMIT 10")
+        .await?
+        .take(0)?;
+
+    println!("Sample chain_id values: {:?}", chain_id_samples);
+
+    // Check source_thought_id in memories
+    let entities_with_source: Vec<serde_json::Value> = db
+        .query("SELECT count() FROM kg_entities WHERE data.source_thought_id IS NOT NULL GROUP ALL")
+        .await?
+        .take(0)?;
+
+    println!(
+        "Entities with source_thought_id: {:?}",
+        entities_with_source
+    );
+
+    let observations_with_source: Vec<serde_json::Value> = db
+        .query("SELECT count() FROM kg_observations WHERE source_thought_id IS NOT NULL GROUP ALL")
+        .await?
+        .take(0)?;
+
+    println!(
+        "Observations with source_thought_id: {:?}",
+        observations_with_source
+    );
+
+    let edges_with_source: Vec<serde_json::Value> = db
+        .query("SELECT count() FROM kg_edges WHERE data.source_thought_id IS NOT NULL GROUP ALL")
+        .await?
+        .take(0)?;
+
+    println!(
+        "Relationships with source_thought_id: {:?}",
+        edges_with_source
+    );
+
     Ok(())
 }
