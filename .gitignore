@@ -26,3 +26,6 @@ fixes/
 .DS_Store
 
 models/bge-small-en-v1.5/
+
+# Photography backups
+photography_backup_*.json
