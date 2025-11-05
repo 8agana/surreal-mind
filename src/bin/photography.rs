@@ -574,18 +574,12 @@ async fn get_email(
 
     // Display results
     let mut table = Table::new();
-    table.add_row(Row::new(vec![
-        Cell::new("Last Name"),
-        Cell::new("Email"),
-    ]));
+    table.add_row(Row::new(vec![Cell::new("Last Name"), Cell::new("Email")]));
 
     for family in families {
         let name = family["last_name"].as_str().unwrap_or("N/A");
         let email = family["email"].as_str().unwrap_or("No email on file");
-        table.add_row(Row::new(vec![
-            Cell::new(name),
-            Cell::new(email),
-        ]));
+        table.add_row(Row::new(vec![Cell::new(name), Cell::new(email)]));
     }
 
     table.printstd();
