@@ -470,10 +470,15 @@ pub async fn unified_search_inner(
             // Always project created_at if used for ordering
             "meta::id(id) as id, content, significance, created_at"
         };
+        let where_sql = if where_clauses.is_empty() {
+            "true".to_string()
+        } else {
+            where_clauses.join(" AND ")
+        };
         let sql = format!(
             "SELECT {} FROM thoughts WHERE {} ORDER BY {} LIMIT $k",
             select_fields,
-            where_clauses.join(" AND "),
+            where_sql,
             order_by
         );
 
