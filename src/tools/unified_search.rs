@@ -176,7 +176,7 @@ pub async fn unified_search_inner(
             let q_dim = q_emb_val.len() as i64;
             let mut sql = "SELECT meta::id(id) as id, name, data, created_at, vector::similarity::cosine(embedding, $q) AS similarity
                  FROM kg_entities WHERE embedding_dim = $dim AND embedding IS NOT NULL".to_string();
-            if let Some(ref cid) = params.chain_id {
+            if params.chain_id.is_some() {
                 sql.push_str(" AND (data.source_thought_id IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid) OR data.staged_by_thought IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid))");
             }
             sql.push_str(&format!(
@@ -223,7 +223,7 @@ pub async fn unified_search_inner(
         let mut sql =
             "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities WHERE name ~ $name"
                 .to_string();
-        if let Some(ref cid) = params.chain_id {
+        if params.chain_id.is_some() {
             sql.push_str(" AND (data.source_thought_id IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid) OR data.staged_by_thought IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid))");
         }
         sql.push_str(&format!(" LIMIT {}", top_k_mem));
@@ -237,7 +237,7 @@ pub async fn unified_search_inner(
         // Fallback to recent items when no query or embedding
         let mut sql =
             "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities".to_string();
-        if let Some(ref cid) = params.chain_id {
+        if params.chain_id.is_some() {
             sql.push_str(" WHERE (data.source_thought_id IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid) OR data.staged_by_thought IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid))");
         }
         sql.push_str(&format!(" ORDER BY created_at DESC LIMIT {}", top_k_mem));
@@ -255,7 +255,7 @@ pub async fn unified_search_inner(
                     (IF type::is::record(target) THEN meta::id(target) ELSE string::concat(target) END) as target_id,
                     rel_type, data, created_at
              FROM kg_edges".to_string();
-        if let Some(ref cid) = params.chain_id {
+        if params.chain_id.is_some() {
             sql.push_str(" WHERE (data.source_thought_id IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid) OR data.staged_by_thought IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid))");
         }
         sql.push_str(&format!(" ORDER BY created_at DESC LIMIT {}", top_k_mem));
@@ -274,7 +274,7 @@ pub async fn unified_search_inner(
             let mut sql = "SELECT meta::id(id) as id, name, data, created_at, vector::similarity::cosine(embedding, $q) AS similarity
                  FROM kg_observations WHERE embedding_dim = $dim AND embedding IS NOT NULL".to_string();
             #[allow(unused_variables)]
-            if let Some(ref cid) = params.chain_id {
+            if params.chain_id.is_some() {
                 sql.push_str(" AND source_thought_id IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid)");
             }
             sql.push_str(&format!(
@@ -320,7 +320,7 @@ pub async fn unified_search_inner(
             // Fallback to name pattern matching when no embedding available
             let mut sql = "SELECT meta::id(id) as id, name, data, created_at FROM kg_observations WHERE name ~ $name".to_string();
             #[allow(unused_variables)]
-            if let Some(ref cid) = params.chain_id {
+            if params.chain_id.is_some() {
                 sql.push_str(" AND source_thought_id IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid)");
             }
             sql.push_str(&format!(" LIMIT {}", top_k_mem));
@@ -335,7 +335,7 @@ pub async fn unified_search_inner(
             let mut sql = "SELECT meta::id(id) as id, name, data, created_at FROM kg_observations"
                 .to_string();
             #[allow(unused_variables)]
-            if let Some(ref cid) = params.chain_id {
+            if params.chain_id.is_some() {
                 sql.push_str(" WHERE source_thought_id IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid)");
             }
             sql.push_str(&format!(" ORDER BY created_at DESC LIMIT {}", top_k_mem));

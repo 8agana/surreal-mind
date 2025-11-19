@@ -1,13 +1,10 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use prettytable::{Cell, Row, Table, row}; // Consolidated prettytable imports
-use serde::Deserialize; // Use specific Deserialize trait
+use prettytable::{row, Cell, Row, Table}; // Consolidated prettytable imports
 use serde_json::Value; // Still needed for some functions
 use std::fs::File; // Still needed for import_roster
-use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::Ws;
-use surrealdb::opt::auth::Root;
-use surrealdb::sql::Thing; // For surrealdb::sql::Thing in Family struct
+use surrealdb::Surreal;
 
 #[derive(Parser)]
 #[command(name = "photography")]
@@ -190,14 +187,14 @@ struct RosterRow {
 struct ParsedSkater {
     first_name: String,
     last_name: String,
-    family_email: Option<String>,
+    _family_email: Option<String>,
 }
 
 #[derive(Debug)]
 struct ParsedName {
     skaters: Vec<ParsedSkater>,
     is_family: bool,
-    is_synchro: bool,
+    _is_synchro: bool,
 }
 
 #[tokio::main]
@@ -769,47 +766,7 @@ async fn get_email(
     Ok(())
 }
 
-async fn pending_galleries(
-    db: &Surreal<surrealdb::engine::remote::ws::Client>,
-    comp: Option<&str>,
-) -> Result<()> {
-    let query = if let Some(c) = comp {
-        format!(
-            "SELECT in.first_name, in.last_name, out.competition.name, out.event_number, request_status
-             FROM competed_in
-             WHERE gallery_status = 'pending' AND out.competition.name CONTAINS '{}'
-             FETCH in, out, out.competition",
-            c
-        )
-    } else {
-        "SELECT in.first_name, in.last_name, out.competition.name, out.event_number, request_status
-         FROM competed_in
-         WHERE gallery_status = 'pending'
-         FETCH in, out, out.competition"
-            .to_string()
-    };
-    let mut resp = db.query(&query).await?;
-    let results: Vec<Value> = resp.take(0)?;
-    let mut table = Table::new();
-    table.add_row(Row::new(vec![
-        Cell::new("Last Name"),
-        Cell::new("First Name"),
-        Cell::new("Competition"),
-        Cell::new("Event #"),
-        Cell::new("Request Status"),
-    ]));
-    for r in results {
-        table.add_row(Row::new(vec![
-            Cell::new(r["in"]["last_name"].as_str().unwrap_or("")),
-            Cell::new(r["in"]["first_name"].as_str().unwrap_or("")),
-            Cell::new(r["out"]["competition"]["name"].as_str().unwrap_or("")),
-            Cell::new(&r["out"]["event_number"].to_string()),
-            Cell::new(r["request_status"].as_str().unwrap_or("")),
-        ]));
-    }
-    table.printstd();
-    Ok(())
-}
+
 
 async fn list_events_for_skater(
     db: &Surreal<surrealdb::engine::remote::ws::Client>,
@@ -981,12 +938,12 @@ fn parse_skater_names(name: &str) -> Result<ParsedName> {
         let skater = ParsedSkater {
             first_name: "Synchro".to_string(),
             last_name: team.to_string(),
-            family_email: None,
+            _family_email: None,
         };
         return Ok(ParsedName {
             skaters: vec![skater],
             is_family: false,
-            is_synchro: true,
+            _is_synchro: true,
         });
     }
 
@@ -1020,7 +977,7 @@ fn parse_skater_names(name: &str) -> Result<ParsedName> {
         .map(|first| ParsedSkater {
             first_name: first,
             last_name: last_name.clone(),
-            family_email: None,
+            _family_email: None,
         })
         .collect();
 
@@ -1029,6 +986,6 @@ fn parse_skater_names(name: &str) -> Result<ParsedName> {
     Ok(ParsedName {
         skaters,
         is_family,
-        is_synchro: false,
+        _is_synchro: false,
     })
 }
