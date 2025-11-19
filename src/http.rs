@@ -390,8 +390,11 @@ pub async fn start_http_server(server: SurrealMindServer) -> Result<()> {
                         return (
                             StatusCode::UNAUTHORIZED,
                             [(header::CONTENT_TYPE, "application/json")],
-                            serde_json::json!({"error": {"code": 401, "message": "Unauthorized"}})
-                                .to_string(),
+                            serde_json::json!({
+                                "error": "invalid_token",
+                                "error_description": "Unauthorized"
+                            })
+                            .to_string(),
                         )
                             .into_response();
                     }
@@ -419,8 +422,11 @@ pub async fn start_http_server(server: SurrealMindServer) -> Result<()> {
                     return (
                         StatusCode::UNAUTHORIZED,
                         [(header::CONTENT_TYPE, "application/json")],
-                        serde_json::json!({"error": {"code": 401, "message": "Unauthorized"}})
-                            .to_string(),
+                        serde_json::json!({
+                            "error": "invalid_token",
+                            "error_description": "Unauthorized"
+                        })
+                        .to_string(),
                     )
                         .into_response();
                 }

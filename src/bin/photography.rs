@@ -1,10 +1,13 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use prettytable::{Cell, Row, Table};
-use serde_json::Value;
-use std::fs::File;
+use prettytable::{Cell, Row, Table, row}; // Consolidated prettytable imports
+use serde::Deserialize; // Use specific Deserialize trait
+use serde_json::Value; // Still needed for some functions
+use std::fs::File; // Still needed for import_roster
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::Ws;
+use surrealdb::opt::auth::Root;
+use surrealdb::sql::Thing; // For surrealdb::sql::Thing in Family struct
 
 #[derive(Parser)]
 #[command(name = "photography")]
@@ -40,19 +43,29 @@ enum Commands {
         #[command(subcommand)]
         update_command: UpdateCommands,
     },
-    /// Query skater by name
-    QuerySkater {
-        /// Skater name (partial match on first or last)
-        name: String,
-        /// Optional competition name
-        #[arg(long)]
-        competition: Option<String>,
+    /// Query skater details including status (replaces old QuerySkater)
+    QuerySkater { last_name: String },
+    /// Get family contact email for gallery delivery (replaces old GetEmail)
+    GetEmail { last_name: String },
+    /// Mark a gallery as SENT for a specific competition
+    MarkSent {
+        last_name: String,
+        #[arg(default_value = "2025_fall_fling")]
+        competition: String,
     },
-    /// List pending galleries
-    PendingGalleries {
-        /// Optional competition name
+    /// Record a purchase for a family
+    RecordPurchase {
+        last_name: String,
+        amount: f64,
+        #[arg(default_value = "2025_fall_fling")]
+        competition: String,
+    },
+    /// Check delivery status for a competition
+    CheckStatus {
+        #[arg(default_value = "2025_fall_fling")]
+        competition: String,
         #[arg(long)]
-        competition: Option<String>,
+        pending_only: bool,
     },
     /// List events for skater
     ListEventsForSkater {
@@ -68,11 +81,43 @@ enum Commands {
         /// Competition name
         comp_name: String,
     },
-    /// Get email for skater/family
-    GetEmail {
-        /// Last name to lookup
-        last_name: String,
-    },
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct SkaterRow {
+    first_name: String,
+    last_name: String,
+    comp_name: Option<String>, // Changed to Option<String>
+    event_num: Option<i32>,    // Changed to Option<i32>
+    req_status: Option<String>,
+    gal_status: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct StatusRow {
+    family_name: String,
+    email: Option<String>,
+    request_status: String,
+    gallery_status: String,
+    sent_date: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct Family {
+    id: surrealdb::sql::Thing,
+    last_name: String,
+    email: Option<String>,
+}
+
+/// Returns ID with backticks for safety: family:`appleby-leo`
+fn format_family_id(last_name: &str) -> String {
+    let lower = last_name.to_lowercase();
+    // Always backtick if it contains non-alphanumeric or spaces just to be safe
+    if lower.chars().any(|c| !c.is_alphanumeric()) || lower.contains(' ') {
+        format!("family:`{}`", lower)
+    } else {
+        format!("family:{}", lower)
+    }
 }
 
 #[derive(Subcommand)]
@@ -208,11 +253,8 @@ async fn main() -> Result<()> {
                 update_gallery(&db, &skater, event, &status, url.as_deref(), amount).await?;
             }
         },
-        Commands::QuerySkater { name, competition } => {
-            query_skater(&db, &name, competition.as_deref()).await?;
-        }
-        Commands::PendingGalleries { competition } => {
-            pending_galleries(&db, competition.as_deref()).await?;
+        Commands::QuerySkater { last_name } => {
+            query_skater(&db, &last_name).await?;
         }
         Commands::ListEventsForSkater {
             skater,
@@ -225,6 +267,25 @@ async fn main() -> Result<()> {
         }
         Commands::GetEmail { last_name } => {
             get_email(&db, &last_name).await?;
+        }
+        Commands::MarkSent {
+            last_name,
+            competition,
+        } => {
+            mark_sent(&db, &last_name, &competition).await?;
+        }
+        Commands::RecordPurchase {
+            last_name,
+            amount,
+            competition,
+        } => {
+            record_purchase(&db, &last_name, amount, &competition).await?;
+        }
+        Commands::CheckStatus {
+            competition,
+            pending_only,
+        } => {
+            check_status(&db, &competition, pending_only).await?;
         }
     }
 
@@ -333,7 +394,7 @@ async fn import_roster(
             let skater_resp = db
                 .query(
                     "INSERT INTO skater (id, first_name, last_name, created_at)
-                     VALUES ($id, $first, $last, time::now())
+                     VALUES ($id, 'first', 'last', time::now())
                      ON DUPLICATE KEY UPDATE first_name = $first, last_name = $last",
                 )
                 .bind(("id", skater_id.clone()))
@@ -375,6 +436,129 @@ async fn import_roster(
     }
 
     println!("Import completed successfully!");
+    Ok(())
+}
+
+async fn mark_sent(
+    db: &Surreal<surrealdb::engine::remote::ws::Client>,
+    last_name: &str,
+    comp: &str,
+) -> Result<()> {
+    let family_id_full = format_family_id(last_name); // e.g., "family:shawhan"
+    let family_id_only = last_name.to_lowercase().replace(" ", "-"); // e.g., "shawhan"
+    let competition_id_only = comp.to_lowercase(); // e.g., "2025_pony_express"
+
+    // 1. Check existence explicitly using raw SQL to avoid SDK "Table Name" confusion
+    let check_sql = "SELECT * FROM type::thing('family', $id)";
+    let mut check_resp = db.query(check_sql).bind(("id", &family_id_only)).await?;
+    let check: Vec<serde_json::Value> = check_resp.take(0)?;
+    
+    if check.is_empty() {
+        println!("❌ Error: Family {} not found.", family_id_full);
+        return Ok(());
+    }
+
+    // 2. Update
+    println!("Marking SENT: {} -> {}", family_id_full, competition_id_only);
+    let sql = "
+        UPDATE family_competition
+        SET gallery_status = 'sent'
+                WHERE in = type::thing('family', $family_id)
+                AND out = type::thing('competition', $competition_id)
+    ";
+    let _ = db.query(sql)
+        .bind(("family_id", family_id_only))
+        .bind(("competition_id", competition_id_only))
+        .await?;
+    println!("✅ Update complete.");
+    Ok(())
+}
+
+async fn check_status(
+    db: &Surreal<surrealdb::engine::remote::ws::Client>,
+    comp_name: &str,
+    pending_only: bool,
+) -> Result<()> {
+    let comp_id = format!("competition:{}", comp_name);
+    let mut sql = String::from(
+        "SELECT in.last_name as family_name,
+                in.email as email,
+                request_status,
+                gallery_status,
+                sent_date
+         FROM family_competition
+         WHERE out = type::thing($comp)
+         AND request_status = 'requested' ", // Only care about requested families
+    );
+
+    if pending_only {
+        sql.push_str(" AND gallery_status = 'pending'");
+    }
+
+    // Sort by status (pending first) then name
+    sql.push_str(" ORDER BY gallery_status ASC, family_name ASC");
+
+    let mut response = db.query(&sql).bind(("comp", comp_id)).await?;
+    let rows: Vec<StatusRow> = response.take(0)?;
+
+    println!("Status Report for {}", comp_name);
+    println!("Found {} records", rows.len());
+
+    let mut table = Table::new();
+    table.add_row(row!["Family", "Email", "Request", "Status", "Sent Date"]);
+
+    for r in rows {
+        table.add_row(row![
+            r.family_name,
+            r.email.unwrap_or_else(|| "-".to_string()),
+            r.request_status,
+            r.gallery_status,
+            r.sent_date.unwrap_or_else(|| "-".to_string())
+        ]);
+    }
+
+    table.printstd();
+    Ok(())
+}
+
+async fn record_purchase(
+    db: &Surreal<surrealdb::engine::remote::ws::Client>,
+    last_name: &str,
+    amount: f64,
+    comp: &str,
+) -> Result<()> {
+    let family_id_full = format_family_id(last_name);
+    let family_id_only = last_name.to_lowercase().replace(" ", "-");
+    let competition_id_only = comp.to_lowercase();
+
+    // Check existence using raw SQL
+    let check_sql = "SELECT * FROM type::thing('family', $id)";
+    let mut check_resp = db.query(check_sql).bind(("id", &family_id_only)).await?;
+    let check: Vec<serde_json::Value> = check_resp.take(0)?;
+
+    if check.is_empty() {
+        println!("❌ Error: Family {} not found.", family_id_full);
+        return Ok(());
+    }
+
+    // Update
+    println!(
+        "Recording purchase: {} -> {} for amount {}",
+        family_id_full, competition_id_only, amount
+    );
+    let sql = "
+        UPDATE family_competition
+        SET gallery_status = 'purchased', purchase_amount = $amount, purchase_date = time::now()
+        WHERE in = type::thing('family', $family_id)
+        AND out = type::thing('competition', $competition_id)
+    ";
+    let _ = db
+        .query(sql)
+        .bind(("family_id", family_id_only))
+        .bind(("competition_id", competition_id_only))
+        .bind(("amount", amount))
+        .await?;
+    println!("✅ Purchase recorded.");
     Ok(())
 }
 
@@ -509,47 +693,50 @@ fn competition_to_id(competition: &str) -> String {
 
 async fn query_skater(
     db: &Surreal<surrealdb::engine::remote::ws::Client>,
-    name: &str,
-    comp: Option<&str>,
+    last_name: &str,
 ) -> Result<()> {
-    let query = if let Some(c) = comp {
-        format!(
-            "SELECT in.first_name, in.last_name, out.competition.name, out.event_number, request_status, gallery_status
-             FROM competed_in
-             WHERE (in.first_name CONTAINS '{}' OR in.last_name CONTAINS '{}')
-               AND out.competition.name CONTAINS '{}'
-             FETCH in, out, out.competition",
-            name, name, c
-        )
-    } else {
-        format!(
-            "SELECT in.first_name, in.last_name, out.competition.name, out.event_number, request_status, gallery_status
-             FROM competed_in
-             WHERE in.first_name CONTAINS '{}' OR in.last_name CONTAINS '{}'
-             FETCH in, out, out.competition",
-            name, name
-        )
-    };
-    let mut resp = db.query(&query).await?;
-    let results: Vec<Value> = resp.take(0)?;
+    println!("Searching for skater: {}", last_name);
+
+    let sql = "
+        SELECT
+            first_name,
+            last_name,
+            array::first(->competed_in->event->competition.name) as comp_name,
+            array::first(->competed_in->event.event_number) as event_num,
+            array::first(->belongs_to->family->family_competition.request_status) as req_status,
+            array::first(->belongs_to->family->family_competition.gallery_status) as gal_status
+        FROM skater
+        WHERE string::lowercase(last_name) CONTAINS string::lowercase($name)
+    ";
+
+    let mut response = db.query(sql).bind(("name", last_name.to_string())).await?;
+    let rows: Vec<SkaterRow> = response.take(0)?;
+
+    if rows.is_empty() {
+        println!("No skaters found.");
+        return Ok(());
+    }
+
     let mut table = Table::new();
-    table.add_row(Row::new(vec![
-        Cell::new("Last Name"),
-        Cell::new("First Name"),
-        Cell::new("Competition"),
-        Cell::new("Event #"),
-        Cell::new("Request Status"),
-        Cell::new("Gallery Status"),
-    ]));
-    for r in results {
-        table.add_row(Row::new(vec![
-            Cell::new(r["in"]["last_name"].as_str().unwrap_or("")),
-            Cell::new(r["in"]["first_name"].as_str().unwrap_or("")),
-            Cell::new(r["out"]["competition"]["name"].as_str().unwrap_or("")),
-            Cell::new(&r["out"]["event_number"].to_string()),
-            Cell::new(r["request_status"].as_str().unwrap_or("")),
-            Cell::new(r["gallery_status"].as_str().unwrap_or("")),
-        ]));
+    table.add_row(row![
+        "Skater",
+        "Competition",
+        "Event",
+        "Req Status",
+        "Gal Status"
+    ]);
+    for r in rows {
+        let r_status = r.req_status.unwrap_or_else(|| "-".to_string());
+        let g_status = r.gal_status.unwrap_or_else(|| "pending".to_string());
+
+        table.add_row(row![
+            format!("{}, {}", r.last_name, r.first_name),
+            r.comp_name.unwrap_or_else(|| "-".to_string()),
+            r.event_num
+                .map_or_else(|| "-".to_string(), |e| e.to_string()),
+            r_status,
+            g_status
+        ]);
     }
     table.printstd();
     Ok(())
@@ -559,30 +746,27 @@ async fn get_email(
     db: &Surreal<surrealdb::engine::remote::ws::Client>,
     last_name: &str,
 ) -> Result<()> {
-    // First try to find family by last name (case-insensitive)
-    let query = format!(
-        "SELECT last_name, email FROM family WHERE string::lowercase(last_name) CONTAINS string::lowercase('{}')",
-        last_name
-    );
-    let mut resp = db.query(&query).await?;
-    let families: Vec<Value> = resp.take(0)?;
+    let family_id_str = format_family_id(last_name);
 
-    if families.is_empty() {
-        println!("No family found with last name containing: {}", last_name);
-        return Ok(());
+    // Use db.select to get the family record directly by its formatted ID
+    let family: Vec<Family> = db.select(&family_id_str).await?;
+
+    if !family.is_empty() {
+        let f = &family[0];
+        let mut table = Table::new();
+        table.add_row(row!["Last Name", "Email", "ID"]);
+        table.add_row(row![
+            f.last_name,
+            f.email.clone().unwrap_or_else(|| "NO EMAIL".to_string()),
+            f.id.to_string()
+        ]);
+        table.printstd();
+    } else {
+        println!(
+            "No family found with last name '{}'. (Searched for ID: {})",
+            last_name, family_id_str
+        );
     }
-
-    // Display results
-    let mut table = Table::new();
-    table.add_row(Row::new(vec![Cell::new("Last Name"), Cell::new("Email")]));
-
-    for family in families {
-        let name = family["last_name"].as_str().unwrap_or("N/A");
-        let email = family["email"].as_str().unwrap_or("No email on file");
-        table.add_row(Row::new(vec![Cell::new(name), Cell::new(email)]));
-    }
-
-    table.printstd();
     Ok(())
 }
 
