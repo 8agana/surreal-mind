@@ -97,8 +97,8 @@ struct SkaterRow {
 struct StatusRow {
     family_name: String,
     email: Option<String>,
-    request_status: String,
-    gallery_status: String,
+    request_status: Option<String>, // Changed to Option<String>
+    gallery_status: Option<String>, // Changed to Option<String>
     sent_date: Option<String>,
 }
 
@@ -444,14 +444,14 @@ async fn mark_sent(
     last_name: &str,
     comp: &str,
 ) -> Result<()> {
-    let family_id_full = format_family_id(last_name); // e.g., "family:shawhan"
-    let family_id_only = last_name.to_lowercase().replace(" ", "-"); // e.g., "shawhan"
-    let competition_id_only = comp.to_lowercase(); // e.g., "2025_pony_express"
+    let family_id_full = format_family_id(last_name);
+    let family_id_only = last_name.to_lowercase().replace(" ", "-");
+    let competition_id_only = comp.to_lowercase();
 
     // 1. Check existence explicitly using raw SQL to avoid SDK "Table Name" confusion
-    let check_sql = "SELECT * FROM type::thing('family', $id)";
-    let mut check_resp = db.query(check_sql).bind(("id", &family_id_only)).await?;
-    let check: Vec<serde_json::Value> = check_resp.take(0)?;
+    let check_sql = r#"SELECT * FROM type::thing('family', $id)"#;
+    let mut check_resp = db.query(check_sql).bind(("id", family_id_only.clone())).await?;
+    let check: Vec<Family> = check_resp.take(0)?;
     
     if check.is_empty() {
         println!("❌ Error: Family {} not found.", family_id_full);
@@ -463,8 +463,8 @@ async fn mark_sent(
     let sql = "
         UPDATE family_competition
         SET gallery_status = 'sent'
-                WHERE in = type::thing('family', $family_id)
-                AND out = type::thing('competition', $competition_id)
+        WHERE in = type::thing('family', $family_id)
+        AND out = type::thing('competition', $competition_id)
     ";
     let _ = db.query(sql)
         .bind(("family_id", family_id_only))
@@ -481,22 +481,21 @@ async fn check_status(
 ) -> Result<()> {
     let comp_id = format!("competition:{}", comp_name);
     let mut sql = String::from(
-        "SELECT in.last_name as family_name,
+        r#"SELECT in.last_name as family_name,
                 in.email as email,
                 request_status,
                 gallery_status,
                 sent_date
          FROM family_competition
-         WHERE out = type::thing($comp)
-         AND request_status = 'requested' ", // Only care about requested families
+         WHERE out = type::thing($comp)"#
     );
 
     if pending_only {
-        sql.push_str(" AND gallery_status = 'pending'");
+        sql.push_str(r#" AND gallery_status = 'pending'"#);
     }
 
     // Sort by status (pending first) then name
-    sql.push_str(" ORDER BY gallery_status ASC, family_name ASC");
+    sql.push_str(r#" ORDER BY gallery_status ASC, family_name ASC"#);
 
     let mut response = db.query(&sql).bind(("comp", comp_id)).await?;
     let rows: Vec<StatusRow> = response.take(0)?;
@@ -511,8 +510,8 @@ async fn check_status(
         table.add_row(row![
             r.family_name,
             r.email.unwrap_or_else(|| "-".to_string()),
-            r.request_status,
-            r.gallery_status,
+            r.request_status.unwrap_or_else(|| "-".to_string()),
+            r.gallery_status.unwrap_or_else(|| "-".to_string()),
             r.sent_date.unwrap_or_else(|| "-".to_string())
         ]);
     }
@@ -532,9 +531,9 @@ async fn record_purchase(
     let competition_id_only = comp.to_lowercase();
 
     // Check existence using raw SQL
-    let check_sql = "SELECT * FROM type::thing('family', $id)";
-    let mut check_resp = db.query(check_sql).bind(("id", &family_id_only)).await?;
-    let check: Vec<serde_json::Value> = check_resp.take(0)?;
+    let check_sql = r#"SELECT * FROM type::thing('family', $id)"#;
+    let mut check_resp = db.query(check_sql).bind(("id", family_id_only.clone())).await?;
+    let check: Vec<Family> = check_resp.take(0)?;
 
     if check.is_empty() {
         println!("❌ Error: Family {} not found.", family_id_full);
@@ -546,12 +545,12 @@ async fn record_purchase(
         "Recording purchase: {} -> {} for amount {}",
         family_id_full, competition_id_only, amount
     );
-    let sql = "
+    let sql = r#"
         UPDATE family_competition
         SET gallery_status = 'purchased', purchase_amount = $amount, purchase_date = time::now()
         WHERE in = type::thing('family', $family_id)
         AND out = type::thing('competition', $competition_id)
-    ";
+    "#;
     let _ = db
         .query(sql)
         .bind(("family_id", family_id_only))
