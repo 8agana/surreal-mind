@@ -1,3 +1,19 @@
+## 2025-11-20 - Fix: Competition ID Format in Photography CLI
+- **Fixed competition ID format**: Commands now properly replace spaces with underscores in competition IDs
+  - **Root cause**: Competition names like "Pony Express" were not converted to database format "pony_express"
+  - **Impact**: DELETE queries failed silently, creating duplicate edges instead of updates
+  - **Affected commands**: mark_sent, set_status, request_ty, send_ty, record_purchase
+  - **Fix**: Changed `comp.to_lowercase()` to `comp.to_lowercase().replace(" ", "_")` in all functions
+- **Ensures DELETE+RELATE pattern works correctly**: Edges are now properly updated instead of duplicated
+
+## 2025-11-20 - Photography CLI: Add set-status Command
+- **Added set-status command**: Generic status setter for all gallery_status values
+  - Usage: `photography set-status <family> <competition> <status>`
+  - Validates status against schema-defined values: pending, culling, processing, sent, purchased, not_shot, needs_research
+  - Uses DELETE+RELATE pattern for clean edge creation/updates
+  - Enables workflow triage: mark families as needs_research (investigation required) or not_shot (split ice, no coverage)
+- **Immediate use case**: 8 Pony Express families marked needs_research for back-burner handling
+
 ## 2025-11-20 - Photography CLI Critical Bug Fixes & Schema Updates
 - **Fixed family_competition Edge Management**: Resolved critical issues with `mark_sent`, `request_ty`, `send_ty`, and `record_purchase` commands.
   - **Root Cause**: Commands were using `UPDATE` on non-existent `family_competition` edges (edges not created during import).

@@ -156,7 +156,7 @@ pub async fn import_roster(db: &Surreal<Client>, competition: &str, file_path: &
 pub async fn mark_sent(db: &Surreal<Client>, last_name: &str, comp: &str) -> Result<()> {
     let family_id_full = format_family_id(last_name);
     let family_id_only = last_name.to_lowercase().replace(" ", "_");
-    let competition_id_only = comp.to_lowercase();
+    let competition_id_only = comp.to_lowercase().replace(" ", "_");
 
     // 1. Check existence explicitly using raw SQL to avoid SDK "Table Name" confusion
     let check_sql = r#"SELECT * FROM type::thing('family', $id)"#;
@@ -204,7 +204,7 @@ pub async fn mark_sent(db: &Surreal<Client>, last_name: &str, comp: &str) -> Res
 pub async fn request_ty(db: &Surreal<Client>, last_name: &str, comp: &str) -> Result<()> {
     let family_id_full = format_family_id(last_name);
     let family_id_only = last_name.to_lowercase().replace(" ", "_");
-    let competition_id_only = comp.to_lowercase();
+    let competition_id_only = comp.to_lowercase().replace(" ", "_");
 
     // Check existence
     let check_sql = r#"SELECT * FROM type::thing('family', $id)"#;
@@ -250,7 +250,7 @@ pub async fn request_ty(db: &Surreal<Client>, last_name: &str, comp: &str) -> Re
 pub async fn send_ty(db: &Surreal<Client>, last_name: &str, comp: &str) -> Result<()> {
     let family_id_full = format_family_id(last_name);
     let family_id_only = last_name.to_lowercase().replace(" ", "_");
-    let competition_id_only = comp.to_lowercase();
+    let competition_id_only = comp.to_lowercase().replace(" ", "_");
 
     // Check existence
     let check_sql = r#"SELECT * FROM type::thing('family', $id)"#;
@@ -365,7 +365,7 @@ pub async fn record_purchase(
 ) -> Result<()> {
     let family_id_full = format_family_id(last_name);
     let family_id_only = last_name.to_lowercase().replace(" ", "_");
-    let competition_id_only = comp.to_lowercase();
+    let competition_id_only = comp.to_lowercase().replace(" ", "_");
 
     // Check existence using raw SQL
     let check_sql = r#"SELECT * FROM type::thing('family', $id)"#;
@@ -763,5 +763,76 @@ pub async fn competition_stats(db: &Surreal<Client>, comp_name: &str) -> Result<
         }
     }
 
+    Ok(())
+}
+
+pub async fn set_status(
+    db: &Surreal<Client>,
+    last_name: &str,
+    comp: &str,
+    status: &str,
+) -> Result<()> {
+    let valid_statuses = [
+        "pending",
+        "culling",
+        "processing",
+        "sent",
+        "purchased",
+        "not_shot",
+        "needs_research",
+    ];
+
+    if !valid_statuses.contains(&status) {
+        println!(
+            "❌ Error: Invalid status '{}'. Valid statuses are: {}",
+            status,
+            valid_statuses.join(", ")
+        );
+        return Ok(());
+    }
+
+    let family_id_full = format_family_id(last_name);
+    let family_id_only = last_name.to_lowercase().replace(" ", "_");
+    let competition_id_only = comp.to_lowercase().replace(" ", "_");
+
+    // Check family exists
+    let check_sql = r#"SELECT * FROM type::thing('family', $id)"#;
+    let mut check_resp = db
+        .query(check_sql)
+        .bind(("id", family_id_only.clone()))
+        .await?;
+    let check: Vec<Family> = check_resp.take(0)?;
+    if check.is_empty() {
+        println!("❌ Error: Family {} not found.", family_id_full);
+        return Ok(());
+    }
+
+    // DELETE+RELATE pattern
+    println!(
+        "Setting status to '{}': {} -> {}",
+        status, family_id_full, competition_id_only
+    );
+    let delete_sql = "
+        DELETE family_competition
+        WHERE in = type::thing('family', $family_id)
+        AND out = type::thing('competition', $competition_id)
+    ";
+    let _ = db
+        .query(delete_sql)
+        .bind(("family_id", family_id_only.clone()))
+        .bind(("competition_id", competition_id_only.clone()))
+        .await?;
+
+    let sql = "
+        RELATE (type::thing('family', $family_id))->family_competition->(type::thing('competition', $competition_id))
+        SET gallery_status = $status
+    ";
+    let _ = db
+        .query(sql)
+        .bind(("family_id", family_id_only))
+        .bind(("competition_id", competition_id_only))
+        .bind(("status", status.to_string()))
+        .await?;
+    println!("✅ Status set to '{}'.", status);
     Ok(())
 }
