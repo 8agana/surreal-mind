@@ -1,6 +1,10 @@
 // Extracted from src/bin/photography.rs
 // Helper functions for photography module
 
+use anyhow::Result;
+use strsim::jaro_winkler;
+use surrealdb::{Surreal, engine::remote::ws::Client};
+
 /// Formats a family ID for use in SurrealDB queries.
 /// Ensures underscores instead of spaces, and backticks if non-alphanumeric characters are present.
 pub fn format_family_id(last_name: &str) -> String {
@@ -85,4 +89,89 @@ pub fn competition_to_id(competition: &str) -> String {
         .replace(" ", "_")
         .replace(",", "")
         .replace("-", "_")
+}
+
+/// Resolves a competition name using exact match, substring match, or fuzzy matching.
+/// Returns the canonical competition name or an error with suggestions.
+pub async fn resolve_competition(db: &Surreal<Client>, input: &str) -> Result<String> {
+    // Query all competition names
+    let mut resp = db.query("SELECT name FROM competition").await?;
+    let competitions: Vec<String> = resp.take(0)?;
+
+    if competitions.is_empty() {
+        return Err(anyhow::anyhow!("No competitions found in database"));
+    }
+
+    let input_lower = input.to_lowercase();
+    let mut exact_matches = Vec::new();
+
+    // Strategy 1: Exact match or substring (case-insensitive)
+    for comp in &competitions {
+        let comp_lower = comp.to_lowercase();
+        if comp_lower == input_lower || comp_lower.contains(&input_lower) {
+            exact_matches.push(comp.clone());
+        }
+    }
+
+    if exact_matches.len() == 1 {
+        return Ok(exact_matches[0].clone());
+    } else if exact_matches.len() > 1 {
+        let names = exact_matches
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(anyhow::anyhow!(
+            "Ambiguous input '{}'. Multiple matches: {}",
+            input,
+            names
+        ));
+    }
+
+    // Strategy 2: Fuzzy matching with Jaro-Winkler
+    let mut best_score = 0.0;
+
+    for comp in &competitions {
+        let score = jaro_winkler(&comp.to_lowercase(), &input_lower);
+        if score > best_score {
+            best_score = score;
+        }
+    }
+
+    if best_score > 0.8 {
+        // Check for multiple high matches
+        let mut high_matches = Vec::new();
+        for comp in &competitions {
+            let score = jaro_winkler(&comp.to_lowercase(), &input_lower);
+            if (score - best_score).abs() < 0.000001 {
+                high_matches.push(comp.clone());
+            }
+        }
+        if high_matches.len() == 1 {
+            return Ok(high_matches[0].clone());
+        } else {
+            let names = high_matches
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(anyhow::anyhow!(
+                "Ambiguous fuzzy matches for '{}'. Suggestions: {}",
+                input,
+                names
+            ));
+        }
+    }
+
+    // No match
+    let available = competitions
+        .iter()
+        .map(|s| s.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    Err(anyhow::anyhow!(
+        "No competition found matching '{}'. Available competitions: {}",
+        input,
+        available
+    ))
 }
