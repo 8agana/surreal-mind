@@ -38,20 +38,22 @@ pub async fn import_roster(db: &Surreal<Client>, competition: &str, file_path: &
         // Parse skater names
         let parsed = parse_skater_names(&row.skater_name)?;
 
-        // If family, upsert family
-        let family_id = if parsed.is_family {
+        // If family or has email, upsert family
+        let family_id = if parsed.is_family || row.email.is_some() {
             let family_id = format!(
                 "family:{}",
                 parsed.skaters[0].last_name.to_lowercase().replace(" ", "_")
             );
+            let email = row.email.clone().unwrap_or_default();
             let family_resp = db
                 .query(
-                    "INSERT INTO family (id, first_name, last_name, created_at)
-                     VALUES ($id, 'Family', $last, time::now())
-                     ON DUPLICATE KEY UPDATE first_name = 'Family', last_name = $last",
+                    "INSERT INTO family (id, name, first_name, last_name, delivery_email, created_at)
+                     VALUES ($id, string::concat('Family ', $last), 'Family', $last, $email, time::now())
+                     ON DUPLICATE KEY UPDATE first_name = 'Family', last_name = $last, delivery_email = $email, name = string::concat('Family ', $last)",
                 )
                 .bind(("id", family_id.clone()))
                 .bind(("last", parsed.skaters[0].last_name.clone()))
+                .bind(("email", email))
                 .await?;
             family_resp.check()?;
             Some(family_id)
@@ -127,6 +129,17 @@ pub async fn import_roster(db: &Surreal<Client>, competition: &str, file_path: &
                     .bind(("family_id", family_id.clone()))
                     .await?;
                 belongs_resp.check()?;
+
+                // Create family_competition relation
+                let fam_comp_resp = db
+                    .query(
+                        "RELATE (type::thing('family', $family_id))->family_competition->(type::thing('competition', $comp_id))
+                         SET created_at = time::now(), gallery_status = (gallery_status OR 'pending')",
+                    )
+                    .bind(("family_id", family_id.clone()))
+                    .bind(("comp_id", comp_id.clone()))
+                    .await?;
+                fam_comp_resp.check()?;
             }
 
             // Create competed_in relation
@@ -697,39 +710,40 @@ pub async fn list_events_for_skater(
 /// Show competition statistics
 pub async fn competition_stats(db: &Surreal<Client>, comp_name: &str) -> Result<()> {
     let lower_comp = comp_name.to_lowercase();
-    let condition = format!("LOWER(out.competition.name) CONTAINS '{}'", lower_comp);
+    let event_condition = format!("string::lowercase(out.competition.name OR '') CONTAINS '{}'", lower_comp);
+    let family_condition = format!("string::lowercase(out.name OR '') CONTAINS '{}'", lower_comp);
 
     // Total distinct skaters
     let mut total_skaters_resp = db
         .query(format!(
-            "SELECT count(DISTINCT in) FROM competed_in WHERE {} FETCH out.competition",
-            condition
+            "RETURN array::len(array::distinct((SELECT VALUE in FROM competed_in WHERE {})))",
+            event_condition
         ))
         .await?;
-    let total_skaters: Vec<Value> = total_skaters_resp.take(0)?;
+    let total_skaters: Option<Value> = total_skaters_resp.take(0)?;
     println!(
         "Total distinct skaters: {}",
-        total_skaters[0].get("count").unwrap_or(&Value::Null)
+        total_skaters.unwrap_or(Value::from(0))
     );
 
     // Total families
     let mut total_families_resp = db
         .query(format!(
-            "SELECT count(DISTINCT in) FROM family_competition WHERE {} FETCH out",
-            condition
+            "RETURN array::len(array::distinct((SELECT VALUE in FROM family_competition WHERE {})))",
+            family_condition
         ))
         .await?;
-    let total_families: Vec<Value> = total_families_resp.take(0)?;
+    let total_families: Option<Value> = total_families_resp.take(0)?;
     println!(
         "Total families: {}",
-        total_families[0].get("count").unwrap_or(&Value::Null)
+        total_families.unwrap_or(Value::from(0))
     );
 
     // Status breakdown
     let mut status_resp = db
         .query(format!(
             "SELECT request_status, count() as count FROM competed_in WHERE {} GROUP BY request_status FETCH out.competition",
-            condition
+            event_condition
         ))
         .await?;
     let statuses: Vec<Value> = status_resp.take(0)?;
@@ -748,7 +762,7 @@ pub async fn competition_stats(db: &Surreal<Client>, comp_name: &str) -> Result<
     let mut gal_resp = db
         .query(format!(
             "SELECT gallery_status, count() as count FROM competed_in WHERE {} GROUP BY gallery_status FETCH out.competition",
-            condition
+            event_condition
         ))
         .await?;
     let galleries: Vec<Value> = gal_resp.take(0)?;
