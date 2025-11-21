@@ -1,5 +1,29 @@
 # Repository Guidelines
 
+## Project Context & Architecture
+
+### Identity
+**SurrealMind** is the Model Context Protocol (MCP) server for the LegacyMind ecosystem. It acts as the central nervous system, managing:
+-   **Long-term Memory**: Storing thoughts and conversations in SurrealDB.
+-   **Tooling**: Exposing tools for "thinking", memory injection, and photography management.
+-   **Intelligence**: Interfacing with local LLMs (via Candle) and OpenAI for embeddings and analysis.
+
+### Architecture (Refactored Nov 2025)
+The project is a Rust-based MCP server built on `rmcp`. The server module (`src/server/`) has been modularized:
+-   **`mod.rs`**: Coordinator and data models (`Thought`, `KGMemory`).
+-   **`router.rs`**: Request routing and `ServerHandler` implementation.
+-   **`db.rs`**: Database connection, authentication, and core operations.
+-   **`schema.rs`**: Database schema definitions and initialization.
+
+### Key Patterns
+-   **ThoughtBuilder** (`src/tools/thinking.rs`): A builder pattern used to construct `Thought` objects, ensuring consistent embedding generation, continuity link resolution, and database insertion across different tool contexts.
+
+### Infrastructure
+-   **Database**: SurrealDB (running locally or on a dedicated server).
+-   **Embeddings**: Hybrid approach using OpenAI (remote) or Candle (local BERT models).
+-   **Transport**: Stdio (default) or SSE (Server-Sent Events).
+
+
 ## File Organization
 - **Test Files**: All test files should go into the `/tests` folder 
 

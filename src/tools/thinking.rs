@@ -147,6 +147,171 @@ pub fn process_continuity_query_result(
     }
 }
 
+/// Builder for creating thoughts with consistent logic
+pub struct ThoughtBuilder<'a> {
+    server: &'a SurrealMindServer,
+    content: String,
+    origin: String,
+    injection_scale: i64,
+    significance: f64,
+    tags: Vec<String>,
+    confidence: Option<f32>,
+    // Continuity params
+    session_id: Option<String>,
+    chain_id: Option<String>,
+    previous_thought_id: Option<String>,
+    revises_thought: Option<String>,
+    branch_from: Option<String>,
+}
+
+impl<'a> ThoughtBuilder<'a> {
+    pub fn new(server: &'a SurrealMindServer, content: &str, origin: &str) -> Self {
+        Self {
+            server,
+            content: content.to_string(),
+            origin: origin.to_string(),
+            injection_scale: 1,
+            significance: 0.5,
+            tags: Vec::new(),
+            confidence: None,
+            session_id: None,
+            chain_id: None,
+            previous_thought_id: None,
+            revises_thought: None,
+            branch_from: None,
+        }
+    }
+
+    pub fn scale(mut self, scale: Option<u8>) -> Self {
+        self.injection_scale = scale.unwrap_or(1) as i64;
+        self
+    }
+
+    pub fn significance(mut self, sig: Option<f32>) -> Self {
+        self.significance = sig.unwrap_or(0.5) as f64;
+        self
+    }
+
+    pub fn tags(mut self, tags: Option<Vec<String>>) -> Self {
+        self.tags = tags.unwrap_or_default();
+        self
+    }
+
+    pub fn confidence(mut self, conf: Option<f32>) -> Self {
+        self.confidence = conf.map(|c| c.clamp(0.0, 1.0));
+        self
+    }
+
+    pub fn continuity(
+        mut self,
+        session_id: Option<String>,
+        chain_id: Option<String>,
+        previous_thought_id: Option<String>,
+        revises_thought: Option<String>,
+        branch_from: Option<String>,
+    ) -> Self {
+        self.session_id = session_id;
+        self.chain_id = chain_id;
+        self.previous_thought_id = previous_thought_id;
+        self.revises_thought = revises_thought;
+        self.branch_from = branch_from;
+        self
+    }
+
+    /// Execute the build process: embed, resolve links, and create record
+    pub async fn execute(self) -> Result<(String, Vec<f32>, ContinuityResult)> {
+        let thought_id = uuid::Uuid::new_v4().to_string();
+        let (provider, model, dim) = self.server.get_embedding_metadata();
+
+        // Compute embedding
+        let embedding = self
+            .server
+            .embedder
+            .embed(&self.content)
+            .await
+            .map_err(|e| SurrealMindError::Embedding {
+                message: e.to_string(),
+            })?;
+
+        if embedding.is_empty() {
+            return Err(SurrealMindError::Embedding {
+                message: "Generated embedding is empty".into(),
+            });
+        }
+
+        // Resolve continuity links
+        let mut resolved_continuity = self
+            .server
+            .resolve_continuity_links(
+                &thought_id,
+                self.previous_thought_id,
+                self.revises_thought,
+                self.branch_from,
+            )
+            .await?;
+        resolved_continuity.session_id = self.session_id;
+        resolved_continuity.chain_id = self.chain_id;
+        resolved_continuity.confidence = self.confidence;
+
+        // Create thought with all fields
+        self.server.db
+            .query(
+                "CREATE type::thing('thoughts', $id) CONTENT {
+            content: $content,
+            created_at: time::now(),
+            embedding: $embedding,
+            injected_memories: [],
+            enriched_content: NONE,
+            injection_scale: $injection_scale,
+            significance: $significance,
+            access_count: 0,
+            last_accessed: NONE,
+            submode: NONE,
+            framework_enhanced: NONE,
+            framework_analysis: NONE,
+            origin: $origin,
+            tags: $tags,
+            is_private: false,
+            embedding_provider: $provider,
+            embedding_model: $model,
+            embedding_dim: $dim,
+            embedded_at: time::now(),
+            session_id: $session_id,
+            chain_id: $chain_id,
+            previous_thought_id: $previous_thought_id,
+            revises_thought: $revises_thought,
+            branch_from: $branch_from,
+            confidence: $confidence
+        } RETURN NONE;",
+            )
+            .bind(("id", thought_id.clone()))
+            .bind(("content", self.content))
+            .bind(("embedding", embedding.clone()))
+            .bind(("injection_scale", self.injection_scale))
+            .bind(("significance", self.significance))
+            .bind(("origin", self.origin))
+            .bind(("tags", self.tags))
+            .bind(("provider", provider))
+            .bind(("model", model))
+            .bind(("dim", dim))
+            .bind(("session_id", resolved_continuity.session_id.clone()))
+            .bind(("chain_id", resolved_continuity.chain_id.clone()))
+            .bind((
+                "previous_thought_id",
+                resolved_continuity.previous_thought_id.clone(),
+            ))
+            .bind((
+                "revises_thought",
+                resolved_continuity.revises_thought.clone(),
+            ))
+            .bind(("branch_from", resolved_continuity.branch_from.clone()))
+            .bind(("confidence", resolved_continuity.confidence))
+            .await?;
+
+        Ok((thought_id, embedding, resolved_continuity))
+    }
+}
+
 impl SurrealMindServer {
     /// Run conversational think (with framework enhancement, origin='human')
     #[allow(clippy::too_many_arguments)]
@@ -165,94 +330,24 @@ impl SurrealMindServer {
         branch_from: Option<String>,
         confidence: Option<f32>,
     ) -> Result<(serde_json::Value, ContinuityResult)> {
-        let injection_scale = injection_scale.unwrap_or(1) as i64;
-        let significance = significance.unwrap_or(0.5_f32) as f64;
-        let content_str = content.to_string();
+        let injection_scale_val = injection_scale.unwrap_or(1) as i64;
         let tags = tags.unwrap_or_default();
+        let content_str = content.to_string();
 
-        // Clamp confidence to [0.0, 1.0]
-        let confidence = confidence.map(|c| c.clamp(0.0, 1.0));
-
-        // Step 1: Generate IDs and compute embedding
-        let thought_id = uuid::Uuid::new_v4().to_string();
-        let (_provider, _model, _dim) = self.get_embedding_metadata();
-
-        // Compute embedding
-        let embedding =
-            self.embedder
-                .embed(&content_str)
-                .await
-                .map_err(|e| SurrealMindError::Embedding {
-                    message: e.to_string(),
-                })?;
-
-        if embedding.is_empty() {
-            return Err(SurrealMindError::Embedding {
-                message: "Generated embedding is empty".into(),
-            });
-        }
-
-        // Step 2: Create thought with basic fields first
-        self.db
-            .query(
-                "CREATE type::thing('thoughts', $id) CONTENT {
-            content: $content,
-            created_at: time::now(),
-            embedding: $embedding,
-            injected_memories: [],
-            enriched_content: NONE,
-            injection_scale: $injection_scale,
-            significance: $significance,
-            access_count: 0,
-            last_accessed: NONE,
-            submode: NONE,
-            framework_enhanced: NONE,
-            framework_analysis: NONE,
-            origin: 'human',
-            tags: $tags,
-            is_private: false,
-            embedding_provider: $_provider,
-            embedding_model: $_model,
-            embedding_dim: $_dim,
-            embedded_at: time::now()
-        } RETURN NONE;",
+        // Use ThoughtBuilder to create the thought
+        let (thought_id, embedding, resolved_continuity) = ThoughtBuilder::new(self, content, "human")
+            .scale(Some(injection_scale_val as u8))
+            .tags(Some(tags.clone()))
+            .significance(significance)
+            .confidence(confidence)
+            .continuity(
+                session_id,
+                chain_id,
+                previous_thought_id,
+                revises_thought,
+                branch_from,
             )
-            .bind(("id", thought_id.clone()))
-            .bind(("content", content_str.clone()))
-            .bind(("embedding", embedding.clone()))
-            .bind(("injection_scale", injection_scale))
-            .bind(("significance", significance))
-            .bind(("tags", tags.clone()))
-            .bind(("_provider", _provider))
-            .bind(("_model", _model))
-            .bind(("_dim", _dim))
-            .await?;
-
-        // Step 3: Resolve continuity links
-        let mut resolved_continuity = self
-            .resolve_continuity_links(
-                &thought_id,
-                previous_thought_id.clone(),
-                revises_thought.clone(),
-                branch_from.clone(),
-            )
-            .await?;
-        resolved_continuity.session_id = session_id.clone();
-        resolved_continuity.chain_id = chain_id.clone();
-        resolved_continuity.confidence = confidence;
-
-        // Step 4: Update thought with resolved continuity links
-        self.db
-            .query(
-                "UPDATE type::thing('thoughts', $id) SET session_id = $session_id, chain_id = $chain_id, previous_thought_id = $previous_thought_id, revises_thought = $revises_thought, branch_from = $branch_from, confidence = $confidence RETURN NONE;",
-            )
-            .bind(("id", thought_id.clone()))
-            .bind(("session_id", resolved_continuity.session_id.clone()))
-            .bind(("chain_id", resolved_continuity.chain_id.clone()))
-            .bind(("previous_thought_id", resolved_continuity.previous_thought_id.clone()))
-            .bind(("revises_thought", resolved_continuity.revises_thought.clone()))
-            .bind(("branch_from", resolved_continuity.branch_from.clone()))
-            .bind(("confidence", resolved_continuity.confidence))
+            .execute()
             .await?;
 
         // Framework enhancement (skip for conclude)
@@ -368,7 +463,7 @@ impl SurrealMindServer {
             .inject_memories(
                 &thought_id,
                 &embedding,
-                injection_scale,
+                injection_scale_val,
                 None,
                 Some("think_convo"),
             )
@@ -410,97 +505,23 @@ impl SurrealMindServer {
             "stuck" => (3u8, 0.9_f32),
             _ => (2u8, 0.6_f32), // fallback
         };
-        let injection_scale = injection_scale.unwrap_or(default_injection_scale) as i64;
-        let significance = significance.unwrap_or(default_significance) as f64;
-        let content_str = content.to_string();
+        let injection_scale_val = injection_scale.unwrap_or(default_injection_scale) as i64;
         let tags = tags.unwrap_or_default();
 
-        // Clamp confidence to [0.0, 1.0]
-        let confidence = confidence.map(|c| c.clamp(0.0, 1.0));
-
-        let thought_id = uuid::Uuid::new_v4().to_string();
-        let (_provider, _model, _dim) = self.get_embedding_metadata();
-
-        // Compute embedding
-        let embedding =
-            self.embedder
-                .embed(&content_str)
-                .await
-                .map_err(|e| SurrealMindError::Embedding {
-                    message: e.to_string(),
-                })?;
-
-        if embedding.is_empty() {
-            return Err(SurrealMindError::Embedding {
-                message: "Generated embedding is empty".into(),
-            });
-        }
-
-        // Step 1: Resolve continuity links
-        let mut resolved_continuity = self
-            .resolve_continuity_links(
-                &thought_id,
-                previous_thought_id.clone(),
-                revises_thought.clone(),
-                branch_from.clone(),
+        // Use ThoughtBuilder
+        let (thought_id, embedding, resolved_continuity) = ThoughtBuilder::new(self, content, "tool")
+            .scale(Some(injection_scale_val as u8))
+            .tags(Some(tags.clone()))
+            .significance(significance.or(Some(default_significance)))
+            .confidence(confidence)
+            .continuity(
+                session_id,
+                chain_id,
+                previous_thought_id,
+                revises_thought,
+                branch_from,
             )
-            .await?;
-        resolved_continuity.session_id = session_id.clone();
-        resolved_continuity.chain_id = chain_id.clone();
-        resolved_continuity.confidence = confidence;
-
-        // Step 2: Create thought with all fields including resolved continuity
-        self.db
-            .query(
-                "CREATE type::thing('thoughts', $id) CONTENT {
-            content: $content,
-            created_at: time::now(),
-            embedding: $embedding,
-            injected_memories: [],
-            enriched_content: NONE,
-            injection_scale: $injection_scale,
-            significance: $significance,
-            access_count: 0,
-            last_accessed: NONE,
-            submode: NONE,
-            framework_enhanced: NONE,
-            framework_analysis: NONE,
-            origin: 'tool',
-            tags: $tags,
-            is_private: false,
-            embedding_provider: $_provider,
-            embedding_model: $_model,
-            embedding_dim: $_dim,
-            embedded_at: time::now(),
-            session_id: $session_id,
-            chain_id: $chain_id,
-            previous_thought_id: $previous_thought_id,
-            revises_thought: $revises_thought,
-            branch_from: $branch_from,
-            confidence: $confidence
-        } RETURN NONE;",
-            )
-            .bind(("id", thought_id.clone()))
-            .bind(("content", content_str.clone()))
-            .bind(("embedding", embedding.clone()))
-            .bind(("injection_scale", injection_scale))
-            .bind(("significance", significance))
-            .bind(("tags", tags.clone()))
-            .bind(("session_id", resolved_continuity.session_id.clone()))
-            .bind(("chain_id", resolved_continuity.chain_id.clone()))
-            .bind((
-                "previous_thought_id",
-                resolved_continuity.previous_thought_id.clone(),
-            ))
-            .bind((
-                "revises_thought",
-                resolved_continuity.revises_thought.clone(),
-            ))
-            .bind(("branch_from", resolved_continuity.branch_from.clone()))
-            .bind(("confidence", resolved_continuity.confidence))
-            .bind(("_provider", _provider))
-            .bind(("_model", _model))
-            .bind(("_dim", _dim))
+            .execute()
             .await?;
 
         let tool_name = format!("think_{}", mode);
@@ -508,7 +529,7 @@ impl SurrealMindServer {
             .inject_memories(
                 &thought_id,
                 &embedding,
-                injection_scale,
+                injection_scale_val,
                 None,
                 Some(&tool_name),
             )
