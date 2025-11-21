@@ -1,3 +1,14 @@
+## 2025-11-20 - Photography TY Workflow & Schema Updates
+- **TY Workflow Implementation**: Added support for "Thank You" gallery tracking in photography CLI and schema.
+  - New commands: `request-ty` (marks requested), `send-ty` (marks sent, timestamps).
+  - Updated `check-status`: Supports `--ty-pending` flag and new statuses (`not_shot`, `needs_research`).
+  - Updated Schema: Added `ty_requested` (bool), `ty_sent` (bool), `ty_sent_date` (option<datetime>) to `family_competition` edge.
+- **Bug Fixes**:
+  - **ID Generation**: Fixed critical bug where `format_family_id` used hyphens (`-`) while import used underscores (`_`). Standardized on underscores.
+  - **Query Syntax**: Fixed `update_gallery` to correctly use `in`/`out` fields for relation updates instead of table names.
+  - **Schema Logic**: Moved TY fields from `competed_in` (event-level) to `family_competition` (family-level) to match business logic.
+- **Refactoring**: Updated `StatusRow` and `SkaterRow` structs to support new fields.
+
 ## 2025-09-20 - Photography Schema Extension
 - **Added photography namespace and ops database**: New SCHEMAFULL schema for photography business operations including client management, family groups, competitions, events, registrations, and shot logging.
 - **Created photography_schema binary**: Dedicated tool to initialize the photography ops database with proper relations, types, and defaults.

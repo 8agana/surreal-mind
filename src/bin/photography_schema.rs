@@ -87,13 +87,20 @@ async fn main() -> Result<()> {
         "DEFINE TABLE competed_in TYPE RELATION FROM skater TO event SCHEMAFULL PERMISSIONS FOR select, create, update FULL;",
         "DEFINE FIELD skate_order ON competed_in TYPE option<int>;",
         "DEFINE FIELD request_status ON competed_in TYPE string DEFAULT 'unrequested' ASSERT $value INSIDE ['requested', 'vip', 'unrequested'];",
-        "DEFINE FIELD gallery_status ON competed_in TYPE string DEFAULT 'pending' ASSERT $value INSIDE ['pending', 'culling', 'processing', 'sent', 'purchased'];",
+        "DEFINE FIELD gallery_status ON competed_in TYPE string DEFAULT 'pending' ASSERT $value INSIDE ['pending', 'culling', 'processing', 'sent', 'purchased', 'not_shot', 'needs_research'];",
         "DEFINE FIELD gallery_url ON competed_in TYPE option<string>;",
         "DEFINE FIELD gallery_sent_at ON competed_in TYPE option<datetime>;",
         "DEFINE FIELD purchase_amount ON competed_in TYPE option<float>;",
         "DEFINE FIELD purchase_date ON competed_in TYPE option<datetime>;",
         "DEFINE FIELD notes ON competed_in TYPE option<string>;",
         "DEFINE FIELD created_at ON competed_in TYPE datetime DEFAULT time::now();",
+        "DEFINE TABLE family_competition TYPE RELATION FROM family TO competition SCHEMAFULL PERMISSIONS FOR select, create, update FULL;",
+        "DEFINE FIELD gallery_status ON family_competition TYPE string DEFAULT 'pending' ASSERT $value INSIDE ['pending', 'culling', 'processing', 'sent', 'purchased', 'not_shot', 'needs_research'];",
+        "DEFINE FIELD request_status ON family_competition TYPE option<string>;",
+        "DEFINE FIELD ty_requested ON family_competition TYPE bool DEFAULT false;",
+        "DEFINE FIELD ty_sent ON family_competition TYPE bool DEFAULT false;",
+        "DEFINE FIELD ty_sent_date ON family_competition TYPE option<datetime>;",
+        "DEFINE FIELD created_at ON family_competition TYPE datetime DEFAULT time::now();",
     ];
 
     // Execute each schema query

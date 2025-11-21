@@ -50,6 +50,18 @@ enum Commands {
         #[arg(default_value = "2025_fall_fling")]
         competition: String,
     },
+    /// Request a Thank You gallery (sets ty_requested=true)
+    RequestTy {
+        last_name: String,
+        #[arg(default_value = "2025_fall_fling")]
+        competition: String,
+    },
+    /// Send a Thank You gallery (sets ty_sent=true, timestamps)
+    SendTy {
+        last_name: String,
+        #[arg(default_value = "2025_fall_fling")]
+        competition: String,
+    },
     /// Record a purchase for a family
     RecordPurchase {
         last_name: String,
@@ -63,6 +75,10 @@ enum Commands {
         competition: String,
         #[arg(long)]
         pending_only: bool,
+        #[arg(long)]
+        ty_pending: bool,
+        #[arg(long)]
+        status: Option<String>,
     },
     /// List events for skater
     ListEventsForSkater {
@@ -97,6 +113,9 @@ struct StatusRow {
     request_status: Option<String>, // Changed to Option<String>
     gallery_status: Option<String>, // Changed to Option<String>
     sent_date: Option<String>,
+    ty_requested: Option<bool>,
+    ty_sent: Option<bool>,
+    ty_sent_date: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -155,7 +174,7 @@ enum UpdateCommands {
         /// Event number
         #[arg(long)]
         event: u32,
-        /// New status (pending, culling, processing, sent, purchased)
+        /// New status (pending, culling, processing, sent, purchased, not_shot, needs_research)
         #[arg(long)]
         status: String,
         /// Gallery URL (for sent status)
@@ -271,6 +290,18 @@ async fn main() -> Result<()> {
         } => {
             mark_sent(&db, &last_name, &competition).await?;
         }
+        Commands::RequestTy {
+            last_name,
+            competition,
+        } => {
+            request_ty(&db, &last_name, &competition).await?;
+        }
+        Commands::SendTy {
+            last_name,
+            competition,
+        } => {
+            send_ty(&db, &last_name, &competition).await?;
+        }
         Commands::RecordPurchase {
             last_name,
             amount,
@@ -281,8 +312,10 @@ async fn main() -> Result<()> {
         Commands::CheckStatus {
             competition,
             pending_only,
+            ty_pending,
+            status,
         } => {
-            check_status(&db, &competition, pending_only).await?;
+            check_status(&db, &competition, pending_only, ty_pending, status.as_deref()).await?;
         }
     }
 
@@ -442,7 +475,7 @@ async fn mark_sent(
     comp: &str,
 ) -> Result<()> {
     let family_id_full = format_family_id(last_name);
-    let family_id_only = last_name.to_lowercase().replace(" ", "-");
+    let family_id_only = last_name.to_lowercase().replace(" ", "_");
     let competition_id_only = comp.to_lowercase();
 
     // 1. Check existence explicitly using raw SQL to avoid SDK "Table Name" confusion
@@ -471,45 +504,134 @@ async fn mark_sent(
     Ok(())
 }
 
+async fn request_ty(
+    db: &Surreal<surrealdb::engine::remote::ws::Client>,
+    last_name: &str,
+    comp: &str,
+) -> Result<()> {
+    let family_id_full = format_family_id(last_name);
+    let family_id_only = last_name.to_lowercase().replace(" ", "_");
+    let competition_id_only = comp.to_lowercase();
+
+    // Check existence
+    let check_sql = r#"SELECT * FROM type::thing('family', $id)"#;
+    let mut check_resp = db.query(check_sql).bind(("id", family_id_only.clone())).await?;
+    let check: Vec<Family> = check_resp.take(0)?;
+
+    if check.is_empty() {
+        println!("❌ Error: Family {} not found.", family_id_full);
+        return Ok(());
+    }
+
+    // Update
+    println!("Requesting TY Gallery: {} -> {}", family_id_full, competition_id_only);
+    let sql = "
+        UPDATE family_competition
+        SET ty_requested = true
+        WHERE in = type::thing('family', $family_id)
+        AND out = type::thing('competition', $competition_id)
+    ";
+    let _ = db.query(sql)
+        .bind(("family_id", family_id_only))
+        .bind(("competition_id", competition_id_only))
+        .await?;
+    println!("✅ TY Requested.");
+    Ok(())
+}
+
+async fn send_ty(
+    db: &Surreal<surrealdb::engine::remote::ws::Client>,
+    last_name: &str,
+    comp: &str,
+) -> Result<()> {
+    let family_id_full = format_family_id(last_name);
+    let family_id_only = last_name.to_lowercase().replace(" ", "_");
+    let competition_id_only = comp.to_lowercase();
+
+    // Check existence
+    let check_sql = r#"SELECT * FROM type::thing('family', $id)"#;
+    let mut check_resp = db.query(check_sql).bind(("id", family_id_only.clone())).await?;
+    let check: Vec<Family> = check_resp.take(0)?;
+
+    if check.is_empty() {
+        println!("❌ Error: Family {} not found.", family_id_full);
+        return Ok(());
+    }
+
+    // Update
+    println!("Sending TY Gallery: {} -> {}", family_id_full, competition_id_only);
+    let sql = "
+        UPDATE family_competition
+        SET ty_sent = true, ty_sent_date = time::now()
+        WHERE in = type::thing('family', $family_id)
+        AND out = type::thing('competition', $competition_id)
+    ";
+    let _ = db.query(sql)
+        .bind(("family_id", family_id_only))
+        .bind(("competition_id", competition_id_only))
+        .await?;
+    println!("✅ TY Sent.");
+    Ok(())
+}
+
 async fn check_status(
     db: &Surreal<surrealdb::engine::remote::ws::Client>,
     comp_name: &str,
     pending_only: bool,
+    ty_pending: bool,
+    status_filter: Option<&str>,
 ) -> Result<()> {
-    let comp_id = format!("competition:{}", comp_name);
+    let comp_name_lower = comp_name.to_lowercase();
     let mut sql = String::from(
         r#"SELECT in.last_name as family_name,
                 in.email as email,
                 request_status,
                 gallery_status,
-                sent_date
+                sent_date,
+                ty_requested,
+                ty_sent,
+                ty_sent_date
          FROM family_competition
-         WHERE out = type::thing($comp)"#
+         WHERE out = type::thing('competition', $comp)"#
     );
 
     if pending_only {
         sql.push_str(r#" AND gallery_status = 'pending'"#);
     }
+    
+    if ty_pending {
+        sql.push_str(r#" AND ty_requested = true AND ty_sent = false"#);
+    }
+
+    if let Some(status) = status_filter {
+        sql.push_str(&format!(" AND gallery_status = '{}'", status));
+    }
 
     // Sort by status (pending first) then name
     sql.push_str(r#" ORDER BY gallery_status ASC, family_name ASC"#);
 
-    let mut response = db.query(&sql).bind(("comp", comp_id)).await?;
+    let mut response = db.query(&sql).bind(("comp", comp_name_lower)).await?;
     let rows: Vec<StatusRow> = response.take(0)?;
 
     println!("Status Report for {}", comp_name);
     println!("Found {} records", rows.len());
 
     let mut table = Table::new();
-    table.add_row(row!["Family", "Email", "Request", "Status", "Sent Date"]);
+    table.add_row(row!["Family", "Email", "Request", "Status", "Sent Date", "TY Req", "TY Sent", "TY Date"]);
 
     for r in rows {
+        let ty_req = if r.ty_requested.unwrap_or(false) { "YES" } else { "no" };
+        let ty_snt = if r.ty_sent.unwrap_or(false) { "YES" } else { "no" };
+        
         table.add_row(row![
             r.family_name,
             r.email.unwrap_or_else(|| "-".to_string()),
             r.request_status.unwrap_or_else(|| "-".to_string()),
             r.gallery_status.unwrap_or_else(|| "-".to_string()),
-            r.sent_date.unwrap_or_else(|| "-".to_string())
+            r.sent_date.unwrap_or_else(|| "-".to_string()),
+            ty_req,
+            ty_snt,
+            r.ty_sent_date.unwrap_or_else(|| "-".to_string())
         ]);
     }
 
@@ -524,7 +646,7 @@ async fn record_purchase(
     comp: &str,
 ) -> Result<()> {
     let family_id_full = format_family_id(last_name);
-    let family_id_only = last_name.to_lowercase().replace(" ", "-");
+    let family_id_only = last_name.to_lowercase().replace(" ", "_");
     let competition_id_only = comp.to_lowercase();
 
     // Check existence using raw SQL
@@ -657,7 +779,7 @@ async fn update_gallery(
 
     // Find the competed_in relation
     let mut update_query = format!(
-        "UPDATE competed_in SET gallery_status = '{}' WHERE skater = skater:{} AND event.event_number = {}",
+        "UPDATE competed_in SET gallery_status = '{}' WHERE in = type::thing('skater', '{}') AND out.event_number = {}",
         status, skater_id, event
     );
 
