@@ -1,0 +1,88 @@
+// Extracted from src/bin/photography.rs
+// Helper functions for photography module
+
+/// Formats a family ID for use in SurrealDB queries.
+/// Ensures underscores instead of spaces, and backticks if non-alphanumeric characters are present.
+pub fn format_family_id(last_name: &str) -> String {
+    let lower = last_name.to_lowercase().replace(" ", "_");
+    // Check for non-alphanumeric characters (excluding underscore)
+    if lower.chars().any(|c| !c.is_alphanumeric() && c != '_') {
+        format!("family:`{}`", lower)
+    } else {
+        format!("family:{}", lower)
+    }
+}
+
+/// Parses skater names from a string, handling families, synchro, and multiple skaters.
+pub fn parse_skater_names(name: &str) -> anyhow::Result<super::models::ParsedName> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(anyhow::anyhow!("Empty skater name"));
+    }
+
+    // Check if it's synchro
+    if name.to_lowercase().starts_with("synchro ") {
+        let team = name[8..].trim();
+        let skater = super::models::ParsedSkater {
+            first_name: "Synchro".to_string(),
+            last_name: team.to_string(),
+            _family_email: None,
+        };
+        return Ok(super::models::ParsedName {
+            skaters: vec![skater],
+            is_family: false,
+            _is_synchro: true,
+        });
+    }
+
+    // Split into words
+    let words: Vec<&str> = name.split_whitespace().collect();
+    if words.is_empty() {
+        return Err(anyhow::anyhow!("Empty skater name"));
+    }
+
+    // Last word is last_name
+    let last_name = words.last().unwrap().to_string();
+
+    // First part is all except last word
+    let first_part = &name[..name.len() - last_name.len()].trim();
+
+    // Parse first_part
+    let first_names: Vec<String> = first_part
+        .split(',')
+        .flat_map(|s| s.split(" and "))
+        .map(|s| s.trim().trim_end_matches(','))
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect();
+
+    if first_names.is_empty() {
+        return Err(anyhow::anyhow!("No first names found"));
+    }
+
+    let skaters: Vec<super::models::ParsedSkater> = first_names
+        .into_iter()
+        .map(|first| super::models::ParsedSkater {
+            first_name: first,
+            last_name: last_name.clone(),
+            _family_email: None,
+        })
+        .collect();
+
+    let is_family = skaters.len() > 1;
+
+    Ok(super::models::ParsedName {
+        skaters,
+        is_family,
+        _is_synchro: false,
+    })
+}
+
+/// Converts a competition name to a valid ID by lowercasing and replacing special characters.
+pub fn competition_to_id(competition: &str) -> String {
+    competition
+        .to_lowercase()
+        .replace(" ", "_")
+        .replace(",", "")
+        .replace("-", "_")
+}
