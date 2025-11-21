@@ -53,7 +53,7 @@ async fn main() -> Result<()> {
         "DEFINE FIELD created_at ON skater TYPE datetime DEFAULT time::now();",
         "DEFINE TABLE family SCHEMAFULL PERMISSIONS FOR select, create, update FULL;",
         "DEFINE FIELD name ON family TYPE string;",
-        "DEFINE FIELD primary_contact ON family TYPE record<client>;",
+        "DEFINE FIELD primary_contact ON family TYPE option<record<client>>;",
         "DEFINE FIELD delivery_email ON family TYPE string;",
         "DEFINE FIELD notes ON family TYPE option<string>;",
         "DEFINE TABLE competition SCHEMAFULL PERMISSIONS FOR select, create, update FULL;",

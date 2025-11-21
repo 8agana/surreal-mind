@@ -48,6 +48,8 @@ pub struct RosterRow {
     pub skater_name: String,
     #[serde(rename = "SignUp")]
     pub signup: Option<String>,
+    #[serde(rename = "Email")]
+    pub email: Option<String>,
 }
 
 #[derive(Debug, Clone)]
