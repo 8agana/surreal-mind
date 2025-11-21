@@ -78,7 +78,15 @@ enum Commands {
         #[arg(long)]
         status: Option<String>,
     },
-    /// List events for skater
+    /// Set gallery status for a family and competition
+    SetStatus {
+        #[arg(help = "Family last name")]
+        last_name: String,
+        #[arg(help = "Competition name")]
+        competition: String,
+        #[arg(help = "Status: pending|culling|processing|sent|purchased|not_shot|needs_research")]
+        status: String,
+    },
     ListEventsForSkater {
         /// Skater last name
         #[arg(long)]
@@ -265,6 +273,15 @@ async fn main() -> Result<()> {
             )
             .await?;
         }
+        Commands::SetStatus {
+            last_name,
+            competition,
+            status,
+        } => {
+            surreal_mind::photography::commands::set_status(&db, &last_name, &competition, &status)
+                .await?;
+        }
+
         Commands::ListEventsForSkater {
             skater,
             competition,

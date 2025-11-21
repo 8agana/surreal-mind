@@ -477,9 +477,7 @@ pub async fn unified_search_inner(
         };
         let sql = format!(
             "SELECT {} FROM thoughts WHERE {} ORDER BY {} LIMIT $k",
-            select_fields,
-            where_sql,
-            order_by
+            select_fields, where_sql, order_by
         );
 
         // Debug the thoughts query
