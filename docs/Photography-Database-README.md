@@ -92,7 +92,8 @@ Authoritative source file documentation:
 ## Project Location
 
 **Code**: `/Users/samuelatagana/Projects/LegacyMind/surreal-mind/`
-- Rust CLI: `src/bin/photography.rs`
+- Rust Library: `src/photography/` (modular business logic and data structures)
+- Rust CLI: `src/bin/photography.rs` (slim CLI wrapper)
 - Python scripts: Various `/tmp/*.py` files (temporary, recreate as needed)
 - Documentation: `docs/` (this directory)
 

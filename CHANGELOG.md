@@ -1,3 +1,11 @@
+## 2025-01-16 - Photography CLI Modular Refactor & Config Centralization
+- **Modular Refactor**: Split monolithic `src/bin/photography.rs` (~1000 lines) into modular library architecture for improved maintainability and AI assistance.
+  - Created `src/photography/` module with submodules: `models.rs` (data structures), `commands.rs` (business logic functions), `utils.rs` (helpers), `mod.rs` (exports).
+  - Moved all structs, async command implementations, and utility functions from binary to library modules.
+  - Slimmed binary to ~150 lines, focusing solely on CLI parsing and dispatching to library functions.
+- **Config Centralization**: Eliminated hardcoded `"2025_fall_fling"` default values from binary by centralizing into `src/photography/mod.rs` as `pub const DEFAULT_COMPETITION: &str`.
+- **Validation**: Code compiles and builds successfully; CLI help displays correct defaults.
+
 ## 2025-11-20 - Photography TY Workflow & Schema Updates
 - **TY Workflow Implementation**: Added support for "Thank You" gallery tracking in photography CLI and schema.
   - New commands: `request-ty` (marks requested), `send-ty` (marks sent, timestamps).
