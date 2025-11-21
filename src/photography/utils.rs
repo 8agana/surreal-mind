@@ -95,7 +95,7 @@ pub fn competition_to_id(competition: &str) -> String {
 /// Returns the canonical competition name or an error with suggestions.
 pub async fn resolve_competition(db: &Surreal<Client>, input: &str) -> Result<String> {
     // Query all competition names
-    let mut resp = db.query("SELECT name FROM competition").await?;
+    let mut resp = db.query("SELECT VALUE name FROM competition").await?;
     let competitions: Vec<String> = resp.take(0)?;
 
     if competitions.is_empty() {
@@ -138,7 +138,7 @@ pub async fn resolve_competition(db: &Surreal<Client>, input: &str) -> Result<St
         }
     }
 
-    if best_score > 0.8 {
+    if best_score > 0.7 {
         // Check for multiple high matches
         let mut high_matches = Vec::new();
         for comp in &competitions {

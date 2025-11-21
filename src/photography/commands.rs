@@ -10,11 +10,17 @@ use surrealdb::engine::remote::ws::Client;
 
 /// Import roster from CSV for a competition
 pub async fn import_roster(db: &Surreal<Client>, competition: &str, file_path: &str) -> Result<()> {
+    // Resolve competition name (fuzzy match), fallback to input if new
+    let competition = match resolve_competition(db, competition).await {
+        Ok(c) => c,
+        Err(_) => competition.to_string(),
+    };
+    
     println!("Importing roster for competition: {}", competition);
     println!("From file: {}", file_path);
 
     // Upsert competition record
-    let comp_id = competition_to_id(competition);
+    let comp_id = competition_to_id(&competition);
     let comp_resp = db
         .query(
             "INSERT INTO competition (id, name, venue, start_date, end_date)
@@ -167,9 +173,10 @@ pub async fn import_roster(db: &Surreal<Client>, competition: &str, file_path: &
 
 /// Mark a gallery as SENT for a specific competition
 pub async fn mark_sent(db: &Surreal<Client>, last_name: &str, comp: &str) -> Result<()> {
+    let comp_resolved = resolve_competition(db, comp).await?;
     let family_id_full = format_family_id(last_name);
     let family_id_only = last_name.to_lowercase().replace(" ", "_");
-    let competition_id_only = comp.to_lowercase().replace(" ", "_");
+    let competition_id_only = competition_to_id(&comp_resolved);
 
     // 1. Check existence explicitly using raw SQL to avoid SDK "Table Name" confusion
     let check_sql = r#"SELECT * FROM type::thing('family', $id)"#;
@@ -215,9 +222,10 @@ pub async fn mark_sent(db: &Surreal<Client>, last_name: &str, comp: &str) -> Res
 
 /// Request a Thank You gallery for a family
 pub async fn request_ty(db: &Surreal<Client>, last_name: &str, comp: &str) -> Result<()> {
+    let comp_resolved = resolve_competition(db, comp).await?;
     let family_id_full = format_family_id(last_name);
     let family_id_only = last_name.to_lowercase().replace(" ", "_");
-    let competition_id_only = comp.to_lowercase().replace(" ", "_");
+    let competition_id_only = competition_to_id(&comp_resolved);
 
     // Check existence
     let check_sql = r#"SELECT * FROM type::thing('family', $id)"#;
@@ -261,9 +269,10 @@ pub async fn request_ty(db: &Surreal<Client>, last_name: &str, comp: &str) -> Re
 
 /// Send a Thank You gallery (sets ty_sent=true, timestamps)
 pub async fn send_ty(db: &Surreal<Client>, last_name: &str, comp: &str) -> Result<()> {
+    let comp_resolved = resolve_competition(db, comp).await?;
     let family_id_full = format_family_id(last_name);
     let family_id_only = last_name.to_lowercase().replace(" ", "_");
-    let competition_id_only = comp.to_lowercase().replace(" ", "_");
+    let competition_id_only = competition_to_id(&comp_resolved);
 
     // Check existence
     let check_sql = r#"SELECT * FROM type::thing('family', $id)"#;
@@ -310,7 +319,8 @@ pub async fn check_status(
     ty_pending: bool,
     status_filter: Option<&str>,
 ) -> Result<()> {
-    let comp_name_lower = comp_name.to_lowercase();
+    let comp_resolved = resolve_competition(db, comp_name).await?;
+    let comp_name_lower = comp_resolved.to_lowercase();
     let mut sql = String::from(
         r#"SELECT in.last_name as family_name,
                 in.email as email,
@@ -337,8 +347,12 @@ pub async fn check_status(
     let mut resp = db.query(sql).bind(("comp", comp_name_lower)).await?;
     let statuses: Vec<StatusRow> = resp.take(0)?;
 
+    if !statuses.is_empty() {
+        println!("Status Report for {}", comp_resolved);
+    }
+
     if statuses.is_empty() {
-        println!("No families found for competition '{}'.", comp_name);
+        println!("No families found for competition '{}'.", comp_resolved);
         return Ok(());
     }
 
@@ -376,9 +390,10 @@ pub async fn record_purchase(
     amount: f64,
     comp: &str,
 ) -> Result<()> {
+    let comp_resolved = resolve_competition(db, comp).await?;
     let family_id_full = format_family_id(last_name);
     let family_id_only = last_name.to_lowercase().replace(" ", "_");
-    let competition_id_only = comp.to_lowercase().replace(" ", "_");
+    let competition_id_only = competition_to_id(&comp_resolved);
 
     // Check existence using raw SQL
     let check_sql = r#"SELECT * FROM type::thing('family', $id)"#;
@@ -480,13 +495,14 @@ pub async fn list_skaters(db: &Surreal<Client>, status: &str) -> Result<()> {
 
 /// List events for competition
 pub async fn list_events(db: &Surreal<Client>, competition: &str) -> Result<()> {
+    let comp_resolved = resolve_competition(db, competition).await?;
     let mut resp = db
         .query(
             "SELECT event_number, split_ice, level, discipline, time_slot
              FROM event
              WHERE competition = type::thing('competition', $comp)",
         )
-        .bind(("comp", competition_to_id(competition)))
+        .bind(("comp", competition_to_id(&comp_resolved)))
         .await?;
     let events: Vec<Value> = resp.take(0)?;
     for event in events {
@@ -673,12 +689,13 @@ pub async fn list_events_for_skater(
     comp: Option<&str>,
 ) -> Result<()> {
     let query = if let Some(c) = comp {
+        let comp_resolved = resolve_competition(db, c).await?;
         format!(
             "SELECT out.competition.name, out.event_number, out.split_ice, request_status, gallery_status, purchase_amount
              FROM competed_in
              WHERE in.last_name = '{}' AND out.competition.name CONTAINS '{}'
              FETCH out, out.competition",
-            last_name, c
+            last_name, comp_resolved
         )
     } else {
         format!(
@@ -709,7 +726,8 @@ pub async fn list_events_for_skater(
 
 /// Show competition statistics
 pub async fn competition_stats(db: &Surreal<Client>, comp_name: &str) -> Result<()> {
-    let lower_comp = comp_name.to_lowercase();
+    let comp_resolved = resolve_competition(db, comp_name).await?;
+    let lower_comp = comp_resolved.to_lowercase();
     let event_condition = format!("string::lowercase(out.competition.name OR '') CONTAINS '{}'", lower_comp);
     let family_condition = format!("string::lowercase(out.name OR '') CONTAINS '{}'", lower_comp);
 
@@ -786,6 +804,7 @@ pub async fn set_status(
     comp: &str,
     status: &str,
 ) -> Result<()> {
+    let comp_resolved = resolve_competition(db, comp).await?;
     let valid_statuses = [
         "pending",
         "culling",
@@ -807,7 +826,7 @@ pub async fn set_status(
 
     let family_id_full = format_family_id(last_name);
     let family_id_only = last_name.to_lowercase().replace(" ", "_");
-    let competition_id_only = comp.to_lowercase().replace(" ", "_");
+    let competition_id_only = competition_to_id(&comp_resolved);
 
     // Check family exists
     let check_sql = r#"SELECT * FROM type::thing('family', $id)"#;
