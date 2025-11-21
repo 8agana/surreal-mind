@@ -171,16 +171,25 @@ pub async fn mark_sent(db: &Surreal<Client>, last_name: &str, comp: &str) -> Res
         return Ok(());
     }
 
-    // 2. Update
+    // 2. Delete existing edges then create new one (avoiding duplicates)
     println!(
         "Marking SENT: {} -> {}",
         family_id_full, competition_id_only
     );
-    let sql = "
-        UPDATE family_competition
-        SET gallery_status = 'sent'
+    let delete_sql = "
+        DELETE family_competition
         WHERE in = type::thing('family', $family_id)
         AND out = type::thing('competition', $competition_id)
+    ";
+    let _ = db
+        .query(delete_sql)
+        .bind(("family_id", family_id_only.clone()))
+        .bind(("competition_id", competition_id_only.clone()))
+        .await?;
+
+    let sql = "
+        RELATE (type::thing('family', $family_id))->family_competition->(type::thing('competition', $competition_id))
+        SET gallery_status = 'sent', sent_date = time::now()
     ";
     let _ = db
         .query(sql)
@@ -213,11 +222,20 @@ pub async fn request_ty(db: &Surreal<Client>, last_name: &str, comp: &str) -> Re
         "Requesting TY: {} -> {}",
         family_id_full, competition_id_only
     );
-    let sql = "
-        UPDATE family_competition
-        SET ty_requested = true
+    let delete_sql = "
+        DELETE family_competition
         WHERE in = type::thing('family', $family_id)
         AND out = type::thing('competition', $competition_id)
+    ";
+    let _ = db
+        .query(delete_sql)
+        .bind(("family_id", family_id_only.clone()))
+        .bind(("competition_id", competition_id_only.clone()))
+        .await?;
+
+    let sql = "
+        RELATE (type::thing('family', $family_id))->family_competition->(type::thing('competition', $competition_id))
+        SET ty_requested = true
     ";
     let _ = db
         .query(sql)
@@ -247,11 +265,20 @@ pub async fn send_ty(db: &Surreal<Client>, last_name: &str, comp: &str) -> Resul
     }
 
     println!("Sending TY: {} -> {}", family_id_full, competition_id_only);
-    let sql = "
-        UPDATE family_competition
-        SET ty_sent = true, ty_sent_date = time::now()
+    let delete_sql = "
+        DELETE family_competition
         WHERE in = type::thing('family', $family_id)
         AND out = type::thing('competition', $competition_id)
+    ";
+    let _ = db
+        .query(delete_sql)
+        .bind(("family_id", family_id_only.clone()))
+        .bind(("competition_id", competition_id_only.clone()))
+        .await?;
+
+    let sql = "
+        RELATE (type::thing('family', $family_id))->family_competition->(type::thing('competition', $competition_id))
+        SET ty_sent = true, ty_sent_date = time::now()
     ";
     let _ = db
         .query(sql)
@@ -274,23 +301,23 @@ pub async fn check_status(
     let mut sql = String::from(
         r#"SELECT in.last_name as family_name,
                 in.email as email,
-                out.request_status as request_status,
-                out.gallery_status as gallery_status,
-                out.sent_date as sent_date,
-                out.ty_requested as ty_requested,
-                out.ty_sent as ty_sent,
-                out.ty_sent_date as ty_sent_date
+                request_status,
+                gallery_status,
+                sent_date,
+                ty_requested,
+                ty_sent,
+                ty_sent_date
                 FROM family_competition
-                WHERE out.competition.name CONTAINS $comp"#,
+                WHERE out.name CONTAINS $comp"#,
     );
     if pending_only {
-        sql.push_str(" AND out.gallery_status = 'sent'");
+        sql.push_str(" AND gallery_status = 'pending'");
     }
     if ty_pending {
-        sql.push_str(" AND out.ty_requested = true AND out.ty_sent = false");
+        sql.push_str(" AND ty_requested = true AND ty_sent = false");
     }
     if let Some(stat) = status_filter {
-        sql.push_str(&format!(" AND out.request_status = '{}'", stat));
+        sql.push_str(&format!(" AND request_status = '{}'", stat));
     }
     sql.push_str(" ORDER BY in.last_name");
 
@@ -356,11 +383,20 @@ pub async fn record_purchase(
         "Recording purchase: {} -> ${} for {}",
         family_id_full, amount, competition_id_only
     );
-    let sql = "
-        UPDATE family_competition
-        SET purchase_amount = $amount, gallery_status = 'purchased'
+    let delete_sql = "
+        DELETE family_competition
         WHERE in = type::thing('family', $family_id)
         AND out = type::thing('competition', $competition_id)
+    ";
+    let _ = db
+        .query(delete_sql)
+        .bind(("family_id", family_id_only.clone()))
+        .bind(("competition_id", competition_id_only.clone()))
+        .await?;
+
+    let sql = "
+        RELATE (type::thing('family', $family_id))->family_competition->(type::thing('competition', $competition_id))
+        SET purchase_amount = $amount, gallery_status = 'purchased'
     ";
     let _ = db
         .query(sql)

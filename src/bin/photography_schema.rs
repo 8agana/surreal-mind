@@ -96,6 +96,7 @@ async fn main() -> Result<()> {
         "DEFINE FIELD created_at ON competed_in TYPE datetime DEFAULT time::now();",
         "DEFINE TABLE family_competition TYPE RELATION FROM family TO competition SCHEMAFULL PERMISSIONS FOR select, create, update FULL;",
         "DEFINE FIELD gallery_status ON family_competition TYPE string DEFAULT 'pending' ASSERT $value INSIDE ['pending', 'culling', 'processing', 'sent', 'purchased', 'not_shot', 'needs_research'];",
+        "DEFINE FIELD sent_date ON family_competition TYPE option<datetime>;",
         "DEFINE FIELD request_status ON family_competition TYPE option<string>;",
         "DEFINE FIELD ty_requested ON family_competition TYPE bool DEFAULT false;",
         "DEFINE FIELD ty_sent ON family_competition TYPE bool DEFAULT false;",

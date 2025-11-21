@@ -1,3 +1,17 @@
+## 2025-11-20 - Photography CLI Critical Bug Fixes & Schema Updates
+- **Fixed family_competition Edge Management**: Resolved critical issues with `mark_sent`, `request_ty`, `send_ty`, and `record_purchase` commands.
+  - **Root Cause**: Commands were using `UPDATE` on non-existent `family_competition` edges (edges not created during import).
+  - **Solution**: Implemented DELETE+RELATE pattern to ensure clean edge creation/updates, preventing duplicate records.
+  - **Impact**: All gallery status tracking now works correctly; commands create edges if missing or update existing ones.
+- **Fixed check_status Query Bugs**:
+  - **Field References**: Removed incorrect `out.` prefixes from edge fields (`gallery_status`, `request_status`, `sent_date`, `ty_requested`, `ty_sent`, `ty_sent_date`). Edge properties are accessed directly, not via node references.
+  - **WHERE Clause**: Fixed `WHERE out.competition.name` → `WHERE out.name` (competition IS the `out` node).
+  - **pending_only Logic**: Corrected filter from `gallery_status = 'sent'` → `gallery_status = 'pending'` (was backwards).
+- **Schema Enhancement**: Added `sent_date` field to `family_competition` edge (type: `option<datetime>`).
+  - Updated `mark_sent` to set both `gallery_status = 'sent'` AND `sent_date = time::now()` for complete audit trail.
+  - Parallels existing `ty_sent_date` field for consistency.
+- **Validation**: All commands tested and verified working correctly. Status tracking operational for 21 families (19 pending, 2 sent).
+
 ## 2025-01-16 - Photography CLI Modular Refactor & Config Centralization
 - **Modular Refactor**: Split monolithic `src/bin/photography.rs` (~1000 lines) into modular library architecture for improved maintainability and AI assistance.
   - Created `src/photography/` module with submodules: `models.rs` (data structures), `commands.rs` (business logic functions), `utils.rs` (helpers), `mod.rs` (exports).
