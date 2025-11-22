@@ -113,19 +113,21 @@ pub async fn resolve_competition(db: &Surreal<Client>, input: &str) -> Result<St
         }
     }
 
-    if exact_matches.len() == 1 {
-        return Ok(exact_matches[0].clone());
-    } else if exact_matches.len() > 1 {
-        let names = exact_matches
-            .iter()
-            .map(|s| s.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        return Err(anyhow::anyhow!(
-            "Ambiguous input '{}'. Multiple matches: {}",
-            input,
-            names
-        ));
+    match exact_matches.len() {
+        1 => return Ok(exact_matches[0].clone()),
+        n if n > 1 => {
+            let names = exact_matches
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(anyhow::anyhow!(
+                "Ambiguous input '{}'. Multiple matches: {}",
+                input,
+                names
+            ));
+        }
+        _ => {}
     }
 
     // Strategy 2: Fuzzy matching with Jaro-Winkler

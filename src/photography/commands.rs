@@ -340,7 +340,7 @@ pub async fn check_status(
         sql.push_str(" AND ty_requested = true AND ty_sent = false");
     }
     if let Some(stat) = status_filter {
-        sql.push_str(&format!(" AND request_status = '{}'", stat));
+        sql.push_str(&format!(" AND gallery_status = '{}'", stat));
     }
     sql.push_str(" ORDER BY in.last_name");
 
@@ -525,18 +525,23 @@ pub async fn show_event(
     event_number: u32,
     split: Option<&str>,
 ) -> Result<()> {
-    let query = if let Some(split_val) = split {
-        format!(
-            "SELECT event_number, split_ice, level, discipline, time_slot, notes FROM event WHERE event_number = {} AND split_ice = '{}'",
-            event_number, split_val
+    let qb = if let Some(split_val) = split {
+        db.query(
+            "SELECT event_number, split_ice, level, discipline, time_slot, notes \
+             FROM event \
+             WHERE event_number = $event_number AND split_ice = $split",
         )
+        .bind(("event_number", event_number))
+        .bind(("split", split_val.to_string()))
     } else {
-        format!(
-            "SELECT event_number, split_ice, level, discipline, time_slot, notes FROM event WHERE event_number = {} AND split_ice IS NONE",
-            event_number
+        db.query(
+            "SELECT event_number, split_ice, level, discipline, time_slot, notes \
+             FROM event \
+             WHERE event_number = $event_number AND split_ice IS NONE",
         )
+        .bind(("event_number", event_number))
     };
-    let mut resp = db.query(&query).await?;
+    let mut resp = qb.await?;
     let events: Vec<Value> = resp.take(0)?;
     for event in events {
         if let Some(obj) = event.as_object() {
@@ -579,11 +584,13 @@ pub async fn update_gallery(
     )
     .replace('-', "_");
 
-    let query = format!(
-        "SELECT meta::id(id) as id FROM competed_in WHERE in = type::thing('skater', '{}') AND out.event_number = {}",
-        skater_id, event
-    );
-    let mut resp = db.query(&query).await?;
+    let mut resp = db
+        .query(
+            "SELECT meta::id(id) as id FROM competed_in WHERE in = type::thing('skater', $skater_id) AND out.event_number = $event",
+        )
+        .bind(("skater_id", skater_id.clone()))
+        .bind(("event", event))
+        .await?;
     let results: Vec<Value> = resp.take(0)?;
     if results.is_empty() {
         println!("No such skater/event combination.");
@@ -591,22 +598,40 @@ pub async fn update_gallery(
     }
     let relation_id = results[0].get("id").unwrap().as_str().unwrap();
 
-    // Update
-    let mut update_sql = format!("UPDATE {} SET gallery_status = '{}'", relation_id, status);
+    // Update using bound parameters to avoid string interpolation risks
+    let update_sql = build_update_gallery_sql(status, url.is_some(), amount.is_some());
+    let mut query = db
+        .query(&update_sql)
+        .bind(("rid", relation_id.to_string()))
+        .bind(("status", status.to_string()));
+
     if status == "sent" {
         if let Some(u) = url {
-            update_sql.push_str(&format!(", gallery_url = '{}'", u));
+            query = query.bind(("url", u.to_string()));
         }
-        update_sql.push_str(", sent_date = time::now()");
     }
     if status == "purchased" {
         if let Some(a) = amount {
-            update_sql.push_str(&format!(", purchase_amount = {}", a));
+            query = query.bind(("amount", a));
         }
     }
-    let _ = db.query(&update_sql).await?;
+    let _ = query.await?;
     println!("Updated gallery status to {}.", status);
     Ok(())
+}
+
+fn build_update_gallery_sql(status: &str, has_url: bool, has_amount: bool) -> String {
+    let mut sql = String::from("UPDATE type::thing($rid) SET gallery_status = $status");
+    if status == "sent" {
+        sql.push_str(", sent_date = time::now()");
+        if has_url {
+            sql.push_str(", gallery_url = $url");
+        }
+    }
+    if status == "purchased" && has_amount {
+        sql.push_str(", purchase_amount = $amount");
+    }
+    sql
 }
 
 /// Query skater details including status
@@ -688,25 +713,30 @@ pub async fn list_events_for_skater(
     last_name: &str,
     comp: Option<&str>,
 ) -> Result<()> {
-    let query = if let Some(c) = comp {
+    let mut query = String::from(
+        "SELECT out.competition.name, out.event_number, out.split_ice, request_status, gallery_status, purchase_amount
+         FROM competed_in
+         WHERE string::lowercase(in.last_name) = string::lowercase($last)",
+    );
+
+    if comp.is_some() {
+        query.push_str(
+            " AND string::lowercase(out.competition.name OR '') CONTAINS string::lowercase($comp)",
+        );
+    }
+    query.push_str(" FETCH out, out.competition");
+
+    let mut resp = if let Some(c) = comp {
         let comp_resolved = resolve_competition(db, c).await?;
-        format!(
-            "SELECT out.competition.name, out.event_number, out.split_ice, request_status, gallery_status, purchase_amount
-             FROM competed_in
-             WHERE in.last_name = '{}' AND out.competition.name CONTAINS '{}'
-             FETCH out, out.competition",
-            last_name, comp_resolved
-        )
+        db.query(&query)
+            .bind(("last", last_name.to_string()))
+            .bind(("comp", comp_resolved.to_lowercase()))
+            .await?
     } else {
-        format!(
-            "SELECT out.competition.name, out.event_number, out.split_ice, request_status, gallery_status, purchase_amount
-             FROM competed_in
-             WHERE in.last_name = '{}'
-             FETCH out, out.competition",
-            last_name
-        )
+        db.query(&query)
+            .bind(("last", last_name.to_string()))
+            .await?
     };
-    let mut resp = db.query(&query).await?;
     let results: Vec<Value> = resp.take(0)?;
     for result in results {
         if let Some(obj) = result.as_object() {
@@ -728,15 +758,13 @@ pub async fn list_events_for_skater(
 pub async fn competition_stats(db: &Surreal<Client>, comp_name: &str) -> Result<()> {
     let comp_resolved = resolve_competition(db, comp_name).await?;
     let lower_comp = comp_resolved.to_lowercase();
-    let event_condition = format!("string::lowercase(out.competition.name OR '') CONTAINS '{}'", lower_comp);
-    let family_condition = format!("string::lowercase(out.name OR '') CONTAINS '{}'", lower_comp);
 
     // Total distinct skaters
     let mut total_skaters_resp = db
-        .query(format!(
-            "RETURN array::len(array::distinct((SELECT VALUE in FROM competed_in WHERE {})))",
-            event_condition
-        ))
+        .query(
+            "RETURN array::len(array::distinct((SELECT VALUE in FROM competed_in WHERE string::lowercase(out.competition.name OR '') CONTAINS $comp)))",
+        )
+        .bind(("comp", lower_comp.clone()))
         .await?;
     let total_skaters: Option<Value> = total_skaters_resp.take(0)?;
     println!(
@@ -746,10 +774,10 @@ pub async fn competition_stats(db: &Surreal<Client>, comp_name: &str) -> Result<
 
     // Total families
     let mut total_families_resp = db
-        .query(format!(
-            "RETURN array::len(array::distinct((SELECT VALUE in FROM family_competition WHERE {})))",
-            family_condition
-        ))
+        .query(
+            "RETURN array::len(array::distinct((SELECT VALUE in FROM family_competition WHERE string::lowercase(out.name OR '') CONTAINS $comp)))",
+        )
+        .bind(("comp", lower_comp.clone()))
         .await?;
     let total_families: Option<Value> = total_families_resp.take(0)?;
     println!(
@@ -759,10 +787,10 @@ pub async fn competition_stats(db: &Surreal<Client>, comp_name: &str) -> Result<
 
     // Status breakdown
     let mut status_resp = db
-        .query(format!(
-            "SELECT request_status, count() as count FROM competed_in WHERE {} GROUP BY request_status FETCH out.competition",
-            event_condition
-        ))
+        .query(
+            "SELECT request_status, count() as count FROM competed_in WHERE string::lowercase(out.competition.name OR '') CONTAINS $comp GROUP BY request_status FETCH out.competition",
+        )
+        .bind(("comp", lower_comp.clone()))
         .await?;
     let statuses: Vec<Value> = status_resp.take(0)?;
     println!("\nRequest Status Breakdown:");
@@ -778,10 +806,10 @@ pub async fn competition_stats(db: &Surreal<Client>, comp_name: &str) -> Result<
 
     // Gallery status
     let mut gal_resp = db
-        .query(format!(
-            "SELECT gallery_status, count() as count FROM competed_in WHERE {} GROUP BY gallery_status FETCH out.competition",
-            event_condition
-        ))
+        .query(
+            "SELECT gallery_status, count() as count FROM competed_in WHERE string::lowercase(out.competition.name OR '') CONTAINS $comp GROUP BY gallery_status FETCH out.competition",
+        )
+        .bind(("comp", lower_comp))
         .await?;
     let galleries: Vec<Value> = gal_resp.take(0)?;
     println!("\nGallery Status Breakdown:");
@@ -868,4 +896,41 @@ pub async fn set_status(
         .await?;
     println!("✅ Status set to '{}'.", status);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_update_gallery_sql;
+
+    #[test]
+    fn build_update_gallery_sent_includes_url_when_present() {
+        let sql = build_update_gallery_sql("sent", true, false);
+        assert!(sql.contains("gallery_status = $status"));
+        assert!(sql.contains("sent_date"));
+        assert!(sql.contains("gallery_url = $url"));
+        assert!(!sql.contains("purchase_amount"));
+    }
+
+    #[test]
+    fn build_update_gallery_sent_without_url_skips_url() {
+        let sql = build_update_gallery_sql("sent", false, false);
+        assert!(sql.contains("sent_date"));
+        assert!(!sql.contains("gallery_url"));
+    }
+
+    #[test]
+    fn build_update_gallery_purchased_includes_amount_only() {
+        let sql = build_update_gallery_sql("purchased", false, true);
+        assert!(sql.contains("purchase_amount = $amount"));
+        assert!(!sql.contains("gallery_url"));
+        assert!(!sql.contains("sent_date"));
+    }
+
+    #[test]
+    fn build_update_gallery_other_statuses_are_minimal() {
+        let sql = build_update_gallery_sql("pending", true, true);
+        assert!(!sql.contains("sent_date"));
+        assert!(!sql.contains("gallery_url"));
+        assert!(!sql.contains("purchase_amount"));
+    }
 }
