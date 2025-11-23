@@ -3,7 +3,7 @@
 A Model Context Protocol (MCP) server implementing bidirectional consciousness persistence with orbital mechanics for memory retrieval and cognitive scaffolding.
 
 ## Features
-- **Unified Thinking Tools**: `legacymind_think` and `photography_think` with automatic mode routing
+- **Unified Thinking Tools**: `legacymind_think` with automatic mode routing
 - **Session Continuity**: `session_id` and `previous_thought_id` chaining
 - **Hypothesis Verification**: Evidence-based validation against the Knowledge Graph
 - **Memory Injection**: KG-only retrieval with injection scales 0–3 (0=none; 1=5, 2=10, 3=20)
@@ -92,9 +92,8 @@ cargo test --test tool_schemas
 ## Recent Updates
 
 ### 2025-09-07 - Major Refactor: Unified Thinking Tools
-- **Phase A/B Complete**: Consolidated 5 think tools into 2 domain-focused tools
-  - `legacymind_think`: Development/technical thinking with mode routing
-  - `photography_think`: Photography-specific thinking (auto-connects to photography namespace)
+- **Phase A/B Complete**: Consolidated 5 think tools into a single domain-focused tool
+  - `legacymind_think`: Development/technical thinking with mode routing (now used for all domains, including photography via tags)
 - **Mode Routing**: Automatic selection based on trigger phrases or heuristics
   - Trigger phrases: "debug time", "building time", "plan time", "i'm stuck", "question time"
   - Heuristic keywords: error→debug, implement→build, design→plan
@@ -105,7 +104,7 @@ cargo test --test tool_schemas
   - Configurable thresholds and evidence limits
 
 ### 2025-09-06 - Production Ready
-- Unified search tools: `legacymind_search` and `photography_search` replace legacy tools
+- Unified search tool: `legacymind_search` replaces legacy tools
 - inner_voice: Synthesis with auto-extraction to KG candidates
 - Frameworks: Local deterministic enhancements (600ms timeout)
 - HTTP robustness: Resilient parsing, descriptive User-Agent strings
@@ -339,9 +338,9 @@ This project includes:
 
 ### Main MCP Server Binary
 - `cargo run` or `./target/release/surreal-mind`: Starts the MCP server with stdio transport
-- **Unified Thinking Tools**: `legacymind_think` (with automatic mode routing), `photography_think`
+- **Unified Thinking Tools**: `legacymind_think` (with automatic mode routing)
 - **Legacy Tool Aliases** (forward to `legacymind_think`): `think_convo`, `think_plan`, `think_debug`, `think_build`, `think_stuck`
-- **Memory & Knowledge Tools**: `memories_create`, `memories_moderate`, `inner_voice`, `legacymind_search`, `photography_search`, `photography_memories`, `photography_voice`, `photography_moderate`, `brain_store`
+- **Memory & Knowledge Tools**: `memories_create`, `memories_moderate`, `inner_voice`, `legacymind_search`, `brain_store`
 - **Maintenance Tools**: `maintenance_ops`, `detailed_help`
 
 ### Inner Voice Tool
@@ -350,17 +349,6 @@ The `inner_voice` tool provides RAG-based synthesis and optional KG extraction.
 - **Local Fallback Response**: "Based on what I could find: [summary of top snippets]"
 
 ### Photography Voice Tool
-The `photography_voice` tool provides RAG-based synthesis for photography memories/thoughts in an isolated namespace, with optional KG extraction.
-- **Provider Chain**: Same as inner_voice (Grok-primary with local fallback)
-- **Namespace Isolation**: Operates on photography database (`ns=photography`, `db=work`)
-- **Local Fallback Response**: "Based on what I could find: [summary of photography snippets]"
-
-### Photography Moderate Tool
-The `photography_moderate` tool reviews and decides on photography knowledge-graph candidates (entities/relationships) in the isolated photography namespace.
-- **Actions**: Accept, reject, or get candidates
-- **Namespace Isolation**: Targets photography KG candidates
-- **Auto-extraction**: Uses Grok for KG candidate extraction if enabled.
-
 ### Brain Store Tool
 The `brain_store` tool provides persistent storage for agent brain sections in the dedicated `brains` namespace.
 - **Actions**: `get` (fetch content) or `set` (create/update content)

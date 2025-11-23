@@ -167,45 +167,14 @@ pub fn detailed_help_schema() -> Arc<Map<String, Value>> {
         "type": "object",
         "properties": {
             "tool": {"type": "string", "enum": [
-                "legacymind_think", "photography_think", "photography_memories",
+                "legacymind_think",
                 "memories_create", "memories_moderate",
-                "legacymind_search", "photography_search",
-                "maintenance_ops", "inner_voice", "photography_voice",
-                "photography_moderate", "brain_store", "detailed_help"
+                "legacymind_search",
+                "maintenance_ops", "inner_voice",
+                "brain_store", "detailed_help"
             ]},
             "format": {"type": "string", "enum": ["compact", "full"], "default": "full"}
         }
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn photography_memories_schema() -> Arc<Map<String, Value>> {
-    // Unified schema that can express create/search/moderate operations
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "mode": {"type": "string", "enum": ["create", "search", "moderate"], "default": "search"},
-            // create-like
-            "kind": {"type": "string", "enum": ["entity", "relationship", "observation"]},
-            "data": {"type": "object"},
-            "upsert": {"type": "boolean"},
-            "source_thought_id": {"type": "string"},
-            "confidence": {"type": ["number", "string"]},
-            // search-like
-            "query": {"type": "object"},
-            "target": {"type": "string", "enum": ["entity", "relationship", "observation", "mixed"]},
-            "top_k": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 50},
-            // moderate-like
-            "action": {"type": "string", "enum": ["review", "decide", "review_and_decide"]},
-            "status": {"type": "string", "enum": ["pending", "approved", "rejected", "auto_approved"]},
-            "min_conf": {"type": ["number", "string"], "minimum": 0.0, "maximum": 1.0},
-            "limit": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 200},
-            "offset": {"type": ["integer", "number", "string"], "minimum": 0},
-            "cursor": {"type": "string"},
-            "items": {"type": "array"},
-            "dry_run": {"type": "boolean"}
-        },
-        "required": ["mode"]
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }

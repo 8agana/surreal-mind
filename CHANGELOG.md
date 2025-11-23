@@ -2,6 +2,7 @@
 - **SQL Safety**: Replaced string-interpolated SURQL in photography commands (`update_gallery`, `list_events_for_skater`, `show_event`, `competition_stats`) with bound parameters.
 - **Regression Tests**: Added unit tests for `build_update_gallery_sql` and for SkaterRequests parsing in `find_missing_skaters`.
 - **Tooling Hygiene**: Repository now clippy-clean with `-D warnings`; full suite (`RUN_DB_TESTS=1 cargo test --workspace`) passes.
+- **Single-mind surface**: Removed photography MCP tools from SurrealMind (one thinking surface); photography stays as ops/CLI. `list_tools` now exposes 8 core tools.
 
 ## 2025-11-20 - Photography CLI Bug Fixes & Final Polish
 - **Fixed `check-status` Filtering**: Corrected a logic bug where the `--status` flag filtered by `request_status` instead of `gallery_status`. Now correctly filters for `sent`, `needs_research`, etc.

@@ -115,53 +115,6 @@ impl SurrealMindServer {
         let thoughts_cache =
             LruCache::new(NonZeroUsize::new(cache_max).unwrap_or(NonZeroUsize::MIN));
 
-        // Optionally connect a photography database handle
-        let db_photo: Option<Arc<Surreal<Client>>> = if config.runtime.photo_enable {
-            // Determine photo connection params (fallback to primary where not provided)
-            let p_url = config
-                .runtime
-                .photo_url
-                .as_ref()
-                .map(|s| normalize_ws_url(s))
-                .unwrap_or_else(|| url.clone());
-            let p_user = config
-                .runtime
-                .photo_user
-                .as_ref()
-                .unwrap_or(user)
-                .to_string();
-            let p_pass = config
-                .runtime
-                .photo_pass
-                .as_ref()
-                .unwrap_or(pass)
-                .to_string();
-            let p_ns = config.runtime.photo_ns.as_ref().unwrap_or(ns).to_string();
-            let p_db = config
-                .runtime
-                .photo_db
-                .as_ref()
-                .unwrap_or(dbname)
-                .to_string();
-
-            let dbp = Surreal::new::<surrealdb::engine::remote::ws::Ws>(&p_url)
-                .await
-                .context("Failed to connect to SurrealDB (photography)")?;
-            dbp.signin(surrealdb::opt::auth::Root {
-                username: &p_user,
-                password: &p_pass,
-            })
-            .await
-            .context("Failed to authenticate with SurrealDB (photography)")?;
-            dbp.use_ns(&p_ns)
-                .use_db(&p_db)
-                .await
-                .context("Failed to select photography NS/DB")?;
-            Some(Arc::new(dbp))
-        } else {
-            None
-        };
-
         // Optional brain datastore handle
         let db_brain: Option<Arc<Surreal<Client>>> = if config.runtime.brain_enable {
             let b_url = config
@@ -210,7 +163,6 @@ impl SurrealMindServer {
 
         let server = Self {
             db: Arc::new(db),
-            db_photo,
             db_brain,
             thoughts: Arc::new(RwLock::new(thoughts_cache)),
             embedder,
@@ -224,17 +176,6 @@ impl SurrealMindServer {
                 message: e.message.to_string(),
             })?;
 
-        // Initialize schema in photography DB if present
-        if let Some(photo_db) = &server.db_photo {
-            let photo_server = server.clone_with_db(photo_db.clone());
-            photo_server
-                .initialize_schema()
-                .await
-                .map_err(|e| SurrealMindError::Mcp {
-                    message: format!("(photography) {}", e.message),
-                })?;
-        }
-
         if let Some(brain_db) = &server.db_brain {
             server
                 .initialize_brain_schema(brain_db)
@@ -247,87 +188,9 @@ impl SurrealMindServer {
         Ok(server)
     }
 
-    /// Clone this server but swap the DB handle
-    pub fn clone_with_db(&self, db: Arc<Surreal<Client>>) -> Self {
-        Self {
-            db,
-            db_photo: self.db_photo.clone(),
-            db_brain: self.db_brain.clone(),
-            thoughts: self.thoughts.clone(),
-            embedder: self.embedder.clone(),
-            config: self.config.clone(),
-        }
-    }
-
     /// Return a cloned handle to the brain datastore if enabled
     pub fn brain_db(&self) -> Option<Arc<Surreal<Client>>> {
         self.db_brain.clone()
-    }
-
-    /// Connect to the photography database using runtime env or sensible defaults.
-    /// Defaults: same URL/user/pass as primary; NS="photography", DB="work".
-    pub async fn connect_photo_db(&self) -> crate::error::Result<Arc<Surreal<Client>>> {
-        fn normalize_ws_url(s: &str) -> String {
-            s.strip_prefix("ws://")
-                .or_else(|| s.strip_prefix("wss://"))
-                .or_else(|| s.strip_prefix("http://"))
-                .or_else(|| s.strip_prefix("https://"))
-                .unwrap_or(s)
-                .to_string()
-        }
-
-        let p_url = self
-            .config
-            .runtime
-            .photo_url
-            .clone()
-            .unwrap_or_else(|| self.config.system.database_url.clone());
-        let p_user = self
-            .config
-            .runtime
-            .photo_user
-            .clone()
-            .unwrap_or_else(|| self.config.runtime.database_user.clone());
-        let p_pass = self
-            .config
-            .runtime
-            .photo_pass
-            .clone()
-            .unwrap_or_else(|| self.config.runtime.database_pass.clone());
-        let p_ns = self
-            .config
-            .runtime
-            .photo_ns
-            .clone()
-            .unwrap_or_else(|| "photography".to_string());
-        let p_db = self
-            .config
-            .runtime
-            .photo_db
-            .clone()
-            .unwrap_or_else(|| "work".to_string());
-
-        let url = normalize_ws_url(&p_url);
-        let dbp = Surreal::new::<surrealdb::engine::remote::ws::Ws>(&url)
-            .await
-            .map_err(|e| SurrealMindError::Mcp {
-                message: format!("photography connect failed: {}", e),
-            })?;
-        dbp.signin(surrealdb::opt::auth::Root {
-            username: &p_user,
-            password: &p_pass,
-        })
-        .await
-        .map_err(|e| SurrealMindError::Mcp {
-            message: format!("photography auth failed: {}", e),
-        })?;
-        dbp.use_ns(&p_ns)
-            .use_db(&p_db)
-            .await
-            .map_err(|e| SurrealMindError::Mcp {
-                message: format!("photography NS/DB select failed: {}", e),
-            })?;
-        Ok(Arc::new(dbp))
     }
 
     /// Get embedding metadata for tracking model/provider info

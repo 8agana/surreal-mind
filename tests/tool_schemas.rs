@@ -23,18 +23,13 @@ fn test_list_tools_returns_expected_tools() {
         "maintenance_ops",
         "detailed_help",
         "inner_voice",
-        "photography_think",
-        "photography_memories",
         "legacymind_search",
-        "photography_search",
-        "photography_voice",
-        "photography_moderate",
         "brain_store",
     ];
     assert_eq!(
         expected_tools.len(),
-        13,
-        "Tool roster should list 13 entries with unified tools, photography, and brain store support"
+        8,
+        "Tool roster should list 8 entries after removing photography tools"
     );
 }
 
@@ -80,39 +75,12 @@ fn test_legacymind_think_schema_structure() {
 }
 
 #[test]
-fn test_photography_think_schema_structure() {
-    // Test that photography_think has the expected schema structure (similar to legacymind_think)
-    let expected_schema = json!({
-        "type": "object",
-        "properties": {
-            "content": {"type": "string"},
-            "injection_scale": {"type": "integer", "minimum": 0, "maximum": 3},
-            "tags": {"type": "array", "items": {"type": "string"}},
-            "significance": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-            "verbose_analysis": {"type": "boolean"}
-        },
-        "required": ["content"]
-    });
-
-    // Verify required properties
-    assert!(schema_has_property(&expected_schema, "content"));
-    assert!(schema_has_property(&expected_schema, "injection_scale"));
-    assert!(schema_has_property(&expected_schema, "tags"));
-    assert!(schema_has_property(&expected_schema, "significance"));
-    assert!(schema_has_property(&expected_schema, "verbose_analysis"));
-
-    // Verify required array
-    assert_eq!(expected_schema["required"].as_array().unwrap().len(), 1);
-    assert_eq!(expected_schema["required"][0].as_str().unwrap(), "content");
-}
-
-#[test]
 fn test_detailed_help_schema_structure() {
     // Test that detailed_help has the expected schema structure
     let expected_schema = json!({
         "type": "object",
         "properties": {
-            "tool": {"type": "string", "enum": ["legacymind_think", "photography_think", "photography_memories", "memories_create", "memories_moderate", "legacymind_search", "photography_search", "maintenance_ops", "inner_voice", "detailed_help", "photography_voice", "photography_moderate", "brain_store"]},
+            "tool": {"type": "string", "enum": ["legacymind_think", "memories_create", "memories_moderate", "legacymind_search", "maintenance_ops", "inner_voice", "detailed_help", "brain_store"]},
             "format": {"type": "string", "enum": ["compact", "full"], "default": "full"},
             "prompts": {"type": "boolean"}
         }
@@ -202,7 +170,7 @@ fn test_brain_store_schema_structure() {
 
 #[test]
 fn test_tech_think_accepts_valid_params() {
-    // Test valid parameter combinations for tech_think (photography_think)
+    // Test valid parameter combinations for tech_think
     let valid_params = vec![
         json!({
             "content": "Photography thought"
@@ -255,18 +223,6 @@ fn test_legacymind_think_rejects_invalid_significance() {
         sig_value < 0.0,
         "Testing rejection of negative significance"
     );
-}
-
-#[test]
-fn test_photography_think_rejects_invalid_significance() {
-    // Test that photography_think also rejects significance value of 1.5
-    let invalid_params = json!({
-        "content": "Photography thought",
-        "significance": 1.5
-    });
-
-    let sig_value = invalid_params["significance"].as_f64().unwrap();
-    assert!(sig_value > 1.0, "Testing rejection of significance > 1.0");
 }
 
 /// Integration test that would require actual server running

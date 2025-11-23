@@ -140,8 +140,6 @@ pub struct SearchThoughtsParams {
 #[derive(Clone)]
 pub struct SurrealMindServer {
     pub db: Arc<Surreal<Client>>,
-    /// Optional secondary database handle for photography namespace/db
-    pub db_photo: Option<Arc<Surreal<Client>>>,
     /// Optional brain datastore handle (separate namespace/db)
     pub db_brain: Option<Arc<Surreal<Client>>>,
     pub thoughts: Arc<RwLock<LruCache<String, Thought>>>, // Bounded in-memory cache (LRU)
