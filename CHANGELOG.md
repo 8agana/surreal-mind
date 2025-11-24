@@ -1,3 +1,8 @@
+## 2025-11-24 - Photography Split Finalized
+- **Single-mind codebase**: Removed all photography modules/binaries/config from SurrealMind; only the 8 core thinking tools remain.
+- **Ops relocation**: Photography CLI/ops now live in the new repo `8agana/photography-mind` (https://github.com/8agana/photography-mind).
+- **Config cleanup**: Dropped `photo_*` runtime/env settings and photography DB health checks; injection scaling table no longer references photography.
+
 ## 2025-11-22 - Safety Hardening & Test Coverage
 - **SQL Safety**: Replaced string-interpolated SURQL in photography commands (`update_gallery`, `list_events_for_skater`, `show_event`, `competition_stats`) with bound parameters.
 - **Regression Tests**: Added unit tests for `build_update_gallery_sql` and for SkaterRequests parsing in `find_missing_skaters`.
