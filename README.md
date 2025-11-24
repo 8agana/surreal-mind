@@ -93,7 +93,7 @@ cargo test --test tool_schemas
 
 ### 2025-09-07 - Major Refactor: Unified Thinking Tools
 - **Phase A/B Complete**: Consolidated 5 think tools into a single domain-focused tool
-  - `legacymind_think`: Development/technical thinking with mode routing (now used for all domains, including photography via tags)
+  - `legacymind_think`: Development/technical thinking with mode routing (now used for all domains)
 - **Mode Routing**: Automatic selection based on trigger phrases or heuristics
   - Trigger phrases: "debug time", "building time", "plan time", "i'm stuck", "question time"
   - Heuristic keywords: error→debug, implement→build, design→plan
@@ -115,7 +115,7 @@ cargo test --test tool_schemas
   - `SURR_THINK_ENHANCE=1` (default ON for think_convo)
   - `SURR_THINK_ENHANCE_TIMEOUT_MS=600`
   - `SURR_THINK_STRICT_JSON=1`
-  - `SURR_THINK_TAG_WHITELIST=plan,debug,dx,photography,idea`
+  - `SURR_THINK_TAG_WHITELIST=plan,debug,dx,idea`
   - `SURR_THINK_LEXICON_DECIDE`, `SURR_THINK_LEXICON_VENT`, `SURR_THINK_LEXICON_CAUSAL`, `SURR_THINK_LEXICON_POS`, `SURR_THINK_LEXICON_NEG`
   - `SURR_THINK_DEEP_LOG=1` (gates 200‑char debug preview)
 - Database: `SURR_DB_RECONNECT=1` (enables auto-reconnection with backoff), `SURR_DB_URL=wss://example.com:8000` (WebSocket endpoint)
@@ -348,7 +348,6 @@ The `inner_voice` tool provides RAG-based synthesis and optional KG extraction.
 - **Provider Chain**: Now Grok-primary with existing local fallback. CLI removed for simplicity; legacy envs warn and default to Grok (if key present) or local fallback. Update configs if needed.
 - **Local Fallback Response**: "Based on what I could find: [summary of top snippets]"
 
-### Photography Voice Tool
 ### Brain Store Tool
 The `brain_store` tool provides persistent storage for agent brain sections in the dedicated `brains` namespace.
 - **Actions**: `get` (fetch content) or `set` (create/update content)
@@ -358,7 +357,6 @@ The `brain_store` tool provides persistent storage for agent brain sections in t
 ### Additional Binaries (src/bin/)
 - `cargo run --bin reembed`: Re-embed thoughts to the active provider/model/dim
 - `cargo run --bin reembed_kg`: Re-embed KG entities/observations
-- `cargo run --bin reembed_photography_kg -- --dry-run --limit 10`: Re-embed photography KG entities/observations (requires SURR_ENABLE_PHOTOGRAPHY)
 - `cargo run --bin fix_dimensions`: Correct thoughts with wrong embedding dimensions
 - `cargo run --bin db_check`: DB connectivity test
 - `cargo run --bin check_db_contents`: Inspect DB contents

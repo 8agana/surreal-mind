@@ -298,7 +298,6 @@ impl SurrealMindServer {
                 "think_debug" => 1000,
                 "think_build" => 400,
                 "think_stuck" => 600,
-                "photography_think" => 500,
                 _ => retrieve,
             };
         }

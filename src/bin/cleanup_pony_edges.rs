@@ -12,11 +12,16 @@ async fn main() -> Result<()> {
 
     println!("Connecting...");
     let db = Surreal::new::<Ws>(url).await?;
-    db.signin(Root { username: &user, password: &pass }).await?;
+    db.signin(Root {
+        username: &user,
+        password: &pass,
+    })
+    .await?;
     db.use_ns("photography").use_db("ops").await?;
 
     println!("Deleting all Pony Express edges...");
-    db.query("DELETE family_competition WHERE out.name CONTAINS Pony;").await?;
+    db.query("DELETE family_competition WHERE out.name CONTAINS Pony;")
+        .await?;
     println!("Done!");
     Ok(())
 }

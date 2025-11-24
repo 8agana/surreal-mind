@@ -232,59 +232,8 @@ pub async fn db_health_handler(State(state): State<HttpState>) -> impl IntoRespo
                 (None, None)
             };
 
-            (ping_result.is_some(), ping_result, counts.0, counts.1)
-        };
 
-    // Optional photography DB health (if enabled)
-    let mut photo = serde_json::Value::Null;
-    if state.config.runtime.photo_enable {
-        let purl = state
-            .config
-            .runtime
-            .photo_url
-            .clone()
-            .unwrap_or_else(|| state.config.system.database_url.clone());
-        if let (Some(ns), Some(db_name)) = (
-            state.config.runtime.photo_ns.clone(),
-            state.config.runtime.photo_db.clone(),
-        ) {
-            let (p_connected, p_ping_ms) = if let Some(p) = ping_db_params(
-                &purl,
-                &ns,
-                &db_name,
-                state.config.runtime.photo_user.as_deref().unwrap_or(""),
-                state.config.runtime.photo_pass.as_deref().unwrap_or(""),
-            )
-            .await
-            {
-                (true, Some(p))
-            } else {
-                (false, None)
-            };
-            let (p_thoughts, p_entities) = if p_connected {
-                get_db_counts_params(
-                    &purl,
-                    &ns,
-                    &db_name,
-                    state.config.runtime.photo_user.as_deref().unwrap_or(""),
-                    state.config.runtime.photo_pass.as_deref().unwrap_or(""),
-                )
-                .await
-            } else {
-                (None, None)
-            };
-            photo = json!({
-                "ns": ns,
-                "db": db_name,
-                "connected": p_connected,
-                "ping_ms": p_ping_ms,
-                "thoughts_count": p_thoughts,
-                "entities_count": p_entities
-            });
-        }
     }
-
-    (
         StatusCode::OK,
         [(header::CONTENT_TYPE, "application/json")],
         json!({
@@ -294,7 +243,6 @@ pub async fn db_health_handler(State(state): State<HttpState>) -> impl IntoRespo
             "db": state.config.system.database_db,
             "thoughts_count": thoughts_count,
             "recalls_count": recalls_count,
-            "photography": photo
         })
         .to_string(),
     )

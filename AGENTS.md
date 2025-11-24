@@ -5,7 +5,7 @@
 ### Identity
 **SurrealMind** is the Model Context Protocol (MCP) server for the LegacyMind ecosystem. It acts as the central nervous system, managing:
 -   **Long-term Memory**: Storing thoughts and conversations in SurrealDB.
--   **Tooling**: Exposing tools for "thinking", memory injection, and photography management.
+-   **Tooling**: Exposing tools for "thinking", memory injection
 -   **Intelligence**: Interfacing with local LLMs (via Candle) and OpenAI for embeddings and analysis.
 
 ### Architecture (Refactored Nov 2025)
@@ -39,7 +39,6 @@ The project is a Rust-based MCP server built on `rmcp`. The server module (`src/
 
 - **Build**: `cargo build` (development) or `cargo build --release` (production binary).
 - **Run MCP server**: `cargo run` (stdio mode).
-- **Initialize Photography Schema**: `cargo run --bin photography_schema` (requires running SurrealDB).
 - **Test**: `cargo test --workspace --all-features` (includes integration tests).
 - **Format code**: `cargo fmt --all`.
 - **Lint**: `cargo clippy --workspace --all-targets -- -D warnings` (warnings treated as errors).
@@ -67,7 +66,7 @@ The project is a Rust-based MCP server built on `rmcp`. The server module (`src/
 
 ## Commit & Pull Request Guidelines
 
-- **Commit messages**: Concise, imperative mood, e.g., "Add photography database health check" or "Refactor code for clarity".
+- **Commit messages**: Concise, imperative mood, e.g., "Add database health check" or "Refactor code for clarity".
 - **PR template**: Include Why, Scope, Safety, Testing checkboxes.
 - **Requirements**: Run `cargo fmt`, `cargo clippy`, `cargo test` before submitting.
 - **Reviews**: Small, focused PRs preferred; link related issues.

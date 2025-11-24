@@ -254,7 +254,8 @@ impl<'a> ThoughtBuilder<'a> {
         resolved_continuity.confidence = self.confidence;
 
         // Create thought with all fields
-        self.server.db
+        self.server
+            .db
             .query(
                 "CREATE type::thing('thoughts', $id) CONTENT {
             content: $content,
@@ -335,20 +336,21 @@ impl SurrealMindServer {
         let content_str = content.to_string();
 
         // Use ThoughtBuilder to create the thought
-        let (thought_id, embedding, resolved_continuity) = ThoughtBuilder::new(self, content, "human")
-            .scale(Some(injection_scale_val as u8))
-            .tags(Some(tags.clone()))
-            .significance(significance)
-            .confidence(confidence)
-            .continuity(
-                session_id,
-                chain_id,
-                previous_thought_id,
-                revises_thought,
-                branch_from,
-            )
-            .execute()
-            .await?;
+        let (thought_id, embedding, resolved_continuity) =
+            ThoughtBuilder::new(self, content, "human")
+                .scale(Some(injection_scale_val as u8))
+                .tags(Some(tags.clone()))
+                .significance(significance)
+                .confidence(confidence)
+                .continuity(
+                    session_id,
+                    chain_id,
+                    previous_thought_id,
+                    revises_thought,
+                    branch_from,
+                )
+                .execute()
+                .await?;
 
         // Framework enhancement (skip for conclude)
         let enhance_enabled =
@@ -509,20 +511,21 @@ impl SurrealMindServer {
         let tags = tags.unwrap_or_default();
 
         // Use ThoughtBuilder
-        let (thought_id, embedding, resolved_continuity) = ThoughtBuilder::new(self, content, "tool")
-            .scale(Some(injection_scale_val as u8))
-            .tags(Some(tags.clone()))
-            .significance(significance.or(Some(default_significance)))
-            .confidence(confidence)
-            .continuity(
-                session_id,
-                chain_id,
-                previous_thought_id,
-                revises_thought,
-                branch_from,
-            )
-            .execute()
-            .await?;
+        let (thought_id, embedding, resolved_continuity) =
+            ThoughtBuilder::new(self, content, "tool")
+                .scale(Some(injection_scale_val as u8))
+                .tags(Some(tags.clone()))
+                .significance(significance.or(Some(default_significance)))
+                .confidence(confidence)
+                .continuity(
+                    session_id,
+                    chain_id,
+                    previous_thought_id,
+                    revises_thought,
+                    branch_from,
+                )
+                .execute()
+                .await?;
 
         let tool_name = format!("think_{}", mode);
         let (mem_count, _enriched) = self
