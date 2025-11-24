@@ -69,7 +69,8 @@ impl ServerHandler for SurrealMindServer {
                 input_schema: legacymind_think_schema_map.clone(),
                 icons: None,
                 annotations: None,
-                output_schema: None,
+                    output_schema: None,
+                meta: None,
             },
             Tool {
                 name: "maintenance_ops".into(),
@@ -78,7 +79,8 @@ impl ServerHandler for SurrealMindServer {
                 input_schema: maintenance_ops_schema_map,
                 icons: None,
                 annotations: None,
-                output_schema: None,
+                    output_schema: None,
+                meta: None,
             },
             // (legacy think_search removed — use legacymind_search)
             Tool {
@@ -90,7 +92,8 @@ impl ServerHandler for SurrealMindServer {
                 input_schema: kg_create_schema_map,
                 icons: None,
                 annotations: None,
-                output_schema: None,
+                    output_schema: None,
+                meta: None,
             },
             // (legacy memories_search removed — use legacymind_search)
             Tool {
@@ -100,7 +103,8 @@ impl ServerHandler for SurrealMindServer {
                 input_schema: kg_moderate_schema_map.clone(),
                 icons: None,
                 annotations: None,
-                output_schema: None,
+                    output_schema: None,
+                meta: None,
             },
             Tool {
                 name: "detailed_help".into(),
@@ -109,7 +113,8 @@ impl ServerHandler for SurrealMindServer {
                 input_schema: detailed_help_schema_map,
                 icons: None,
                 annotations: None,
-                output_schema: None,
+                    output_schema: None,
+                meta: None,
             },
         ];
 
@@ -123,7 +128,8 @@ impl ServerHandler for SurrealMindServer {
             input_schema: inner_voice_schema_map.clone(),
             icons: None,
             annotations: None,
-            output_schema: None,
+                output_schema: None,
+                meta: None,
         });
 
         tools.push(Tool {
@@ -135,7 +141,8 @@ impl ServerHandler for SurrealMindServer {
             input_schema: unified_schema,
             icons: None,
             annotations: None,
-            output_schema: None,
+                output_schema: None,
+                meta: None,
         });
         tools.push(Tool {
             name: "brain_store".into(),
@@ -144,7 +151,8 @@ impl ServerHandler for SurrealMindServer {
             input_schema: brain_store_schema_map,
             icons: None,
             annotations: None,
-            output_schema: None,
+                output_schema: None,
+                meta: None,
         });
         // (photography tools removed from this server)
 
