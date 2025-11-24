@@ -47,15 +47,11 @@ impl SurrealMindServer {
                 // Canonical tools roster
                 let overview = json!([
                     {"name": "legacymind_think", "one_liner": "Unified thinking tool with automatic mode routing via triggers/heurs", "key_params": ["content", "hint", "injection_scale", "tags", "significance"]},
-                    {"name": "photography_think", "one_liner": "Store photography thoughts with memory injection (isolated repo)", "key_params": ["content", "injection_scale", "tags", "significance"]},
                     {"name": "memories_create", "one_liner": "Create entities/relationships/observations in the KG", "key_params": ["kind", "data", "confidence", "source_thought_id"]},
                     {"name": "memories_moderate", "one_liner": "Review/decide on KG candidates", "key_params": ["action", "target", "status", "items", "dry_run"]},
                     {"name": "legacymind_search", "one_liner": "Unified LM search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]},
-                    {"name": "photography_search", "one_liner": "Unified Photography search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]},
                     {"name": "maintenance_ops", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]},
                     {"name": "inner_voice", "one_liner": "Retrieves and synthesizes relevant memories/thoughts into a concise answer; can optionally auto-extract entities/relationships into staged knowledge‑graph candidates for review.", "key_params": ["query", "top_k", "auto_extract_to_kg"]},
-                    {"name": "photography_voice", "one_liner": "Retrieves and synthesizes relevant photography memories/thoughts into a concise answer; can optionally auto-extract entities/relationships (photography namespace)", "key_params": ["query", "top_k", "auto_extract_to_kg"]},
-                    {"name": "photography_moderate", "one_liner": "Review/decide on photography knowledge-graph candidates (photography namespace)", "key_params": ["action", "target", "status", "items", "dry_run"]},
                     {"name": "brain_store", "one_liner": "Get or set persistent brain sections for agents", "key_params": ["action", "agent", "section", "content"]}
                 ]);
                 return Ok(CallToolResult::structured(overview));
@@ -64,55 +60,6 @@ impl SurrealMindServer {
         };
 
         let help = match tool {
-            "photography_voice" => json!({
-                "name": "photography_voice",
-                "description": "Retrieves and synthesizes relevant photography memories/thoughts into a concise answer; can optionally auto-extract entities/relationships into staged knowledge‑graph candidates (photography namespace).",
-                "arguments": {
-                    "query": "string (required) — the query text",
-                    "top_k": "integer (1-50) — max candidates to retrieve (default 10)",
-                    "floor": "number (0.0-1.0) — similarity floor for retrieval",
-                    "mix": "number (0.0-1.0) — mix ratio for retrieval (default 0.6)",
-                    "include_private": "boolean — include private items (default false)",
-                    "include_tags": "string[] — tags to include",
-                    "exclude_tags": "string[] — tags to exclude",
-                    "auto_extract_to_kg": "boolean — auto-extract KG candidates (default false)",
-                    "previous_thought_id": "string — reference to previous thought",
-                    "include_feedback": "boolean — include feedback generation (default true)",
-                    "feedback_max_lines": "integer (1-10) — max lines for feedback (default 3)"
-                },
-                "returns": {
-                    "answer": "string — synthesized response",
-                    "synth_thought_id": "string — ID of synthesized thought",
-                    "feedback": "string? — feedback if enabled",
-                    "feedback_thought_id": "string? — ID of feedback thought",
-                    "sources_compact": "string — compact source listing",
-                    "synth_provider": "string — synthesis provider used ('grok', 'local')",
-                    "synth_model": "string — model used",
-                    "embedding_dim": "integer — embedding dimension",
-                    "extracted": {
-                        "entities": "integer — entities extracted",
-                        "relationships": "integer — relationships extracted"
-                    }
-                }
-            }),
-            "photography_moderate" => json!({
-                "name": "photography_moderate",
-                "description": "Review/decide on photography knowledge-graph candidates (photography namespace).",
-                "arguments": {
-                    "action": "string (required) — 'accept', 'reject', or 'get_candidates'",
-                    "target": "string — optional specific table ('kg_entity_candidates', 'kg_edge_candidates')",
-                    "status": "string — optional filter by status ('pending', 'accepted', 'rejected')",
-                    "items": "integer (1-100) — max items to return (default 20)",
-                    "dry_run": "boolean — perform action as dry-run (default false)"
-                },
-                "returns": {
-                    "action_performed": "string — action taken",
-                    "target": "string — target table affected",
-                    "updated": "integer — items updated",
-                    "candidates": "array — candidate list (if action='get_candidates')",
-                    "dry_run": "boolean — whether this was a dry run"
-                }
-            }),
             "brain_store" => json!({
                 "name": "brain_store",
                 "description": "Retrieve or update persistent brain sections stored in the brains namespace.",
@@ -196,17 +143,6 @@ impl SurrealMindServer {
                     }
                 }
             }),
-            "photography_think" => json!({
-                "name": "photography_think",
-                "description": "Store photography thoughts with memory injection (isolated photography repo).",
-                "arguments": {
-                    "content": "string (required) — the thought text",
-                    "injection_scale": "integer|string (0-3 or presets) — memory injection level (0=no injection, 1-3=scale)",
-                    "tags": "string[] — optional tags",
-                    "significance": "number|string (0.0-1.0 or presets) — importance"
-                },
-                "returns": {"thought_id": "string", "memories_injected": "number", "embedding_model": "string", "embedding_dim": "number", "framework_enhanced": "boolean"}
-            }),
             "inner_voice" => json!({
                 "name": "inner_voice",
                 "description": "Retrieves and synthesizes relevant memories/thoughts into a concise answer; can optionally auto-extract entities/relationships into staged knowledge‑graph candidates for review.",
@@ -263,20 +199,6 @@ impl SurrealMindServer {
                     "confidence": "number — optional confidence"
                 },
                 "returns": {"created": true, "id": "string", "kind": "string"}
-            }),
-            "photography_search" => json!({
-                "name": "photography_search",
-                "description": "Unified search in Photography (ns=photography, db=work): memories by default + optional thoughts when include_thoughts=true.",
-                "arguments": {
-                    "query": "object — used for memories (e.g., {name})",
-                    "target": "'entity'|'relationship'|'observation'|'mixed' (default 'mixed')",
-                    "include_thoughts": "boolean (default false)",
-                    "thoughts_content": "string — optional explicit query text for thoughts",
-                    "top_k_memories": "integer (1-50; default 10)",
-                    "top_k_thoughts": "integer (1-50; default 5)",
-                    "sim_thresh": "number (0.0-1.0) — similarity floor for thoughts"
-                },
-                "returns": {"memories": {"items": "array"}, "thoughts": {"total": "number", "results": "array"}}
             }),
             "memories_moderate" => json!({
                 "name": "memories_moderate",

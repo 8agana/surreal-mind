@@ -1,5 +1,6 @@
 ## 2025-11-24 - Photography Split Finalized
 - **Single-mind codebase**: Removed all photography modules/binaries/config from SurrealMind; only the 8 core thinking tools remain.
+- **Tool surface cleanup**: Removed lingering photography tool metadata from detailed_help and rebuilt/restarted service.
 - **Ops relocation**: Photography CLI/ops now live in the new repo `8agana/photography-mind` (https://github.com/8agana/photography-mind).
 - **Config cleanup**: Dropped `photo_*` runtime/env settings and photography DB health checks; injection scaling table no longer references photography.
 
