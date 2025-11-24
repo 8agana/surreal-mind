@@ -187,53 +187,15 @@ pub async fn metrics_handler(State(state): State<HttpState>) -> impl IntoRespons
 
 /// DB health endpoint (optional, gated by SURR_DB_STATS=1)
 pub async fn db_health_handler(State(state): State<HttpState>) -> impl IntoResponse {
-    if std::env::var("SURR_DB_STATS").ok().as_deref() != Some("1") {
-        return (
-            StatusCode::NOT_FOUND,
-            [(header::CONTENT_TYPE, "application/json")],
-            json!({"error": "DB stats not enabled"}).to_string(),
-        );
-    }
-
-    let (connected, ping_ms, thoughts_count, recalls_count) =
-        if state.config.system.database_url.is_empty() {
-            (false, None, None, None)
-        } else {
-            // Check cache or ping
-            let ttl_ms = std::env::var("SURR_DB_PING_TTL_MS")
-                .unwrap_or_else(|_| "1500".to_string())
-                .parse::<u64>()
-                .unwrap_or(1500);
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64;
-            let cache = state.db_ping_cache.lock().await;
-            let (ping_ms, _is_cached) = if let Some((ts, p)) = *cache {
-                if now.saturating_sub(ts) < ttl_ms {
-                    (Some(p), true)
-                } else {
-                    (None, false)
-                }
-            } else {
-                (None, false)
-            };
-            drop(cache);
-
-            let ping_result = if ping_ms.is_some() {
-                ping_ms
-            } else {
-                ping_db(&state).await
-            };
-
-            let counts = if ping_result.is_some() {
-                get_db_counts(&state).await
-            } else {
-                (None, None)
-            };
-
-
-    }
+    let ping_result = ping_db(&state).await;
+    let connected = ping_result.is_some();
+    let ping_ms = ping_result;
+    let (thoughts_count, recalls_count) = if connected {
+        get_db_counts(&state).await
+    } else {
+        (None, None)
+    };
+    (
         StatusCode::OK,
         [(header::CONTENT_TYPE, "application/json")],
         json!({
@@ -242,7 +204,7 @@ pub async fn db_health_handler(State(state): State<HttpState>) -> impl IntoRespo
             "ns": state.config.system.database_ns,
             "db": state.config.system.database_db,
             "thoughts_count": thoughts_count,
-            "recalls_count": recalls_count,
+            "recalls_count": recalls_count
         })
         .to_string(),
     )
