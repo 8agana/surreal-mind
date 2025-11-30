@@ -113,3 +113,74 @@ frameworks = { RootCause = 0.4, SystemsThinking = 0.3, OODA = 0.3 }
 orbital_weights = { recency = 0.4, access = 0.3, significance = 0.3 }
 auto_extract = true
 edge_boosts = { solves = 2.0, blocks = 1.5, depends_on = 1.3 }
+
+[submodes.default]
+# Earth orbit - standard operational parameters
+injection_scale = 1
+significance = 0.5
+kg_traverse_depth = 1
+frameworks = { Socratic = 0.5, OODA = 0.5 }
+orbital_weights = { recency = 0.4, access = 0.3, significance = 0.3 }
+auto_extract = true
+edge_boosts = { relates_to = 1.1 }
+match_threshold = 0.5
+
+[memory_injection]
+# Required by older stable build (2fb3ec1)
+inject_debounce_ms = 1000
+similarity_threshold = 0.6
+# Floor for memory injection (required)
+floor = 0.15
+# Thresholds for injection scales 1-3 (required)
+t1 = 0.6
+t2 = 0.4
+t3 = 0.25
+
+[maintenance]
+# Cleanup configuration
+dry_run = false  # For SURR_MAINTENANCE_DRY_RUN
+format = "parquet"  # For SURR_MAINTENANCE_FORMAT
+limit = 100  # For SURR_MAINTENANCE_LIMIT
+output_dir = "./archive"  # For SURR_MAINTENANCE_OUTPUT_DIR
+retention_days = 365  # Keep memories for 1 year
+deletion_batch_size = 100  # Delete in batches of 100
+
+[logging]
+# Logging behavior
+level = "info"  # Default log level
+deep_log = false  # For SURR_THINK_DEEP_LOG
+mcp_no_log = false  # For MCP_NO_LOG (disable logs in stdio mode)
+json_errors = true  # Format errors as JSON for MCP compatibility
+
+[http]
+# HTTP fallback configuration
+port = 3000  # Port for HTTP interface
+cors = true  # Enable CORS
+timeout_ms = 30000  # Request timeout
+user_agent = "LegacyMind-Surreal/0.1.0"
+strict_security = true  # Enforce HTTPS/Auth in production
+rate_limit = 100  # Requests per minute
+max_body_size = 1048576  # 1MB max payload
+trace_requests = true  # Log all requests
+trace_headers = ["User-Agent", "X-Request-ID"]  # Headers to log
+trace_bodies = false  # Don't log request bodies by default
+trace_responses = false  # Don't log response bodies by default
+trace_errors = true  # Log all errors
+trace_performance = true  # Log timing data
+trace_auth = false  # Don't log auth details
+trace_payloads = false  # Don't log payloads
+trace_queries = false  # Don't log raw queries
+trace_stacks = false  # Don't include stack traces in logs
+
+[testing]
+# Test environment settings
+test_db_ns = "test_mind"
+test_db_db = "test_consciousness"
+mock_embeddings = true  # Use deterministic embeddings for tests
+verbose_failures = true  # Show full details on test failure
+snapshot_dir = "tests/snapshots"  # Directory for test snapshots
+fixture_dir = "tests/fixtures"  # Directory for test fixtures
+timeout_ms = 5000  # Default test timeout
+parallel = true  # Run tests in parallel where possible
+db_cleanup = true  # Clean up test DB after run
+db_isolation = true  # Run each test in isolated DB scope

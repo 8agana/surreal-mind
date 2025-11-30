@@ -1,3 +1,8 @@
+## 2025-11-29 - Cognitive Kernel Purification
+- **Cleanup**: Removed 9 legacy photography binaries from `src/bin/` to complete the separation of concerns.
+- **Config**: Fixed hallucinated timeout parameters in `surreal_mind.toml`.
+- **Documentation**: Created `GEMINI.md` for `surreal-mind` context tracking.
+
 ## 2025-11-24 - Photography Split Finalized
 - **Single-mind codebase**: Removed all photography modules/binaries/config from SurrealMind; only the 8 core thinking tools remain.
 - **Tool surface cleanup**: Removed lingering photography tool metadata from detailed_help and rebuilt/restarted service.
