@@ -60,14 +60,17 @@ We have successfully separated the *Business Logic* (Photography, Skaters, Order
 -   **Finding:** The core "Thinking Engine" is robust and modular.
 -   **Finding:** The "Lobotomy" (separation of photography logic) is mostly done, but `src/bin/` is polluted with legacy business logic scripts.
 -   **Finding:** `surreal_mind.toml` has junk data at the end.
+-   **Finding:** `src/tools/` contained unused legacy handlers (`convo_think`, `tech_think`, `search_thoughts`).
 -   **Plan:**
-    1.  Clean up `src/bin/` (remove photography binaries).
-    2.  Fix `surreal_mind.toml`.
-    3.  Verify the purity of the cognitive kernel.
+    1.  Clean up `src/bin/` (remove photography binaries). [Done]
+    2.  Fix `surreal_mind.toml`. [Done]
+    3.  Remove dead legacy tools from `src/tools/`. [Done]
+    4.  Verify the purity of the cognitive kernel.
 
 ---
 
 ## 5. PLANS & TODOS
-- [ ] **Cleanup:** Remove photography-specific binaries from `src/bin/`.
-- [ ] **Config:** Prune the "multiverse timeout" hallucinations from `surreal_mind.toml`.
-- [ ] **Refactor:** Verify `src/tools/` for dead code related to old individual think tools.
+- [x] **Cleanup:** Remove photography-specific binaries from `src/bin/`.
+- [x] **Cleanup:** Remove dead legacy tool handlers.
+- [x] **Config:** Prune the "multiverse timeout" hallucinations from `surreal_mind.toml`.
+- [ ] **Verification:** Run a final health check / compile to ensure no broken refs.

@@ -1,5 +1,6 @@
 ## 2025-11-29 - Cognitive Kernel Purification
 - **Cleanup**: Removed 9 legacy photography binaries from `src/bin/` to complete the separation of concerns.
+- **Cleanup**: Removed dead legacy tool handlers (`convo_think`, `tech_think`, `search_thoughts`) superseded by `legacymind_think` and `unified_search`.
 - **Config**: Fixed hallucinated timeout parameters in `surreal_mind.toml`.
 - **Documentation**: Created `GEMINI.md` for `surreal-mind` context tracking.
 
