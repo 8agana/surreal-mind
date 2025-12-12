@@ -1,3 +1,8 @@
+## 2025-12-05 - Brain Store Removal
+- Removed the `brain_store` tool, schema, config flags, and tests to keep the core surface lean (now 7 tools).
+- Cleaned docs (README/AGENTS) and detailed_help roster; dropped brain datastore envs.
+- inner_voice: moved KG auto-extraction to LLM-appended JSON candidates; removed heuristic extractor to prevent junk staging.
+
 ## 2025-11-29 - Cognitive Kernel Purification
 - **Cleanup**: Removed 9 legacy photography binaries from `src/bin/` to complete the separation of concerns.
 - **Cleanup**: Removed dead legacy tool handlers (`convo_think`, `tech_think`, `search_thoughts`) superseded by `legacymind_think` and `unified_search`.

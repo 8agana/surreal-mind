@@ -94,28 +94,4 @@ impl SurrealMindServer {
 
         Ok(())
     }
-
-    pub async fn initialize_brain_schema(
-        &self,
-        brain_db: &std::sync::Arc<surrealdb::Surreal<surrealdb::engine::remote::ws::Client>>,
-    ) -> std::result::Result<(), McpError> {
-        info!("Initializing brain datastore schema");
-
-        let schema_sql = r#"
-            DEFINE TABLE brain_sections SCHEMALESS;
-            DEFINE FIELD agent ON TABLE brain_sections TYPE string;
-            DEFINE FIELD section ON TABLE brain_sections TYPE string;
-            DEFINE FIELD content ON TABLE brain_sections TYPE string;
-            DEFINE FIELD updated_at ON TABLE brain_sections TYPE datetime;
-            DEFINE INDEX idx_brain_agent_section ON TABLE brain_sections FIELDS agent, section UNIQUE;
-        "#;
-
-        brain_db.query(schema_sql).await.map_err(|e| McpError {
-            code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-            message: format!("Brain schema init failed: {}", e).into(),
-            data: None,
-        })?;
-
-        Ok(())
-    }
 }

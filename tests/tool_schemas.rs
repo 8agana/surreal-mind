@@ -24,12 +24,11 @@ fn test_list_tools_returns_expected_tools() {
         "detailed_help",
         "inner_voice",
         "legacymind_search",
-        "brain_store",
     ];
     assert_eq!(
         expected_tools.len(),
-        8,
-        "Tool roster should list 8 entries after removing photography tools"
+        7,
+        "Tool roster should list 7 entries after removing photography and brain_store tools"
     );
 }
 
@@ -80,7 +79,7 @@ fn test_detailed_help_schema_structure() {
     let expected_schema = json!({
         "type": "object",
         "properties": {
-            "tool": {"type": "string", "enum": ["legacymind_think", "memories_create", "memories_moderate", "legacymind_search", "maintenance_ops", "inner_voice", "detailed_help", "brain_store"]},
+            "tool": {"type": "string", "enum": ["legacymind_think", "memories_create", "memories_moderate", "legacymind_search", "maintenance_ops", "inner_voice", "detailed_help"]},
             "format": {"type": "string", "enum": ["compact", "full"], "default": "full"},
             "prompts": {"type": "boolean"}
         }
@@ -147,25 +146,6 @@ fn test_convo_think_accepts_valid_params() {
             );
         }
     }
-}
-
-#[test]
-fn test_brain_store_schema_structure() {
-    let expected_schema = json!({
-        "type": "object",
-        "properties": {
-            "action": {"type": "string", "enum": ["get", "set"], "default": "get"},
-            "agent": {"type": "string"},
-            "section": {"type": "string"},
-            "content": {"type": "string"}
-        },
-        "required": ["agent", "section"]
-    });
-
-    assert!(schema_has_property(&expected_schema, "agent"));
-    assert!(schema_has_property(&expected_schema, "section"));
-    assert!(schema_has_property(&expected_schema, "action"));
-    assert_eq!(expected_schema["required"].as_array().unwrap().len(), 2);
 }
 
 #[test]

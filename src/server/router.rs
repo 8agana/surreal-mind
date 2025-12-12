@@ -56,7 +56,6 @@ impl ServerHandler for SurrealMindServer {
         let maintenance_ops_schema_map = crate::schemas::maintenance_ops_schema();
         let kg_create_schema_map = crate::schemas::kg_create_schema();
         let kg_moderate_schema_map = crate::schemas::kg_moderate_schema();
-        let brain_store_schema_map = crate::schemas::brain_store_schema();
         let detailed_help_schema_map = crate::schemas::detailed_help_schema();
         let inner_voice_schema_map = crate::schemas::inner_voice_schema();
         let unified_schema = crate::schemas::unified_search_schema();
@@ -69,7 +68,7 @@ impl ServerHandler for SurrealMindServer {
                 input_schema: legacymind_think_schema_map.clone(),
                 icons: None,
                 annotations: None,
-                    output_schema: None,
+                output_schema: None,
                 meta: None,
             },
             Tool {
@@ -79,7 +78,7 @@ impl ServerHandler for SurrealMindServer {
                 input_schema: maintenance_ops_schema_map,
                 icons: None,
                 annotations: None,
-                    output_schema: None,
+                output_schema: None,
                 meta: None,
             },
             // (legacy think_search removed — use legacymind_search)
@@ -92,7 +91,7 @@ impl ServerHandler for SurrealMindServer {
                 input_schema: kg_create_schema_map,
                 icons: None,
                 annotations: None,
-                    output_schema: None,
+                output_schema: None,
                 meta: None,
             },
             // (legacy memories_search removed — use legacymind_search)
@@ -103,7 +102,7 @@ impl ServerHandler for SurrealMindServer {
                 input_schema: kg_moderate_schema_map.clone(),
                 icons: None,
                 annotations: None,
-                    output_schema: None,
+                output_schema: None,
                 meta: None,
             },
             Tool {
@@ -113,7 +112,7 @@ impl ServerHandler for SurrealMindServer {
                 input_schema: detailed_help_schema_map,
                 icons: None,
                 annotations: None,
-                    output_schema: None,
+                output_schema: None,
                 meta: None,
             },
         ];
@@ -141,18 +140,8 @@ impl ServerHandler for SurrealMindServer {
             input_schema: unified_schema,
             icons: None,
             annotations: None,
-                output_schema: None,
-                meta: None,
-        });
-        tools.push(Tool {
-            name: "brain_store".into(),
-            title: Some("Brain Store".into()),
-            description: Some("Get or set persistent brain sections for agents".into()),
-            input_schema: brain_store_schema_map,
-            icons: None,
-            annotations: None,
-                output_schema: None,
-                meta: None,
+            output_schema: None,
+            meta: None,
         });
         // (photography tools removed from this server)
 
@@ -205,7 +194,6 @@ impl ServerHandler for SurrealMindServer {
                 .handle_unified_search(request)
                 .await
                 .map_err(|e| e.into()),
-            "brain_store" => self.handle_brain_store(request).await.map_err(|e| e.into()),
             _ => Err(McpError {
                 code: rmcp::model::ErrorCode::METHOD_NOT_FOUND,
                 message: format!("Unknown tool: {}", request.name).into(),

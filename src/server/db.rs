@@ -4,8 +4,6 @@ use anyhow::Context;
 use lru::LruCache;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use surrealdb::Surreal;
-use surrealdb::engine::remote::ws::Client;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
@@ -115,55 +113,8 @@ impl SurrealMindServer {
         let thoughts_cache =
             LruCache::new(NonZeroUsize::new(cache_max).unwrap_or(NonZeroUsize::MIN));
 
-        // Optional brain datastore handle
-        let db_brain: Option<Arc<Surreal<Client>>> = if config.runtime.brain_enable {
-            let b_url = config
-                .runtime
-                .brain_url
-                .as_ref()
-                .map(|s| normalize_ws_url(s))
-                .unwrap_or_else(|| url.clone());
-            let b_user = config
-                .runtime
-                .brain_user
-                .as_ref()
-                .unwrap_or(user)
-                .to_string();
-            let b_pass = config
-                .runtime
-                .brain_pass
-                .as_ref()
-                .unwrap_or(pass)
-                .to_string();
-            let b_ns = config.runtime.brain_ns.as_ref().unwrap_or(ns).to_string();
-            let b_db = config
-                .runtime
-                .brain_db
-                .as_ref()
-                .unwrap_or(dbname)
-                .to_string();
-
-            let dbb = Surreal::new::<surrealdb::engine::remote::ws::Ws>(&b_url)
-                .await
-                .context("Failed to connect to SurrealDB (brain)")?;
-            dbb.signin(surrealdb::opt::auth::Root {
-                username: &b_user,
-                password: &b_pass,
-            })
-            .await
-            .context("Failed to authenticate with SurrealDB (brain)")?;
-            dbb.use_ns(&b_ns)
-                .use_db(&b_db)
-                .await
-                .context("Failed to select brain NS/DB")?;
-            Some(Arc::new(dbb))
-        } else {
-            None
-        };
-
         let server = Self {
             db: Arc::new(db),
-            db_brain,
             thoughts: Arc::new(RwLock::new(thoughts_cache)),
             embedder,
             config: Arc::new(config.clone()),
@@ -176,21 +127,7 @@ impl SurrealMindServer {
                 message: e.message.to_string(),
             })?;
 
-        if let Some(brain_db) = &server.db_brain {
-            server
-                .initialize_brain_schema(brain_db)
-                .await
-                .map_err(|e| SurrealMindError::Mcp {
-                    message: format!("(brain) {}", e.message),
-                })?;
-        }
-
         Ok(server)
-    }
-
-    /// Return a cloned handle to the brain datastore if enabled
-    pub fn brain_db(&self) -> Option<Arc<Surreal<Client>>> {
-        self.db_brain.clone()
     }
 
     /// Get embedding metadata for tracking model/provider info

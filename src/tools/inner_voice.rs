@@ -473,15 +473,22 @@ impl SurrealMindServer {
             let grok_key = std::env::var("GROK_API_KEY").unwrap_or_default();
             let messages = build_synthesis_messages(&params.query, &snippets);
             if crate::tools::inner_voice::providers::allow_grok() && !grok_key.is_empty() {
-                if let Ok(ans) = crate::tools::inner_voice::providers::grok_call(
+                match crate::tools::inner_voice::providers::grok_call(
                     &base, &model, &grok_key, &messages,
                 )
                 .await
                 {
-                    synthesized = ans;
-                    synth_provider = "grok".to_string();
-                    synth_model = model;
+                    Ok(ans) => {
+                        synthesized = ans;
+                        synth_provider = "grok".to_string();
+                        synth_model = model;
+                    }
+                    Err(e) => {
+                        tracing::warn!("inner_voice: grok_call failed: {}", e);
+                    }
                 }
+            } else {
+                tracing::debug!("inner_voice: grok disabled or key missing");
             }
         }
 
@@ -573,57 +580,13 @@ impl SurrealMindServer {
         let mut extracted_entities = 0usize;
         let mut extracted_rels = 0usize;
         if auto_extract {
-            // Extract entities/relationships using Grok if allowed
-            let allow_grok =
-                std::env::var("IV_ALLOW_GROK").unwrap_or_else(|_| "true".to_string()) != "false";
-
-            if allow_grok {
-                let grok_base = std::env::var("GROK_BASE_URL")
-                    .unwrap_or_else(|_| "https://api.x.ai/v1".to_string());
-                let grok_model =
-                    std::env::var("GROK_MODEL").unwrap_or_else(|_| "grok-code-fast-1".to_string());
-                let grok_key_ex = std::env::var("GROK_API_KEY").unwrap_or_default();
-                if !grok_key_ex.is_empty() {
-                    if let Ok((ec, rc)) = self
-                        .auto_extract_candidates_from_text(
-                            &grok_base,
-                            &grok_model,
-                            &grok_key_ex,
-                            &synthesized,
-                            &synth_thought_id,
-                        )
-                        .await
-                    {
-                        tracing::debug!(
-                            "inner_voice: Grok fallback staged candidates: entities={}, edges={}",
-                            ec,
-                            rc
-                        );
-                        extracted_entities = ec;
-                        extracted_rels = rc;
-                    }
-                }
-            }
-
-            // Optional HeuristicExtractor fallback
-            if extracted_entities == 0 && extracted_rels == 0 {
-                let heuristic_enabled = std::env::var("SURR_IV_HEURISTIC_FALLBACK")
-                    .map(|v| v != "0")
-                    .unwrap_or(true);
-                if heuristic_enabled {
-                    if let Ok((ec, rc)) = self
-                        .heuristic_extract(&synthesized, &synth_thought_id)
-                        .await
-                    {
-                        tracing::debug!(
-                            "inner_voice: Heuristic fallback staged candidates: entities={}, edges={}",
-                            ec,
-                            rc
-                        );
-                        extracted_entities = ec;
-                        extracted_rels = rc;
-                    }
-                }
+            let parsed = parse_appended_candidates(&synthesized).or_else(parse_env_candidates);
+            if let Some(parsed) = parsed {
+                let (ec, rc) = self
+                    .stage_candidates_from_llm(parsed, &synth_thought_id)
+                    .await?;
+                extracted_entities = ec;
+                extracted_rels = rc;
             }
         }
 
@@ -647,71 +610,6 @@ impl SurrealMindServer {
         });
 
         Ok(CallToolResult::structured(result))
-    }
-
-    /// HeuristicExtractor fallback
-    async fn heuristic_extract(&self, text: &str, thought_id: &str) -> Result<(usize, usize)> {
-        // Simple pattern-based extraction
-        let entities_cap = std::env::var("SURR_IV_HEURISTIC_MAX_ENTITIES")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(20);
-        let edges_cap = std::env::var("SURR_IV_HEURISTIC_MAX_EDGES")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(30);
-
-        let mut entities = Vec::new();
-        let mut edges = Vec::new();
-
-        // Basic entity extraction (capitalized words)
-        for word in text.split_whitespace() {
-            if word.chars().next().is_some_and(|c| c.is_uppercase()) && word.len() > 2 {
-                entities.push(word.to_string());
-                if entities.len() >= entities_cap {
-                    break;
-                }
-            }
-        }
-
-        // Basic relationships (simple patterns)
-        let patterns = ["uses", "depends on", "related to", "->"];
-        for pattern in &patterns {
-            if let Some(pos) = text.find(pattern) {
-                let before = &text[..pos];
-                let after = &text[pos + pattern.len()..];
-                if let Some(src) = before.split_whitespace().last() {
-                    if let Some(dst) = after.split_whitespace().next() {
-                        edges.push((src.to_string(), dst.to_string()));
-                        if edges.len() >= edges_cap {
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Stage with low confidence
-        let mut ecount = 0;
-        for name in entities.into_iter().take(entities_cap) {
-            let _ = self.db.query("CREATE kg_entity_candidates SET created_at = time::now(), name = $n, entity_type = 'unknown', confidence = 0.7, status = 'pending', data = { staged_by_thought: $th, origin: 'inner_voice' }")
-                .bind(("n", name))
-                .bind(("th", thought_id.to_string()))
-                .await;
-            ecount += 1;
-        }
-
-        let mut rcount = 0;
-        for (src, dst) in edges.into_iter().take(edges_cap) {
-            let _ = self.db.query("CREATE kg_edge_candidates SET created_at = time::now(), source_name = $s, target_name = $t, rel_type = 'related_to', confidence = 0.6, status = 'pending', data = { staged_by_thought: $th, origin: 'inner_voice' }")
-                .bind(("s", src))
-                .bind(("t", dst))
-                .bind(("th", thought_id.to_string()))
-                .await;
-            rcount += 1;
-        }
-
-        Ok((ecount, rcount))
     }
 
     async fn fetch_thought_candidates(
@@ -936,24 +834,20 @@ impl SurrealMindServer {
 }
 
 #[derive(Debug, Deserialize)]
-struct ExtractOut {
+struct CandidateEnvelope {
     #[serde(default)]
-    entities: Vec<ExtractEntity>,
-    #[serde(default)]
-    relationships: Vec<ExtractRel>,
+    candidates: Vec<ExtractCandidate>,
 }
 
 #[derive(Debug, Deserialize)]
-struct ExtractEntity {
+struct ExtractCandidate {
     name: String,
+    #[serde(rename = "type")]
+    kind: String, // "entity" or "relationship"
     #[serde(default)]
     entity_type: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ExtractRel {
-    source_name: String,
-    target_name: String,
+    #[serde(default)]
+    target: Option<String>,
     #[serde(default)]
     rel_type: Option<String>,
     #[serde(default)]
@@ -961,90 +855,77 @@ struct ExtractRel {
 }
 
 impl SurrealMindServer {
-    /// Use Grok to extract candidate entities/relationships and stage them into *_candidates tables
-    pub async fn auto_extract_candidates_from_text(
+    /// Stage LLM-provided candidates into *_candidates tables
+    async fn stage_candidates_from_llm(
         &self,
-        base: &str,
-        model: &str,
-        api_key: &str,
-        text: &str,
+        out: CandidateEnvelope,
         thought_id: &str,
     ) -> Result<(usize, usize)> {
-        let messages = build_extraction_messages(text);
-        let out = call_grok(base, model, api_key, &messages).await?;
-        // Parse JSON; Grok may return markdown fences; strip if present
-        let cleaned = out
-            .trim()
-            .trim_start_matches("```json")
-            .trim_end_matches("```")
-            .trim()
-            .to_string();
-        let parsed: ExtractOut = serde_json::from_str(&cleaned).unwrap_or(ExtractOut {
-            entities: vec![],
-            relationships: vec![],
-        });
-
         let mut ecount = 0usize;
-        for e in parsed.entities {
-            let name = e.name.trim().to_string();
-            if name.is_empty() {
-                continue;
-            }
-            let etype = e.entity_type.clone().unwrap_or_default();
-            // Dedup by existing pending with same name+etype
-            let found: Vec<serde_json::Value> = self
-                .db
-                .query("SELECT meta::id(id) as id FROM kg_entity_candidates WHERE name = $n AND entity_type = $t AND status = 'pending' LIMIT 1")
-                .bind(("n", name.clone()))
-                .bind(("t", etype.clone()))
-                .await?
-                .take(0)?;
-            if found.is_empty() {
-                let _ : Vec<serde_json::Value> = self
-                    .db
-                    .query("CREATE kg_entity_candidates SET created_at = time::now(), name = $n, entity_type = $t, confidence = 0.6, status = 'pending', data = { staged_by_thought: $th, origin: 'inner_voice' } RETURN meta::id(id) as id")
-                    .bind(("n", name))
-                    .bind(("t", etype))
-                    .bind(("th", thought_id.to_string()))
-                    .await?
-                    .take(0)?;
-                ecount += 1;
-            }
-        }
-
         let mut rcount = 0usize;
-        for r in parsed.relationships {
-            let src = r.source_name.trim().to_string();
-            let dst = r.target_name.trim().to_string();
-            if src.is_empty() || dst.is_empty() {
-                continue;
-            }
-            let kind = r
-                .rel_type
-                .clone()
-                .unwrap_or_else(|| "related_to".to_string());
-            let conf = r.confidence.unwrap_or(0.6_f32);
-            // Dedup by same names+rel_type and status pending
-            let found: Vec<serde_json::Value> = self
-                .db
-                .query("SELECT meta::id(id) as id FROM kg_edge_candidates WHERE source_name = $s AND target_name = $t AND rel_type = $k AND status = 'pending' LIMIT 1")
-                .bind(("s", src.clone()))
-                .bind(("t", dst.clone()))
-                .bind(("k", kind.clone()))
-                .await?
-                .take(0)?;
-            if found.is_empty() {
-                let _ : Vec<serde_json::Value> = self
-                    .db
-                    .query("CREATE kg_edge_candidates SET created_at = time::now(), source_name = $s, target_name = $t, rel_type = $k, confidence = $c, status = 'pending', data = { staged_by_thought: $th, origin: 'inner_voice' } RETURN meta::id(id) as id")
-                    .bind(("s", src))
-                    .bind(("t", dst))
-                    .bind(("k", kind))
-                    .bind(("c", conf))
-                    .bind(("th", thought_id.to_string()))
-                    .await?
-                    .take(0)?;
-                rcount += 1;
+
+        for c in out.candidates {
+            match c.kind.to_lowercase().as_str() {
+                "entity" => {
+                    let name = c.name.trim().to_string();
+                    if name.is_empty() {
+                        continue;
+                    }
+                    let etype = c.entity_type.clone().unwrap_or_default();
+                    let found: Vec<serde_json::Value> = self
+                        .db
+                        .query("SELECT meta::id(id) as id FROM kg_entity_candidates WHERE name = $n AND entity_type = $t AND status = 'pending' LIMIT 1")
+                        .bind(("n", name.clone()))
+                        .bind(("t", etype.clone()))
+                        .await?
+                        .take(0)?;
+                    if found.is_empty() {
+                        let _ : Vec<serde_json::Value> = self
+                        .db
+                        .query("CREATE kg_entity_candidates SET created_at = time::now(), name = $n, entity_type = $t, confidence = $c, status = 'pending', data = { staged_by_thought: $th, origin: 'inner_voice' } RETURN meta::id(id) as id")
+                        .bind(("n", name))
+                        .bind(("t", etype))
+                        .bind(("c", c.confidence.unwrap_or(0.7)))
+                        .bind(("th", thought_id.to_string()))
+                        .await?
+                        .take(0)?;
+                        ecount += 1;
+                    }
+                }
+                "relationship" => {
+                    let src = c.name.trim().to_string();
+                    let dst = c.target.as_deref().unwrap_or("").trim().to_string();
+                    if src.is_empty() || dst.is_empty() {
+                        continue;
+                    }
+                    let kind = c
+                        .rel_type
+                        .clone()
+                        .unwrap_or_else(|| "related_to".to_string());
+                    let conf = c.confidence.unwrap_or(0.6_f32);
+                    let found: Vec<serde_json::Value> = self
+                        .db
+                        .query("SELECT meta::id(id) as id FROM kg_edge_candidates WHERE source_name = $s AND target_name = $t AND rel_type = $k AND status = 'pending' LIMIT 1")
+                        .bind(("s", src.clone()))
+                        .bind(("t", dst.clone()))
+                        .bind(("k", kind.clone()))
+                        .await?
+                        .take(0)?;
+                    if found.is_empty() {
+                        let _ : Vec<serde_json::Value> = self
+                            .db
+                            .query("CREATE kg_edge_candidates SET created_at = time::now(), source_name = $s, target_name = $t, rel_type = $k, confidence = $c, status = 'pending', data = { staged_by_thought: $th, origin: 'inner_voice' } RETURN meta::id(id) as id")
+                            .bind(("s", src))
+                            .bind(("t", dst))
+                            .bind(("k", kind))
+                            .bind(("c", conf))
+                            .bind(("th", thought_id.to_string()))
+                            .await?
+                            .take(0)?;
+                        rcount += 1;
+                    }
+                }
+                _ => continue,
             }
         }
 
@@ -1052,13 +933,43 @@ impl SurrealMindServer {
     }
 }
 
-fn build_extraction_messages(text: &str) -> serde_json::Value {
-    json!({
-        "messages": [
-            {"role": "system", "content": "You extract entities and relationships from text and return only JSON exactly matching the schema. No extra commentary."},
-            {"role": "user", "content": format!("Extract from the following text. Return JSON: {{\n  \"entities\": [{{\"name\": string, \"entity_type\"?: string}}],\n  \"relationships\": [{{\"source_name\": string, \"target_name\": string, \"rel_type\"?: string, \"confidence\"?: number}}]\n}}\n\nTEXT:\n{}", text) }
-        ]
-    })
+/// Parse an appended JSON block with candidates from the synthesized answer
+fn parse_appended_candidates(text: &str) -> Option<CandidateEnvelope> {
+    let trimmed = text.trim();
+    // Prefer fenced ```json blocks at the end
+    if let Some(start) = trimmed.rfind("```json") {
+        let after = &trimmed[start + 7..];
+        if let Some(end_rel) = after.rfind("```") {
+            let json_slice = after[..end_rel].trim();
+            if let Ok(parsed) = serde_json::from_str::<CandidateEnvelope>(json_slice) {
+                return Some(parsed);
+            }
+        }
+    }
+    // Fallback: look for the last '{' and attempt JSON parse if it contains "candidates"
+    if let Some(pos) = trimmed.rfind('{') {
+        let slice = trimmed[pos..].trim();
+        if slice.contains("\"candidates\"") {
+            if let Ok(parsed) = serde_json::from_str::<CandidateEnvelope>(slice) {
+                return Some(parsed);
+            }
+        }
+    }
+    None
+}
+
+/// Optional test hook: stage candidates from SURR_IV_TEST_CANDIDATES env when no JSON is found.
+fn parse_env_candidates() -> Option<CandidateEnvelope> {
+    if let Ok(val) = std::env::var("SURR_IV_TEST_CANDIDATES") {
+        let trimmed = val.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        if let Ok(parsed) = serde_json::from_str::<CandidateEnvelope>(trimmed) {
+            return Some(parsed);
+        }
+    }
+    None
 }
 
 /// Compute cosine similarity (delegates to utils)
@@ -1079,9 +990,9 @@ fn build_synthesis_messages(query: &str, snippets: &[Snippet]) -> serde_json::Va
         lines.push(format!("{}\n{}", meta, text));
     }
 
-    let system = "You are a careful, grounded synthesizer. Only use the provided snippets. Cite sources inline like [1], [2]. Prefer concise answers (<= 4 sentences). If insufficient evidence, say so.";
+    let system = "You are a careful, grounded synthesizer. Only use the provided snippets. Cite sources inline like [1], [2]. Prefer concise answers (<= 4 sentences). If insufficient evidence, say so. If you identify knowledge-graph candidates, append a fenced JSON block exactly at the end: ```json {\"candidates\":[{\"name\":\"<entity_or_source>\",\"type\":\"entity\",\"entity_type\":\"<optional>\"},{\"name\":\"<source>\",\"type\":\"relationship\",\"target\":\"<target>\",\"rel_type\":\"<optional>\"}]}```. Omit the block entirely if no candidates.";
     let user = format!(
-        "Query: {}\n\nSnippets:\n{}\n\nTask: Provide a concise, grounded answer with inline [n] citations.",
+        "Query: {}\n\nSnippets:\n{}\n\nTask: Provide a concise, grounded answer with inline [n] citations. If you see high-confidence entities or relationships, append the JSON block described in the system message at the very end. Do not include any other trailing text after the JSON block.",
         query,
         lines.join("\n\n")
     );
@@ -1188,6 +1099,7 @@ async fn call_planner_grok(base: &str, api_key: &str, query: &str) -> Result<Pla
 }
 
 /// Call Grok chat/completions
+#[allow(dead_code)]
 pub(super) async fn call_grok(
     base: &str,
     model: &str,

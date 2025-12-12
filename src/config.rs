@@ -229,13 +229,6 @@ pub struct RuntimeConfig {
     pub verify_evidence_limit: usize,
     pub persist_verification: bool,
     pub inner_voice: InnerVoiceConfig,
-    // Brain datastore support
-    pub brain_enable: bool,
-    pub brain_url: Option<String>,
-    pub brain_ns: Option<String>,
-    pub brain_db: Option<String>,
-    pub brain_user: Option<String>,
-    pub brain_pass: Option<String>,
     // HTTP transport configuration
     pub transport: String,
     pub http_bind: std::net::SocketAddr,
@@ -277,12 +270,6 @@ impl Default for RuntimeConfig {
             kg_timeout_ms: 5000,
             kg_candidates: 200,
             inner_voice: InnerVoiceConfig::default(),
-            brain_enable: false,
-            brain_url: None,
-            brain_ns: None,
-            brain_db: None,
-            brain_user: None,
-            brain_pass: None,
             transport: "stdio".to_string(),
             http_bind: "127.0.0.1:8787"
                 .parse()
@@ -623,12 +610,6 @@ impl RuntimeConfig {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(200),
             inner_voice: InnerVoiceConfig::load_from_env(),
-            brain_enable: false,
-            brain_url: None,
-            brain_ns: None,
-            brain_db: None,
-            brain_user: None,
-            brain_pass: None,
             transport: "stdio".to_string(),
             http_bind: "127.0.0.1:8787"
                 .parse()
@@ -642,16 +623,6 @@ impl RuntimeConfig {
             http_mcp_op_timeout_ms: None,
             http_metrics_mode: "basic".to_string(),
         };
-
-        // Brain datastore envs
-        if let Ok(enable) = std::env::var("SURR_ENABLE_BRAIN") {
-            cfg.brain_enable = enable == "1" || enable.to_lowercase() == "true";
-        }
-        cfg.brain_url = std::env::var("SURR_BRAIN_URL").ok();
-        cfg.brain_ns = std::env::var("SURR_BRAIN_NS").ok();
-        cfg.brain_db = std::env::var("SURR_BRAIN_DB").ok();
-        cfg.brain_user = std::env::var("SURR_BRAIN_USER").ok();
-        cfg.brain_pass = std::env::var("SURR_BRAIN_PASS").ok();
 
         // HTTP transport configuration
         cfg.transport = std::env::var("SURR_TRANSPORT").unwrap_or_else(|_| "stdio".to_string());
