@@ -238,6 +238,7 @@ pub async fn start_http_server(server: SurrealMindServer) -> Result<()> {
         StreamableHttpServerConfig {
             stateful_mode: true,
             sse_keep_alive: Some(keepalive),
+            ..Default::default()
         },
     );
 

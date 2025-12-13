@@ -1,3 +1,10 @@
+## 2025-12-12 - rmcp Upgrade to 0.11.0
+- **Dependency**: Updated rmcp from 0.9.0 to 0.11.0
+- **Breaking change in rmcp**: SSE transport removed (we don't use it - our features: macros, transport-io, transport-streamable-http-server, transport-worker)
+- **API fix**: `StreamableHttpServerConfig` now requires `cancellation_token` field - added via `..Default::default()`
+- **New in 0.10.0**: Custom client notifications support
+- **New in 0.11.0**: outputSchema validation
+
 ## 2025-12-05 - Brain Store Removal
 - Removed the `brain_store` tool, schema, config flags, and tests to keep the core surface lean (now 7 tools).
 - Cleaned docs (README/AGENTS) and detailed_help roster; dropped brain datastore envs.
