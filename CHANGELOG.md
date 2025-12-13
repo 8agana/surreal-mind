@@ -1,3 +1,16 @@
+## 2025-12-12 - Output Schema Implementation
+- **Feature**: Added `output_schema` definitions for all 7 MCP tools (rmcp 0.11.0+)
+  - `legacymind_think`: mode_selected, reason, delegated_result, links, telemetry, verification
+  - `maintenance_ops`: subcommand-dependent results with counts, paths, messages
+  - `memories_create`: created flag, id, kind
+  - `memories_moderate`: review items array, results array
+  - `inner_voice`: answer, synth_thought_id, feedback, sources, extracted
+  - `legacymind_search`: memories and optional thoughts results
+  - `detailed_help`: tool info object with description, arguments, returns
+- **Schemas**: Added 7 `*_output_schema()` functions to `src/schemas.rs`
+- **Router**: Wired `output_schema: Some(...)` to all tool definitions in `router.rs`
+- **Future**: Progress notifications require handler refactoring (passing RequestContext) - deferred
+
 ## 2025-12-12 - rmcp Upgrade to 0.11.0
 - **Dependency**: Updated rmcp from 0.9.0 to 0.11.0
 - **Breaking change in rmcp**: SSE transport removed (we don't use it - our features: macros, transport-io, transport-streamable-http-server, transport-worker)

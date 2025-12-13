@@ -51,14 +51,23 @@ impl ServerHandler for SurrealMindServer {
 
         use rmcp::model::Tool;
 
+        // Input schemas
         let legacymind_think_schema_map = crate::schemas::legacymind_think_schema();
-
         let maintenance_ops_schema_map = crate::schemas::maintenance_ops_schema();
         let kg_create_schema_map = crate::schemas::kg_create_schema();
         let kg_moderate_schema_map = crate::schemas::kg_moderate_schema();
         let detailed_help_schema_map = crate::schemas::detailed_help_schema();
         let inner_voice_schema_map = crate::schemas::inner_voice_schema();
         let unified_schema = crate::schemas::unified_search_schema();
+
+        // Output schemas (rmcp 0.11.0+)
+        let legacymind_think_output = crate::schemas::legacymind_think_output_schema();
+        let maintenance_ops_output = crate::schemas::maintenance_ops_output_schema();
+        let memories_create_output = crate::schemas::memories_create_output_schema();
+        let memories_moderate_output = crate::schemas::memories_moderate_output_schema();
+        let detailed_help_output = crate::schemas::detailed_help_output_schema();
+        let inner_voice_output = crate::schemas::inner_voice_output_schema();
+        let unified_search_output = crate::schemas::legacymind_search_output_schema();
 
         let mut tools = vec![
             Tool {
@@ -68,7 +77,7 @@ impl ServerHandler for SurrealMindServer {
                 input_schema: legacymind_think_schema_map.clone(),
                 icons: None,
                 annotations: None,
-                output_schema: None,
+                output_schema: Some(legacymind_think_output),
                 meta: None,
             },
             Tool {
@@ -78,7 +87,7 @@ impl ServerHandler for SurrealMindServer {
                 input_schema: maintenance_ops_schema_map,
                 icons: None,
                 annotations: None,
-                output_schema: None,
+                output_schema: Some(maintenance_ops_output),
                 meta: None,
             },
             // (legacy think_search removed — use legacymind_search)
@@ -91,7 +100,7 @@ impl ServerHandler for SurrealMindServer {
                 input_schema: kg_create_schema_map,
                 icons: None,
                 annotations: None,
-                output_schema: None,
+                output_schema: Some(memories_create_output),
                 meta: None,
             },
             // (legacy memories_search removed — use legacymind_search)
@@ -102,7 +111,7 @@ impl ServerHandler for SurrealMindServer {
                 input_schema: kg_moderate_schema_map.clone(),
                 icons: None,
                 annotations: None,
-                output_schema: None,
+                output_schema: Some(memories_moderate_output),
                 meta: None,
             },
             Tool {
@@ -112,7 +121,7 @@ impl ServerHandler for SurrealMindServer {
                 input_schema: detailed_help_schema_map,
                 icons: None,
                 annotations: None,
-                output_schema: None,
+                output_schema: Some(detailed_help_output),
                 meta: None,
             },
         ];
@@ -127,8 +136,8 @@ impl ServerHandler for SurrealMindServer {
             input_schema: inner_voice_schema_map.clone(),
             icons: None,
             annotations: None,
-                output_schema: None,
-                meta: None,
+            output_schema: Some(inner_voice_output),
+            meta: None,
         });
 
         tools.push(Tool {
@@ -140,7 +149,7 @@ impl ServerHandler for SurrealMindServer {
             input_schema: unified_schema,
             icons: None,
             annotations: None,
-            output_schema: None,
+            output_schema: Some(unified_search_output),
             meta: None,
         });
         // (photography tools removed from this server)

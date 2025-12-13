@@ -286,3 +286,190 @@ pub fn inner_voice_schema() -> Arc<Map<String, Value>> {
 }
 
 // (photography_search_schema removed in favor of two explicit tools)
+
+// ============================================================================
+// OUTPUT SCHEMAS (rmcp 0.11.0+)
+// These define the structure of tool responses for schema validation
+// ============================================================================
+
+pub fn legacymind_think_output_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "mode_selected": {"type": "string", "description": "The thinking mode that was selected"},
+            "reason": {"type": "string", "description": "Why this mode was selected"},
+            "delegated_result": {
+                "type": "object",
+                "properties": {
+                    "thought_id": {"type": "string"},
+                    "embedding_model": {"type": "string"},
+                    "embedding_dim": {"type": "integer"},
+                    "memories_injected": {"type": "integer"}
+                },
+                "description": "Result from the delegated thinking mode"
+            },
+            "links": {
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": ["string", "null"]},
+                    "chain_id": {"type": ["string", "null"]},
+                    "previous_thought_id": {"type": ["string", "null"]},
+                    "revises_thought": {"type": ["string", "null"]},
+                    "branch_from": {"type": ["string", "null"]},
+                    "confidence": {"type": ["number", "null"]}
+                },
+                "description": "Resolved continuity links"
+            },
+            "telemetry": {
+                "type": "object",
+                "description": "Trigger matching and heuristic info"
+            },
+            "verification": {
+                "type": "object",
+                "properties": {
+                    "hypothesis": {"type": "string"},
+                    "supporting": {"type": "array"},
+                    "contradicting": {"type": "array"},
+                    "confidence_score": {"type": "number"},
+                    "suggested_revision": {"type": ["string", "null"]}
+                },
+                "description": "Optional hypothesis verification result"
+            }
+        },
+        "required": ["mode_selected", "reason", "delegated_result", "links", "telemetry"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn memories_create_output_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "kind": {"type": "string", "enum": ["entity", "relationship", "observation"]},
+            "id": {"type": "string", "description": "The created record ID"},
+            "created": {"type": "boolean", "description": "True if newly created, false if existing found"}
+        },
+        "required": ["kind", "id", "created"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn memories_moderate_output_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "review": {
+                "type": "object",
+                "properties": {
+                    "items": {"type": "array", "description": "Candidates for review"}
+                },
+                "description": "Review results (when action includes review)"
+            },
+            "results": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "kind": {"type": "string"},
+                        "decision": {"type": "string"},
+                        "success": {"type": "boolean"},
+                        "error": {"type": "string"}
+                    }
+                },
+                "description": "Decision results (when action includes decide)"
+            }
+        }
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn legacymind_search_output_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "memories": {
+                "type": "object",
+                "properties": {
+                    "items": {"type": "array", "description": "Memory items found"}
+                },
+                "description": "Memory search results"
+            },
+            "thoughts": {
+                "type": "object",
+                "properties": {
+                    "total": {"type": "integer"},
+                    "results": {"type": "array"}
+                },
+                "description": "Thought search results (when include_thoughts=true)"
+            }
+        }
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn maintenance_ops_output_schema() -> Arc<Map<String, Value>> {
+    // Maintenance ops returns different structures based on subcommand
+    // Using a permissive schema that allows any object structure
+    let schema = json!({
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Output varies by subcommand. Common fields: expected_dim, thoughts, kg_entities, kg_observations for health_check; candidates, archived for removal ops."
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn inner_voice_output_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "answer": {"type": "string", "description": "Synthesized answer from memories/thoughts"},
+            "synth_thought_id": {"type": "string", "description": "ID of the synthesis thought created"},
+            "feedback": {"type": "string", "description": "Optional feedback text"},
+            "feedback_thought_id": {"type": ["string", "null"], "description": "ID of feedback thought if created"},
+            "sources_compact": {"type": "string", "description": "Compact list of source IDs"},
+            "synth_provider": {"type": "string", "description": "Provider used for synthesis"},
+            "synth_model": {"type": "string", "description": "Model used for synthesis"},
+            "embedding_dim": {"type": "integer", "description": "Embedding dimension used"},
+            "extracted": {
+                "type": "object",
+                "properties": {
+                    "entities": {"type": "integer"},
+                    "relationships": {"type": "integer"}
+                },
+                "description": "Count of entities/relationships extracted to KG (when auto_extract_to_kg=true)"
+            }
+        },
+        "required": ["answer", "synth_thought_id", "sources_compact", "synth_provider", "synth_model", "embedding_dim", "extracted"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn detailed_help_output_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "tools": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "one_liner": {"type": "string"},
+                        "key_params": {"type": "array", "items": {"type": "string"}}
+                    }
+                },
+                "description": "List of available tools (when no specific tool requested)"
+            },
+            "name": {"type": "string", "description": "Tool name (when specific tool requested)"},
+            "description": {"type": "string"},
+            "arguments": {"type": "object"},
+            "returns": {"type": "object"},
+            "prompts": {
+                "type": "array",
+                "description": "List of prompts (when prompts=true)"
+            }
+        }
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
