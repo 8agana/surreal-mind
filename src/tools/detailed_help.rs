@@ -44,16 +44,17 @@ impl SurrealMindServer {
 
         let tool = match maybe_tool {
             None => {
-                // Canonical tools roster
-                let overview = json!([
-                {"name": "legacymind_think", "one_liner": "Unified thinking tool with automatic mode routing via triggers/heurs", "key_params": ["content", "hint", "injection_scale", "tags", "significance"]},
-                {"name": "memories_create", "one_liner": "Create entities/relationships/observations in the KG", "key_params": ["kind", "data", "confidence", "source_thought_id"]},
-                {"name": "memories_moderate", "one_liner": "Review/decide on KG candidates", "key_params": ["action", "target", "status", "items", "dry_run"]},
-                {"name": "legacymind_search", "one_liner": "Unified LM search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]},
-                {"name": "maintenance_ops", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]},
-                {"name": "inner_voice", "one_liner": "Retrieves and synthesizes relevant memories/thoughts into a concise answer; can optionally auto-extract entities/relationships into staged knowledge‑graph candidates for review.", "key_params": ["query", "top_k", "auto_extract_to_kg"]}
-                ]);
-                return Ok(CallToolResult::structured(overview));
+                // Canonical tools roster (wrapped in object for rmcp 0.11.0 schema validation)
+                let tools = vec![
+                    json!({"name": "legacymind_think", "one_liner": "Unified thinking tool with automatic mode routing via triggers/heurs", "key_params": ["content", "hint", "injection_scale", "tags", "significance"]}),
+                    json!({"name": "memories_create", "one_liner": "Create entities/relationships/observations in the KG", "key_params": ["kind", "data", "confidence", "source_thought_id"]}),
+                    json!({"name": "memories_moderate", "one_liner": "Review/decide on KG candidates", "key_params": ["action", "target", "status", "items", "dry_run"]}),
+                    json!({"name": "legacymind_search", "one_liner": "Unified LM search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]}),
+                    json!({"name": "maintenance_ops", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]}),
+                    json!({"name": "inner_voice", "one_liner": "Retrieves and synthesizes relevant memories/thoughts into a concise answer; can optionally auto-extract entities/relationships into staged knowledge‑graph candidates for review.", "key_params": ["query", "top_k", "auto_extract_to_kg"]}),
+                    json!({"name": "detailed_help", "one_liner": "Get help for a specific tool or list all tools", "key_params": ["tool", "format", "prompts"]}),
+                ];
+                return Ok(CallToolResult::structured(json!({ "tools": tools })));
             }
             Some(t) => t,
         };

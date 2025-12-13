@@ -2,6 +2,7 @@
 - **Dependency**: Updated rmcp from 0.9.0 to 0.11.0
 - **Breaking change in rmcp**: SSE transport removed (we don't use it - our features: macros, transport-io, transport-streamable-http-server, transport-worker)
 - **API fix**: `StreamableHttpServerConfig` now requires `cancellation_token` field - added via `..Default::default()`
+- **API fix**: `detailed_help` overview mode now returns `{tools: [...]}` object instead of raw array (rmcp 0.11.0 outputSchema validation requires object wrapper)
 - **New in 0.10.0**: Custom client notifications support
 - **New in 0.11.0**: outputSchema validation
 
