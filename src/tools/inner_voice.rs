@@ -245,6 +245,11 @@ pub struct Candidate {
 static SENTENCE_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"[.!?]["”"']?\s"#).expect("regex should compile"));
 
+/// Match fenced code blocks that contain JSON. Permissive to catch ```json ...``` and bare ``` ...```.
+static FENCED_JSON_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?s)```(?:json)?\s*(\{.*?\})\s*```").expect("fenced json regex should compile")
+});
+
 impl SurrealMindServer {
     /// Handle the inner_voice tool call
     pub async fn handle_inner_voice_retrieve(
@@ -580,7 +585,25 @@ impl SurrealMindServer {
         let mut extracted_entities = 0usize;
         let mut extracted_rels = 0usize;
         if auto_extract {
-            let parsed = parse_appended_candidates(&synthesized).or_else(parse_env_candidates);
+            // Parse appended candidates; fail fast on malformed JSON to surface brittle format changes.
+            let mut parsed = match parse_appended_candidates(&synthesized) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!(target: "inner_voice", error = %e, "auto_extract: failed to parse appended candidates");
+                    return Err(e);
+                }
+            };
+
+            if parsed.is_none() {
+                parsed = match parse_env_candidates() {
+                    Ok(v) => v,
+                    Err(e) => {
+                        tracing::warn!(target: "inner_voice", error = %e, "auto_extract: failed to parse SURR_IV_TEST_CANDIDATES");
+                        return Err(e);
+                    }
+                };
+            }
+
             if let Some(parsed) = parsed {
                 let (ec, rc) = self
                     .stage_candidates_from_llm(parsed, &synth_thought_id)
@@ -933,43 +956,80 @@ impl SurrealMindServer {
     }
 }
 
-/// Parse an appended JSON block with candidates from the synthesized answer
-fn parse_appended_candidates(text: &str) -> Option<CandidateEnvelope> {
+/// Parse an appended JSON block with candidates from the synthesized answer.
+/// Returns Ok(None) when no candidate block is present; returns Err on malformed blocks so
+/// auto_extract callers can fail fast instead of silently dropping candidates.
+fn parse_appended_candidates(text: &str) -> Result<Option<CandidateEnvelope>> {
     let trimmed = text.trim();
-    // Prefer fenced ```json blocks at the end
-    if let Some(start) = trimmed.rfind("```json") {
-        let after = &trimmed[start + 7..];
-        if let Some(end_rel) = after.rfind("```") {
-            let json_slice = after[..end_rel].trim();
-            if let Ok(parsed) = serde_json::from_str::<CandidateEnvelope>(json_slice) {
-                return Some(parsed);
+
+    // 1) Look for fenced code blocks anywhere (prefer the last occurrence)
+    let mut last_block: Option<String> = None;
+    for caps in FENCED_JSON_REGEX.captures_iter(trimmed) {
+        if let Some(m) = caps.get(1) {
+            last_block = Some(m.as_str().trim().to_string());
+        }
+    }
+    if let Some(json_block) = last_block {
+        match serde_json::from_str::<CandidateEnvelope>(&json_block) {
+            Ok(parsed) => return Ok(Some(parsed)),
+            Err(e) => {
+                let snippet = tail_snippet(&json_block);
+                tracing::warn!(target: "inner_voice", error = %e, snippet = %snippet, "Failed to parse fenced JSON candidates");
+                return Err(SurrealMindError::Internal {
+                    message: format!("Failed to parse fenced JSON candidates: {}", e),
+                });
             }
         }
     }
-    // Fallback: look for the last '{' and attempt JSON parse if it contains "candidates"
+
+    // 2) Fallback: look for the last '{' and attempt JSON parse if it contains \"candidates\"
     if let Some(pos) = trimmed.rfind('{') {
         let slice = trimmed[pos..].trim();
         if slice.contains("\"candidates\"") {
-            if let Ok(parsed) = serde_json::from_str::<CandidateEnvelope>(slice) {
-                return Some(parsed);
+            match serde_json::from_str::<CandidateEnvelope>(slice) {
+                Ok(parsed) => return Ok(Some(parsed)),
+                Err(e) => {
+                    let snippet = tail_snippet(slice);
+                    tracing::warn!(target: "inner_voice", error = %e, snippet = %snippet, "Failed to parse trailing JSON candidates");
+                    return Err(SurrealMindError::Internal {
+                        message: format!("Failed to parse trailing JSON candidates: {}", e),
+                    });
+                }
             }
         }
     }
-    None
+
+    Ok(None)
 }
 
 /// Optional test hook: stage candidates from SURR_IV_TEST_CANDIDATES env when no JSON is found.
-fn parse_env_candidates() -> Option<CandidateEnvelope> {
+fn parse_env_candidates() -> Result<Option<CandidateEnvelope>> {
     if let Ok(val) = std::env::var("SURR_IV_TEST_CANDIDATES") {
         let trimmed = val.trim();
         if trimmed.is_empty() {
-            return None;
+            return Ok(None);
         }
-        if let Ok(parsed) = serde_json::from_str::<CandidateEnvelope>(trimmed) {
-            return Some(parsed);
+        match serde_json::from_str::<CandidateEnvelope>(trimmed) {
+            Ok(parsed) => Ok(Some(parsed)),
+            Err(e) => {
+                tracing::warn!(target: "inner_voice", error = %e, "Failed to parse SURR_IV_TEST_CANDIDATES");
+                Err(SurrealMindError::Internal {
+                    message: format!("Invalid SURR_IV_TEST_CANDIDATES JSON: {}", e),
+                })
+            }
         }
+    } else {
+        Ok(None)
     }
-    None
+}
+
+fn tail_snippet(s: &str) -> String {
+    let clean = s.trim();
+    if clean.len() <= 200 {
+        clean.to_string()
+    } else {
+        clean[clean.len() - 200..].to_string()
+    }
 }
 
 /// Compute cosine similarity (delegates to utils)

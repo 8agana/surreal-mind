@@ -1,3 +1,7 @@
+## 2025-12-16 - inner_voice Auto-Extract Hardening
+- Hardened inner_voice KG auto-extraction parser: robust fenced JSON detection, better logging, and explicit errors on malformed candidate blocks.
+- Parse failures now warn and abort auto_extract instead of silently returning None; env test hook validated with error surfacing.
+
 ## 2025-12-12 - Output Schema Implementation
 - **Feature**: Added `output_schema` definitions for all 7 MCP tools (rmcp 0.11.0+)
   - `legacymind_think`: mode_selected, reason, delegated_result, links, telemetry, verification
