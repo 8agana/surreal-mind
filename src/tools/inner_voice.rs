@@ -9,7 +9,7 @@ use crate::error::{Result, SurrealMindError};
 use crate::schemas::Snippet;
 use crate::server::SurrealMindServer;
 use blake3::Hasher;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use reqwest::Client;
@@ -47,6 +47,10 @@ pub struct InnerVoiceRetrieveParams {
     pub include_feedback: Option<bool>,
     #[serde(default)]
     pub feedback_max_lines: Option<usize>,
+    #[serde(default)]
+    pub recency_days: Option<u32>,
+    #[serde(default)]
+    pub prefer_recent: Option<bool>,
 }
 
 /// Runtime snapshot and hooks to support reuse while preserving behavior
@@ -58,6 +62,9 @@ pub struct InnerVoiceRuntime {
     pub floor_default: f32,
     pub max_candidates_per_source: usize,
     pub include_private_default: bool,
+    pub recency_half_life_days: f32,
+    pub recency_days_default: Option<u32>,
+    pub prefer_recent_default: bool,
 
     // Provider configuration
     pub grok_base: String,
@@ -100,6 +107,9 @@ impl SurrealMindServer {
         let floor_default = cfg.min_floor;
         let max_candidates_per_source = cfg.max_candidates_per_source;
         let include_private_default = cfg.include_private_default;
+        let recency_half_life_days = cfg.recency_half_life_days;
+        let recency_days_default = cfg.recency_days_default;
+        let prefer_recent_default = cfg.prefer_recent_default;
 
         // Provider/env snapshot (preserve existing defaults and precedence)
         let grok_base =
@@ -155,6 +165,9 @@ impl SurrealMindServer {
             floor_default,
             max_candidates_per_source,
             include_private_default,
+            recency_half_life_days,
+            recency_days_default,
+            prefer_recent_default,
             grok_base,
             grok_model,
             grok_allow,
@@ -298,6 +311,14 @@ impl SurrealMindServer {
         let mut include_tags = params.include_tags.clone();
         let mut exclude_tags = params.exclude_tags.clone();
         let mut date_filter = None;
+        let mut recency_days =
+            params
+                .recency_days
+                .or(self.config.runtime.inner_voice.recency_days_default);
+        let prefer_recent = params
+            .prefer_recent
+            .unwrap_or(self.config.runtime.inner_voice.prefer_recent_default);
+        let apply_recency = prefer_recent || recency_days.is_some();
         let mut planner_response = None;
         if cfg.plan {
             let base = std::env::var("GROK_BASE_URL")
@@ -334,12 +355,7 @@ impl SurrealMindServer {
                             date_filter = Some(date_range);
                         } else if let Some(days) = planner.recency_days {
                             if days > 0 {
-                                let now = Utc::now();
-                                let from = now - chrono::Duration::days(days as i64);
-                                date_filter = Some(DateRange {
-                                    from: from.format("%Y-%m-%d").to_string(),
-                                    to: now.format("%Y-%m-%d").to_string(),
-                                });
+                                recency_days = Some(days);
                             }
                         }
                     }
@@ -350,6 +366,9 @@ impl SurrealMindServer {
                 }
             }
         }
+
+        // recency_days is now used only for scoring boost, not as a hard filter
+        // (planner's explicit date_range remains as a hard filter if set)
 
         // Embed query
         let q_emb = self.embedder.embed(&effective_query).await.map_err(|e| {
@@ -382,9 +401,15 @@ impl SurrealMindServer {
         let mut thought_hits: Vec<Candidate> = Vec::new();
         let mut kg_hits: Vec<Candidate> = Vec::new();
 
+        let now = Utc::now();
+        let half_life = cfg.recency_half_life_days;
+
         for cand in thought_candidates {
             if cand.embedding.len() == q_emb.len() {
-                let score = cosine(&q_emb, &cand.embedding);
+                let mut score = cosine(&q_emb, &cand.embedding);
+                if apply_recency {
+                    score *= recency_multiplier(&cand.created_at, now, half_life, recency_days);
+                }
                 if score >= floor {
                     let mut c = cand;
                     c.score = score;
@@ -396,6 +421,9 @@ impl SurrealMindServer {
         for cand in kg_entity_candidates.into_iter().chain(kg_obs_candidates) {
             if cand.embedding.len() == q_emb.len() {
                 let mut score = cosine(&q_emb, &cand.embedding);
+                if apply_recency {
+                    score *= recency_multiplier(&cand.created_at, now, half_life, recency_days);
+                }
                 if score >= floor {
                     // Apply entity_hints boost (advisory only)
                     if cfg.plan {
@@ -1392,6 +1420,41 @@ pub(super) fn check_http_status(status_code: u16, body_text: &str, context: &str
     })
 }
 
+/// Compute a time-decay multiplier based on age and half-life (days).
+/// When recency_window_days is provided, content within the window gets boosted
+/// while older content still gets retrieved but with decaying scores.
+/// Returns 1.0 when parsing fails or half_life_days <= 0.
+fn recency_multiplier(
+    created_at: &str,
+    now: DateTime<Utc>,
+    half_life_days: f32,
+    recency_window_days: Option<u32>,
+) -> f32 {
+    if half_life_days <= 0.0 {
+        return 1.0;
+    }
+    let created = match DateTime::parse_from_rfc3339(created_at) {
+        Ok(dt) => dt.with_timezone(&Utc),
+        Err(_) => return 1.0,
+    };
+    let age_secs = (now - created).num_seconds();
+    if age_secs <= 0 {
+        return 1.0;
+    }
+    let age_days = age_secs as f32 / 86_400.0;
+
+    // If recency_window_days is set, use it as the half-life for stronger recent boost
+    let effective_half_life = if let Some(window) = recency_window_days {
+        // Use half the window as half-life for sharper decay beyond the window
+        (window as f32) / 2.0
+    } else {
+        half_life_days
+    };
+
+    // decay = 0.5^(age/half_life)
+    (0.5_f32).powf(age_days / effective_half_life)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1454,5 +1517,35 @@ mod tests {
 
         // Test unknown origin gets red tier
         assert_eq!(compute_trust_tier("unknown", "thoughts"), "red");
+    }
+
+    #[test]
+    fn recency_multiplier_respects_half_life() {
+        let now = Utc::now();
+        let recent = now - chrono::Duration::days(1);
+        let old = now - chrono::Duration::days(14);
+        let half_life = 14.0;
+        let m_recent = recency_multiplier(&recent.to_rfc3339(), now, half_life, None);
+        let m_old = recency_multiplier(&old.to_rfc3339(), now, half_life, None);
+        assert!(m_recent > m_old);
+        assert!(m_old > 0.4 && m_old < 0.6); // roughly 0.5 at one half-life
+    }
+
+    #[test]
+    fn recency_multiplier_with_window_boosts_recent() {
+        let now = Utc::now();
+        let within_window = now - chrono::Duration::days(3);
+        let outside_window = now - chrono::Duration::days(14);
+        let half_life = 14.0;
+        let window_days = Some(7);
+
+        let m_within = recency_multiplier(&within_window.to_rfc3339(), now, half_life, window_days);
+        let m_outside =
+            recency_multiplier(&outside_window.to_rfc3339(), now, half_life, window_days);
+
+        // Content within window should score higher than content outside window
+        assert!(m_within > m_outside);
+        // But older content should still be retrieved (not zero)
+        assert!(m_outside > 0.0);
     }
 }

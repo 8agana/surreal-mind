@@ -39,6 +39,8 @@ mod tests {
             previous_thought_id: None,
             include_feedback: None,
             feedback_max_lines: None,
+            recency_days: None,
+            prefer_recent: None,
         };
         // default true => result true even with mix=0
         assert!(compute_auto_extract(params.auto_extract_to_kg, true));

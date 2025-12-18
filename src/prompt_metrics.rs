@@ -165,6 +165,26 @@ impl crate::server::SurrealMindServer {
         let refusals = stats["refusals"].as_i64().unwrap_or(0);
         let errors_count = stats["errors"].as_i64().unwrap_or(0);
 
+        // Use the version from the most recent invocation for this prompt
+        let latest_version: Vec<serde_json::Value> = self
+            .db
+            .query(
+                "SELECT version 
+                 FROM prompt_invocations 
+                 WHERE prompt_id = $id 
+                 ORDER BY created_at DESC 
+                 LIMIT 1",
+            )
+            .bind(("id", prompt_id.to_string()))
+            .await?
+            .take(0)?;
+
+        let version = latest_version
+            .first()
+            .and_then(|v| v["version"].as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+
         // Safe division helper
         let safe_rate = |count: i64| {
             if total > 0 {
@@ -176,7 +196,7 @@ impl crate::server::SurrealMindServer {
 
         Ok(PromptMetrics {
             prompt_id: prompt_id.to_string(),
-            version: "1.0.0".to_string(), // TODO: Get from latest invocation
+            version,
             total_invocations: total,
             success_rate: safe_rate(successes),
             refusal_rate: safe_rate(refusals),

@@ -95,6 +95,9 @@ pub struct InnerVoiceConfig {
     pub include_private_default: bool,
     pub plan: bool,
     pub auto_extract_default: bool,
+    pub recency_half_life_days: f32,
+    pub recency_days_default: Option<u32>,
+    pub prefer_recent_default: bool,
 }
 
 impl Default for InnerVoiceConfig {
@@ -109,6 +112,9 @@ impl Default for InnerVoiceConfig {
             include_private_default: false,
             plan: false,
             auto_extract_default: true,
+            recency_half_life_days: 14.0,
+            recency_days_default: None,
+            prefer_recent_default: false,
         }
     }
 }
@@ -178,6 +184,28 @@ impl InnerVoiceConfig {
             config.auto_extract_default = ae == "1" || ae.to_lowercase() == "true";
         }
 
+        if let Some(hl) = std::env::var("SURR_IV_RECENCY_HALF_LIFE_DAYS")
+            .ok()
+            .and_then(|v| v.parse::<f32>().ok())
+        {
+            if hl > 0.0 {
+                config.recency_half_life_days = hl;
+            }
+        }
+
+        if let Some(days) = std::env::var("SURR_IV_RECENCY_DEFAULT_DAYS")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+        {
+            if days > 0 {
+                config.recency_days_default = Some(days);
+            }
+        }
+
+        if let Ok(pref) = std::env::var("SURR_IV_PREFER_RECENT") {
+            config.prefer_recent_default = pref == "1" || pref.eq_ignore_ascii_case("true");
+        }
+
         config
     }
 
@@ -196,6 +224,9 @@ impl InnerVoiceConfig {
             anyhow::bail!(
                 "SURR_INNER_VOICE_MAX_CANDIDATES_PER_SOURCE must be at least 3 * topk_default"
             );
+        }
+        if self.recency_half_life_days <= 0.0 {
+            anyhow::bail!("SURR_IV_RECENCY_HALF_LIFE_DAYS must be > 0");
         }
         Ok(())
     }

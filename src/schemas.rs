@@ -278,7 +278,9 @@ pub fn inner_voice_schema() -> Arc<Map<String, Value>> {
             "auto_extract_to_kg": {"type": "boolean", "default": false},
             "previous_thought_id": {"type": "string"},
             "include_feedback": {"type": "boolean", "default": true},
-            "feedback_max_lines": {"type": "integer", "default": 3, "minimum": 1, "maximum": 10}
+            "feedback_max_lines": {"type": "integer", "default": 3, "minimum": 1, "maximum": 10},
+            "recency_days": {"type": "integer", "minimum": 1, "maximum": 365},
+            "prefer_recent": {"type": "boolean"}
         },
         "required": ["query"]
     });
