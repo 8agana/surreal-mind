@@ -289,6 +289,45 @@ pub fn inner_voice_schema() -> Arc<Map<String, Value>> {
 
 // (photography_search_schema removed in favor of two explicit tools)
 
+pub fn curiosity_add_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "content": {"type": "string"},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "agent": {"type": "string"},
+            "topic": {"type": "string"},
+            "in_reply_to": {"type": "string"}
+        },
+        "required": ["content"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn curiosity_get_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
+            "since": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"}
+        }
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn curiosity_search_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+            "top_k": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
+            "recency_days": {"type": "integer", "minimum": 1, "maximum": 365}
+        },
+        "required": ["query"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
 // ============================================================================
 // OUTPUT SCHEMAS (rmcp 0.11.0+)
 // These define the structure of tool responses for schema validation

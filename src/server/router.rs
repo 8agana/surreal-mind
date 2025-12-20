@@ -59,6 +59,9 @@ impl ServerHandler for SurrealMindServer {
         let detailed_help_schema_map = crate::schemas::detailed_help_schema();
         let inner_voice_schema_map = crate::schemas::inner_voice_schema();
         let unified_schema = crate::schemas::unified_search_schema();
+        let curiosity_add_schema = crate::schemas::curiosity_add_schema();
+        let curiosity_get_schema = crate::schemas::curiosity_get_schema();
+        let curiosity_search_schema = crate::schemas::curiosity_search_schema();
 
         // Output schemas (rmcp 0.11.0+)
         let legacymind_think_output = crate::schemas::legacymind_think_output_schema();
@@ -141,6 +144,39 @@ impl ServerHandler for SurrealMindServer {
         });
 
         tools.push(Tool {
+            name: "curiosity_add".into(),
+            title: Some("Curiosity Add".into()),
+            description: Some("Add a curiosity entry (lightweight note) with optional tags/agent/topic/in_reply_to.".into()),
+            input_schema: curiosity_add_schema.clone(),
+            icons: None,
+            annotations: None,
+            output_schema: None,
+            meta: None,
+        });
+        tools.push(Tool {
+            name: "curiosity_get".into(),
+            title: Some("Curiosity Get".into()),
+            description: Some("Fetch recent curiosity entries (limit/since).".into()),
+            input_schema: curiosity_get_schema.clone(),
+            icons: None,
+            annotations: None,
+            output_schema: None,
+            meta: None,
+        });
+        tools.push(Tool {
+            name: "curiosity_search".into(),
+            title: Some("Curiosity Search".into()),
+            description: Some(
+                "Search curiosity entries via embeddings with optional recency filter.".into(),
+            ),
+            input_schema: curiosity_search_schema.clone(),
+            icons: None,
+            annotations: None,
+            output_schema: None,
+            meta: None,
+        });
+
+        tools.push(Tool {
             name: "legacymind_search".into(),
             title: Some("LegacyMind Search".into()),
             description: Some(
@@ -191,6 +227,18 @@ impl ServerHandler for SurrealMindServer {
             // New canonical name
             "inner_voice" => self
                 .handle_inner_voice_retrieve(request)
+                .await
+                .map_err(|e| e.into()),
+            "curiosity_add" => self
+                .handle_curiosity_add(request)
+                .await
+                .map_err(|e| e.into()),
+            "curiosity_get" => self
+                .handle_curiosity_get(request)
+                .await
+                .map_err(|e| e.into()),
+            "curiosity_search" => self
+                .handle_curiosity_search(request)
                 .await
                 .map_err(|e| e.into()),
 
