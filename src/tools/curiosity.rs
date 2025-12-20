@@ -172,7 +172,7 @@ impl SurrealMindServer {
 
         let top_k = params.top_k.clamp(1, 50);
 
-        let mut sql = "SELECT meta::id(id) as id, content, tags ?? [] AS tags, agent, topic, in_reply_to, created_at, dot(embedding, $q) as score FROM curiosity_entries WHERE array::len(embedding) = $dim".to_string();
+        let mut sql = "SELECT meta::id(id) as id, content, tags ?? [] AS tags, agent, topic, in_reply_to, created_at, vector::similarity::cosine(embedding, $q) as score FROM curiosity_entries WHERE array::len(embedding) = $dim".to_string();
         if let Some(_days) = params.recency_days {
             sql.push_str(" AND created_at >= time::now() - duration::from::days($days)");
         }
