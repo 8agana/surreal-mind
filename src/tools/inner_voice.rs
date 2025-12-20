@@ -1548,4 +1548,41 @@ mod tests {
         // But older content should still be retrieved (not zero)
         assert!(m_outside > 0.0);
     }
+
+    #[test]
+    fn recency_prefers_newer_candidate_scores() {
+        let now = Utc::now();
+        let q = vec![1.0_f32, 0.0_f32];
+        let base_score = cosine(&q, &q); // 1.0
+        let half_life = 14.0;
+        let window_days = Some(30);
+
+        let mut recent = Candidate {
+            id: "r".into(),
+            table: "thoughts".into(),
+            source_type: "thought".into(),
+            origin: "human".into(),
+            created_at: (now - chrono::Duration::days(1)).to_rfc3339(),
+            text: "recent".into(),
+            embedding: q.clone(),
+            score: 0.0,
+            tags: vec![],
+            is_private: false,
+            content_hash: String::new(),
+            trust_tier: String::new(),
+        };
+
+        let mut old = recent.clone();
+        old.id = "o".into();
+        old.created_at = (now - chrono::Duration::days(60)).to_rfc3339();
+
+        recent.score =
+            base_score * recency_multiplier(&recent.created_at, now, half_life, window_days);
+        old.score = base_score * recency_multiplier(&old.created_at, now, half_life, window_days);
+
+        assert!(
+            recent.score > old.score,
+            "newer candidate should score higher after recency decay"
+        );
+    }
 }
