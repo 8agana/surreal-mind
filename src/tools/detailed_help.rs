@@ -62,7 +62,7 @@ impl SurrealMindServer {
         let help = match tool {
             "legacymind_think" => json!({
                 "name": "legacymind_think",
-                "description": "Unified thinking tool that routes to appropriate mode based on triggers, hint, or heuristics.",
+                "description": "Unified thinking tool that routes to appropriate mode based on triggers, hint, or heuristics. Persists thoughts with optional framework enhancement and memory injection.",
                 "arguments": {
                     "content": "string (required) — the thought text",
                     "hint": "string — optional explicit mode ('debug', 'build', 'plan', 'stuck', 'question', 'conclude')",
@@ -83,19 +83,21 @@ impl SurrealMindServer {
                     "contradiction_patterns": "string[] — optional custom patterns for contradiction detection (default: ['not', 'no', 'cannot', 'false', 'incorrect', 'fails', 'broken', 'doesn't', 'isn't', 'won't'])"
                 },
                 "returns": {
-                    "mode_selected": "string",
-                    "reason": "string",
-                    "delegated_result": "object — result from the chosen mode",
-                    "links": {
+                    "thought_id": "string — the ID of the created thought",
+                    "memories_injected": "integer — count of memories injected (content is persisted to DB, not returned)",
+                    "framework_enhanced": "boolean — true if framework analysis was run and persisted (analysis is DB-only)",
+                    "embedding_dim": "integer — dimension of the generated embedding",
+                    "embedding_model": "string — model used for embedding",
+                    "continuity": {
                         "session_id": "string? — resolved session identifier",
                         "chain_id": "string? — resolved chain identifier",
                         "previous_thought_id": "string? — resolved previous thought reference",
                         "revises_thought": "string? — resolved thought being revised",
                         "branch_from": "string? — resolved branch reference",
-                        "confidence": "number? — clamped confidence value"
+                        "confidence": "number? — clamped confidence value",
+                        "links_resolved": "object? — details on how links were resolved"
                     },
-                    "verification": "object? — hypothesis verification result (only if needs_verification=true and hypothesis provided)",
-                    "telemetry": "object — trigger/heuristic info + link resolution details"
+                    "verification": "object? — hypothesis verification result (only if needs_verification=true and hypothesis provided)"
                 },
                 "hypothesis_verification": {
                     "description": "Optional KG-based verification of a provided hypothesis. Embeds the hypothesis, searches similar KG entities/observations, classifies evidence as supporting/contradicting based on pattern matching, and computes a confidence score.",
