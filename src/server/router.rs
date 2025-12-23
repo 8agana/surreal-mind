@@ -1,4 +1,7 @@
 use crate::server::SurrealMindServer;
+use crate::tools::memories_populate::{
+    ExtractedMemory, MemoriesPopulateRequest, MemoriesPopulateResponse,
+};
 use chrono::Utc;
 use rmcp::{
     ErrorData as McpError,
@@ -212,14 +215,79 @@ impl ServerHandler for SurrealMindServer {
         })
     }
 
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParam,
+        _context: RequestContext<RoleServer>,
+    ) -> std::result::Result<CallToolResult, McpError> {
+        // Route to appropriate tool handler
+        match request.name.as_ref() {
+            // Unified thinking tool
+            "legacymind_think" => self
+                .handle_legacymind_think(request)
+                .await
+                .map_err(|e| e.into()),
+
+            // Intelligence and utility
+            "maintenance_ops" => self
+                .handle_maintenance_ops(request)
+                .await
+                .map_err(|e| e.into()),
+            // Memory tools
+            "memories_create" => self
+                .handle_knowledgegraph_create(request)
+                .await
+                .map_err(|e| e.into()),
+            "memories_moderate" => self
+                .handle_knowledgegraph_moderate(request)
+                .await
+                .map_err(|e| e.into()),
+            // Inner voice retrieval
+            // New canonical name
+            "inner_voice" => self
+                .handle_inner_voice_retrieve(request)
+                .await
+                .map_err(|e| e.into()),
+            "curiosity_add" => self
+                .handle_curiosity_add(request)
+                .await
+                .map_err(|e| e.into()),
+            "curiosity_get" => self
+                .handle_curiosity_get(request)
+                .await
+                .map_err(|e| e.into()),
+            "curiosity_search" => self
+                .handle_curiosity_search(request)
+                .await
+                .map_err(|e| e.into()),
+
+            // Help
+            "detailed_help" => self
+                .handle_detailed_help(request)
+                .await
+                .map_err(|e| e.into()),
+            "legacymind_search" => self
+                .handle_unified_search(request)
+                .await
+                .map_err(|e| e.into()),
+            "memories_populate" => self
+                .handle_memories_populate(request)
+                .await
+                .map_err(|e| e.into()),
+            _ => Err(McpError {
+                code: rmcp::model::ErrorCode::METHOD_NOT_FOUND,
+                message: format!("Unknown tool: {}", request.name).into(),
+                data: None,
+            }),
+        }
+    }
+}
+
+impl SurrealMindServer {
     async fn handle_memories_populate(
         &self,
         request: CallToolRequestParam,
     ) -> std::result::Result<CallToolResult, McpError> {
-        use crate::tools::memories_populate::{
-            ExtractedMemory, MemoriesPopulateRequest, MemoriesPopulateResponse,
-        };
-
         let params: MemoriesPopulateRequest = serde_json::from_value(serde_json::Value::Object(
             request.arguments.unwrap_or_default(),
         ))
@@ -328,7 +396,7 @@ THOUGHTS TO PROCESS:
                 })?;
                 resp
             }
-            Err(e) if session_id.is_some() => {
+            Err(_) if session_id.is_some() => {
                 // Reset on failure
                 crate::sessions::clear_tool_session(&self.db, tool_name.to_string())
                     .await
@@ -418,9 +486,14 @@ THOUGHTS TO PROCESS:
             "#;
             self.db
                 .query(sql)
-                .bind(("batch_id", &extraction_batch_id))
-                .bind(("id", &thought.id))
-                .await?;
+                .bind(("batch_id", extraction_batch_id.clone()))
+                .bind(("id", thought.id.clone()))
+                .await
+                .map_err(|e| McpError {
+                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                    message: format!("Database update failed: {}", e).into(),
+                    data: None,
+                })?;
         }
 
         let response = MemoriesPopulateResponse {
@@ -435,9 +508,20 @@ THOUGHTS TO PROCESS:
             gemini_session_id: gemini_response.session_id,
         };
 
+        let response_value = serde_json::to_value(response).map_err(|e| McpError {
+            code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+            message: format!("Failed to serialize response: {}", e).into(),
+            data: None,
+        })?;
+        let response_raw = RawContent::json(response_value).map_err(|e| McpError {
+            code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+            message: format!("Failed to build JSON content: {}", e).into(),
+            data: None,
+        })?;
+
         Ok(CallToolResult {
             content: vec![Annotated {
-                raw: RawContent::json(serde_json::to_value(response)?)?,
+                raw: response_raw,
                 annotations: None,
             }],
             structured_content: None,
@@ -486,11 +570,11 @@ THOUGHTS TO PROCESS:
 
         let mut query = self.db.query(sql).bind(("limit", params.limit as i64));
         if params.source == "chain_id" {
-            query = query.bind(("chain_id", params.chain_id.as_ref().unwrap()));
+            query = query.bind(("chain_id", params.chain_id.clone().unwrap_or_default()));
         } else if params.source == "date_range" {
             query = query
-                .bind(("since", params.since.as_ref().unwrap()))
-                .bind(("until", params.until.as_ref().unwrap()));
+                .bind(("since", params.since.clone().unwrap_or_default()))
+                .bind(("until", params.until.clone().unwrap_or_default()));
         }
 
         let mut result = query.await.map_err(|e| McpError {
@@ -526,14 +610,14 @@ THOUGHTS TO PROCESS:
 
         self.db
             .query(&sql)
-            .bind(("data", &memory.data))
+            .bind(("data", memory.data.clone()))
             .bind(("confidence", memory.confidence))
-            .bind(("source_thought_ids", &memory.source_thought_ids))
-            .bind(("extraction_batch_id", &memory.extraction_batch_id))
-            .bind(("extracted_at", &memory.extracted_at))
+            .bind(("source_thought_ids", memory.source_thought_ids.clone()))
+            .bind(("extraction_batch_id", memory.extraction_batch_id.clone()))
+            .bind(("extracted_at", memory.extracted_at.clone()))
             .bind((
                 "extraction_prompt_version",
-                &memory.extraction_prompt_version,
+                memory.extraction_prompt_version.clone(),
             ))
             .await
             .map_err(|e| McpError {
@@ -570,14 +654,14 @@ THOUGHTS TO PROCESS:
 
         self.db
             .query(&sql)
-            .bind(("data", &memory.data))
+            .bind(("data", memory.data.clone()))
             .bind(("confidence", memory.confidence))
-            .bind(("source_thought_ids", &memory.source_thought_ids))
-            .bind(("extraction_batch_id", &memory.extraction_batch_id))
-            .bind(("extracted_at", &memory.extracted_at))
+            .bind(("source_thought_ids", memory.source_thought_ids.clone()))
+            .bind(("extraction_batch_id", memory.extraction_batch_id.clone()))
+            .bind(("extracted_at", memory.extracted_at.clone()))
             .bind((
                 "extraction_prompt_version",
-                &memory.extraction_prompt_version,
+                memory.extraction_prompt_version.clone(),
             ))
             .await
             .map_err(|e| McpError {
@@ -586,72 +670,5 @@ THOUGHTS TO PROCESS:
                 data: None,
             })?;
         Ok(())
-    }
-
-    async fn call_tool(
-        &self,
-        request: CallToolRequestParam,
-        _context: RequestContext<RoleServer>,
-    ) -> std::result::Result<CallToolResult, McpError> {
-        // Route to appropriate tool handler
-        match request.name.as_ref() {
-            // Unified thinking tool
-            "legacymind_think" => self
-                .handle_legacymind_think(request)
-                .await
-                .map_err(|e| e.into()),
-
-            // Intelligence and utility
-            "maintenance_ops" => self
-                .handle_maintenance_ops(request)
-                .await
-                .map_err(|e| e.into()),
-            // Memory tools
-            "memories_create" => self
-                .handle_knowledgegraph_create(request)
-                .await
-                .map_err(|e| e.into()),
-            "memories_moderate" => self
-                .handle_knowledgegraph_moderate(request)
-                .await
-                .map_err(|e| e.into()),
-            // Inner voice retrieval
-            // New canonical name
-            "inner_voice" => self
-                .handle_inner_voice_retrieve(request)
-                .await
-                .map_err(|e| e.into()),
-            "curiosity_add" => self
-                .handle_curiosity_add(request)
-                .await
-                .map_err(|e| e.into()),
-            "curiosity_get" => self
-                .handle_curiosity_get(request)
-                .await
-                .map_err(|e| e.into()),
-            "curiosity_search" => self
-                .handle_curiosity_search(request)
-                .await
-                .map_err(|e| e.into()),
-
-            // Help
-            "detailed_help" => self
-                .handle_detailed_help(request)
-                .await
-                .map_err(|e| e.into()),
-            "legacymind_search" => self
-                .handle_unified_search(request)
-                .await
-                .map_err(|e| e.into()),
-            "memories_populate" => self
-                .handle_memories_populate(request)
-                .await
-                .map_err(|e| e.into()),
-            _ => Err(McpError {
-                code: rmcp::model::ErrorCode::METHOD_NOT_FOUND,
-                message: format!("Unknown tool: {}", request.name).into(),
-                data: None,
-            }),
-        }
     }
 }

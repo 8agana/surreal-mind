@@ -35,7 +35,7 @@ impl GeminiClient {
         &self,
         prompt: &str,
         session_id: Option<&str>,
-    ) -> Result<GeminiResponse, Box<dyn std::error::Error>> {
+    ) -> Result<GeminiResponse, Box<dyn std::error::Error + Send + Sync>> {
         let mut cmd = Command::new("gemini");
         cmd.args(&["-o", "json"]);
 

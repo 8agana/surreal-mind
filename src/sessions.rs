@@ -1,4 +1,3 @@
-use crate::gemini::ToolSession; // Import ToolSession from gemini.rs
 use chrono::{Duration, Utc};
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::Client;
@@ -7,7 +6,7 @@ const SESSION_TTL_HOURS: i64 = 24; // Sessions older than this are considered st
 
 pub async fn get_tool_session(
     db: &Surreal<Client>,
-    tool_name: &str,
+    tool_name: String,
 ) -> Result<Option<String>, Box<dyn std::error::Error>> {
     let cutoff = Utc::now() - Duration::hours(SESSION_TTL_HOURS);
 
@@ -33,8 +32,8 @@ pub async fn get_tool_session(
 
 pub async fn store_tool_session(
     db: &Surreal<Client>,
-    tool_name: &str,
-    session_id: &str,
+    tool_name: String,
+    session_id: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let sql = r#"
         UPSERT tool_sessions
@@ -53,7 +52,7 @@ pub async fn store_tool_session(
 
 pub async fn clear_tool_session(
     db: &Surreal<Client>,
-    tool_name: &str,
+    tool_name: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let sql = "DELETE FROM tool_sessions WHERE tool_name = $tool_name";
     db.query(sql).bind(("tool_name", tool_name)).await?;
