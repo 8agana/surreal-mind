@@ -36,6 +36,8 @@ impl SurrealMindServer {
             DEFINE FIELD embedding_provider ON TABLE thoughts TYPE option<string>;
             DEFINE FIELD embedding_dim ON TABLE thoughts TYPE option<int>;
             DEFINE FIELD embedded_at ON TABLE thoughts TYPE option<datetime>;
+            DEFINE FIELD extracted_to_kg ON TABLE thoughts TYPE bool DEFAULT false;
+            DEFINE FIELD extraction_batch_id ON TABLE thoughts TYPE option<string>;
             -- Continuity fields for thought chaining
             DEFINE FIELD session_id ON TABLE thoughts TYPE option<string>;
             DEFINE FIELD chain_id ON TABLE thoughts TYPE option<string>;
@@ -56,18 +58,43 @@ impl SurrealMindServer {
             DEFINE INDEX idx_recalls_created ON TABLE recalls FIELDS created_at;
 
             DEFINE TABLE kg_entities SCHEMALESS;
+            DEFINE FIELD source_thought_ids ON TABLE kg_entities TYPE option<array<string>>;
+            DEFINE FIELD extraction_batch_id ON TABLE kg_entities TYPE option<string>;
+            DEFINE FIELD extracted_at ON TABLE kg_entities TYPE option<datetime>;
+            DEFINE FIELD extraction_confidence ON TABLE kg_entities TYPE option<float>;
+            DEFINE FIELD extraction_prompt_version ON TABLE kg_entities TYPE option<string>;
             DEFINE INDEX idx_kge_created ON TABLE kg_entities FIELDS created_at;
             DEFINE INDEX idx_kge_name ON TABLE kg_entities FIELDS name;
             DEFINE INDEX idx_kge_name_type ON TABLE kg_entities FIELDS name, data.entity_type;
+            DEFINE INDEX idx_kge_extraction_batch ON TABLE kg_entities FIELDS extraction_batch_id;
 
             DEFINE TABLE kg_edges SCHEMALESS;
+            DEFINE FIELD source_thought_ids ON TABLE kg_edges TYPE option<array<string>>;
+            DEFINE FIELD extraction_batch_id ON TABLE kg_edges TYPE option<string>;
+            DEFINE FIELD extracted_at ON TABLE kg_edges TYPE option<datetime>;
+            DEFINE FIELD extraction_confidence ON TABLE kg_edges TYPE option<float>;
+            DEFINE FIELD extraction_prompt_version ON TABLE kg_edges TYPE option<string>;
             DEFINE INDEX idx_kged_created ON TABLE kg_edges FIELDS created_at;
             DEFINE INDEX idx_kged_triplet ON TABLE kg_edges FIELDS source, target, rel_type;
+            DEFINE INDEX idx_kged_extraction_batch ON TABLE kg_edges FIELDS extraction_batch_id;
 
             DEFINE TABLE kg_observations SCHEMALESS;
+            DEFINE FIELD source_thought_ids ON TABLE kg_observations TYPE option<array<string>>;
+            DEFINE FIELD extraction_batch_id ON TABLE kg_observations TYPE option<string>;
+            DEFINE FIELD extracted_at ON TABLE kg_observations TYPE option<datetime>;
+            DEFINE FIELD extraction_confidence ON TABLE kg_observations TYPE option<float>;
+            DEFINE FIELD extraction_prompt_version ON TABLE kg_observations TYPE option<string>;
             DEFINE INDEX idx_kgo_created ON TABLE kg_observations FIELDS created_at;
             DEFINE INDEX idx_kgo_name ON TABLE kg_observations FIELDS name;
             DEFINE INDEX idx_kgo_name_src ON TABLE kg_observations FIELDS name, source_thought_id;
+            DEFINE INDEX idx_kgo_extraction_batch ON TABLE kg_observations FIELDS extraction_batch_id;
+
+            -- Tool session tracking
+            DEFINE TABLE tool_sessions SCHEMAFULL;
+            DEFINE FIELD tool_name ON tool_sessions TYPE string;
+            DEFINE FIELD gemini_session_id ON tool_sessions TYPE string;
+            DEFINE FIELD last_used ON tool_sessions TYPE datetime;
+            DEFINE INDEX tool_name_idx ON tool_sessions FIELDS tool_name UNIQUE;
 
             -- Approval workflow candidate tables
             DEFINE TABLE kg_entity_candidates SCHEMALESS;

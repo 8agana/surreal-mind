@@ -8,5 +8,6 @@
 - `curiosity_search` — embedding search over curiosity entries with optional `recency_days`.
 - `memories_create` — create KG `entity|relationship|observation`; supports `upsert`, `source_thought_id`, `confidence`, `data`.
 - `memories_moderate` — review/decide staged KG candidates; `action` (`review|decide|review_and_decide`), filters + decisions payload.
+- `memories_populate` — process unextracted thoughts with Gemini CLI; `source` (`unprocessed|chain_id|date_range`), `limit`, `auto_approve`, `confidence_threshold`, `challenge`, `inherit_session_from`.
 - `maintenance_ops` — `health_check_embeddings`, `health_check_indexes`, `list_removal_candidates`, `export_removals`, `finalize_removal`, `reembed`, `reembed_kg`, `ensure_continuity_fields`, `echo_config`.
 - `detailed_help` — deterministic schemas/prompts for tool discovery.

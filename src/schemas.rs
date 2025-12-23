@@ -168,7 +168,7 @@ pub fn detailed_help_schema() -> Arc<Map<String, Value>> {
         "properties": {
             "tool": {"type": "string", "enum": [
                 "legacymind_think",
-                "memories_create", "memories_moderate",
+                "memories_create", "memories_moderate", "memories_populate",
                 "legacymind_search",
                 "maintenance_ops", "inner_voice",
                 "detailed_help"
@@ -511,6 +511,43 @@ pub fn detailed_help_output_schema() -> Arc<Map<String, Value>> {
                 "description": "List of prompts (when prompts=true)"
             }
         }
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn memories_populate_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "source": {"type": "string", "enum": ["unprocessed", "chain_id", "date_range"], "default": "unprocessed"},
+            "chain_id": {"type": "string"},
+            "since": {"type": "string"},
+            "until": {"type": "string"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
+            "auto_approve": {"type": "boolean", "default": false},
+            "confidence_threshold": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.8},
+            "challenge": {"type": "boolean", "default": false},
+            "inherit_session_from": {"type": "string"}
+        }
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn memories_populate_output_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "thoughts_processed": {"type": "integer"},
+            "entities_extracted": {"type": "integer"},
+            "relationships_extracted": {"type": "integer"},
+            "observations_extracted": {"type": "integer"},
+            "boundaries_extracted": {"type": "integer"},
+            "staged_for_review": {"type": "integer"},
+            "auto_approved": {"type": "integer"},
+            "extraction_batch_id": {"type": "string"},
+            "gemini_session_id": {"type": "string"}
+        },
+        "required": ["thoughts_processed", "entities_extracted", "relationships_extracted", "observations_extracted", "boundaries_extracted", "staged_for_review", "auto_approved", "extraction_batch_id", "gemini_session_id"]
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
