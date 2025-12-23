@@ -7,7 +7,7 @@ const SESSION_TTL_HOURS: i64 = 24; // Sessions older than this are considered st
 
 pub async fn get_tool_session(
     db: &Surreal<Client>,
-    tool_name: String,
+    tool_name: &str,
 ) -> Result<Option<String>, Box<dyn std::error::Error>> {
     let cutoff = Utc::now() - Duration::hours(SESSION_TTL_HOURS);
 
@@ -22,7 +22,7 @@ pub async fn get_tool_session(
 
     let mut result = db
         .query(sql)
-        .bind(("tool_name", &tool_name))
+        .bind(("tool_name", tool_name))
         .bind(("cutoff", cutoff))
         .await?;
 
@@ -33,8 +33,8 @@ pub async fn get_tool_session(
 
 pub async fn store_tool_session(
     db: &Surreal<Client>,
-    tool_name: String,
-    session_id: String,
+    tool_name: &str,
+    session_id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let sql = r#"
         UPSERT tool_sessions
@@ -44,8 +44,8 @@ pub async fn store_tool_session(
     "#;
 
     db.query(sql)
-        .bind(("tool_name", &tool_name))
-        .bind(("session_id", &session_id))
+        .bind(("tool_name", tool_name))
+        .bind(("session_id", session_id))
         .await?;
 
     Ok(())
@@ -53,9 +53,9 @@ pub async fn store_tool_session(
 
 pub async fn clear_tool_session(
     db: &Surreal<Client>,
-    tool_name: String,
+    tool_name: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let sql = "DELETE FROM tool_sessions WHERE tool_name = $tool_name";
-    db.query(sql).bind(("tool_name", &tool_name)).await?;
+    db.query(sql).bind(("tool_name", tool_name)).await?;
     Ok(())
 }
