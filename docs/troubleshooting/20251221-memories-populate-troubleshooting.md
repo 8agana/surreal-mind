@@ -604,3 +604,60 @@ Status: Build is green; clippy now passes after collapsible-if fixes were applie
 - Codex: serde(default) fixes, clippy cleanup
 
 Six agents, multiple fix layers applied, root cause still elusive.
+
+## Codex Pass (2025-12-24 ~12:40 CST) — Null/Enum mitigation
+
+**What I did:**
+- Queried SurrealDB directly: namespaces `surreal_mind` and `legacymind` are empty; only `photography/ops` has tables. This explains `thoughts_processed: 0` locally (no thoughts to read), but not the enum error seen remotely.
+- Hardened `fetch_thoughts_for_extraction` SELECTs to coalesce NULL/NONE to concrete primitives to avoid Surreal’s enum `{"None":null}` payloads:
+  - `embedding ?? []`, `injected_memories ?? []`, `injection_scale ?? 0`, `significance ?? 0.0`, `access_count ?? 0`, `framework_enhanced ?? false`, `framework_analysis ?? {}`, `extracted_to_kg ?? false`.
+- Ran `cargo fmt`.
+
+**Rationale:** Surreal returns `{"None":null}` for unset fields, which serde treats as an enum and triggers `invalid type: enum`. Coalescing in SQL ensures JSON primitives hit deserializer even when rows are sparse/partial.
+
+**Next steps suggested:**
+1) Re-run `memories_populate` against the live DB (the service’s configured namespace may differ from local; likely has data) to see if the enum error clears and `thoughts_processed` increments.  
+2) If error persists, add temporary logging in `fetch_thoughts_for_extraction` to dump one raw row (behind an env flag) to pinpoint any remaining enum-valued fields.  
+3) Confirm service namespace/db alignment (current DB server only shows `surreal_mind` and `photography`; no `legacymind` tables). If the tool points to an empty NS/DB, we’ll always get 0 thoughts and never exercise extraction.
+
+**Status:** Code compiles/formats locally after coalesce change; awaiting integration test against live data to validate the fix.
+
+---
+
+## Post-Coalesce Test (CC 2025-12-24 ~23:45 CST)
+
+**Test Result:**
+```json
+{
+  "thoughts_processed": 0,
+  "entities_extracted": 0,
+  "relationships_extracted": 0,
+  "observations_extracted": 0,
+  "boundaries_extracted": 0,
+  "staged_for_review": 0,
+  "auto_approved": 0,
+  "extraction_batch_id": "",
+  "gemini_session_id": "",
+  "error": "-32603: Result parsing failed: Serialization error: invalid type: enum, expected any valid JSON value"
+}
+```
+
+**Analysis:** Same enum serialization error persists despite SQL coalesce fix.
+
+**Database Location Clarification:**
+- **Correct NS/DB**: `surreal_mind` / `consciousness` (577 thoughts exist here)
+- **MCP .env config**: Already correctly configured with `SURR_DB_NS=surreal_mind`, `SURR_DB_DB=consciousness`
+- Codex's local query showing empty namespaces was likely pointing elsewhere
+
+**Status:** Enum error root cause still unidentified. All attempted fixes:
+1. ❌ Raw string literals (`r#""` → `r#"`)
+2. ❌ Error handling wrapper (schema-conformant returns)
+3. ❌ Explicit field selection (vs SELECT *)
+4. ❌ `#[serde(default)]` on Thought fields
+5. ❌ SQL coalesce for NULL values
+6. ❌ Clippy cleanup
+
+**Next Investigation:**
+- Add logging to dump raw SurrealDB response before deserialization
+- Check `surrealdb::sql::Datetime` serialization behavior
+- Verify `deserialize_thing_to_string` helper isn't returning enum 

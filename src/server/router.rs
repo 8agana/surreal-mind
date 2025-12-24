@@ -785,7 +785,26 @@ THOUGHTS TO PROCESS:
         let sql = match params.source.as_str() {
             "unprocessed" => {
                 r#"
-                SELECT id, content, created_at, embedding, injected_memories, injection_scale, significance, access_count, last_accessed, submode, framework_enhanced, framework_analysis, embedding_model, embedding_provider, embedding_dim, embedded_at, extracted_to_kg, extraction_batch_id FROM thoughts
+                SELECT
+                    id,
+                    content,
+                    created_at,
+                    embedding ?? []            AS embedding,
+                    injected_memories ?? []   AS injected_memories,
+                    injection_scale ?? 0      AS injection_scale,
+                    significance ?? 0.0       AS significance,
+                    access_count ?? 0         AS access_count,
+                    last_accessed,
+                    submode,
+                    framework_enhanced ?? false AS framework_enhanced,
+                    framework_analysis ?? {}  AS framework_analysis,
+                    embedding_model,
+                    embedding_provider,
+                    embedding_dim,
+                    embedded_at,
+                    extracted_to_kg ?? false  AS extracted_to_kg,
+                    extraction_batch_id
+                FROM thoughts
                 WHERE extracted_to_kg = false
                 ORDER BY created_at ASC
                 LIMIT $limit
@@ -793,7 +812,26 @@ THOUGHTS TO PROCESS:
             }
             "chain_id" => {
                 r#"
-                SELECT id, content, created_at, embedding, injected_memories, injection_scale, significance, access_count, last_accessed, submode, framework_enhanced, framework_analysis, embedding_model, embedding_provider, embedding_dim, embedded_at, extracted_to_kg, extraction_batch_id FROM thoughts
+                SELECT
+                    id,
+                    content,
+                    created_at,
+                    embedding ?? []            AS embedding,
+                    injected_memories ?? []   AS injected_memories,
+                    injection_scale ?? 0      AS injection_scale,
+                    significance ?? 0.0       AS significance,
+                    access_count ?? 0         AS access_count,
+                    last_accessed,
+                    submode,
+                    framework_enhanced ?? false AS framework_enhanced,
+                    framework_analysis ?? {}  AS framework_analysis,
+                    embedding_model,
+                    embedding_provider,
+                    embedding_dim,
+                    embedded_at,
+                    extracted_to_kg ?? false  AS extracted_to_kg,
+                    extraction_batch_id
+                FROM thoughts
                 WHERE chain_id = $chain_id AND extracted_to_kg = false
                 ORDER BY created_at ASC
                 LIMIT $limit
@@ -801,7 +839,26 @@ THOUGHTS TO PROCESS:
             }
             "date_range" => {
                 r#"
-                SELECT id, content, created_at, embedding, injected_memories, injection_scale, significance, access_count, last_accessed, submode, framework_enhanced, framework_analysis, embedding_model, embedding_provider, embedding_dim, embedded_at, extracted_to_kg, extraction_batch_id FROM thoughts
+                SELECT
+                    id,
+                    content,
+                    created_at,
+                    embedding ?? []            AS embedding,
+                    injected_memories ?? []   AS injected_memories,
+                    injection_scale ?? 0      AS injection_scale,
+                    significance ?? 0.0       AS significance,
+                    access_count ?? 0         AS access_count,
+                    last_accessed,
+                    submode,
+                    framework_enhanced ?? false AS framework_enhanced,
+                    framework_analysis ?? {}  AS framework_analysis,
+                    embedding_model,
+                    embedding_provider,
+                    embedding_dim,
+                    embedded_at,
+                    extracted_to_kg ?? false  AS extracted_to_kg,
+                    extraction_batch_id
+                FROM thoughts
                 WHERE created_at >= $since AND created_at <= $until AND extracted_to_kg = false
                 ORDER BY created_at ASC
                 LIMIT $limit
