@@ -90,3 +90,69 @@ Next step: Investigate what Gemini CLI is actually returning. "expected value at
 **Status:** fmt/clippy/tests all pass after this change.
 
 **Next action:** Re-run `memories_populate` (NS `surreal_mind`, DB `consciousness`) with `SURR_DEBUG_MEMORIES_POPULATE_ROWS=1`. The error should now include the offending Gemini output (or stderr if empty), letting us adjust the prompt/CLI invocation accordingly.
+
+---
+
+## Test: 2025-12-24 16:55 CST (CC Session 4)
+
+**Binary**: Rebuilt via scalpel
+**Service**: Restarted
+
+**Result**: ROOT CAUSE FOUND!
+
+```json
+{
+  "gemini_session_id": "ce281c37-bb69-44cc-a0c6-c4c9ea2cde5c",
+  "error": "Failed to parse Gemini response: expected value at line 1 column 1 | snippet: ```json\\n{\\n  \"entities\": [..."
+}
+```
+
+**Analysis**:
+- ✅ All SQL issues resolved
+- ✅ Thoughts fetched from DB
+- ✅ Gemini CLI invoked successfully
+- ✅ Gemini returning valid JSON content
+- ❌ JSON wrapped in markdown code fences (` ```json ... ``` `)
+
+**Root Cause**: Gemini CLI returns JSON wrapped in markdown triple backticks. Parser tries to parse "```json" as JSON and fails at line 1 column 1.
+
+**Fix Required**: Strip markdown code fence before JSON parsing. The actual JSON content is valid.
+
+## Codex Fix (2025-12-24 ~17:45 CST) — Strip code fences before parsing
+
+**What changed:**
+- `memories_populate` now removes markdown code fences (``` and ```json) from the Gemini response prior to `serde_json` parsing.
+- Parse failures now log the session_id and first 500 chars of the cleaned response and return that snippet in the error for faster diagnosis.
+
+**Status:** fmt/clippy/tests all pass. Ready for the next run; expected outcome is a successful parse (or a new, more specific error with the cleaned payload).
+
+---
+
+## Test: 2025-12-24 17:00 CST (CC Session 4)
+
+**Binary**: Rebuilt via scalpel
+**Service**: Restarted
+
+**Result**: SUCCESS!
+
+```json
+{
+  "thoughts_processed": 1,
+  "entities_extracted": 0,
+  "relationships_extracted": 0,
+  "observations_extracted": 0,
+  "boundaries_extracted": 0,
+  "staged_for_review": 0,
+  "auto_approved": 0,
+  "extraction_batch_id": "02bc674f-3228-49d0-b303-6ff1e5673eab",
+  "gemini_session_id": "053fc646-c9c6-4289-938a-e937362c6271"
+}
+```
+
+**Analysis**:
+- ✅ No error!
+- ✅ 1 thought processed successfully
+- ✅ Full pipeline working: DB → Gemini CLI → Parse → Return
+- ℹ️ Zero extractions from this particular thought (may be content-dependent)
+
+**Status**: TOOL IS WORKING. Markdown fence stripping fix resolved the parsing issue.

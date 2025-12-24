@@ -624,15 +624,25 @@ THOUGHTS TO PROCESS:
             }
         };
 
+        fn strip_code_fence(s: &str) -> String {
+            let trimmed = s.trim();
+            if trimmed.starts_with("```") {
+                let mut lines = trimmed.lines();
+                let _ = lines.next(); // fence line (``` or ```json)
+                let body = lines.collect::<Vec<_>>().join("\n");
+                body.trim_end_matches("```").trim().to_string()
+            } else {
+                trimmed.to_string()
+            }
+        }
+
+        let cleaned_resp = strip_code_fence(&gemini_response.response);
+
         // Parse extraction results
-        let extraction: serde_json::Value = match serde_json::from_str(&gemini_response.response) {
+        let extraction: serde_json::Value = match serde_json::from_str(&cleaned_resp) {
             Ok(val) => val,
             Err(e) => {
-                let resp_snippet: String = gemini_response
-                    .response
-                    .chars()
-                    .take(500)
-                    .collect::<String>();
+                let resp_snippet: String = cleaned_resp.chars().take(500).collect::<String>();
                 tracing::error!(
                     "memories_populate: failed to parse Gemini response (sid={}): {} | snippet: {}",
                     gemini_response.session_id,

@@ -29,7 +29,7 @@ let sql = r#""
 ""#;
 
 // CORRECT - Creates executable SQL strings  
-let sql = r#"
+let sql = r#"`
     SELECT * FROM thoughts
     WHERE extracted_to_kg = false
     ORDER BY created_at ASC
@@ -47,19 +47,19 @@ let sql = r#"
 
 **Build Verification**:
 ```bash
-cargo clippy --workspace --all-targets -- -D warnings  # ✅ Clean
-cargo build --release                                    # ✅ Success (30.84s)
+`cargo clippy --workspace --all-targets -- -D warnings`  # ✅ Clean
+`cargo build --release`                                    # ✅ Success (30.84s)
 ```
 
 **Service Deployment**:
 ```bash
-pkill -f surreal-mind
-launchctl kickstart -k gui/$(id -u)/dev.legacymind.surreal-mind
+`pkill -f surreal-mind`
+`launchctl kickstart -k gui/$(id -u)/dev.legacymind.surreal-mind`
 ```
 
 **Process Verification**:
 ```bash
-ps aux | grep surreal-mind | grep -v grep
+`ps aux | grep surreal-mind | grep -v grep`
 # Result: samuelatagana 47246 5.5 0.0 435359968 15328 ?? S 1:06PM 0:00.05 /path/to/surreal-mind
 ```
 
@@ -111,24 +111,24 @@ ps aux | grep surreal-mind | grep -v grep
 
 ```bash
 # Test the fixed tool
-curl -X POST "https://mcp.samataganaphotography.com/mcp?access_token=266454F6-A77A-4136-A314-0612FDC92670" \
+`curl -X POST "https://mcp.samataganaphotography.com/mcp?access_token=266454F6-A77A-4136-A314-0612FDC92670" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "tools/call",
-    "params": {
-      "name": "memories_populate",
-      "arguments": {
-        "limit": 5,
-        "source": "unprocessed"
-      }
-    }
-  }'
+  -d '{`
+    `"jsonrpc": "2.0",`
+    `"id": 1,`
+    `"method": "tools/call",`
+    `"params": {`
+      `"name": "memories_populate",`
+      `"arguments": {`
+        `"limit": 5,`
+        `"source": "unprocessed"`
+      `}`
+    `}`
+  `}'`
 
 # Check service health
-curl -s http://127.0.0.1:8787/health
+`curl -s http://127.0.0.1:8787/health`
 ```
 
 **Expected Result**: Tool should now successfully fetch thoughts from database and return `thoughts_processed: N` instead of `thoughts_processed: 0`.
@@ -829,3 +829,18 @@ This forces SurrealDB server to convert types, bypassing the Rust driver's broke
 **Next validation step:** Run `memories_populate` against `surreal_mind/consciousness` with `SURR_DEBUG_MEMORIES_POPULATE_ROWS=1` to confirm the enum error is gone and to see rows flow through.
 
 ---
+
+## Resolution & Handoff (Architectural Decision)
+
+**The Enum Error Solution**: 
+We discovered that the Rust `surrealdb` driver cannot serialize internal types (`Thing`, `Datetime`) directly into `serde_json::Value` without hitting an "enum" representation that fails JSON parsing.
+
+**Architectural Rule**: 
+Do not rely on the driver's default serialization for complex types. 
+**You MUST cast these fields to strings in the SQL query itself** (e.g., `<string> id`, `<string> created_at`). 
+This forces the DB server to do the conversion, ensuring the Rust driver receives clean Strings.
+
+**Next Phase**: 
+Troubleshooting continues in the linked doc (see header) to address Gemini CLI integration issues (Markdown wrapping).
+
+```
