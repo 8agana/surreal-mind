@@ -786,24 +786,24 @@ THOUGHTS TO PROCESS:
             "unprocessed" => {
                 r#"
                 SELECT
-                    id,
+                    string::concat(meta::id(id))               AS id,
                     content,
-                    created_at,
+                    IF defined(created_at) THEN <string> created_at ELSE null END AS created_at,
                     embedding ?? []            AS embedding,
                     injected_memories ?? []   AS injected_memories,
                     injection_scale ?? 0      AS injection_scale,
                     significance ?? 0.0       AS significance,
                     access_count ?? 0         AS access_count,
-                    last_accessed,
+                    IF defined(last_accessed) THEN <string> last_accessed ELSE null END AS last_accessed,
                     submode,
                     framework_enhanced ?? false AS framework_enhanced,
                     framework_analysis ?? {}  AS framework_analysis,
                     embedding_model,
                     embedding_provider,
                     embedding_dim,
-                    embedded_at,
+                    IF defined(embedded_at) THEN <string> embedded_at ELSE null END AS embedded_at,
                     extracted_to_kg ?? false  AS extracted_to_kg,
-                    extraction_batch_id
+                    IF defined(extraction_batch_id) THEN <string> extraction_batch_id ELSE null END AS extraction_batch_id
                 FROM thoughts
                 WHERE extracted_to_kg = false
                 ORDER BY created_at ASC
@@ -813,24 +813,24 @@ THOUGHTS TO PROCESS:
             "chain_id" => {
                 r#"
                 SELECT
-                    id,
+                    string::concat(meta::id(id))               AS id,
                     content,
-                    created_at,
+                    IF defined(created_at) THEN <string> created_at ELSE null END AS created_at,
                     embedding ?? []            AS embedding,
                     injected_memories ?? []   AS injected_memories,
                     injection_scale ?? 0      AS injection_scale,
                     significance ?? 0.0       AS significance,
                     access_count ?? 0         AS access_count,
-                    last_accessed,
+                    IF defined(last_accessed) THEN <string> last_accessed ELSE null END AS last_accessed,
                     submode,
                     framework_enhanced ?? false AS framework_enhanced,
                     framework_analysis ?? {}  AS framework_analysis,
                     embedding_model,
                     embedding_provider,
                     embedding_dim,
-                    embedded_at,
+                    IF defined(embedded_at) THEN <string> embedded_at ELSE null END AS embedded_at,
                     extracted_to_kg ?? false  AS extracted_to_kg,
-                    extraction_batch_id
+                    IF defined(extraction_batch_id) THEN <string> extraction_batch_id ELSE null END AS extraction_batch_id
                 FROM thoughts
                 WHERE chain_id = $chain_id AND extracted_to_kg = false
                 ORDER BY created_at ASC
@@ -840,24 +840,24 @@ THOUGHTS TO PROCESS:
             "date_range" => {
                 r#"
                 SELECT
-                    id,
+                    string::concat(meta::id(id))               AS id,
                     content,
-                    created_at,
+                    IF defined(created_at) THEN <string> created_at ELSE null END AS created_at,
                     embedding ?? []            AS embedding,
                     injected_memories ?? []   AS injected_memories,
                     injection_scale ?? 0      AS injection_scale,
                     significance ?? 0.0       AS significance,
                     access_count ?? 0         AS access_count,
-                    last_accessed,
+                    IF defined(last_accessed) THEN <string> last_accessed ELSE null END AS last_accessed,
                     submode,
                     framework_enhanced ?? false AS framework_enhanced,
                     framework_analysis ?? {}  AS framework_analysis,
                     embedding_model,
                     embedding_provider,
                     embedding_dim,
-                    embedded_at,
+                    IF defined(embedded_at) THEN <string> embedded_at ELSE null END AS embedded_at,
                     extracted_to_kg ?? false  AS extracted_to_kg,
-                    extraction_batch_id
+                    IF defined(extraction_batch_id) THEN <string> extraction_batch_id ELSE null END AS extraction_batch_id
                 FROM thoughts
                 WHERE created_at >= $since AND created_at <= $until AND extracted_to_kg = false
                 ORDER BY created_at ASC

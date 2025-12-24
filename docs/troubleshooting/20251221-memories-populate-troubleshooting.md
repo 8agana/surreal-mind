@@ -807,3 +807,20 @@ SELECT
 ```
 
 This forces SurrealDB server to convert types, bypassing the Rust driver's broken serialization.
+
+## Codex Fix (2025-12-24 ~16:30 CST) — Cast Thing/Datetime in SQL
+
+**What changed:**
+- Updated `fetch_thoughts_for_extraction` SELECTs to cast Surreal types to strings server-side:
+  - `string::concat(meta::id(id)) AS id`
+  - `IF defined(created_at) THEN <string> created_at ELSE null END AS created_at`
+  - `IF defined(last_accessed) THEN <string> last_accessed ELSE null END AS last_accessed`
+  - `IF defined(embedded_at) THEN <string> embedded_at ELSE null END AS embedded_at`
+  - `IF defined(extraction_batch_id) THEN <string> extraction_batch_id ELSE null END AS extraction_batch_id`
+- Kept existing coalesce defaults for embedding/injected_memories/etc.
+
+**Why:** SurrealDB Rust driver fails to serialize Thing/Datetime into serde_json::Value, triggering the enum error before our sanitizer runs. Casting in the query sidesteps the driver’s enum representation.
+
+**Validation:** `cargo fmt`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test` all pass.
+
+**Next validation step:** Run `memories_populate` against `surreal_mind/consciousness` with `SURR_DEBUG_MEMORIES_POPULATE_ROWS=1` to confirm the enum error is gone and to see rows flow through.
