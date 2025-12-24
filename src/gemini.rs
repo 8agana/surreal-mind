@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::process::Command;
+use std::time::Duration;
+use tokio::process::Command;
+use tokio::time::timeout;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GeminiResponse {
@@ -17,8 +19,7 @@ pub struct ToolSession {
 
 pub struct GeminiClient {
     model: String,
-    /// Timeout in milliseconds (stored for future use, gemini CLI doesn't support timeout flag)
-    #[allow(dead_code)]
+    /// Timeout in milliseconds
     timeout_ms: u64,
 }
 
@@ -39,7 +40,7 @@ impl GeminiClient {
         }
     }
 
-    pub fn call(
+    pub async fn call(
         &self,
         prompt: &str,
         session_id: Option<&str>,
@@ -55,9 +56,16 @@ impl GeminiClient {
             cmd.args(["--resume", sid]);
         }
 
-        // Note: timeout_ms stored but gemini CLI doesn't support timeout flag
-        // Consider using std::process timeout wrapper if needed
-        let output = cmd.output()?;
+        // Use configured timeout
+        let duration = Duration::from_millis(self.timeout_ms);
+        
+        let output_result = timeout(duration, cmd.output()).await;
+
+        let output = match output_result {
+            Ok(Ok(out)) => out,
+            Ok(Err(e)) => return Err(format!("Gemini CLI execution failed: {}", e).into()),
+            Err(_) => return Err(format!("Gemini CLI timed out after {}ms", self.timeout_ms).into()),
+        };
 
         if !output.status.success() {
             return Err(format!(
@@ -72,7 +80,7 @@ impl GeminiClient {
     }
 
     pub fn check_available() -> bool {
-        Command::new("which")
+        std::process::Command::new("which")
             .arg("gemini")
             .status()
             .map(|s| s.success())

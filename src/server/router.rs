@@ -8,8 +8,8 @@ use rmcp::{
     ErrorData as McpError,
     handler::server::ServerHandler,
     model::{
-        Annotated, CallToolRequestParam, CallToolResult, Implementation, InitializeRequestParam,
-        InitializeResult, ListToolsResult, PaginatedRequestParam, ProtocolVersion, RawContent,
+        Annotated, RawContent, CallToolRequestParam, CallToolResult, Implementation, InitializeRequestParam,
+        InitializeResult, ListToolsResult, PaginatedRequestParam, ProtocolVersion,
         ServerCapabilities, ServerInfo, ToolsCapability,
     },
     service::{RequestContext, RoleServer},
@@ -301,14 +301,26 @@ impl SurrealMindServer {
         // Fetch unprocessed thoughts
         let thoughts = self.fetch_thoughts_for_extraction(&params).await?;
         if thoughts.is_empty() {
+            // Return schema-conformant response even when no work to do
+            let response_value = json!({
+                "thoughts_processed": 0,
+                "entities_extracted": 0,
+                "relationships_extracted": 0,
+                "observations_extracted": 0,
+                "boundaries_extracted": 0,
+                "staged_for_review": 0,
+                "auto_approved": 0,
+                "extraction_batch_id": "",
+                "gemini_session_id": ""
+            });
             return Ok(CallToolResult {
-                content: vec![Annotated {
-                    raw: RawContent::text("No unprocessed thoughts found.".to_string()),
-                    annotations: None,
-                }],
-                structured_content: None,
+                content: vec![Annotated::new(
+                    RawContent::text(response_value.to_string()),
+                    None,
+                )],
                 is_error: Some(false),
                 meta: None,
+                structured_content: None,
             });
         }
 
@@ -378,7 +390,7 @@ THOUGHTS TO PROCESS:
                 })?
         };
 
-        let gemini_response = match gemini.call(&prompt, session_id.as_deref()) {
+        let gemini_response = match gemini.call(&prompt, session_id.as_deref()).await {
             Ok(resp) => {
                 // Store new session
                 crate::sessions::store_tool_session(
@@ -403,7 +415,7 @@ THOUGHTS TO PROCESS:
                         message: format!("DB error: {}", e).into(),
                         data: None,
                     })?;
-                let resp = gemini.call(&prompt, None).map_err(|e| McpError {
+                let resp = gemini.call(&prompt, None).await.map_err(|e| McpError {
                     code: rmcp::model::ErrorCode::INTERNAL_ERROR,
                     message: format!("Gemini error: {}", e).into(),
                     data: None,
@@ -505,20 +517,14 @@ THOUGHTS TO PROCESS:
             "extraction_batch_id": extraction_batch_id,
             "gemini_session_id": gemini_response.session_id,
         });
-        let response_raw = RawContent::json(response_value).map_err(|e| McpError {
-            code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-            message: format!("Failed to build JSON content: {}", e).into(),
-            data: None,
-        })?;
-
         Ok(CallToolResult {
-            content: vec![Annotated {
-                raw: response_raw,
-                annotations: None,
-            }],
-            structured_content: None,
+            content: vec![Annotated::new(
+                RawContent::text(response_value.to_string()),
+                None,
+            )],
             is_error: Some(false),
             meta: None,
+            structured_content: None,
         })
     }
 
