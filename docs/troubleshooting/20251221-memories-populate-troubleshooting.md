@@ -935,4 +935,28 @@ In the Gemini session query, either:
 - Captures stdout/stderr as strings; if stdout is empty, returns an explicit error that includes stderr.
 - On JSON parse failure, the error now includes the first 500 chars of stdout plus stderr to see what the CLI actually returned.
 
-**Status:** fmt/clippy/tests all pass. Ready to retest `memories_populate` to see the real Gemini output instead of a generic “expected value” parse error.
+**Status:** fmt/clippy/tests all pass. Ready to retest `memories_populate` to see the real Gemini output instead of a generic "expected value" parse error.
+
+---
+
+## Test: 2025-12-24 16:50 CST (CC Session 4)
+
+**Binary**: Rebuilt via scalpel
+**Service**: Restarted
+
+**Result**: PROGRESS - Gemini CLI actually called!
+
+```json
+{
+  "gemini_session_id": "fb252342-79b3-48a0-bfed-257fde4e4c22",
+  "error": "Failed to parse Gemini response: expected value at line 1 column 1"
+}
+```
+
+**Analysis**:
+- ✅ All SQL issues resolved
+- ✅ Thoughts fetched from DB
+- ✅ Gemini CLI invoked (session ID generated)
+- ❌ Gemini response not valid JSON
+
+Next step: Investigate what Gemini CLI is actually returning. "expected value at line 1 column 1" suggests empty or non-JSON output.
