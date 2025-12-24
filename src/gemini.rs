@@ -17,6 +17,8 @@ pub struct ToolSession {
 
 pub struct GeminiClient {
     model: String,
+    /// Timeout in milliseconds (stored for future use, gemini CLI doesn't support timeout flag)
+    #[allow(dead_code)]
     timeout_ms: u64,
 }
 
@@ -38,6 +40,7 @@ impl GeminiClient {
     ) -> Result<GeminiResponse, Box<dyn std::error::Error + Send + Sync>> {
         let mut cmd = Command::new("gemini");
         cmd.args(&["-o", "json"]);
+        cmd.args(&["-m", &self.model]);
 
         // Pass prompt via stdin to avoid arg length limits
         cmd.arg(prompt);
@@ -46,6 +49,8 @@ impl GeminiClient {
             cmd.args(&["--resume", sid]);
         }
 
+        // Note: timeout_ms stored but gemini CLI doesn't support timeout flag
+        // Consider using std::process timeout wrapper if needed
         let output = cmd.output()?;
 
         if !output.status.success() {

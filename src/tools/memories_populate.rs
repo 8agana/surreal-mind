@@ -1,15 +1,4 @@
-use crate::error::{Result, SurrealMindError};
-use crate::gemini::GeminiClient;
-use crate::schemas::{memories_populate_output_schema, memories_populate_schema};
-use crate::server::SurrealMindServer;
-use crate::sessions::{clear_tool_session, get_tool_session, store_tool_session};
-use chrono::Utc;
-use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
-use std::collections::HashSet;
-use surrealdb::engine::any::Any;
-use uuid::Uuid;
 
 /// Parameters for the memories_populate tool
 #[derive(Debug, Deserialize, Serialize)]
@@ -80,7 +69,10 @@ pub struct ExtractedMemory {
 }
 
 // Extraction prompt stored inline
+// TODO: These will be used when full extraction logic is implemented
+#[allow(dead_code)]
 const EXTRACTION_PROMPT_VERSION: &str = "extraction_v1";
+#[allow(dead_code)]
 const EXTRACTION_PROMPT: &str = r#"
 You are extracting knowledge graph entries from a collection of thoughts.
 

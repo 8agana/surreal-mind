@@ -443,9 +443,9 @@ THOUGHTS TO PROCESS:
         // Process extractions (simplified counts)
         let extracted_at = Utc::now().to_rfc3339();
         let mut entities_extracted = 0;
-        let mut relationships_extracted = 0;
-        let mut observations_extracted = 0;
-        let mut boundaries_extracted = 0;
+        let relationships_extracted = 0;
+        let observations_extracted = 0;
+        let boundaries_extracted = 0;
         let mut staged_for_review = 0;
         let mut auto_approved = 0;
 
