@@ -7,174 +7,6 @@
 
 ---
 
-## Error Handling Pattern Issue (Rusty Analysis 2025-12-23)
-
-**Error:** `MCP error -32603: Result parsing failed: Serialization error: invalid type: enum, expected any valid JSON value`
-
-**Root Cause:** Error paths use `?` operator which returns `Err(McpError{...})`. rmcp 0.11 tries to serialize ALL returns through the output schema. `McpError` is an enum, but the schema expects a flat object with 9 required fields.
-
-**Output Schema Requirements** (lines 536-553):
-ALL of these fields are REQUIRED in every return:
-- `thoughts_processed` (integer)
-- `entities_extracted` (integer)
-- `relationships_extracted` (integer)
-- `observations_extracted` (integer)
-- `boundaries_extracted` (integer)
-- `staged_for_review` (integer)
-- `auto_approved` (integer)
-- `extraction_batch_id` (string)
-- `gemini_session_id` (string)
-
-**Return Path Analysis:**
-
-| Path | Location | Status |
-|------|----------|--------|
-| No thoughts found | Lines 304-325 | ✅ Returns all 9 fields |
-| Success | Lines 509-530 | ✅ Returns all 9 fields |
-| DB query error | Line 302 | ❌ Returns `Err(McpError)` via `?` |
-| Session storage errors | Lines 380-390 | ❌ Returns `Err(McpError)` via `?` |
-| Gemini CLI errors | Lines 414-442 | ❌ Returns `Err(McpError)` via `?` |
-
-**The Problem:** When errors occur (DB query fails, Gemini call fails, session storage fails), the handler returns `Err(McpError{...})` via `?` operator. rmcp 0.11 tries to serialize this through the output schema, but `McpError` is an enum while the schema expects a flat JSON object.
-
-**Fix Options:**
-1. Replace all `?` error returns with schema-conformant responses (zeros + error metadata field)
-2. Restructure error handling to use a pattern rmcp 0.11 recognizes as legitimate errors
-
-**Example Fix Pattern:**
-```rust
-// Instead of:
-let thoughts = fetch_thoughts_for_extraction(&db, &params).await?;
-
-// Use:
-let thoughts = match fetch_thoughts_for_extraction(&db, &params).await {
-    Ok(t) => t,
-    Err(e) => {
-        return Ok(CallToolResult::structured(json!({
-            "thoughts_processed": 0,
-            "entities_extracted": 0,
-            "relationships_extracted": 0,
-            "observations_extracted": 0,
-            "boundaries_extracted": 0,
-            "staged_for_review": 0,
-            "auto_approved": 0,
-            "extraction_batch_id": "",
-            "gemini_session_id": "",
-            "error": e.to_string()
-        })));
-    }
-};
-```
-
----
-
-## Problem
-
-`memories_populate` tool failing with error:
-```
-MCP error -32603: Result parsing failed: Serialization error: invalid type: enum, expected any valid JSON value
-```
-
----
-
-## Root Cause Analysis
-
-**Initial Investigation**: The error suggested enum serialization issues in MCP response structure. Through remote testing, discovered the tool was responding to protocol messages but not processing calls correctly.
-
-**Critical Discovery by CC (2025-12-23)**:
-Found that the tool had TWO separate return paths with inconsistent response patterns:
-
-1. **Early return path** (line ~304): Manual `CallToolResult` construction
-2. **Success return path** (line ~508): Manual `CallToolResult` construction
-
-Both paths were manually constructing `CallToolResult` instead of using the established `CallToolResult::structured()` helper pattern used by all other tools in the codebase.
-
----
-
-## Solution Implementation
-
-### 1. Early Return Path Fix
-
-**Before (line 304-312):**
-```rust
-return Ok(CallToolResult {
-    content: vec![Annotated {
-        raw: RawContent::text("No unprocessed thoughts found.".to_string()),
-        annotations: None,
-    }],
-    structured_content: None,
-    is_error: Some(false),
-    meta: None,
-})
-```
-
-**After (line 304-306):**
-```rust
-return Ok(CallToolResult::structured(json!({"message": "No unprocessed thoughts found."})));
-```
-
-### 2. Success Return Path Fix
-
-**Before (line 508-527):**
-```rust
-let response = MemoriesPopulateResponse { ... };
-let response_value = serde_json::to_value(response).map_err(|e| McpError {
-    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-    message: format!("Failed to serialize response: {}", e).into(),
-    data: None,
-})?;
-let response_raw = RawContent::json(response_value).map_err(|e| McpError {
-    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-    message: format!("Failed to build JSON content: {}", e).into(),
-    data: None,
-})?;
-
-Ok(CallToolResult {
-    content: vec![Annotated {
-        raw: response_raw,
-        annotations: None,
-    }],
-    structured_content: None,
-    is_error: Some(false),
-    meta: None,
-})
-```
-
-**After (line 508-508):**
-```rust
-let response_value = json!({
-    "thoughts_processed": thoughts.len() as u32,
-    "entities_extracted": entities_extracted,
-    "relationships_extracted": relationships_extracted,
-    "observations_extracted": observations_extracted,
-    "boundaries_extracted": boundaries_extracted,
-    "staged_for_review": staged_for_review,
-    "auto_approved": auto_approved,
-    "extraction_batch_id": extraction_batch_id,
-    "gemini_session_id": gemini_response.session_id,
-});
-
-Ok(CallToolResult::structured(response_value))
-```
-
----
-
-## Pattern Verification
-
-**Confirmed**: All other 7 tools in surreal-mind codebase use `CallToolResult::structured()` helper exclusively:
-
-- `thinking.rs`: `CallToolResult::structured(output)`
-- `maintenance.rs`: `CallToolResult::structured(report)`  
-- `curiosity.rs`: `CallToolResult::structured(json!())`
-- `inner_voice.rs`: `CallToolResult::structured(result)`
-- `knowledge_graph.rs`: `CallToolResult::structured(serde_json::Value::Object(out))`
-- `unified_search.rs`: `CallToolResult::structured(serde_json::Value::Object(out))`
-- `detailed_help.rs`: `CallToolResult::structured(output)`
-
-**Pattern Established**: `CallToolResult::structured(json!({...}))` is the standard approach.
-
----
-
 ## Raw String Literal Bug
 
 **Additional Critical Fix (CC caught 2025-12-23)**:
@@ -382,3 +214,205 @@ Ok(CallToolResult {
 **Verification:**
 - `cargo build --release` succeeded.
 - Implementation now matches the original prompt intent (stdin passing).
+
+---
+
+## Problem
+
+`memories_populate` tool failing with error:
+```
+MCP error -32603: Result parsing failed: Serialization error: invalid type: enum, expected any valid JSON value
+```
+
+---
+
+## Root Cause Analysis
+
+**Initial Investigation**: The error suggested enum serialization issues in MCP response structure. Through remote testing, discovered the tool was responding to protocol messages but not processing calls correctly.
+
+**Critical Discovery by CC (2025-12-23)**:
+Found that the tool had TWO separate return paths with inconsistent response patterns:
+
+1. **Early return path** (line ~304): Manual `CallToolResult` construction
+2. **Success return path** (line ~508): Manual `CallToolResult` construction
+
+Both paths were manually constructing `CallToolResult` instead of using the established `CallToolResult::structured()` helper pattern used by all other tools in the codebase.
+
+---
+
+## Solution Implementation
+
+### 1. Early Return Path Fix
+
+**Before (line 304-312):**
+```rust
+return Ok(CallToolResult {
+    content: vec![Annotated {
+        raw: RawContent::text("No unprocessed thoughts found.".to_string()),
+        annotations: None,
+    }],
+    structured_content: None,
+    is_error: Some(false),
+    meta: None,
+})
+```
+
+**After (line 304-306):**
+```rust
+return Ok(CallToolResult::structured(json!({"message": "No unprocessed thoughts found."})));
+```
+
+### 2. Success Return Path Fix
+
+**Before (line 508-527):**
+```rust
+let response = MemoriesPopulateResponse { ... };
+let response_value = serde_json::to_value(response).map_err(|e| McpError {
+    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+    message: format!("Failed to serialize response: {}", e).into(),
+    data: None,
+})?;
+let response_raw = RawContent::json(response_value).map_err(|e| McpError {
+    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+    message: format!("Failed to build JSON content: {}", e).into(),
+    data: None,
+})?;
+
+Ok(CallToolResult {
+    content: vec![Annotated {
+        raw: response_raw,
+        annotations: None,
+    }],
+    structured_content: None,
+    is_error: Some(false),
+    meta: None,
+})
+```
+
+**After (line 508-508):**
+```rust
+let response_value = json!({
+    "thoughts_processed": thoughts.len() as u32,
+    "entities_extracted": entities_extracted,
+    "relationships_extracted": relationships_extracted,
+    "observations_extracted": observations_extracted,
+    "boundaries_extracted": boundaries_extracted,
+    "staged_for_review": staged_for_review,
+    "auto_approved": auto_approved,
+    "extraction_batch_id": extraction_batch_id,
+    "gemini_session_id": gemini_response.session_id,
+});
+
+Ok(CallToolResult::structured(response_value))
+```
+
+---
+
+## Pattern Verification
+
+**Confirmed**: All other 7 tools in surreal-mind codebase use `CallToolResult::structured()` helper exclusively:
+
+- `thinking.rs`: `CallToolResult::structured(output)`
+- `maintenance.rs`: `CallToolResult::structured(report)`  
+- `curiosity.rs`: `CallToolResult::structured(json!())`
+- `inner_voice.rs`: `CallToolResult::structured(result)`
+- `knowledge_graph.rs`: `CallToolResult::structured(serde_json::Value::Object(out))`
+- `unified_search.rs`: `CallToolResult::structured(serde_json::Value::Object(out))`
+- `detailed_help.rs`: `CallToolResult::structured(output)`
+
+**Pattern Established**: `CallToolResult::structured(json!({...}))` is the standard approach.
+
+
+---
+
+## Error Handling Pattern Issue (Rusty Analysis 2025-12-23)
+
+**Error:** `MCP error -32603: Result parsing failed: Serialization error: invalid type: enum, expected any valid JSON value`
+
+**Root Cause:** Error paths use `?` operator which returns `Err(McpError{...})`. rmcp 0.11 tries to serialize ALL returns through the output schema. `McpError` is an enum, but the schema expects a flat object with 9 required fields.
+
+**Output Schema Requirements** (lines 536-553):
+ALL of these fields are REQUIRED in every return:
+- `thoughts_processed` (integer)
+- `entities_extracted` (integer)
+- `relationships_extracted` (integer)
+- `observations_extracted` (integer)
+- `boundaries_extracted` (integer)
+- `staged_for_review` (integer)
+- `auto_approved` (integer)
+- `extraction_batch_id` (string)
+- `gemini_session_id` (string)
+
+**Return Path Analysis:**
+
+| Path | Location | Status |
+|------|----------|--------|
+| No thoughts found | Lines 304-325 | ✅ Returns all 9 fields |
+| Success | Lines 509-530 | ✅ Returns all 9 fields |
+| DB query error | Line 302 | ❌ Returns `Err(McpError)` via `?` |
+| Session storage errors | Lines 380-390 | ❌ Returns `Err(McpError)` via `?` |
+| Gemini CLI errors | Lines 414-442 | ❌ Returns `Err(McpError)` via `?` |
+
+**The Problem:** When errors occur (DB query fails, Gemini call fails, session storage fails), the handler returns `Err(McpError{...})` via `?` operator. rmcp 0.11 tries to serialize this through the output schema, but `McpError` is an enum while the schema expects a flat JSON object.
+
+**Fix Options:**
+1. Replace all `?` error returns with schema-conformant responses (zeros + error metadata field)
+2. Restructure error handling to use a pattern rmcp 0.11 recognizes as legitimate errors
+
+**Example Fix Pattern:**
+```rust
+// Instead of:
+let thoughts = fetch_thoughts_for_extraction(&db, &params).await?;
+
+// Use:
+let thoughts = match fetch_thoughts_for_extraction(&db, &params).await {
+    Ok(t) => t,
+    Err(e) => {
+        return Ok(CallToolResult::structured(json!({
+            "thoughts_processed": 0,
+            "entities_extracted": 0,
+            "relationships_extracted": 0,
+            "observations_extracted": 0,
+            "boundaries_extracted": 0,
+            "staged_for_review": 0,
+            "auto_approved": 0,
+            "extraction_batch_id": "",
+            "gemini_session_id": "",
+            "error": e.to_string()
+        })));
+    }
+};
+```
+
+---
+
+## Error Handling Wrapper Applied (Pickle Fix 2025-12-24)
+
+**Fix Applied:** Pickle implemented the error handling pattern from Rusty's analysis - wrapped the handler in a catch-all that returns schema-conformant JSON with error field.
+
+**Test Result (CC 2025-12-24 ~22:15 CST):**
+```json
+{
+  "thoughts_processed": 0,
+  "entities_extracted": 0,
+  "relationships_extracted": 0,
+  "observations_extracted": 0,
+  "boundaries_extracted": 0,
+  "staged_for_review": 0,
+  "auto_approved": 0,
+  "extraction_batch_id": "",
+  "gemini_session_id": "",
+  "error": "-32603: Result parsing failed: Serialization error: invalid type: enum, expected any valid JSON value"
+}
+```
+
+**Analysis:**
+- ✅ **Progress**: Now receiving valid JSON response instead of MCP protocol error
+- ✅ **Error handling wrapper works**: All 9 required fields present + error field
+- ❌ **Internal error persists**: Something inside the handler still throws enum serialization error
+- 🔍 **Likely cause**: `thoughts_processed: 0` suggests failure at DB query step - there may still be a `?` operator or serialization issue in `fetch_thoughts_for_extraction` before the outer catch wraps it
+
+**Next Steps:**
+1. Check if `fetch_thoughts_for_extraction` has internal `?` returns that bypass the wrapper
+2. Look for any `.await?` or `map_err()?` patterns that could throw before the catch-all
+3. Verify the Thought struct deserialization from SurrealDB query results

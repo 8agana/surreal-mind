@@ -299,7 +299,31 @@ impl SurrealMindServer {
         let extraction_batch_id = Uuid::new_v4().to_string();
 
         // Fetch unprocessed thoughts
-        let thoughts = self.fetch_thoughts_for_extraction(&params).await?;
+        let thoughts = match self.fetch_thoughts_for_extraction(&params).await {
+            Ok(t) => t,
+            Err(e) => {
+                return Ok(CallToolResult {
+                    content: vec![Annotated::new(
+                        RawContent::text(json!({
+                            "thoughts_processed": 0,
+                            "entities_extracted": 0,
+                            "relationships_extracted": 0,
+                            "observations_extracted": 0,
+                            "boundaries_extracted": 0,
+                            "staged_for_review": 0,
+                            "auto_approved": 0,
+                            "extraction_batch_id": "",
+                            "gemini_session_id": "",
+                            "error": e.to_string()
+                        }).to_string()),
+                        None,
+                    )],
+                    is_error: Some(false),
+                    meta: None,
+                    structured_content: None,
+                });
+            }
+        };
         if thoughts.is_empty() {
             // Return schema-conformant response even when no work to do
             let response_value = json!({
@@ -373,82 +397,227 @@ THOUGHTS TO PROCESS:
 
         // Try to resume session
         let session_id: Option<String> = if let Some(inherit_from) = &params.inherit_session_from {
-            crate::sessions::get_tool_session(&self.db, inherit_from.clone())
-                .await
-                .map_err(|e| McpError {
-                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                    message: format!("DB error: {}", e).into(),
-                    data: None,
-                })?
+            match crate::sessions::get_tool_session(&self.db, inherit_from.clone()).await {
+                Ok(sid) => sid,
+                Err(e) => {
+                    return Ok(CallToolResult {
+                        content: vec![Annotated::new(
+                            RawContent::text(json!({
+                                "thoughts_processed": 0,
+                                "entities_extracted": 0,
+                                "relationships_extracted": 0,
+                                "observations_extracted": 0,
+                                "boundaries_extracted": 0,
+                                "staged_for_review": 0,
+                                "auto_approved": 0,
+                                "extraction_batch_id": "",
+                                "gemini_session_id": "",
+                                "error": format!("DB error: {}", e)
+                            }).to_string()),
+                            None,
+                        )],
+                        is_error: Some(false),
+                        meta: None,
+                        structured_content: None,
+                    });
+                }
+            }
         } else {
-            crate::sessions::get_tool_session(&self.db, tool_name.to_string())
-                .await
-                .map_err(|e| McpError {
-                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                    message: format!("DB error: {}", e).into(),
-                    data: None,
-                })?
+            match crate::sessions::get_tool_session(&self.db, tool_name.to_string()).await {
+                Ok(sid) => sid,
+                Err(e) => {
+                    return Ok(CallToolResult {
+                        content: vec![Annotated::new(
+                            RawContent::text(json!({
+                                "thoughts_processed": 0,
+                                "entities_extracted": 0,
+                                "relationships_extracted": 0,
+                                "observations_extracted": 0,
+                                "boundaries_extracted": 0,
+                                "staged_for_review": 0,
+                                "auto_approved": 0,
+                                "extraction_batch_id": "",
+                                "gemini_session_id": "",
+                                "error": format!("DB error: {}", e)
+                            }).to_string()),
+                            None,
+                        )],
+                        is_error: Some(false),
+                        meta: None,
+                        structured_content: None,
+                    });
+                }
+            }
         };
 
         let gemini_response = match gemini.call(&prompt, session_id.as_deref()).await {
             Ok(resp) => {
                 // Store new session
-                crate::sessions::store_tool_session(
+                match crate::sessions::store_tool_session(
                     &self.db,
                     tool_name.to_string(),
                     resp.session_id.clone(),
-                )
-                .await
-                .map_err(|e| McpError {
-                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                    message: format!("DB error: {}", e).into(),
-                    data: None,
-                })?;
+                ).await {
+                    Ok(_) => {},
+                    Err(e) => {
+                        return Ok(CallToolResult {
+                            content: vec![Annotated::new(
+                                RawContent::text(json!({
+                                    "thoughts_processed": 0,
+                                    "entities_extracted": 0,
+                                    "relationships_extracted": 0,
+                                    "observations_extracted": 0,
+                                    "boundaries_extracted": 0,
+                                    "staged_for_review": 0,
+                                    "auto_approved": 0,
+                                    "extraction_batch_id": "",
+                                    "gemini_session_id": "",
+                                    "error": format!("DB error: {}", e)
+                                }).to_string()),
+                                None,
+                            )],
+                            is_error: Some(false),
+                            meta: None,
+                            structured_content: None,
+                        });
+                    }
+                }
                 resp
             }
-            Err(_) if session_id.is_some() => {
+            Err(e) if session_id.is_some() => {
                 // Reset on failure
-                crate::sessions::clear_tool_session(&self.db, tool_name.to_string())
-                    .await
-                    .map_err(|e| McpError {
-                        code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                        message: format!("DB error: {}", e).into(),
-                        data: None,
-                    })?;
-                let resp = gemini.call(&prompt, None).await.map_err(|e| McpError {
-                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                    message: format!("Gemini error: {}", e).into(),
-                    data: None,
-                })?;
-                crate::sessions::store_tool_session(
+                match crate::sessions::clear_tool_session(&self.db, tool_name.to_string()).await {
+                    Ok(_) => {},
+                    Err(db_err) => {
+                        return Ok(CallToolResult {
+                            content: vec![Annotated::new(
+                                RawContent::text(json!({
+                                    "thoughts_processed": 0,
+                                    "entities_extracted": 0,
+                                    "relationships_extracted": 0,
+                                    "observations_extracted": 0,
+                                    "boundaries_extracted": 0,
+                                    "staged_for_review": 0,
+                                    "auto_approved": 0,
+                                    "extraction_batch_id": "",
+                                    "gemini_session_id": "",
+                                    "error": format!("DB error clearing session: {}", db_err)
+                                }).to_string()),
+                                None,
+                            )],
+                            is_error: Some(false),
+                            meta: None,
+                            structured_content: None,
+                        });
+                    }
+                }
+                let resp = match gemini.call(&prompt, None).await {
+                    Ok(resp) => resp,
+                    Err(gem_err) => {
+                        return Ok(CallToolResult {
+                            content: vec![Annotated::new(
+                                RawContent::text(json!({
+                                    "thoughts_processed": 0,
+                                    "entities_extracted": 0,
+                                    "relationships_extracted": 0,
+                                    "observations_extracted": 0,
+                                    "boundaries_extracted": 0,
+                                    "staged_for_review": 0,
+                                    "auto_approved": 0,
+                                    "extraction_batch_id": "",
+                                    "gemini_session_id": "",
+                                    "error": format!("Gemini error after session reset: {}", gem_err)
+                                }).to_string()),
+                                None,
+                            )],
+                            is_error: Some(false),
+                            meta: None,
+                            structured_content: None,
+                        });
+                    }
+                };
+                // Store session after successful retry
+                match crate::sessions::store_tool_session(
                     &self.db,
                     tool_name.to_string(),
                     resp.session_id.clone(),
-                )
-                .await
-                .map_err(|e| McpError {
-                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                    message: format!("DB error: {}", e).into(),
-                    data: None,
-                })?;
+                ).await {
+                    Ok(_) => {},
+                    Err(e) => {
+                        return Ok(CallToolResult {
+                            content: vec![Annotated::new(
+                                RawContent::text(json!({
+                                    "thoughts_processed": 0,
+                                    "entities_extracted": 0,
+                                    "relationships_extracted": 0,
+                                    "observations_extracted": 0,
+                                    "boundaries_extracted": 0,
+                                    "staged_for_review": 0,
+                                    "auto_approved": 0,
+                                    "extraction_batch_id": "",
+                                    "gemini_session_id": "",
+                                    "error": format!("DB error storing retry session: {}", e)
+                                }).to_string()),
+                                None,
+                            )],
+                            is_error: Some(false),
+                            meta: None,
+                            structured_content: None,
+                        });
+                    }
+                }
                 resp
             }
             Err(e) => {
-                return Err(McpError {
-                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                    message: format!("Gemini CLI error: {}", e).into(),
-                    data: None,
+                return Ok(CallToolResult {
+                    content: vec![Annotated::new(
+                        RawContent::text(json!({
+                            "thoughts_processed": 0,
+                            "entities_extracted": 0,
+                            "relationships_extracted": 0,
+                            "observations_extracted": 0,
+                            "boundaries_extracted": 0,
+                            "staged_for_review": 0,
+                            "auto_approved": 0,
+                            "extraction_batch_id": "",
+                            "gemini_session_id": "",
+                            "error": format!("Gemini error: {}", e)
+                        }).to_string()),
+                        None,
+                    )],
+                    is_error: Some(false),
+                    meta: None,
+                    structured_content: None,
                 });
             }
         };
 
         // Parse extraction results
-        let extraction: serde_json::Value = serde_json::from_str(&gemini_response.response)
-            .map_err(|e| McpError {
-                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                message: format!("Failed to parse Gemini response: {}", e).into(),
-                data: None,
-            })?;
+        let extraction: serde_json::Value = match serde_json::from_str(&gemini_response.response) {
+            Ok(val) => val,
+            Err(e) => {
+                return Ok(CallToolResult {
+                    content: vec![Annotated::new(
+                        RawContent::text(json!({
+                            "thoughts_processed": 0,
+                            "entities_extracted": 0,
+                            "relationships_extracted": 0,
+                            "observations_extracted": 0,
+                            "boundaries_extracted": 0,
+                            "staged_for_review": 0,
+                            "auto_approved": 0,
+                            "extraction_batch_id": "",
+                            "gemini_session_id": gemini_response.session_id,
+                            "error": format!("Failed to parse Gemini response: {}", e)
+                        }).to_string()),
+                        None,
+                    )],
+                    is_error: Some(false),
+                    meta: None,
+                    structured_content: None,
+                });
+            }
+        };
 
         // Process extractions (simplified counts)
         let extracted_at = Utc::now().to_rfc3339();
@@ -494,16 +663,11 @@ THOUGHTS TO PROCESS:
                     extraction_batch_id = $batch_id
                 WHERE id = $id
             ""#;
-            self.db
+            let _ = self.db
                 .query(sql)
                 .bind(("batch_id", extraction_batch_id.clone()))
                 .bind(("id", thought.id.clone()))
-                .await
-                .map_err(|e| McpError {
-                    code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-                    message: format!("Database update failed: {}", e).into(),
-                    data: None,
-                })?;
+                .await;
         }
 
         let response_value = json!({
