@@ -877,3 +877,12 @@ Replace `IF defined(field) THEN ... ELSE null END` with SurrealDB-compatible syn
 In the Gemini session query, either:
 - Add `last_used` to the SELECT: `SELECT gemini_session_id, last_used FROM ...`
 - Or remove the ORDER BY clause if not needed
+
+## Codex Fix (2025-12-24 ~17:00 CST) — Gemini session query
+
+**What changed:**
+- Updated `get_tool_session` (sessions.rs) to select `gemini_session_id, last_used` so SurrealDB accepts `ORDER BY last_used DESC`. Added a small struct for deserialization.
+
+**Validation:** `cargo fmt`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test` all pass post-fix.
+
+**Next step:** Re-run `memories_populate` with `SURR_DEBUG_MEMORIES_POPULATE_ROWS=1`; the previous “Missing order idiom last_used” error should be resolved.

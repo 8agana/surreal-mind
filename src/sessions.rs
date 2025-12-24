@@ -11,7 +11,7 @@ pub async fn get_tool_session(
     let cutoff = Utc::now() - Duration::hours(SESSION_TTL_HOURS);
 
     let sql = r#"
-        SELECT gemini_session_id
+        SELECT gemini_session_id, last_used
         FROM tool_sessions
         WHERE tool_name = $tool_name
           AND last_used > $cutoff
@@ -25,9 +25,15 @@ pub async fn get_tool_session(
         .bind(("cutoff", cutoff))
         .await?;
 
-    // Extract the session_id directly as a string array
-    let session_ids: Vec<String> = result.take(0)?;
-    Ok(session_ids.into_iter().next())
+    #[derive(serde::Deserialize)]
+    struct SessionRow {
+        gemini_session_id: String,
+        #[allow(dead_code)]
+        last_used: chrono::DateTime<chrono::Utc>,
+    }
+
+    let rows: Vec<SessionRow> = result.take(0)?;
+    Ok(rows.into_iter().next().map(|r| r.gemini_session_id))
 }
 
 pub async fn store_tool_session(
