@@ -22,6 +22,12 @@ pub struct GeminiClient {
     timeout_ms: u64,
 }
 
+impl Default for GeminiClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GeminiClient {
     pub fn new() -> Self {
         Self {
@@ -39,14 +45,14 @@ impl GeminiClient {
         session_id: Option<&str>,
     ) -> Result<GeminiResponse, Box<dyn std::error::Error + Send + Sync>> {
         let mut cmd = Command::new("gemini");
-        cmd.args(&["-o", "json"]);
-        cmd.args(&["-m", &self.model]);
+        cmd.args(["-o", "json"]);
+        cmd.args(["-m", &self.model]);
 
         // Pass prompt via stdin to avoid arg length limits
         cmd.arg(prompt);
 
         if let Some(sid) = session_id {
-            cmd.args(&["--resume", sid]);
+            cmd.args(["--resume", sid]);
         }
 
         // Note: timeout_ms stored but gemini CLI doesn't support timeout flag
