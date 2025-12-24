@@ -775,6 +775,27 @@ THOUGHTS TO PROCESS:
                 .await;
         }
 
+        // Mark processed thoughts as extracted
+        let now_str = Utc::now().to_rfc3339();
+        for thought in &thoughts {
+            let _ = self
+                .db
+                .query(
+                    r#"
+                    UPDATE $id SET
+                        extracted_to_kg = true,
+                        extraction_batch_id = $batch,
+                        extracted_at = $now
+                "#,
+                )
+                .bind(("id", thought.id.clone()))
+                .bind(("batch", extraction_batch_id.clone()))
+                .bind(("now", now_str.clone()))
+                .await;
+        }
+
+        let thought_ids: Vec<String> = thoughts.iter().map(|t| t.id.clone()).collect();
+
         let response_value = json!({
             "thoughts_processed": thoughts.len() as u32,
             "entities_extracted": entities_extracted,
@@ -785,6 +806,7 @@ THOUGHTS TO PROCESS:
             "auto_approved": auto_approved,
             "extraction_batch_id": extraction_batch_id,
             "gemini_session_id": gemini_response.session_id,
+            "thought_ids": thought_ids,
         });
 
         // Use manual text content to avoid serialization issues with structured content
