@@ -299,6 +299,7 @@ impl SurrealMindServer {
         let extraction_batch_id = Uuid::new_v4().to_string();
 
         // Fetch unprocessed thoughts
+        tracing::info!("memories_populate: fetching thoughts with params: source={}, limit={}", params.source, params.limit);
         let thoughts = match self.fetch_thoughts_for_extraction(&params).await {
             Ok(t) => t,
             Err(e) => {
@@ -324,6 +325,7 @@ impl SurrealMindServer {
                 });
             }
         };
+        tracing::info!("memories_populate: found {} thoughts to process", thoughts.len());
         if thoughts.is_empty() {
             // Return schema-conformant response even when no work to do
             let response_value = json!({
@@ -701,7 +703,7 @@ THOUGHTS TO PROCESS:
         let sql = match params.source.as_str() {
             "unprocessed" => {
                 r#"
-                SELECT * FROM thoughts
+                SELECT id, content, created_at, embedding, injected_memories, injection_scale, significance, access_count, last_accessed, submode, framework_enhanced, framework_analysis, embedding_model, embedding_provider, embedding_dim, embedded_at, extracted_to_kg, extraction_batch_id FROM thoughts
                 WHERE extracted_to_kg = false
                 ORDER BY created_at ASC
                 LIMIT $limit
@@ -709,7 +711,7 @@ THOUGHTS TO PROCESS:
             }
             "chain_id" => {
                 r#"
-                SELECT * FROM thoughts
+                SELECT id, content, created_at, embedding, injected_memories, injection_scale, significance, access_count, last_accessed, submode, framework_enhanced, framework_analysis, embedding_model, embedding_provider, embedding_dim, embedded_at, extracted_to_kg, extraction_batch_id FROM thoughts
                 WHERE chain_id = $chain_id AND extracted_to_kg = false
                 ORDER BY created_at ASC
                 LIMIT $limit
@@ -717,7 +719,7 @@ THOUGHTS TO PROCESS:
             }
             "date_range" => {
                 r#"
-                SELECT * FROM thoughts
+                SELECT id, content, created_at, embedding, injected_memories, injection_scale, significance, access_count, last_accessed, submode, framework_enhanced, framework_analysis, embedding_model, embedding_provider, embedding_dim, embedded_at, extracted_to_kg, extraction_batch_id FROM thoughts
                 WHERE created_at >= $since AND created_at <= $until AND extracted_to_kg = false
                 ORDER BY created_at ASC
                 LIMIT $limit
@@ -746,10 +748,13 @@ THOUGHTS TO PROCESS:
             message: format!("DB query failed: {}", e).into(),
             data: None,
         })?;
-        let thoughts: Vec<crate::server::Thought> = result.take(0).map_err(|e| McpError {
-            code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-            message: format!("Result parsing failed: {}", e).into(),
-            data: None,
+        let thoughts: Vec<crate::server::Thought> = result.take(0).map_err(|e| {
+            tracing::error!("Failed to deserialize thoughts: {}", e);
+            McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!("Result parsing failed: {}", e).into(),
+                data: None,
+            }
         })?;
         Ok(thoughts)
     }
