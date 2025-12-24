@@ -414,43 +414,37 @@ impl SurrealMindServer {
                         .unwrap_or(serde_json::Value::Null),
                 ),
             ];
-            if framework_enhanced {
-                if let Some(env) = framework_analysis.as_ref().and_then(|a| a.as_object()) {
-                    if let Some(data) = env.get("data").and_then(|d| d.as_object()) {
-                        if let Some(tags_from_analysis) =
-                            data.get("tags").and_then(|t| t.as_array())
-                        {
-                            // Merge tags, then filter by whitelist to ensure only allowed tags persist
-                            let existing_tags: Vec<String> = tags.clone();
-                            let envelope_tags: Vec<String> = tags_from_analysis
-                                .iter()
-                                .filter_map(|t| t.as_str())
-                                .map(|s| s.to_string())
-                                .collect();
-                            let mut merged_set: HashSet<String> =
-                                existing_tags.into_iter().collect();
-                            merged_set.extend(envelope_tags.into_iter());
-                            // Build whitelist from env (same source used by framework)
-                            let whitelist: HashSet<String> =
-                                std::env::var("SURR_THINK_TAG_WHITELIST")
-                                    .unwrap_or("plan,debug,dx,photography,idea".to_string())
-                                    .split(',')
-                                    .map(|s| s.trim().to_string())
-                                    .collect();
-                            let merged: Vec<String> = merged_set
-                                .into_iter()
-                                .filter(|t| whitelist.contains(t))
-                                .collect();
-                            query.push_str(", tags = $merged_tags");
-                            binds.push((
-                                "merged_tags",
-                                serde_json::Value::Array(
-                                    merged.into_iter().map(serde_json::Value::String).collect(),
-                                ),
-                            ));
-                        }
-                    }
-                }
+            if framework_enhanced
+                && let Some(env) = framework_analysis.as_ref().and_then(|a| a.as_object())
+                && let Some(data) = env.get("data").and_then(|d| d.as_object())
+                && let Some(tags_from_analysis) = data.get("tags").and_then(|t| t.as_array())
+            {
+                // Merge tags, then filter by whitelist to ensure only allowed tags persist
+                let existing_tags: Vec<String> = tags.clone();
+                let envelope_tags: Vec<String> = tags_from_analysis
+                    .iter()
+                    .filter_map(|t| t.as_str())
+                    .map(|s| s.to_string())
+                    .collect();
+                let mut merged_set: HashSet<String> = existing_tags.into_iter().collect();
+                merged_set.extend(envelope_tags.into_iter());
+                // Build whitelist from env (same source used by framework)
+                let whitelist: HashSet<String> = std::env::var("SURR_THINK_TAG_WHITELIST")
+                    .unwrap_or("plan,debug,dx,photography,idea".to_string())
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .collect();
+                let merged: Vec<String> = merged_set
+                    .into_iter()
+                    .filter(|t| whitelist.contains(t))
+                    .collect();
+                query.push_str(", tags = $merged_tags");
+                binds.push((
+                    "merged_tags",
+                    serde_json::Value::Array(
+                        merged.into_iter().map(serde_json::Value::String).collect(),
+                    ),
+                ));
             }
             query.push_str(" RETURN NONE;");
             let mut db_query = self.db.query(&query);
@@ -746,14 +740,14 @@ impl SurrealMindServer {
                 seen_ids.insert(id.clone());
             }
         }
-        if let Some(ref id) = resolved.branch_from {
-            if seen_ids.contains(id) {
-                resolved.branch_from = None;
-                links_resolved.insert(
-                    "branch_from".to_string(),
-                    serde_json::Value::String("dropped_duplicate".to_string()),
-                );
-            }
+        if let Some(ref id) = resolved.branch_from
+            && seen_ids.contains(id)
+        {
+            resolved.branch_from = None;
+            links_resolved.insert(
+                "branch_from".to_string(),
+                serde_json::Value::String("dropped_duplicate".to_string()),
+            );
         }
 
         resolved.links_resolved = serde_json::Value::Object(links_resolved);
@@ -1372,19 +1366,18 @@ impl SurrealMindServer {
         if let (Some(verification), true) = (
             &verification_result,
             self.config.runtime.persist_verification,
-        ) {
-            if let Some(thought_id) = delegated_result.get("thought_id").and_then(|v| v.as_str()) {
-                let thought_id = thought_id.to_string();
-                let _ = self
-                    .db
-                    .query("UPDATE type::thing('thoughts', $id) SET verification = $verif")
-                    .bind(("id", thought_id))
-                    .bind((
-                        "verif",
-                        serde_json::to_value(verification).unwrap_or(serde_json::Value::Null),
-                    ))
-                    .await;
-            }
+        ) && let Some(thought_id) = delegated_result.get("thought_id").and_then(|v| v.as_str())
+        {
+            let thought_id = thought_id.to_string();
+            let _ = self
+                .db
+                .query("UPDATE type::thing('thoughts', $id) SET verification = $verif")
+                .bind(("id", thought_id))
+                .bind((
+                    "verif",
+                    serde_json::to_value(verification).unwrap_or(serde_json::Value::Null),
+                ))
+                .await;
         }
 
         let telemetry = json!({

@@ -128,10 +128,10 @@ impl InnerVoiceConfig {
         // - SURR_DISABLE_INNER_VOICE=1|true force-disables
         // - SURR_ENABLE_INNER_VOICE=0|false disables; =1|true enables
         // - default: enabled
-        if let Ok(disable) = std::env::var("SURR_DISABLE_INNER_VOICE") {
-            if disable == "1" || disable.eq_ignore_ascii_case("true") {
-                config.enable = false;
-            }
+        if let Ok(disable) = std::env::var("SURR_DISABLE_INNER_VOICE")
+            && (disable == "1" || disable.eq_ignore_ascii_case("true"))
+        {
+            config.enable = false;
         }
         if let Ok(enable) = std::env::var("SURR_ENABLE_INNER_VOICE") {
             if enable == "0" || enable.eq_ignore_ascii_case("false") {
@@ -158,10 +158,9 @@ impl InnerVoiceConfig {
         if let Some(min_floor) = std::env::var("SURR_INNER_VOICE_MIN_FLOOR")
             .ok()
             .and_then(|v| v.parse::<f32>().ok())
+            && (0.0..=1.0).contains(&min_floor)
         {
-            if (0.0..=1.0).contains(&min_floor) {
-                config.min_floor = min_floor;
-            }
+            config.min_floor = min_floor;
         }
 
         if let Some(max_candidates) = std::env::var("SURR_INNER_VOICE_MAX_CANDIDATES_PER_SOURCE")
@@ -187,19 +186,17 @@ impl InnerVoiceConfig {
         if let Some(hl) = std::env::var("SURR_IV_RECENCY_HALF_LIFE_DAYS")
             .ok()
             .and_then(|v| v.parse::<f32>().ok())
+            && hl > 0.0
         {
-            if hl > 0.0 {
-                config.recency_half_life_days = hl;
-            }
+            config.recency_half_life_days = hl;
         }
 
         if let Some(days) = std::env::var("SURR_IV_RECENCY_DEFAULT_DAYS")
             .ok()
             .and_then(|v| v.parse::<u32>().ok())
+            && days > 0
         {
-            if days > 0 {
-                config.recency_days_default = Some(days);
-            }
+            config.recency_days_default = Some(days);
         }
 
         if let Ok(pref) = std::env::var("SURR_IV_PREFER_RECENT") {
@@ -657,10 +654,10 @@ impl RuntimeConfig {
 
         // HTTP transport configuration
         cfg.transport = std::env::var("SURR_TRANSPORT").unwrap_or_else(|_| "stdio".to_string());
-        if let Ok(v) = std::env::var("SURR_HTTP_BIND") {
-            if let Ok(bind) = v.parse::<std::net::SocketAddr>() {
-                cfg.http_bind = bind;
-            }
+        if let Ok(v) = std::env::var("SURR_HTTP_BIND")
+            && let Ok(bind) = v.parse::<std::net::SocketAddr>()
+        {
+            cfg.http_bind = bind;
         }
         cfg.http_path = std::env::var("SURR_HTTP_PATH").unwrap_or_else(|_| "/mcp".to_string());
         cfg.bearer_token = std::env::var("SURR_BEARER_TOKEN").ok().or_else(|| {

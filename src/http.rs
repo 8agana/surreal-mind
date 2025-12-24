@@ -317,15 +317,17 @@ pub async fn start_http_server(server: SurrealMindServer) -> Result<()> {
                     .map(|v| v == format!("Bearer {}", expected))
                     .unwrap_or(false);
                 let mut query_ok = false;
-                if !header_ok && allow_q {
-                    if let Some(q) = req.uri().query() {
-                        for pair in q.split('&') {
-                            if let Some((k, v)) = pair.split_once('=') {
-                                if (k == "access_token" || k == "token") && v == expected {
-                                    query_ok = true;
-                                    break;
-                                }
-                            }
+                if !header_ok
+                    && allow_q
+                    && let Some(q) = req.uri().query()
+                {
+                    for pair in q.split('&') {
+                        if let Some((k, v)) = pair.split_once('=')
+                            && (k == "access_token" || k == "token")
+                            && v == expected
+                        {
+                            query_ok = true;
+                            break;
                         }
                     }
                 }

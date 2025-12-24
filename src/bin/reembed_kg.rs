@@ -200,13 +200,12 @@ async fn main() -> Result<()> {
             }
             // Use name plus lightweight data summary if present
             let mut text = name.clone();
-            if let Some(d) = r.get("data") {
-                if let Some(obj) = d.as_object() {
-                    if let Some(desc) = obj.get("description").and_then(|v| v.as_str()) {
-                        text.push_str(" - ");
-                        text.push_str(desc);
-                    }
-                }
+            if let Some(d) = r.get("data")
+                && let Some(obj) = d.as_object()
+                && let Some(desc) = obj.get("description").and_then(|v| v.as_str())
+            {
+                text.push_str(" - ");
+                text.push_str(desc);
             }
             let emb = embedder.embed(&text).await?;
             if !dry_run {

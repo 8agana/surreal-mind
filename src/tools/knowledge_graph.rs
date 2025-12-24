@@ -78,29 +78,27 @@ impl SurrealMindServer {
 
                 // Add canonical suggestions for entity candidates
                 for entity in &mut entity_rows {
-                    if let Some(name) = entity.get("name").and_then(|v| v.as_str()) {
-                        if let Some(entity_type) =
+                    if let Some(name) = entity.get("name").and_then(|v| v.as_str())
+                        && let Some(entity_type) =
                             entity.get("entity_type").and_then(|v| v.as_str())
-                        {
-                            let suggestions =
-                                self.find_similar_entities(name, entity_type, 3).await?;
-                            if !suggestions.is_empty() {
-                                let suggestions_json = suggestions
-                                    .iter()
-                                    .map(|(id, name, score)| {
-                                        json!({
-                                            "id": id,
-                                            "name": name,
-                                            "similarity": score
-                                        })
+                    {
+                        let suggestions = self.find_similar_entities(name, entity_type, 3).await?;
+                        if !suggestions.is_empty() {
+                            let suggestions_json = suggestions
+                                .iter()
+                                .map(|(id, name, score)| {
+                                    json!({
+                                        "id": id,
+                                        "name": name,
+                                        "similarity": score
                                     })
-                                    .collect::<Vec<_>>();
-                                if let Some(obj) = entity.as_object_mut() {
-                                    obj.insert(
-                                        "canonical_suggestions".to_string(),
-                                        json!({"suggestions": suggestions_json}),
-                                    );
-                                }
+                                })
+                                .collect::<Vec<_>>();
+                            if let Some(obj) = entity.as_object_mut() {
+                                obj.insert(
+                                    "canonical_suggestions".to_string(),
+                                    json!({"suggestions": suggestions_json}),
+                                );
                             }
                         }
                     }
@@ -488,10 +486,8 @@ impl SurrealMindServer {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
         let has_entity_type = data.get("entity_type").is_some();
-        if !has_entity_type {
-            if let (Some(t), Some(obj)) = (alias_type, data.as_object_mut()) {
-                obj.insert("entity_type".to_string(), serde_json::Value::String(t));
-            }
+        if !has_entity_type && let (Some(t), Some(obj)) = (alias_type, data.as_object_mut()) {
+            obj.insert("entity_type".to_string(), serde_json::Value::String(t));
         }
         // Determine upsert behavior (default true)
         let upsert = args.get("upsert").and_then(|v| v.as_bool()).unwrap_or(true);
@@ -626,11 +622,11 @@ impl SurrealMindServer {
                     .await?
                     .take(0)?;
 
-                if let Some(rel_row) = existing_rel.first() {
-                    if let Some(rel_id) = rel_row.get("id").and_then(|v| v.as_str()) {
-                        let result = json!({"kind": kind_s, "id": rel_id, "created": false});
-                        return Ok(CallToolResult::structured(result));
-                    }
+                if let Some(rel_row) = existing_rel.first()
+                    && let Some(rel_id) = rel_row.get("id").and_then(|v| v.as_str())
+                {
+                    let result = json!({"kind": kind_s, "id": rel_id, "created": false});
+                    return Ok(CallToolResult::structured(result));
                 }
 
                 // 3. Create new relationship
@@ -679,11 +675,11 @@ impl SurrealMindServer {
                         .bind(("src", source_thought_id_s.clone()))
                         .await?
                         .take(0)?;
-                    if let Some(obs_row) = existing_obs.first() {
-                        if let Some(obs_id) = obs_row.get("id").and_then(|v| v.as_str()) {
-                            let result = json!({"kind": kind_s, "id": obs_id, "created": false});
-                            return Ok(CallToolResult::structured(result));
-                        }
+                    if let Some(obs_row) = existing_obs.first()
+                        && let Some(obs_id) = obs_row.get("id").and_then(|v| v.as_str())
+                    {
+                        let result = json!({"kind": kind_s, "id": obs_id, "created": false});
+                        return Ok(CallToolResult::structured(result));
                     }
                 }
 
@@ -724,17 +720,16 @@ impl SurrealMindServer {
                     e
                 );
             }
-        } else if kind_s == "observation" {
-            if let Err(e) = self
+        } else if kind_s == "observation"
+            && let Err(e) = self
                 .ensure_kg_embedding("kg_observations", &id, &name, &data)
                 .await
-            {
-                tracing::warn!(
-                    "kg_embedding: failed to auto-embed created observation {}: {}",
-                    id,
-                    e
-                );
-            }
+        {
+            tracing::warn!(
+                "kg_embedding: failed to auto-embed created observation {}: {}",
+                id,
+                e
+            );
         }
 
         let result = json!({
@@ -862,10 +857,10 @@ impl SurrealMindServer {
             if let Some(entity_type) = data.get("entity_type").and_then(|v| v.as_str()) {
                 text.push_str(&format!(" ({})", entity_type));
             }
-        } else if table == "kg_observations" {
-            if let Some(description) = data.get("description").and_then(|v| v.as_str()) {
-                text.push_str(&format!(" - {}", description));
-            }
+        } else if table == "kg_observations"
+            && let Some(description) = data.get("description").and_then(|v| v.as_str())
+        {
+            text.push_str(&format!(" - {}", description));
         }
 
         // Generate embedding
@@ -1212,10 +1207,10 @@ impl SurrealMindServer {
     /// Accepts full Thing strings, bare IDs, or names.
     async fn resolve_entity_id_str(&self, entity: &str) -> Result<Option<String>> {
         // Full Thing? parse and return the inner id as string
-        if let Ok(thing) = surrealdb::sql::Thing::from_str(entity) {
-            if !thing.tb.is_empty() {
-                return Ok(Some(thing.id.to_string()));
-            }
+        if let Ok(thing) = surrealdb::sql::Thing::from_str(entity)
+            && !thing.tb.is_empty()
+        {
+            return Ok(Some(thing.id.to_string()));
         }
         // Try match by exact meta id or constructed thing, else by name
         let mut q = self

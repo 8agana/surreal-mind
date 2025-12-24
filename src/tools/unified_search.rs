@@ -128,29 +128,26 @@ pub async fn unified_search_inner(
 
     // Build a simple name-like predicate from query if available
     let mut name_like: Option<String> = None;
-    if let Some(q) = &params.query {
-        if let Some(n) = q.get("name").and_then(|v| v.as_str()) {
-            if !n.is_empty() {
-                name_like = Some(n.to_string());
-            }
-        }
+    if let Some(q) = &params.query
+        && let Some(n) = q.get("name").and_then(|v| v.as_str())
+        && !n.is_empty()
+    {
+        name_like = Some(n.to_string());
     }
 
     // Determine content for embedding
     let mut content = params.thoughts_content.clone().unwrap_or_default();
-    if content.is_empty() {
-        if let Some(qjson) = &params.query {
-            if let Some(text) = qjson.get("text").and_then(|v| v.as_str()) {
-                if !text.is_empty() {
-                    content = text.to_string();
-                }
-            }
-        }
+    if content.is_empty()
+        && let Some(qjson) = &params.query
+        && let Some(text) = qjson.get("text").and_then(|v| v.as_str())
+        && !text.is_empty()
+    {
+        content = text.to_string();
     }
-    if content.is_empty() {
-        if let Some(ref nl) = name_like {
-            content = nl.clone();
-        }
+    if content.is_empty()
+        && let Some(ref nl) = name_like
+    {
+        content = nl.clone();
     }
     let has_query = !content.is_empty();
     let q_emb = if has_query {
@@ -206,11 +203,11 @@ pub async fn unified_search_inner(
             let mut scored_entities: Vec<serde_json::Value> = Vec::new();
             for row in rows {
                 let similarity = row.similarity;
-                if let Some(sim) = similarity {
-                    if sim >= sim_thresh {
-                        let entity_json = json!({"id": row.id, "name": row.name, "data": row.data, "created_at": row.created_at, "similarity": sim});
-                        scored_entities.push(entity_json);
-                    }
+                if let Some(sim) = similarity
+                    && sim >= sim_thresh
+                {
+                    let entity_json = json!({"id": row.id, "name": row.name, "data": row.data, "created_at": row.created_at, "similarity": sim});
+                    scored_entities.push(entity_json);
                 }
             }
             // Sort by similarity descending before truncating
@@ -304,11 +301,11 @@ pub async fn unified_search_inner(
             let mut scored_observations: Vec<serde_json::Value> = Vec::new();
             for row in rows {
                 let similarity = row.similarity;
-                if let Some(sim) = similarity {
-                    if sim >= sim_thresh {
-                        let observation_json = json!({ "id": row.id, "name": row.name, "data": row.data, "created_at": row.created_at, "similarity": sim });
-                        scored_observations.push(observation_json);
-                    }
+                if let Some(sim) = similarity
+                    && sim >= sim_thresh
+                {
+                    let observation_json = json!({ "id": row.id, "name": row.name, "data": row.data, "created_at": row.created_at, "similarity": sim });
+                    scored_observations.push(observation_json);
                 }
             }
 
@@ -357,20 +354,17 @@ pub async fn unified_search_inner(
     if include_thoughts {
         // Decide query text for thoughts
         let mut content = params.thoughts_content.clone().unwrap_or_default();
-        if content.is_empty() {
-            // Prefer explicit text from query if available (common client pattern)
-            if let Some(qjson) = &params.query {
-                if let Some(text) = qjson.get("text").and_then(|v| v.as_str()) {
-                    if !text.is_empty() {
-                        content = text.to_string();
-                    }
-                }
-            }
+        if content.is_empty()
+            && let Some(qjson) = &params.query
+            && let Some(text) = qjson.get("text").and_then(|v| v.as_str())
+            && !text.is_empty()
+        {
+            content = text.to_string();
         }
-        if content.is_empty() {
-            if let Some(ref nl) = name_like {
-                content = nl.clone();
-            }
+        if content.is_empty()
+            && let Some(ref nl) = name_like
+        {
+            content = nl.clone();
         }
         let has_query = !content.is_empty();
         let q_emb = if has_query {

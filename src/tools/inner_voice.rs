@@ -353,10 +353,10 @@ impl SurrealMindServer {
                         // Date filter
                         if let Some(date_range) = planner.date_range {
                             date_filter = Some(date_range);
-                        } else if let Some(days) = planner.recency_days {
-                            if days > 0 {
-                                recency_days = Some(days);
-                            }
+                        } else if let Some(days) = planner.recency_days
+                            && days > 0
+                        {
+                            recency_days = Some(days);
                         }
                     }
                     Err(_) => {
@@ -426,16 +426,15 @@ impl SurrealMindServer {
                 }
                 if score >= floor {
                     // Apply entity_hints boost (advisory only)
-                    if cfg.plan {
-                        if let Some(planner) = &planner_response {
-                            if !planner.entity_hints.is_empty() {
-                                let name_lower = cand.text.to_lowercase();
-                                for hint in &planner.entity_hints {
-                                    if name_lower.contains(&hint.to_lowercase()) {
-                                        score += 0.05; // Small boost
-                                        break;
-                                    }
-                                }
+                    if cfg.plan
+                        && let Some(planner) = &planner_response
+                        && !planner.entity_hints.is_empty()
+                    {
+                        let name_lower = cand.text.to_lowercase();
+                        for hint in &planner.entity_hints {
+                            if name_lower.contains(&hint.to_lowercase()) {
+                                score += 0.05; // Small boost
+                                break;
                             }
                         }
                     }
@@ -1170,16 +1169,15 @@ async fn call_planner_grok(base: &str, api_key: &str, query: &str) -> Result<Pla
         message: e.to_string(),
     })?;
 
-    if let Some(choice) = val.get("choices").and_then(|c| c.get(0)) {
-        if let Some(content) = choice
+    if let Some(choice) = val.get("choices").and_then(|c| c.get(0))
+        && let Some(content) = choice
             .get("message")
             .and_then(|m| m.get("content"))
             .and_then(|c| c.as_str())
-        {
-            let trimmed = content.trim();
-            // Try to parse as JSON via helper
-            return parse_planner_json(trimmed);
-        }
+    {
+        let trimmed = content.trim();
+        // Try to parse as JSON via helper
+        return parse_planner_json(trimmed);
     }
     Err(SurrealMindError::Internal {
         message: "No valid response from planner".into(),
@@ -1231,14 +1229,13 @@ pub(super) async fn call_grok(
     let val: serde_json::Value = resp.json().await.map_err(|e| SurrealMindError::Internal {
         message: e.to_string(),
     })?;
-    if let Some(choice) = val.get("choices").and_then(|c| c.get(0)) {
-        if let Some(content) = choice
+    if let Some(choice) = val.get("choices").and_then(|c| c.get(0))
+        && let Some(content) = choice
             .get("message")
             .and_then(|m| m.get("content"))
             .and_then(|c| c.as_str())
-        {
-            return Ok(content.trim().to_string());
-        }
+    {
+        return Ok(content.trim().to_string());
     }
     // Fallback: return the raw JSON if format unexpected
     Ok(val.to_string())

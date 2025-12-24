@@ -83,15 +83,15 @@ async fn debug_kg_relationship_creation() {
             "    Case-insensitive source match: {}",
             source_match_case.is_some()
         );
-        if source_match_case.is_some() {
-            println!("      Source entity: '{}'", source_match_case.unwrap().name);
+        if let Some(source_match_case) = source_match_case {
+            println!("      Source entity: '{}'", source_match_case.name);
         }
         println!(
             "    Case-insensitive target match: {}",
             target_match_case.is_some()
         );
-        if target_match_case.is_some() {
-            println!("      Target entity: '{}'", target_match_case.unwrap().name);
+        if let Some(target_match_case) = target_match_case {
+            println!("      Target entity: '{}'", target_match_case.name);
         }
 
         // Check if matching would succeed

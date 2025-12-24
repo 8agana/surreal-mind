@@ -71,55 +71,55 @@ fn main() -> anyhow::Result<()> {
             last_refresh = Instant::now();
         }
 
-        if event::poll(Duration::from_millis(200))? {
-            if let event::Event::Key(k) = event::read()? {
-                use crossterm::event::{KeyCode, KeyModifiers};
-                match k.code {
-                    KeyCode::Char('q') | KeyCode::Esc => break,
-                    KeyCode::Char('r') => {
-                        let _ = restart_sm();
-                        status = gather_status(Some(&status));
-                    }
-                    KeyCode::Char('f') => {
-                        let _ = start_cloudflared();
-                        status = gather_status(Some(&status));
-                    }
-                    KeyCode::Char('g') => {
-                        let _ = stop_cloudflared();
-                        status = gather_status(Some(&status));
-                    }
-                    KeyCode::Char('y') => {
-                        let _ = copy_to_clipboard(&status.url);
-                    }
-                    KeyCode::Char('Y') => {
-                        let _ = copy_to_clipboard(&status.token);
-                    }
-                    KeyCode::Char('u') => {
-                        let _ = copy_to_clipboard(status.tunnel_url.as_deref().unwrap_or(""));
-                    }
-                    KeyCode::Char('a') => {
-                        status.use_header_auth = !status.use_header_auth;
-                    }
-                    KeyCode::PageUp => status.log_scroll = status.log_scroll.saturating_add(10),
-                    KeyCode::PageDown => status.log_scroll = status.log_scroll.saturating_sub(10),
-                    KeyCode::Home | KeyCode::Char('b') => {
-                        status.log_scroll = status.combined_log_tail.len() as u16
-                    }
-                    KeyCode::End | KeyCode::Char('e') => status.log_scroll = 0,
-                    KeyCode::Char('s') => {
-                        status.log_filter = match status.log_filter {
-                            LogFilter::All => LogFilter::Stdout,
-                            LogFilter::Stdout => LogFilter::Stderr,
-                            LogFilter::Stderr => LogFilter::Cloudflared,
-                            LogFilter::Cloudflared => LogFilter::All,
-                        };
-                    }
-                    KeyCode::Char('t') => {
-                        status.show_detail = !status.show_detail;
-                    }
-                    KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => break,
-                    _ => {}
+        if event::poll(Duration::from_millis(200))?
+            && let event::Event::Key(k) = event::read()?
+        {
+            use crossterm::event::{KeyCode, KeyModifiers};
+            match k.code {
+                KeyCode::Char('q') | KeyCode::Esc => break,
+                KeyCode::Char('r') => {
+                    let _ = restart_sm();
+                    status = gather_status(Some(&status));
                 }
+                KeyCode::Char('f') => {
+                    let _ = start_cloudflared();
+                    status = gather_status(Some(&status));
+                }
+                KeyCode::Char('g') => {
+                    let _ = stop_cloudflared();
+                    status = gather_status(Some(&status));
+                }
+                KeyCode::Char('y') => {
+                    let _ = copy_to_clipboard(&status.url);
+                }
+                KeyCode::Char('Y') => {
+                    let _ = copy_to_clipboard(&status.token);
+                }
+                KeyCode::Char('u') => {
+                    let _ = copy_to_clipboard(status.tunnel_url.as_deref().unwrap_or(""));
+                }
+                KeyCode::Char('a') => {
+                    status.use_header_auth = !status.use_header_auth;
+                }
+                KeyCode::PageUp => status.log_scroll = status.log_scroll.saturating_add(10),
+                KeyCode::PageDown => status.log_scroll = status.log_scroll.saturating_sub(10),
+                KeyCode::Home | KeyCode::Char('b') => {
+                    status.log_scroll = status.combined_log_tail.len() as u16
+                }
+                KeyCode::End | KeyCode::Char('e') => status.log_scroll = 0,
+                KeyCode::Char('s') => {
+                    status.log_filter = match status.log_filter {
+                        LogFilter::All => LogFilter::Stdout,
+                        LogFilter::Stdout => LogFilter::Stderr,
+                        LogFilter::Stderr => LogFilter::Cloudflared,
+                        LogFilter::Cloudflared => LogFilter::All,
+                    };
+                }
+                KeyCode::Char('t') => {
+                    status.show_detail = !status.show_detail;
+                }
+                KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => break,
+                _ => {}
             }
         }
     }
@@ -385,11 +385,11 @@ fn gather_status(prev: Option<&Status>) -> Status {
                 .and_then(|v| v.as_u64())
                 .map(|v| v as usize);
             st.http_total_sessions = m.get("http_total_sessions").and_then(|v| v.as_u64());
-            if let Some(prev_t) = prev.and_then(|p| p.total_requests) {
-                if let Some(cur) = st.total_requests {
-                    let dt = 2.0_f64;
-                    st.rps = Some((cur.saturating_sub(prev_t) as f64) / dt);
-                }
+            if let Some(prev_t) = prev.and_then(|p| p.total_requests)
+                && let Some(cur) = st.total_requests
+            {
+                let dt = 2.0_f64;
+                st.rps = Some((cur.saturating_sub(prev_t) as f64) / dt);
             }
             let mut rps_hist = prev.map(|p| p.rps_history.clone()).unwrap_or_default();
             if let Some(rps) = st.rps {
@@ -424,16 +424,13 @@ fn gather_status(prev: Option<&Status>) -> Status {
                     st.db_db = db.get("db").and_then(|v| v.as_str()).map(|s| s.to_string());
                 }
             }
-        } else {
-            // Use cached info
-            if let Some((_, info)) = &st.info_cache {
-                if let Some(db) = info.get("db").and_then(|v| v.as_object()) {
-                    st.db_connected = db.get("connected").and_then(|v| v.as_bool());
-                    st.db_ping_ms = db.get("ping_ms").and_then(|v| v.as_u64());
-                    st.db_ns = db.get("ns").and_then(|v| v.as_str()).map(|s| s.to_string());
-                    st.db_db = db.get("db").and_then(|v| v.as_str()).map(|s| s.to_string());
-                }
-            }
+        } else if let Some((_, info)) = &st.info_cache
+            && let Some(db) = info.get("db").and_then(|v| v.as_object())
+        {
+            st.db_connected = db.get("connected").and_then(|v| v.as_bool());
+            st.db_ping_ms = db.get("ping_ms").and_then(|v| v.as_u64());
+            st.db_ns = db.get("ns").and_then(|v| v.as_str()).map(|s| s.to_string());
+            st.db_db = db.get("db").and_then(|v| v.as_str()).map(|s| s.to_string());
         }
     }
 
@@ -493,23 +490,23 @@ fn gather_status(prev: Option<&Status>) -> Status {
     // Read stdio state.json
     if let Some(data_dir) = dirs::data_dir() {
         let state_file = data_dir.join("surreal-mind").join("state.json");
-        if let Ok(content) = fs::read_to_string(state_file) {
-            if let Ok(state) = from_str::<Value>(&content) {
-                st.stdio_sessions = state
-                    .get("sessions")
-                    .and_then(|v| v.as_u64())
-                    .map(|v| v as usize);
-            }
+        if let Ok(content) = fs::read_to_string(state_file)
+            && let Ok(state) = from_str::<Value>(&content)
+        {
+            st.stdio_sessions = state
+                .get("sessions")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize);
         }
     }
 
     // Gather resource usage for surreal-mind process
-    if let Some(pid) = get_surreal_mind_pid() {
-        if let Some((cpu, rss_kb, uptime)) = get_process_stats(pid) {
-            st.resource_cpu = Some(cpu);
-            st.resource_rss_mb = Some(rss_kb as f64 / 1024.0);
-            st.resource_uptime = Some(uptime);
-        }
+    if let Some(pid) = get_surreal_mind_pid()
+        && let Some((cpu, rss_kb, uptime)) = get_process_stats(pid)
+    {
+        st.resource_cpu = Some(cpu);
+        st.resource_rss_mb = Some(rss_kb as f64 / 1024.0);
+        st.resource_uptime = Some(uptime);
     }
 
     st
@@ -659,14 +656,13 @@ fn tail_lines(path: &str, max: usize) -> Vec<String> {
 }
 
 fn parse_ts(line: &str) -> Option<std::time::SystemTime> {
-    if let Some(first) = line.split_whitespace().next() {
-        if let Ok(dt) =
+    if let Some(first) = line.split_whitespace().next()
+        && let Ok(dt) =
             time::OffsetDateTime::parse(first, &time::format_description::well_known::Rfc3339)
-        {
-            return Some(
-                std::time::UNIX_EPOCH + std::time::Duration::from_secs(dt.unix_timestamp() as u64),
-            );
-        }
+    {
+        return Some(
+            std::time::UNIX_EPOCH + std::time::Duration::from_secs(dt.unix_timestamp() as u64),
+        );
     }
     None
 }

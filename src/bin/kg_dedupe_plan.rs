@@ -252,8 +252,8 @@ async fn main() -> Result<()> {
         // Ensure we never pick a 0/0 candidate if better exists
         let best_is_empty = degree_map.get(&ents[best_idx].id).copied().unwrap_or(0) == 0
             && data_completeness(&ents[best_idx].data) == 0;
-        if best_is_empty {
-            if let Some((i_alt, _)) = ents
+        if best_is_empty
+            && let Some((i_alt, _)) = ents
                 .iter()
                 .enumerate()
                 .filter(|(_, e)| {
@@ -261,9 +261,8 @@ async fn main() -> Result<()> {
                         || data_completeness(&e.data) > 0
                 })
                 .max_by_key(|(_, e)| degree_map.get(&e.id).copied().unwrap_or(0))
-            {
-                best_idx = i_alt;
-            }
+        {
+            best_idx = i_alt;
         }
         let winner = &ents[best_idx];
         let losers: Vec<&Entity> = ents

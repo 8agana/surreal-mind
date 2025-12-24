@@ -209,17 +209,14 @@ impl SurrealMindServer {
 
             // Check if field exists (simple check - may not catch all cases)
             let check_query = "INFO FOR TABLE thoughts".to_string();
-            if let Ok(mut response) = self.db.query(&check_query).await {
-                if let Ok(vec) = response.take::<Vec<serde_json::Value>>(0) {
-                    if let Some(table_info) = vec.first() {
-                        if let Some(fields_obj) = table_info.get("fields") {
-                            if fields_obj.get(field_name).is_some() {
-                                existing_fields.push((*field_name).to_string());
-                                continue;
-                            }
-                        }
-                    }
-                }
+            if let Ok(mut response) = self.db.query(&check_query).await
+                && let Ok(vec) = response.take::<Vec<serde_json::Value>>(0)
+                && let Some(table_info) = vec.first()
+                && let Some(fields_obj) = table_info.get("fields")
+                && fields_obj.get(field_name).is_some()
+            {
+                existing_fields.push((*field_name).to_string());
+                continue;
             }
 
             if !dry_run {
@@ -253,17 +250,14 @@ impl SurrealMindServer {
 
             // Check if index exists (simple check - may not catch all cases)
             let check_query = "INFO FOR TABLE thoughts".to_string();
-            if let Ok(mut response) = self.db.query(&check_query).await {
-                if let Ok(vec) = response.take::<Vec<serde_json::Value>>(0) {
-                    if let Some(table_info) = vec.first() {
-                        if let Some(indexes_obj) = table_info.get("indexes") {
-                            if indexes_obj.get(index_name).is_some() {
-                                existing_indexes.push(index_name.to_string());
-                                continue;
-                            }
-                        }
-                    }
-                }
+            if let Ok(mut response) = self.db.query(&check_query).await
+                && let Ok(vec) = response.take::<Vec<serde_json::Value>>(0)
+                && let Some(table_info) = vec.first()
+                && let Some(indexes_obj) = table_info.get("indexes")
+                && indexes_obj.get(index_name).is_some()
+            {
+                existing_indexes.push(index_name.to_string());
+                continue;
             }
 
             if !dry_run {

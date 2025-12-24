@@ -48,14 +48,13 @@ pub async fn grok_call(base: &str, model: &str, api_key: &str, messages: &Value)
     let val: serde_json::Value = resp.json().await.map_err(|e| SurrealMindError::Internal {
         message: e.to_string(),
     })?;
-    if let Some(choice) = val.get("choices").and_then(|c| c.get(0)) {
-        if let Some(content) = choice
+    if let Some(choice) = val.get("choices").and_then(|c| c.get(0))
+        && let Some(content) = choice
             .get("message")
             .and_then(|m| m.get("content"))
             .and_then(|c| c.as_str())
-        {
-            return Ok(content.trim().to_string());
-        }
+    {
+        return Ok(content.trim().to_string());
     }
     // Fallback: return the raw JSON if format unexpected
     Ok(val.to_string())
