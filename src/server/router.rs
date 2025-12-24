@@ -1,8 +1,9 @@
 use crate::server::SurrealMindServer;
 use crate::tools::memories_populate::{
-    ExtractedMemory, MemoriesPopulateRequest, MemoriesPopulateResponse,
+    ExtractedMemory, MemoriesPopulateRequest,
 };
 use chrono::Utc;
+use serde_json::json;
 use rmcp::{
     ErrorData as McpError,
     handler::server::ServerHandler,
@@ -493,23 +494,17 @@ THOUGHTS TO PROCESS:
                 })?;
         }
 
-        let response = MemoriesPopulateResponse {
-            thoughts_processed: thoughts.len() as u32,
-            entities_extracted,
-            relationships_extracted,
-            observations_extracted,
-            boundaries_extracted,
-            staged_for_review,
-            auto_approved,
-            extraction_batch_id,
-            gemini_session_id: gemini_response.session_id,
-        };
-
-        let response_value = serde_json::to_value(response).map_err(|e| McpError {
-            code: rmcp::model::ErrorCode::INTERNAL_ERROR,
-            message: format!("Failed to serialize response: {}", e).into(),
-            data: None,
-        })?;
+        let response_value = json!({
+            "thoughts_processed": thoughts.len() as u32,
+            "entities_extracted": entities_extracted,
+            "relationships_extracted": relationships_extracted,
+            "observations_extracted": observations_extracted,
+            "boundaries_extracted": boundaries_extracted,
+            "staged_for_review": staged_for_review,
+            "auto_approved": auto_approved,
+            "extraction_batch_id": extraction_batch_id,
+            "gemini_session_id": gemini_response.session_id,
+        });
         let response_raw = RawContent::json(response_value).map_err(|e| McpError {
             code: rmcp::model::ErrorCode::INTERNAL_ERROR,
             message: format!("Failed to build JSON content: {}", e).into(),
