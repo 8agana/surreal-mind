@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
+use std::process::Stdio;
 use std::time::Duration;
+use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::time::timeout;
+use tracing::{info, instrument};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GeminiResponse {
@@ -40,6 +43,7 @@ impl GeminiClient {
         }
     }
 
+    #[instrument(skip(self, prompt), fields(model = %self.model, timeout_ms = %self.timeout_ms))]
     pub async fn call(
         &self,
         prompt: &str,
@@ -49,17 +53,37 @@ impl GeminiClient {
         cmd.args(["-o", "json"]);
         cmd.args(["-m", &self.model]);
 
-        // Pass prompt via stdin to avoid arg length limits
-        cmd.arg(prompt);
-
         if let Some(sid) = session_id {
             cmd.args(["--resume", sid]);
         }
 
+        // Setup stdin/stdout for piping
+        cmd.stdin(Stdio::piped());
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+
+        info!("Starting Gemini CLI process");
+        let mut child = cmd.spawn()?;
+
+        // Write prompt to stdin
+        let mut stdin = child.stdin.take().ok_or("Failed to open stdin")?;
+        let prompt_bytes = prompt.as_bytes().to_vec();
+        
+        // Write in a separate task to avoid blocking wait_with_output if buffer fills
+        // (though for typical prompts it might be fine, safe approach is usually task or join)
+        let _writer = tokio::spawn(async move {
+            if let Err(e) = stdin.write_all(&prompt_bytes).await {
+                // If the process exits early/crashes, this write might fail.
+                // We log it but rely on the wait result to report the actual process error.
+                tracing::warn!("Failed to write to Gemini stdin (process might have exited): {}", e);
+            }
+        });
+
         // Use configured timeout
         let duration = Duration::from_millis(self.timeout_ms);
         
-        let output_result = timeout(duration, cmd.output()).await;
+        info!("Waiting for Gemini response (timeout: {}ms)", self.timeout_ms);
+        let output_result = timeout(duration, child.wait_with_output()).await;
 
         let output = match output_result {
             Ok(Ok(out)) => out,
@@ -68,13 +92,16 @@ impl GeminiClient {
         };
 
         if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            info!("Gemini CLI failed with stderr: {}", stderr);
             return Err(format!(
                 "Gemini CLI failed: {}",
-                String::from_utf8_lossy(&output.stderr)
+                stderr
             )
             .into());
         }
 
+        info!("Gemini CLI success, parsing response");
         let response: GeminiResponse = serde_json::from_slice(&output.stdout)?;
         Ok(response)
     }

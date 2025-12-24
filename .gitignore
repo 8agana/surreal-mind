@@ -8,8 +8,6 @@ reference/
 claude_desktop_config.json
 mcp-server-*.log
 mcp.log
-docs/prompts/
-docs/prompts/*.md
 
 
 /symlinks

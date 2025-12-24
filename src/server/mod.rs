@@ -78,6 +78,10 @@ pub struct Thought {
     pub embedding_dim: Option<i64>,
     #[serde(default)]
     pub embedded_at: Option<surrealdb::sql::Datetime>,
+    #[serde(default)]
+    pub extracted_to_kg: bool,
+    #[serde(default)]
+    pub extraction_batch_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
