@@ -845,3 +845,13 @@ This forces SurrealDB server to convert types, bypassing the Rust driver's broke
 Replace `IF defined(field) THEN ... ELSE null END` with SurrealDB-compatible syntax:
 - Option 1: `IF field IS NOT NONE THEN <string> field ELSE null END`
 - Option 2: `<string> field ?? null` (simpler coalesce approach)
+
+## Codex Fix (2025-12-24 ~16:45 CST) — Surreal-compatible casting
+
+**What changed:**
+- Replaced the invalid `defined()` checks with Surreal-friendly `IF field != NONE THEN <string> field ELSE null END` for `created_at`, `last_accessed`, `embedded_at`, and `extraction_batch_id` across all three SELECT variants.
+- Retained the string cast for `id` (`string::concat(meta::id(id)) AS id`) and existing `??` coalesces.
+
+**Status:** `cargo fmt`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test` all pass after this change.
+
+**Next validation:** Re-run `memories_populate` against `surreal_mind/consciousness` with `SURR_DEBUG_MEMORIES_POPULATE_ROWS=1`. Expectation: SQL parse error should be gone; if a new error appears, logs will capture it. If it succeeds, `thoughts_processed` should be >0.
