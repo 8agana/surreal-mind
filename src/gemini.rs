@@ -35,7 +35,8 @@ impl Default for GeminiClient {
 impl GeminiClient {
     pub fn new() -> Self {
         Self {
-            model: std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-2.5-pro".to_string()),
+            model: std::env::var("GEMINI_MODEL")
+                .unwrap_or_else(|_| "gemini-3-pro-preview".to_string()),
             timeout_ms: std::env::var("GEMINI_TIMEOUT_MS")
                 .ok()
                 .and_then(|s| s.parse().ok())
