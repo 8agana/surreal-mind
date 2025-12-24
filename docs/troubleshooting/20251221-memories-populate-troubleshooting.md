@@ -885,4 +885,45 @@ In the Gemini session query, either:
 
 **Validation:** `cargo fmt`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test` all pass post-fix.
 
-**Next step:** Re-run `memories_populate` with `SURR_DEBUG_MEMORIES_POPULATE_ROWS=1`; the previous “Missing order idiom last_used” error should be resolved.
+**Next step:** Re-run `memories_populate` with `SURR_DEBUG_MEMORIES_POPULATE_ROWS=1`; the previous "Missing order idiom last_used" error should be resolved.
+
+---
+
+## Test: 2025-12-24 16:35 CST (CC Session 4)
+
+**Binary**: Already rebuilt by Codex
+**Service**: Restarted via launchctl
+
+**Result**: Same ORDER BY error persists
+
+```json
+{
+  "error": "DB error: Parse error: Missing order idiom `last_used` in statement selection\n --> [6:18]\n  |\n6 | ORDER BY last_used DESC\n  |          ^^^^^^^^^^^^^^ \n --> [2:16]\n  |\n2 | SELECT gemini_session_id\n  |        ^^^^^^^^^^^^^^^^^ Idiom missing here\n"
+}
+```
+
+**Conclusion**: Codex needs to add `last_used` to the SELECT clause or remove the ORDER BY. This is the Gemini session query blocking progress.
+
+---
+
+## Test: 2025-12-24 16:38 CST (CC Session 4)
+
+**Binary**: Rebuilt (Codex forgot to build after code changes)
+**Service**: Restarted
+
+**Result**: PROGRESS - New error, past the SQL issues!
+
+```json
+{
+  "gemini_session_id": "98adc92f-fa42-477a-86eb-533084c17555",
+  "error": "Failed to parse Gemini response: expected value at line 1 column 1"
+}
+```
+
+**Analysis**:
+- ✅ DB query worked (ORDER BY fix successful)
+- ✅ Thoughts fetched successfully
+- ✅ Gemini CLI was invoked
+- ❌ Gemini response couldn't be parsed as JSON
+
+"expected value at line 1 column 1" indicates empty or non-JSON response from Gemini CLI. Need to investigate what Gemini is actually returning.
