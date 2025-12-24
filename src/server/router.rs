@@ -628,6 +628,17 @@ THOUGHTS TO PROCESS:
         let extraction: serde_json::Value = match serde_json::from_str(&gemini_response.response) {
             Ok(val) => val,
             Err(e) => {
+                let resp_snippet: String = gemini_response
+                    .response
+                    .chars()
+                    .take(500)
+                    .collect::<String>();
+                tracing::error!(
+                    "memories_populate: failed to parse Gemini response (sid={}): {} | snippet: {}",
+                    gemini_response.session_id,
+                    e,
+                    resp_snippet
+                );
                 return Ok(CallToolResult {
                     content: vec![Annotated::new(
                         RawContent::text(
@@ -641,7 +652,7 @@ THOUGHTS TO PROCESS:
                                 "auto_approved": 0,
                                 "extraction_batch_id": "",
                                 "gemini_session_id": gemini_response.session_id,
-                                "error": format!("Failed to parse Gemini response: {}", e)
+                                "error": format!("Failed to parse Gemini response: {} | snippet: {}", e, resp_snippet)
                             })
                             .to_string(),
                         ),

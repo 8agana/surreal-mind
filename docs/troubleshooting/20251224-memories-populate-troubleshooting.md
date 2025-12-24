@@ -82,3 +82,11 @@
 - ❌ Gemini response not valid JSON
 
 Next step: Investigate what Gemini CLI is actually returning. "expected value at line 1 column 1" suggests empty or non-JSON output.
+
+## Codex Fix (2025-12-24 ~17:30 CST) — Log failing Gemini payload
+
+**What changed:** In `memories_populate`, when JSON parse of `gemini_response.response` fails, we now log the session_id and the first 500 chars of the response, and return that snippet in the error. This will show exactly what Gemini emitted.
+
+**Status:** fmt/clippy/tests all pass after this change.
+
+**Next action:** Re-run `memories_populate` (NS `surreal_mind`, DB `consciousness`) with `SURR_DEBUG_MEMORIES_POPULATE_ROWS=1`. The error should now include the offending Gemini output (or stderr if empty), letting us adjust the prompt/CLI invocation accordingly.
