@@ -824,3 +824,24 @@ This forces SurrealDB server to convert types, bypassing the Rust driver's broke
 **Validation:** `cargo fmt`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test` all pass.
 
 **Next validation step:** Run `memories_populate` against `surreal_mind/consciousness` with `SURR_DEBUG_MEMORIES_POPULATE_ROWS=1` to confirm the enum error is gone and to see rows flow through.
+
+---
+
+## Post-SQL-Casting Test (CC 2025-12-24 ~16:35 CST)
+
+**Test Result:**
+```json
+{
+  "thoughts_processed": 0,
+  "error": "-32603: DB query failed: Parse error: Invalid function/constant path\n --> [5:24]\n  |\n5 | IF defined(created_at) THEN <string> created_at ELSE null END AS created_at,\n  |    ^^^^^^^ \n"
+}
+```
+
+**Analysis:**
+- ✅ **PROGRESS!** Got past the enum serialization error!
+- ❌ SQL syntax error - SurrealDB doesn't have a `defined()` function
+
+**Fix Required:**
+Replace `IF defined(field) THEN ... ELSE null END` with SurrealDB-compatible syntax:
+- Option 1: `IF field IS NOT NONE THEN <string> field ELSE null END`
+- Option 2: `<string> field ?? null` (simpler coalesce approach)
