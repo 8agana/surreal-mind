@@ -270,9 +270,7 @@ impl ServerHandler for SurrealMindServer {
                 .handle_unified_search(request)
                 .await
                 .map_err(|e| e.into()),
-            "memories_populate" => self
-                .handle_memories_populate(request)
-                .await,
+            "memories_populate" => self.handle_memories_populate(request).await,
             _ => Err(McpError {
                 code: rmcp::model::ErrorCode::METHOD_NOT_FOUND,
                 message: format!("Unknown tool: {}", request.name).into(),
