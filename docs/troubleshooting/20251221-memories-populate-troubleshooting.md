@@ -855,3 +855,25 @@ Replace `IF defined(field) THEN ... ELSE null END` with SurrealDB-compatible syn
 **Status:** `cargo fmt`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test` all pass after this change.
 
 **Next validation:** Re-run `memories_populate` against `surreal_mind/consciousness` with `SURR_DEBUG_MEMORIES_POPULATE_ROWS=1`. Expectation: SQL parse error should be gone; if a new error appears, logs will capture it. If it succeeds, `thoughts_processed` should be >0.
+
+---
+
+## Post-Syntax-Fix Test (CC 2025-12-24 ~16:50 CST)
+
+**Test Result:**
+```json
+{
+  "thoughts_processed": 0,
+  "error": "DB error: Parse error: Missing order idiom `last_used` in statement selection\n --> [6:18]\n  |\n6 | ORDER BY last_used DESC\n  |          ^^^^^^^^^^^^^^ \n --> [2:16]\n  |\n2 | SELECT gemini_session_id\n  |        ^^^^^^^^^^^^^^^^^ Idiom missing here\n"
+}
+```
+
+**Analysis:**
+- ✅ Got past the `defined()` syntax error!
+- ❌ New error in a different query (Gemini session lookup)
+- SurrealDB requires ORDER BY fields to be in SELECT
+
+**Fix Required:**
+In the Gemini session query, either:
+- Add `last_used` to the SELECT: `SELECT gemini_session_id, last_used FROM ...`
+- Or remove the ORDER BY clause if not needed
