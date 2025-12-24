@@ -68,37 +68,41 @@ impl GeminiClient {
         // Write prompt to stdin
         let mut stdin = child.stdin.take().ok_or("Failed to open stdin")?;
         let prompt_bytes = prompt.as_bytes().to_vec();
-        
+
         // Write in a separate task to avoid blocking wait_with_output if buffer fills
         // (though for typical prompts it might be fine, safe approach is usually task or join)
         let _writer = tokio::spawn(async move {
             if let Err(e) = stdin.write_all(&prompt_bytes).await {
                 // If the process exits early/crashes, this write might fail.
                 // We log it but rely on the wait result to report the actual process error.
-                tracing::warn!("Failed to write to Gemini stdin (process might have exited): {}", e);
+                tracing::warn!(
+                    "Failed to write to Gemini stdin (process might have exited): {}",
+                    e
+                );
             }
         });
 
         // Use configured timeout
         let duration = Duration::from_millis(self.timeout_ms);
-        
-        info!("Waiting for Gemini response (timeout: {}ms)", self.timeout_ms);
+
+        info!(
+            "Waiting for Gemini response (timeout: {}ms)",
+            self.timeout_ms
+        );
         let output_result = timeout(duration, child.wait_with_output()).await;
 
         let output = match output_result {
             Ok(Ok(out)) => out,
             Ok(Err(e)) => return Err(format!("Gemini CLI execution failed: {}", e).into()),
-            Err(_) => return Err(format!("Gemini CLI timed out after {}ms", self.timeout_ms).into()),
+            Err(_) => {
+                return Err(format!("Gemini CLI timed out after {}ms", self.timeout_ms).into());
+            }
         };
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             info!("Gemini CLI failed with stderr: {}", stderr);
-            return Err(format!(
-                "Gemini CLI failed: {}",
-                stderr
-            )
-            .into());
+            return Err(format!("Gemini CLI failed: {}", stderr).into());
         }
 
         info!("Gemini CLI success, parsing response");

@@ -541,3 +541,20 @@ SELECT id, content, created_at, embedding, injected_memories, injection_scale, s
 - Check the debug logs added in the previous fix to see the actual deserialization error
 - Verify what type `surrealdb::sql::Datetime` serializes to
 - Check if any serde derives on Thought struct fields use enum representations
+
+## New Findings (Codex 2025-12-24, code inspection)
+
+- The enum deserialization error is occurring while deserializing `Thought` rows in `fetch_thoughts_for_extraction`. Fields `embedding: Vec<f32>`, `injected_memories: Vec<String>`, `injection_scale: u8`, `significance: f32`, and `access_count: u32` are non-optional. If any row has `NONE/null`, Surreal returns an enum (`{"None":null}`) and serde errors with `invalid type: enum`, stopping before processing—hence `thoughts_processed` stays 0.
+- Two write paths still use `?` and can leak `McpError` enums back to rmcp if DB writes fail: `create_memory(..)?;` and `stage_memory_for_review(..)?;` in `handle_memories_populate`. Those bypass the 9-field JSON wrapper.
+
+**Planned fixes:**
+- Add `#[serde(default)]` to the non-optional `Thought` fields above so missing/NULL values deserialize safely.
+- Wrap the create/stage calls in schema-conformant error responses (same 9 fields + `error`) to prevent enum leakage on write failures.
+
+## Test & Build Status (Codex 2025-12-24)
+
+- `cargo fmt` ✅
+- `cargo clippy --workspace --all-targets -- -D warnings` ❌ — fails on existing `clippy::collapsible-if` lint violations across multiple files (config.rs, inner_voice.rs, unified_search.rs, knowledge_graph.rs, etc.). These are preexisting style lints, not new logic errors; fixing them was out of current scope.
+- `cargo build --release` ✅ (finished `release` profile successfully)
+
+Status: Build is green; clippy still blocks on collapsible-if warnings unless those are refactored or allowed.

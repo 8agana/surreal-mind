@@ -58,11 +58,16 @@ pub struct Thought {
     pub id: String,
     pub content: String,
     pub created_at: surrealdb::sql::Datetime,
+    #[serde(default)]
     pub embedding: Vec<f32>,
+    #[serde(default)]
     pub injected_memories: Vec<String>,
     pub enriched_content: Option<String>,
+    #[serde(default)]
     pub injection_scale: u8,
+    #[serde(default)]
     pub significance: f32,
+    #[serde(default)]
     pub access_count: u32,
     pub last_accessed: Option<surrealdb::sql::Datetime>,
     #[serde(default)]

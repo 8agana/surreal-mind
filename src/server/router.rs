@@ -1,19 +1,17 @@
 use crate::server::SurrealMindServer;
-use crate::tools::memories_populate::{
-    ExtractedMemory, MemoriesPopulateRequest,
-};
+use crate::tools::memories_populate::{ExtractedMemory, MemoriesPopulateRequest};
 use chrono::Utc;
-use serde_json::json;
 use rmcp::{
     ErrorData as McpError,
     handler::server::ServerHandler,
     model::{
-        Annotated, RawContent, CallToolRequestParam, CallToolResult, Implementation, InitializeRequestParam,
-        InitializeResult, ListToolsResult, PaginatedRequestParam, ProtocolVersion,
+        Annotated, CallToolRequestParam, CallToolResult, Implementation, InitializeRequestParam,
+        InitializeResult, ListToolsResult, PaginatedRequestParam, ProtocolVersion, RawContent,
         ServerCapabilities, ServerInfo, ToolsCapability,
     },
     service::{RequestContext, RoleServer},
 };
+use serde_json::json;
 use tracing::info;
 use uuid::Uuid;
 
@@ -299,24 +297,31 @@ impl SurrealMindServer {
         let extraction_batch_id = Uuid::new_v4().to_string();
 
         // Fetch unprocessed thoughts
-        tracing::info!("memories_populate: fetching thoughts with params: source={}, limit={}", params.source, params.limit);
+        tracing::info!(
+            "memories_populate: fetching thoughts with params: source={}, limit={}",
+            params.source,
+            params.limit
+        );
         let thoughts = match self.fetch_thoughts_for_extraction(&params).await {
             Ok(t) => t,
             Err(e) => {
                 return Ok(CallToolResult {
                     content: vec![Annotated::new(
-                        RawContent::text(json!({
-                            "thoughts_processed": 0,
-                            "entities_extracted": 0,
-                            "relationships_extracted": 0,
-                            "observations_extracted": 0,
-                            "boundaries_extracted": 0,
-                            "staged_for_review": 0,
-                            "auto_approved": 0,
-                            "extraction_batch_id": "",
-                            "gemini_session_id": "",
-                            "error": e.to_string()
-                        }).to_string()),
+                        RawContent::text(
+                            json!({
+                                "thoughts_processed": 0,
+                                "entities_extracted": 0,
+                                "relationships_extracted": 0,
+                                "observations_extracted": 0,
+                                "boundaries_extracted": 0,
+                                "staged_for_review": 0,
+                                "auto_approved": 0,
+                                "extraction_batch_id": "",
+                                "gemini_session_id": "",
+                                "error": e.to_string()
+                            })
+                            .to_string(),
+                        ),
                         None,
                     )],
                     is_error: Some(false),
@@ -325,7 +330,10 @@ impl SurrealMindServer {
                 });
             }
         };
-        tracing::info!("memories_populate: found {} thoughts to process", thoughts.len());
+        tracing::info!(
+            "memories_populate: found {} thoughts to process",
+            thoughts.len()
+        );
         if thoughts.is_empty() {
             // Return schema-conformant response even when no work to do
             let response_value = json!({
@@ -404,18 +412,21 @@ THOUGHTS TO PROCESS:
                 Err(e) => {
                     return Ok(CallToolResult {
                         content: vec![Annotated::new(
-                            RawContent::text(json!({
-                                "thoughts_processed": 0,
-                                "entities_extracted": 0,
-                                "relationships_extracted": 0,
-                                "observations_extracted": 0,
-                                "boundaries_extracted": 0,
-                                "staged_for_review": 0,
-                                "auto_approved": 0,
-                                "extraction_batch_id": "",
-                                "gemini_session_id": "",
-                                "error": format!("DB error: {}", e)
-                            }).to_string()),
+                            RawContent::text(
+                                json!({
+                                    "thoughts_processed": 0,
+                                    "entities_extracted": 0,
+                                    "relationships_extracted": 0,
+                                    "observations_extracted": 0,
+                                    "boundaries_extracted": 0,
+                                    "staged_for_review": 0,
+                                    "auto_approved": 0,
+                                    "extraction_batch_id": "",
+                                    "gemini_session_id": "",
+                                    "error": format!("DB error: {}", e)
+                                })
+                                .to_string(),
+                            ),
                             None,
                         )],
                         is_error: Some(false),
@@ -430,18 +441,21 @@ THOUGHTS TO PROCESS:
                 Err(e) => {
                     return Ok(CallToolResult {
                         content: vec![Annotated::new(
-                            RawContent::text(json!({
-                                "thoughts_processed": 0,
-                                "entities_extracted": 0,
-                                "relationships_extracted": 0,
-                                "observations_extracted": 0,
-                                "boundaries_extracted": 0,
-                                "staged_for_review": 0,
-                                "auto_approved": 0,
-                                "extraction_batch_id": "",
-                                "gemini_session_id": "",
-                                "error": format!("DB error: {}", e)
-                            }).to_string()),
+                            RawContent::text(
+                                json!({
+                                    "thoughts_processed": 0,
+                                    "entities_extracted": 0,
+                                    "relationships_extracted": 0,
+                                    "observations_extracted": 0,
+                                    "boundaries_extracted": 0,
+                                    "staged_for_review": 0,
+                                    "auto_approved": 0,
+                                    "extraction_batch_id": "",
+                                    "gemini_session_id": "",
+                                    "error": format!("DB error: {}", e)
+                                })
+                                .to_string(),
+                            ),
                             None,
                         )],
                         is_error: Some(false),
@@ -459,23 +473,28 @@ THOUGHTS TO PROCESS:
                     &self.db,
                     tool_name.to_string(),
                     resp.session_id.clone(),
-                ).await {
-                    Ok(_) => {},
+                )
+                .await
+                {
+                    Ok(_) => {}
                     Err(e) => {
                         return Ok(CallToolResult {
                             content: vec![Annotated::new(
-                                RawContent::text(json!({
-                                    "thoughts_processed": 0,
-                                    "entities_extracted": 0,
-                                    "relationships_extracted": 0,
-                                    "observations_extracted": 0,
-                                    "boundaries_extracted": 0,
-                                    "staged_for_review": 0,
-                                    "auto_approved": 0,
-                                    "extraction_batch_id": "",
-                                    "gemini_session_id": "",
-                                    "error": format!("DB error: {}", e)
-                                }).to_string()),
+                                RawContent::text(
+                                    json!({
+                                        "thoughts_processed": 0,
+                                        "entities_extracted": 0,
+                                        "relationships_extracted": 0,
+                                        "observations_extracted": 0,
+                                        "boundaries_extracted": 0,
+                                        "staged_for_review": 0,
+                                        "auto_approved": 0,
+                                        "extraction_batch_id": "",
+                                        "gemini_session_id": "",
+                                        "error": format!("DB error: {}", e)
+                                    })
+                                    .to_string(),
+                                ),
                                 None,
                             )],
                             is_error: Some(false),
@@ -489,22 +508,25 @@ THOUGHTS TO PROCESS:
             Err(e) if session_id.is_some() => {
                 // Reset on failure
                 match crate::sessions::clear_tool_session(&self.db, tool_name.to_string()).await {
-                    Ok(_) => {},
+                    Ok(_) => {}
                     Err(db_err) => {
                         return Ok(CallToolResult {
                             content: vec![Annotated::new(
-                                RawContent::text(json!({
-                                    "thoughts_processed": 0,
-                                    "entities_extracted": 0,
-                                    "relationships_extracted": 0,
-                                    "observations_extracted": 0,
-                                    "boundaries_extracted": 0,
-                                    "staged_for_review": 0,
-                                    "auto_approved": 0,
-                                    "extraction_batch_id": "",
-                                    "gemini_session_id": "",
-                                    "error": format!("DB error clearing session: {}", db_err)
-                                }).to_string()),
+                                RawContent::text(
+                                    json!({
+                                        "thoughts_processed": 0,
+                                        "entities_extracted": 0,
+                                        "relationships_extracted": 0,
+                                        "observations_extracted": 0,
+                                        "boundaries_extracted": 0,
+                                        "staged_for_review": 0,
+                                        "auto_approved": 0,
+                                        "extraction_batch_id": "",
+                                        "gemini_session_id": "",
+                                        "error": format!("DB error clearing session: {}", db_err)
+                                    })
+                                    .to_string(),
+                                ),
                                 None,
                             )],
                             is_error: Some(false),
@@ -543,23 +565,28 @@ THOUGHTS TO PROCESS:
                     &self.db,
                     tool_name.to_string(),
                     resp.session_id.clone(),
-                ).await {
-                    Ok(_) => {},
+                )
+                .await
+                {
+                    Ok(_) => {}
                     Err(e) => {
                         return Ok(CallToolResult {
                             content: vec![Annotated::new(
-                                RawContent::text(json!({
-                                    "thoughts_processed": 0,
-                                    "entities_extracted": 0,
-                                    "relationships_extracted": 0,
-                                    "observations_extracted": 0,
-                                    "boundaries_extracted": 0,
-                                    "staged_for_review": 0,
-                                    "auto_approved": 0,
-                                    "extraction_batch_id": "",
-                                    "gemini_session_id": "",
-                                    "error": format!("DB error storing retry session: {}", e)
-                                }).to_string()),
+                                RawContent::text(
+                                    json!({
+                                        "thoughts_processed": 0,
+                                        "entities_extracted": 0,
+                                        "relationships_extracted": 0,
+                                        "observations_extracted": 0,
+                                        "boundaries_extracted": 0,
+                                        "staged_for_review": 0,
+                                        "auto_approved": 0,
+                                        "extraction_batch_id": "",
+                                        "gemini_session_id": "",
+                                        "error": format!("DB error storing retry session: {}", e)
+                                    })
+                                    .to_string(),
+                                ),
                                 None,
                             )],
                             is_error: Some(false),
@@ -573,18 +600,21 @@ THOUGHTS TO PROCESS:
             Err(e) => {
                 return Ok(CallToolResult {
                     content: vec![Annotated::new(
-                        RawContent::text(json!({
-                            "thoughts_processed": 0,
-                            "entities_extracted": 0,
-                            "relationships_extracted": 0,
-                            "observations_extracted": 0,
-                            "boundaries_extracted": 0,
-                            "staged_for_review": 0,
-                            "auto_approved": 0,
-                            "extraction_batch_id": "",
-                            "gemini_session_id": "",
-                            "error": format!("Gemini error: {}", e)
-                        }).to_string()),
+                        RawContent::text(
+                            json!({
+                                "thoughts_processed": 0,
+                                "entities_extracted": 0,
+                                "relationships_extracted": 0,
+                                "observations_extracted": 0,
+                                "boundaries_extracted": 0,
+                                "staged_for_review": 0,
+                                "auto_approved": 0,
+                                "extraction_batch_id": "",
+                                "gemini_session_id": "",
+                                "error": format!("Gemini error: {}", e)
+                            })
+                            .to_string(),
+                        ),
                         None,
                     )],
                     is_error: Some(false),
@@ -600,18 +630,21 @@ THOUGHTS TO PROCESS:
             Err(e) => {
                 return Ok(CallToolResult {
                     content: vec![Annotated::new(
-                        RawContent::text(json!({
-                            "thoughts_processed": 0,
-                            "entities_extracted": 0,
-                            "relationships_extracted": 0,
-                            "observations_extracted": 0,
-                            "boundaries_extracted": 0,
-                            "staged_for_review": 0,
-                            "auto_approved": 0,
-                            "extraction_batch_id": "",
-                            "gemini_session_id": gemini_response.session_id,
-                            "error": format!("Failed to parse Gemini response: {}", e)
-                        }).to_string()),
+                        RawContent::text(
+                            json!({
+                                "thoughts_processed": 0,
+                                "entities_extracted": 0,
+                                "relationships_extracted": 0,
+                                "observations_extracted": 0,
+                                "boundaries_extracted": 0,
+                                "staged_for_review": 0,
+                                "auto_approved": 0,
+                                "extraction_batch_id": "",
+                                "gemini_session_id": gemini_response.session_id,
+                                "error": format!("Failed to parse Gemini response: {}", e)
+                            })
+                            .to_string(),
+                        ),
                         None,
                     )],
                     is_error: Some(false),
@@ -646,10 +679,58 @@ THOUGHTS TO PROCESS:
                     };
 
                     if params.auto_approve && confidence >= params.confidence_threshold {
-                        self.create_memory(&memory, "kg_entities").await?;
+                        if let Err(e) = self.create_memory(&memory, "kg_entities").await {
+                            return Ok(CallToolResult {
+                                content: vec![Annotated::new(
+                                    RawContent::text(
+                                        json!({
+                                            "thoughts_processed": thoughts.len() as u32,
+                                            "entities_extracted": entities_extracted,
+                                            "relationships_extracted": relationships_extracted,
+                                            "observations_extracted": observations_extracted,
+                                            "boundaries_extracted": boundaries_extracted,
+                                            "staged_for_review": staged_for_review,
+                                            "auto_approved": auto_approved,
+                                            "extraction_batch_id": extraction_batch_id,
+                                            "gemini_session_id": gemini_response.session_id,
+                                            "error": format!("Memory creation failed: {}", e)
+                                        })
+                                        .to_string(),
+                                    ),
+                                    None,
+                                )],
+                                is_error: Some(false),
+                                meta: None,
+                                structured_content: None,
+                            });
+                        }
                         auto_approved += 1;
                     } else {
-                        self.stage_memory_for_review(&memory).await?;
+                        if let Err(e) = self.stage_memory_for_review(&memory).await {
+                            return Ok(CallToolResult {
+                                content: vec![Annotated::new(
+                                    RawContent::text(
+                                        json!({
+                                            "thoughts_processed": thoughts.len() as u32,
+                                            "entities_extracted": entities_extracted,
+                                            "relationships_extracted": relationships_extracted,
+                                            "observations_extracted": observations_extracted,
+                                            "boundaries_extracted": boundaries_extracted,
+                                            "staged_for_review": staged_for_review,
+                                            "auto_approved": auto_approved,
+                                            "extraction_batch_id": extraction_batch_id,
+                                            "gemini_session_id": gemini_response.session_id,
+                                            "error": format!("Staging failed: {}", e)
+                                        })
+                                        .to_string(),
+                                    ),
+                                    None,
+                                )],
+                                is_error: Some(false),
+                                meta: None,
+                                structured_content: None,
+                            });
+                        }
                         staged_for_review += 1;
                     }
                     entities_extracted += 1;
@@ -665,7 +746,8 @@ THOUGHTS TO PROCESS:
                     extraction_batch_id = $batch_id
                 WHERE id = $id
             "#;
-            let _ = self.db
+            let _ = self
+                .db
                 .query(sql)
                 .bind(("batch_id", extraction_batch_id.clone()))
                 .bind(("id", thought.id.clone()))
