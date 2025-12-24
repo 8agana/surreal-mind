@@ -156,3 +156,34 @@ Next step: Investigate what Gemini CLI is actually returning. "expected value at
 - ℹ️ Zero extractions from this particular thought (may be content-dependent)
 
 **Status**: TOOL IS WORKING. Markdown fence stripping fix resolved the parsing issue.
+
+---
+
+## Bugs Identified: 2025-12-24 17:10 CST
+
+### Bug 1: Thoughts not marked as extracted
+After processing, thoughts are not having their `extracted_at` field set. This means:
+- Same thought will be reprocessed on next run
+- No way to track what has been processed
+- Query for unprocessed thoughts returns inconsistent results
+
+**Fix needed**: Set `extracted_at` timestamp after successful processing.
+
+### Bug 2: Response doesn't include thought_id
+The tool returns `extraction_batch_id` and `gemini_session_id` but not which thought(s) were processed. This makes it impossible to:
+- Verify what was processed
+- Review extraction quality
+- Debug issues with specific thoughts
+
+**Fix needed**: Include `thought_ids: [...]` array in response.
+
+### Question: Processing order for thoughts
+
+**Current behavior**: Unknown - need to verify which thoughts are selected first.
+
+**Recommendation**: Process oldest thoughts first (ORDER BY created_at ASC).
+
+**Rationale**: When newer thoughts challenge or update information from older thoughts, recency indicates which is more likely correct. Processing chronologically ensures:
+- Older knowledge is extracted first
+- Newer thoughts can override/correct previous entries
+- Recency becomes a signal for accuracy in case of conflicts
