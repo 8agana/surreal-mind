@@ -759,3 +759,51 @@ SurrealDB's Rust driver treats data types strictly. When a field is `NONE` or re
 3. Optional fields: Strict `Option<T>` typing with `#[serde(default)]` for NONE handling
 
 **Action:** Inspect Thought struct in Rust and fix type mismatches
+
+---
+
+## Post-Sanitizer Test (CC 2025-12-24 ~16:10 CST)
+
+**Test Result:**
+```json
+{
+  "thoughts_processed": 0,
+  "entities_extracted": 0,
+  "relationships_extracted": 0,
+  "observations_extracted": 0,
+  "boundaries_extracted": 0,
+  "staged_for_review": 0,
+  "auto_approved": 0,
+  "extraction_batch_id": "",
+  "gemini_session_id": "",
+  "error": "-32603: Result parsing failed: Serialization error: invalid type: enum, expected any valid JSON value"
+}
+```
+
+**Log Output:**
+```
+2025-12-24T22:10:06.272885Z  INFO serve_inner: surreal_mind::server::router: memories_populate: fetching thoughts with params: source=unprocessed, limit=1
+2025-12-24T22:10:06.277475Z ERROR serve_inner: surreal_mind::server::router: Failed to fetch raw thoughts: Serialization error: invalid type: enum, expected any valid JSON value
+```
+
+**Analysis:**
+- Codex's `{"None":null}` sanitizer doesn't help
+- Error occurs at `result.take::<Vec<serde_json::Value>>(0)` - BEFORE sanitizer can run
+- The surrealdb Rust driver fails to serialize its internal types (Thing, Datetime) to serde_json::Value
+- Sanitizer approach is ineffective because we never get the raw data out
+
+**Root Cause Confirmed:**
+The enum error is in the surrealdb crate's internal serialization, not in our deserialization code. The driver can't convert Thing/Datetime types to JSON Value.
+
+**Required Fix:**
+Cast problematic types to strings IN THE SQL query before the Rust driver sees them:
+```sql
+SELECT
+    <string> id AS id,
+    <string> created_at AS created_at,
+    <string> embedded_at AS embedded_at,
+    <string> last_accessed AS last_accessed,
+    ...
+```
+
+This forces SurrealDB server to convert types, bypassing the Rust driver's broken serialization.
