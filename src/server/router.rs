@@ -355,7 +355,7 @@ impl SurrealMindServer {
             .collect::<Vec<_>>()
             .join("\n\n---\n\n");
         let prompt = format!(
-            r#""
+            r#"
 You are extracting knowledge graph entries from a collection of thoughts.
 
 For each thought, identify:
@@ -657,12 +657,12 @@ THOUGHTS TO PROCESS:
 
         // Mark thoughts as processed
         for thought in &thoughts {
-            let sql = r#""
+            let sql = r#"
                 UPDATE thoughts SET
                     extracted_to_kg = true,
                     extraction_batch_id = $batch_id
                 WHERE id = $id
-            ""#;
+            "#;
             let _ = self.db
                 .query(sql)
                 .bind(("batch_id", extraction_batch_id.clone()))
@@ -760,7 +760,7 @@ THOUGHTS TO PROCESS:
         table: &str,
     ) -> std::result::Result<(), McpError> {
         let sql = format!(
-            r#""
+            r#"
             CREATE {} SET
                 data = $data,
                 confidence = $confidence,
@@ -768,7 +768,7 @@ THOUGHTS TO PROCESS:
                 extraction_batch_id = $extraction_batch_id,
                 extracted_at = $extracted_at,
                 extraction_prompt_version = $extraction_prompt_version
-        ""#,
+        "#,
             table
         );
 
@@ -803,7 +803,7 @@ THOUGHTS TO PROCESS:
         };
 
         let sql = format!(
-            r#""
+            r#"
             CREATE {} SET
                 status = 'pending',
                 data = $data,
@@ -812,7 +812,7 @@ THOUGHTS TO PROCESS:
                 extraction_batch_id = $extraction_batch_id,
                 extracted_at = $extracted_at,
                 extraction_prompt_version = $extraction_prompt_version
-        ""#,
+        "#,
             table
         );
 
