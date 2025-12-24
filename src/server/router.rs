@@ -887,14 +887,61 @@ THOUGHTS TO PROCESS:
             message: format!("DB query failed: {}", e).into(),
             data: None,
         })?;
-        let thoughts: Vec<crate::server::Thought> = result.take(0).map_err(|e| {
-            tracing::error!("Failed to deserialize thoughts: {}", e);
+
+        // Take raw rows as JSON for optional debugging before deserialization
+        let raw_rows: Vec<serde_json::Value> = result.take(0).map_err(|e| {
+            tracing::error!("Failed to fetch raw thoughts: {}", e);
             McpError {
                 code: rmcp::model::ErrorCode::INTERNAL_ERROR,
                 message: format!("Result parsing failed: {}", e).into(),
                 data: None,
             }
         })?;
+
+        if std::env::var("SURR_DEBUG_MEMORIES_POPULATE_ROWS")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+        {
+            if let Some(sample) = raw_rows.first() {
+                tracing::warn!("memories_populate sample row: {}", sample);
+            } else {
+                tracing::warn!("memories_populate: no rows returned");
+            }
+        }
+
+        fn sanitize_none(value: serde_json::Value) -> serde_json::Value {
+            match value {
+                serde_json::Value::Object(mut map) => {
+                    if map.len() == 1 && map.contains_key("None") {
+                        serde_json::Value::Null
+                    } else {
+                        for v in map.values_mut() {
+                            *v = sanitize_none(v.take());
+                        }
+                        serde_json::Value::Object(map)
+                    }
+                }
+                serde_json::Value::Array(arr) => {
+                    serde_json::Value::Array(arr.into_iter().map(sanitize_none).collect())
+                }
+                other => other,
+            }
+        }
+
+        let thoughts: Vec<crate::server::Thought> = raw_rows
+            .into_iter()
+            .map(|v| {
+                let cleaned = sanitize_none(v.clone());
+                serde_json::from_value(cleaned.clone()).map_err(|e| {
+                    tracing::error!("Failed to deserialize thought row {}: {}", cleaned, e);
+                    McpError {
+                        code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                        message: format!("Result parsing failed: {}", e).into(),
+                        data: None,
+                    }
+                })
+            })
+            .collect::<Result<_, _>>()?;
         Ok(thoughts)
     }
 

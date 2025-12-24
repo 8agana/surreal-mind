@@ -661,3 +661,101 @@ Six agents, multiple fix layers applied, root cause still elusive.
 - Add logging to dump raw SurrealDB response before deserialization
 - Check `surrealdb::sql::Datetime` serialization behavior
 - Verify `deserialize_thing_to_string` helper isn't returning enum 
+
+## Codex Update (2025-12-24 ~13:15 CST) — Raw row logging added
+
+**Changes made:**
+- In `fetch_thoughts_for_extraction` we now take rows as `Vec<Value>`, optionally log the first row when `SURR_DEBUG_MEMORIES_POPULATE_ROWS=1`, then deserialize with `serde_json::from_value`. Any row that fails logs the offending JSON.
+
+**Additional hardening (2025-12-24, Codex):**
+- Added a sanitizer that transforms Surreal `{"None":null}` enum objects into JSON nulls before deserialization. This should eliminate the enum→serde mismatch for sparse/optional fields.
+
+**Status:** `cargo fmt`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test` all pass. Next validation step is to run `memories_populate` with `SURR_DEBUG_MEMORIES_POPULATE_ROWS=1` in the live environment (NS `surreal_mind`, DB `consciousness`) to capture/confirm any remaining offenders.
+
+---
+
+## CC Testing Session (2025-12-24 ~16:00 CST)
+
+**Issue Discovered: Binary was out of date**
+- Binary timestamp: Dec 24 15:02
+- Source (router.rs) timestamp: Dec 24 15:46
+- Codex's debug logging changes were NOT compiled into running binary!
+- The log message "Failed to deserialize thoughts" doesn't exist in current source code
+
+**Fix Applied:**
+1. Rebuilt binary: `cargo build --release` (30.75s, completed 16:00)
+2. Added debug env var to launchd plist: `SURR_DEBUG_MEMORIES_POPULATE_ROWS=1`
+3. Reloaded launchd service
+
+**New Issue: MCP calls timing out at network layer**
+- Remote health check (`curl https://mcp.samataganaphotography.com/health`) returns 200 ✅
+- MCP protocol calls via `mcp__surreal-mind-remote__memories_populate` timeout before reaching local server
+- Logs show no memories_populate calls after 21:57:27 UTC (last call before rebuild)
+- MCP handshake + tool call exceeds Claude Code's MCP timeout
+
+**Side Finding: Startup log message is hardcoded**
+```
+🛠️  Loaded 7 MCP tools: legacymind_think, maintenance_ops, memories_create, memories_moderate, detailed_help, inner_voice, legacymind_search
+```
+This is a static string in `src/main.rs:89` - actual tool count is 11 (includes curiosity_*, memories_populate)
+
+**Next Steps:**
+1. Find a way to test memories_populate that bypasses the MCP timeout issue
+2. Options:
+   - Increase MCP timeout in Claude Code config
+   - Test via stdio transport instead of HTTP
+   - Create a test binary that calls the handler directly
+   - Use a different MCP client with longer timeout
+
+---
+
+## Gemini Manual Simulation (2025-12-24 ~16:15 CST)
+
+**Methodology:** Gemini manually executed the fetch→extract→populate→update cycle using `surreal` CLI to validate DB connectivity and inspect raw data.
+
+**Key Finding:** The database is healthy. The full workflow completes successfully when done manually. The `invalid type: enum` error is **strictly a Rust/Serde deserialization mismatch**.
+
+**Raw Data Observed:**
+```
+{
+    access_count: 0,
+    confidence: 0.5199999809265137f,
+    content: 'User asked what context I currently have...',
+    created_at: d'2025-12-24T21:03:05.475564Z',
+    embedded_at: d'2025-12-24T21:03:05.475568Z',
+    embedding: [-0.06363752484321594f, ...], // 1536 floats
+    extracted_to_kg: false,
+    framework_analysis: {
+        data: { ... },
+        framework_version: 'convo/1',
+        methodology: 'constraints'
+    },
+    framework_enhanced: true,
+    id: thoughts:⟨0044b4b6-53ce-4596-95da-e8b0a4f555da⟩,
+    injected_memories: [],
+    injection_scale: 1,
+    is_private: false,
+    origin: 'human',
+    session_id: '20251224-Session1',
+    significance: 0.5f,
+    tags: ['plan']
+}
+```
+
+**Root Cause Analysis:**
+SurrealDB's Rust driver treats data types strictly. When a field is `NONE` or returns complex objects, the driver represents these as Enum variants (`Value::None`, `Value::Object`, `Value::Thing`).
+
+**Three Likely Culprits:**
+
+1. **`framework_analysis`**: Nested Object in DB. If Rust struct expects `String` or flat structure, Serde fails with "expected string/struct, got map/enum"
+
+2. **`embedding`**: Array of 1536 floats. If Rust struct is `Option<Vec<f32>>` but DB returns `NONE` (not JSON null), driver passes `Value::None` enum variant that Serde can't unwrap
+
+3. **`id`**: Thing (Record ID) type. If struct expects `String`, standard deserialization fails because Thing is a distinct type/Enum in the driver
+
+**Fix Requirements:**
+1. Record IDs: Use `#[serde(deserialize_with = "deserialize_thing_to_string")]`
+2. Complex fields like `framework_analysis`: Use `serde_json::Value` or matching struct, NOT `String`
+3. Optional fields: Strict `Option<T>` typing with `#[serde(default)]` for NONE handling
+
+**Action:** Inspect Thought struct in Rust and fix type mismatches
