@@ -5,6 +5,7 @@
 - (2025-12-19) Added `curiosity_add`, `curiosity_get`, `curiosity_search` tools for lightweight note-taking with semantic search.
 
 ### Fixed
+- (2025-12-24) Cleared clippy `collapsible_if` and `unnecessary_unwrap` across inner_voice, knowledge_graph, maintenance, http, binaries (smtop, reembed_kg, kg_dedupe_plan) and tests; workspace now clippy-clean with full test suite passing.
 - (2025-12-23) Updated `detailed_help` documentation for `legacymind_think` to accurately reflect its return structure (flat JSON, not nested) and clarify that framework analysis is DB-only.
 - (2025-12-19) Fixed `recency_days` parameter in search tools - was being ignored, now properly filters by date.
 
