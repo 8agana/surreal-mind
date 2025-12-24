@@ -927,3 +927,12 @@ In the Gemini session query, either:
 - ❌ Gemini response couldn't be parsed as JSON
 
 "expected value at line 1 column 1" indicates empty or non-JSON response from Gemini CLI. Need to investigate what Gemini is actually returning.
+
+## Codex Fix (2025-12-24 ~17:20 CST) — Gemini stdout diagnostics
+
+**What changed:**
+- Gemini client now writes the prompt directly (with a trailing newline) without a spawned task, and closes stdin.
+- Captures stdout/stderr as strings; if stdout is empty, returns an explicit error that includes stderr.
+- On JSON parse failure, the error now includes the first 500 chars of stdout plus stderr to see what the CLI actually returned.
+
+**Status:** fmt/clippy/tests all pass. Ready to retest `memories_populate` to see the real Gemini output instead of a generic “expected value” parse error.

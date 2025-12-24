@@ -65,22 +65,19 @@ impl GeminiClient {
         info!("Starting Gemini CLI process");
         let mut child = cmd.spawn()?;
 
-        // Write prompt to stdin
-        let mut stdin = child.stdin.take().ok_or("Failed to open stdin")?;
-        let prompt_bytes = prompt.as_bytes().to_vec();
-
-        // Write in a separate task to avoid blocking wait_with_output if buffer fills
-        // (though for typical prompts it might be fine, safe approach is usually task or join)
-        let _writer = tokio::spawn(async move {
+        // Write prompt to stdin and close it
+        if let Some(mut stdin) = child.stdin.take() {
+            let mut prompt_bytes = prompt.as_bytes().to_vec();
+            prompt_bytes.push(b'\n');
             if let Err(e) = stdin.write_all(&prompt_bytes).await {
-                // If the process exits early/crashes, this write might fail.
-                // We log it but rely on the wait result to report the actual process error.
                 tracing::warn!(
                     "Failed to write to Gemini stdin (process might have exited): {}",
                     e
                 );
             }
-        });
+        } else {
+            return Err("Failed to open stdin for Gemini CLI".into());
+        }
 
         // Use configured timeout
         let duration = Duration::from_millis(self.timeout_ms);
@@ -99,15 +96,31 @@ impl GeminiClient {
             }
         };
 
+        let stdout_str = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr_str = String::from_utf8_lossy(&output.stderr).to_string();
+
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            info!("Gemini CLI failed with stderr: {}", stderr);
-            return Err(format!("Gemini CLI failed: {}", stderr).into());
+            info!("Gemini CLI failed with stderr: {}", stderr_str);
+            return Err(format!("Gemini CLI failed: {}", stderr_str).into());
+        }
+
+        if stdout_str.trim().is_empty() {
+            return Err(
+                format!("Gemini CLI returned empty stdout (stderr: {})", stderr_str).into(),
+            );
         }
 
         info!("Gemini CLI success, parsing response");
-        let response: GeminiResponse = serde_json::from_slice(&output.stdout)?;
-        Ok(response)
+        match serde_json::from_str::<GeminiResponse>(&stdout_str) {
+            Ok(resp) => Ok(resp),
+            Err(e) => Err(format!(
+                "Failed to parse Gemini response: {}. stdout (first 500 chars): {} | stderr: {}",
+                e,
+                stdout_str.chars().take(500).collect::<String>(),
+                stderr_str
+            )
+            .into()),
+        }
     }
 
     pub fn check_available() -> bool {
