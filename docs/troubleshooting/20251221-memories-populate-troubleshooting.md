@@ -503,3 +503,41 @@ SELECT id, content, created_at, embedding, injected_memories, injection_scale, s
 4. Deploy updated service and test tool functionality
 5. Verify thoughts are fetched and processed correctly
 6. Monitor for successful extraction batch creation
+
+---
+
+## Post-Explicit Field Selection Test (CC 2025-12-24 ~22:45 CST)
+
+**Test Result:**
+```json
+{
+  "thoughts_processed": 0,
+  "entities_extracted": 0,
+  "relationships_extracted": 0,
+  "observations_extracted": 0,
+  "boundaries_extracted": 0,
+  "staged_for_review": 0,
+  "auto_approved": 0,
+  "extraction_batch_id": "",
+  "gemini_session_id": "",
+  "error": "-32603: Result parsing failed: Serialization error: invalid type: enum, expected any valid JSON value"
+}
+```
+
+**Analysis:** Same enum serialization error persists despite explicit field selection fix.
+
+**Observations:**
+- Error message unchanged: "invalid type: enum"
+- `thoughts_processed: 0` still indicates failure at DB query step
+- Explicit field selection did NOT resolve the issue
+
+**Possible Remaining Causes:**
+1. The enum error might not be from Thought deserialization at all
+2. Could be in the error handling chain itself (McpError is an enum)
+3. A field type in the explicit SELECT might still have enum-like behavior (e.g., `surrealdb::sql::Datetime`)
+4. The CallToolResult construction might have an enum serialization issue
+
+**Suggested Investigation:**
+- Check the debug logs added in the previous fix to see the actual deserialization error
+- Verify what type `surrealdb::sql::Datetime` serializes to
+- Check if any serde derives on Thought struct fields use enum representations
