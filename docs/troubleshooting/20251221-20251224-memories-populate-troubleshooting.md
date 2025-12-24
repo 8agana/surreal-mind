@@ -6,6 +6,10 @@
 **Issue Type**: SQL Syntax + Deserialization Errors
 **Status**: Fixes Implemented - Awaiting Testing
 **Prompt Location**: /Users/samuelatagana/Projects/LegacyMind/surreal-mind/docs/prompts/20251221-memories-populate-implementation.md
+**Continued Troubleshooting**: /Users/samuelatagana/Projects/LegacyMind/surreal-mind/docs/troubleshooting/20251224-memories-populate-troubleshooting.md
+**Reference Doc**: /Users/samuelatagana/Projects/LegacyMind/surreal-mind/docs/troubleshooting/20251221-memories-populate-manual.md
+**Status**: Continued
+
 
 ---
 
@@ -19,7 +23,6 @@
 ```rust
 // WRONG - Creates literal quoted SQL strings
 let sql = r#""
-    SELECT * FROM thoughts
     WHERE extracted_to_kg = false
     ORDER BY created_at ASC
     LIMIT $limit
@@ -826,137 +829,3 @@ This forces SurrealDB server to convert types, bypassing the Rust driver's broke
 **Next validation step:** Run `memories_populate` against `surreal_mind/consciousness` with `SURR_DEBUG_MEMORIES_POPULATE_ROWS=1` to confirm the enum error is gone and to see rows flow through.
 
 ---
-
-## Post-SQL-Casting Test (CC 2025-12-24 ~16:35 CST)
-
-**Test Result:**
-```json
-{
-  "thoughts_processed": 0,
-  "error": "-32603: DB query failed: Parse error: Invalid function/constant path\n --> [5:24]\n  |\n5 | IF defined(created_at) THEN <string> created_at ELSE null END AS created_at,\n  |    ^^^^^^^ \n"
-}
-```
-
-**Analysis:**
-- ✅ **PROGRESS!** Got past the enum serialization error!
-- ❌ SQL syntax error - SurrealDB doesn't have a `defined()` function
-
-**Fix Required:**
-Replace `IF defined(field) THEN ... ELSE null END` with SurrealDB-compatible syntax:
-- Option 1: `IF field IS NOT NONE THEN <string> field ELSE null END`
-- Option 2: `<string> field ?? null` (simpler coalesce approach)
-
-## Codex Fix (2025-12-24 ~16:45 CST) — Surreal-compatible casting
-
-**What changed:**
-- Replaced the invalid `defined()` checks with Surreal-friendly `IF field != NONE THEN <string> field ELSE null END` for `created_at`, `last_accessed`, `embedded_at`, and `extraction_batch_id` across all three SELECT variants.
-- Retained the string cast for `id` (`string::concat(meta::id(id)) AS id`) and existing `??` coalesces.
-
-**Status:** `cargo fmt`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test` all pass after this change.
-
-**Next validation:** Re-run `memories_populate` against `surreal_mind/consciousness` with `SURR_DEBUG_MEMORIES_POPULATE_ROWS=1`. Expectation: SQL parse error should be gone; if a new error appears, logs will capture it. If it succeeds, `thoughts_processed` should be >0.
-
----
-
-## Post-Syntax-Fix Test (CC 2025-12-24 ~16:50 CST)
-
-**Test Result:**
-```json
-{
-  "thoughts_processed": 0,
-  "error": "DB error: Parse error: Missing order idiom `last_used` in statement selection\n --> [6:18]\n  |\n6 | ORDER BY last_used DESC\n  |          ^^^^^^^^^^^^^^ \n --> [2:16]\n  |\n2 | SELECT gemini_session_id\n  |        ^^^^^^^^^^^^^^^^^ Idiom missing here\n"
-}
-```
-
-**Analysis:**
-- ✅ Got past the `defined()` syntax error!
-- ❌ New error in a different query (Gemini session lookup)
-- SurrealDB requires ORDER BY fields to be in SELECT
-
-**Fix Required:**
-In the Gemini session query, either:
-- Add `last_used` to the SELECT: `SELECT gemini_session_id, last_used FROM ...`
-- Or remove the ORDER BY clause if not needed
-
-## Codex Fix (2025-12-24 ~17:00 CST) — Gemini session query
-
-**What changed:**
-- Updated `get_tool_session` (sessions.rs) to select `gemini_session_id, last_used` so SurrealDB accepts `ORDER BY last_used DESC`. Added a small struct for deserialization.
-
-**Validation:** `cargo fmt`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test` all pass post-fix.
-
-**Next step:** Re-run `memories_populate` with `SURR_DEBUG_MEMORIES_POPULATE_ROWS=1`; the previous "Missing order idiom last_used" error should be resolved.
-
----
-
-## Test: 2025-12-24 16:35 CST (CC Session 4)
-
-**Binary**: Already rebuilt by Codex
-**Service**: Restarted via launchctl
-
-**Result**: Same ORDER BY error persists
-
-```json
-{
-  "error": "DB error: Parse error: Missing order idiom `last_used` in statement selection\n --> [6:18]\n  |\n6 | ORDER BY last_used DESC\n  |          ^^^^^^^^^^^^^^ \n --> [2:16]\n  |\n2 | SELECT gemini_session_id\n  |        ^^^^^^^^^^^^^^^^^ Idiom missing here\n"
-}
-```
-
-**Conclusion**: Codex needs to add `last_used` to the SELECT clause or remove the ORDER BY. This is the Gemini session query blocking progress.
-
----
-
-## Test: 2025-12-24 16:38 CST (CC Session 4)
-
-**Binary**: Rebuilt (Codex forgot to build after code changes)
-**Service**: Restarted
-
-**Result**: PROGRESS - New error, past the SQL issues!
-
-```json
-{
-  "gemini_session_id": "98adc92f-fa42-477a-86eb-533084c17555",
-  "error": "Failed to parse Gemini response: expected value at line 1 column 1"
-}
-```
-
-**Analysis**:
-- ✅ DB query worked (ORDER BY fix successful)
-- ✅ Thoughts fetched successfully
-- ✅ Gemini CLI was invoked
-- ❌ Gemini response couldn't be parsed as JSON
-
-"expected value at line 1 column 1" indicates empty or non-JSON response from Gemini CLI. Need to investigate what Gemini is actually returning.
-
-## Codex Fix (2025-12-24 ~17:20 CST) — Gemini stdout diagnostics
-
-**What changed:**
-- Gemini client now writes the prompt directly (with a trailing newline) without a spawned task, and closes stdin.
-- Captures stdout/stderr as strings; if stdout is empty, returns an explicit error that includes stderr.
-- On JSON parse failure, the error now includes the first 500 chars of stdout plus stderr to see what the CLI actually returned.
-
-**Status:** fmt/clippy/tests all pass. Ready to retest `memories_populate` to see the real Gemini output instead of a generic "expected value" parse error.
-
----
-
-## Test: 2025-12-24 16:50 CST (CC Session 4)
-
-**Binary**: Rebuilt via scalpel
-**Service**: Restarted
-
-**Result**: PROGRESS - Gemini CLI actually called!
-
-```json
-{
-  "gemini_session_id": "fb252342-79b3-48a0-bfed-257fde4e4c22",
-  "error": "Failed to parse Gemini response: expected value at line 1 column 1"
-}
-```
-
-**Analysis**:
-- ✅ All SQL issues resolved
-- ✅ Thoughts fetched from DB
-- ✅ Gemini CLI invoked (session ID generated)
-- ❌ Gemini response not valid JSON
-
-Next step: Investigate what Gemini CLI is actually returning. "expected value at line 1 column 1" suggests empty or non-JSON output.

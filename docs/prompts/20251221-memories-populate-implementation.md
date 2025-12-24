@@ -3,6 +3,8 @@
 **Date**: 2025-12-21
 **Requested by**: Sam
 **Context**: First Gemini CLI integration into surreal-mind. Replaces broken Grok extraction with quality KG population.
+**Troubleshooting Doc**: /Users/samuelatagana/Projects/LegacyMind/surreal-mind/docs/troubleshooting/20251221-20251224-memories-populate-troubleshooting.md
+**Status**: Implementation Complete
 
 ---
 
