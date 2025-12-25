@@ -266,3 +266,71 @@ Revert the return type in `src/server/router.rs` to use `CallToolResult::structu
 
 **Next Steps:**
 - Re-run `memories_populate` end-to-end to confirm strict-schema clients (Gemini interactive) now accept responses and that `extracted_at` is set. If it fails, capture stdout/stderr snippet now included in errors.
+
+---
+
+## Test: 2025-12-24 21:30 CST (CC Session 5)
+
+**Objective**: Full end-to-end `memories_populate` validation after Codex fixes
+
+**Binary**: Latest rebuild (Codex fixes applied)
+**Service**: Restarted
+**Test Call**: `memories_populate(limit=5, auto_approve=false)`
+
+### Results: EXTRACTION QUALITY EXCELLENT ✅
+
+**Summary**:
+```
+thoughts_processed: 5
+entities_extracted: 11
+relationships_extracted: 0
+observations_extracted: 0
+staged_for_review: 11
+auto_approved: 0
+```
+
+**Extracted Entities** (all high confidence):
+- `SurrealMind` (entity_type: "Tool", confidence: 0.95)
+- `Sam` (entity_type: "Person", confidence: 1.0)
+- `Codex` (entity_type: "LLM Agent", confidence: 0.95)
+- `legacymind_think` (entity_type: "Tool", confidence: 0.95)
+- `Warp` (entity_type: "Tool", confidence: 0.9)
+- `Cloudflare` (entity_type: "Infrastructure", confidence: 0.9)
+- `AGENTS.md` (entity_type: "Documentation", confidence: 0.95)
+- `MBP14` (entity_type: "Hardware", confidence: 1.0)
+- `CC` (entity_type: "AI Agent", confidence: 1.0)
+- `~/.surr_token` (entity_type: "Configuration", confidence: 0.95)
+- + 1 more (11 total)
+
+**Analysis**:
+- ✅ Pipeline producing high-quality, properly-typed entities
+- ✅ All confidence scores in valid range (0.9-1.0)
+- ✅ Entity descriptions captured and meaningful
+- ✅ No garbage/malformed candidates in staging area
+- ℹ️ Zero relationships/observations extracted from these 5 thoughts (content-dependent, not a bug)
+
+### Identified Issues 🔴
+
+**Bug: `extracted_at` not being set**
+
+After processing 5 thoughts, running the same `memories_populate(limit=5)` call again returns the **same 5 thought_ids**:
+- `a3462985-f103-4d62-9902-ecbe0c8a1b81`
+- `36fd3a5d-2f34-4549-a6ac-0fd2f24c6700`
+- `175a6ffc-4a8d-42b6-8cd8-1c41430a5e77`
+- (2 more)
+
+**Impact**:
+- Thoughts will be re-processed indefinitely
+- No way to track which thoughts have been extracted
+- `extracted_at` field is not being updated after successful processing
+
+**Root Cause**: Query for unprocessed thoughts (likely `WHERE extracted_at IS NULL` or missing) is returning already-processed thoughts.
+
+**Fix Required**: After successful entity staging, set `extracted_at = now()` on the processed thought(s) before returning success. This prevents infinite re-processing.
+
+**Code Location**: In Codex's `memories_populate` handler, after entities are staged but before response, add:
+```sql
+UPDATE thoughts SET extracted_at = now() WHERE id IN [processed_thought_ids]
+```
+
+**For Codex**: This is the final blocker to making memories_populate idempotent and production-ready.
