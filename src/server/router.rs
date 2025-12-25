@@ -633,30 +633,14 @@ THOUGHTS TO PROCESS:
             }
         }
 
-        // Mark thoughts as processed
-        for thought in &thoughts {
-            let sql = r#"
-                UPDATE thoughts SET
-                    extracted_to_kg = true,
-                    extraction_batch_id = $batch_id
-                WHERE id = $id
-            "#;
-            let _ = self
-                .db
-                .query(sql)
-                .bind(("batch_id", extraction_batch_id.clone()))
-                .bind(("id", thought.id.clone()))
-                .await;
-        }
-
         // Mark processed thoughts as extracted
         let now_str = Utc::now().to_rfc3339();
         for thought in &thoughts {
-            let _ = self
+            if let Err(e) = self
                 .db
                 .query(
                     r#"
-                    UPDATE $id SET
+                    UPDATE type::thing($id) SET
                         extracted_to_kg = true,
                         extraction_batch_id = $batch,
                         extracted_at = $now
@@ -665,7 +649,14 @@ THOUGHTS TO PROCESS:
                 .bind(("id", thought.id.clone()))
                 .bind(("batch", extraction_batch_id.clone()))
                 .bind(("now", now_str.clone()))
-                .await;
+                .await
+            {
+                tracing::error!(
+                    "memories_populate: failed to mark thought {} as extracted: {}",
+                    thought.id,
+                    e
+                );
+            }
         }
 
         let thought_ids: Vec<String> = thoughts.iter().map(|t| t.id.clone()).collect();

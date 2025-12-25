@@ -114,7 +114,7 @@ impl GeminiClient {
     pub fn new() -> Self {
         Self {
             model: std::env::var("GEMINI_MODEL")
-                .unwrap_or_else(|_| "gemini-2.5-pro".to_string()),
+                .unwrap_or_else(|_| "gemini-3-pro-preview".to_string()),
             timeout_ms: std::env::var("GEMINI_TIMEOUT_MS")
                 .ok()
                 .and_then(|s| s.parse().ok())
@@ -446,7 +446,7 @@ Add to `.env`:
 
 ```bash
 # Gemini CLI Integration
-GEMINI_MODEL=gemini-2.5-pro
+GEMINI_MODEL=gemini-3-pro-preview
 GEMINI_TIMEOUT_MS=60000
 GEMINI_ENABLED=true
 

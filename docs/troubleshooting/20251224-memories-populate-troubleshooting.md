@@ -334,3 +334,18 @@ UPDATE thoughts SET extracted_at = now() WHERE id IN [processed_thought_ids]
 ```
 
 **For Codex**: This is the final blocker to making memories_populate idempotent and production-ready.
+
+---
+
+## Fix: 2025-12-25 10:20 CST (Codex) — extracted_at stamping + schema compliance
+
+**What changed:**
+- Added explicit `extracted_at` update for processed thoughts (alongside `extracted_to_kg` and `extraction_batch_id`) in the memories_populate handler.
+- Converted all remaining return paths to `CallToolResult::structured(...)` (no `RawContent::text` left), aligning with MCP output schema requirements.
+- Default Gemini model set to `gemini-3-pro-preview` (env override still honored).
+
+**Validation:** `cargo fmt`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test` all pass locally. Live MCP run still pending.
+
+**Next step:** Re-run `memories_populate(limit=5, auto_approve=false)` to verify `extracted_at` now prevents reprocessing and that strict-schema clients accept the structured response without errors.
+
+**Implementation detail:** The thought-updating query now uses `UPDATE type::thing($id)` so SurrealDB treats the bound string as a record id; this should correctly persist `extracted_to_kg`, `extraction_batch_id`, and `extracted_at` for each processed thought. Errors are logged with the thought id if an update fails.
