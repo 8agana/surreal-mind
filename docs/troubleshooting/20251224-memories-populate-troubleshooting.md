@@ -119,9 +119,119 @@ Next step: Investigate what Gemini CLI is actually returning. "expected value at
 
 **Fix Required**: Strip markdown code fence before JSON parsing. The actual JSON content is valid.
 
+
 ---
 
-## Test: 2025-12-24 17:15 CST (Gemini Interactive)
+## Test: 2025-12-24 17:00 CST (CC Session 4)
+
+**Binary**: Rebuilt via scalpel
+**Service**: Restarted
+
+**Result**: SUCCESS! 🎉
+
+```json
+{
+  "thoughts_processed": 1,
+  "entities_extracted": 0,
+  "extraction_batch_id": "02bc674f-3228-49d0-b303-6ff1e5673eab",
+  "gemini_session_id": "053fc646-c9c6-4289-938a-e937362c6271"
+}
+```
+
+**Analysis**:
+- ✅ No error!
+- ✅ 1 thought processed successfully
+- ✅ Full pipeline working: DB → Gemini CLI → Parse → Return
+- ℹ️ Zero extractions from this particular thought (content-dependent)
+
+**Status**: TOOL IS WORKING. Markdown fence stripping fix resolved the parsing issue.
+
+---
+
+## Bugs Identified: 2025-12-24 17:10 CST
+
+### Bug 1: Thoughts not marked as extracted
+After processing, thoughts are not having their `extracted_at` field set. This means:
+- Same thought will be reprocessed on next run
+- No way to track what has been processed
+- Query for unprocessed thoughts returns inconsistent results
+
+**Fix needed**: Set `extracted_at` timestamp after successful processing.
+
+### Bug 2: Response doesn't include thought_id
+The tool returns `extraction_batch_id` and `gemini_session_id` but not which thought(s) were processed. This makes it impossible to:
+- Verify what was processed
+- Review extraction quality
+- Debug issues with specific thoughts
+
+**Fix needed**: Include `thought_ids: [...]` array in response.
+
+### Question: Processing order for thoughts
+
+**Current behavior**: Unknown - need to verify which thoughts are selected first.
+
+**Recommendation**: Process oldest thoughts first (ORDER BY created_at ASC).
+
+**Rationale**: When newer thoughts challenge or update information from older thoughts, recency indicates which is more likely correct. Processing chronologically ensures:
+- Older knowledge is extracted first
+- Newer thoughts can override/correct previous entries
+- Recency becomes a signal for accuracy in case of conflicts
+
+---
+
+## Test: 2025-12-24 17:18 CST (CC Session 4)
+
+**Binary**: Rebuilt via scalpel
+**Service**: Restarted
+
+**Result**: Bug 2 FIXED!
+
+```json
+{
+  "thoughts_processed": 1,
+  "entities_extracted": 0,
+  "thought_ids": ["a3462985-f103-4d62-9902-ecbe0c8a1b81"]
+}
+```
+
+**Analysis**:
+- ✅ `thought_ids` array now included in response
+- ⏳ Bug 1 (extracted_at marking) - status unknown, need to verify
+- ℹ️ Zero extractions from this thought - may be content-dependent
+
+---
+
+## Test: 2025-12-24 17:28 CST (CC Session 4)
+
+**Binary**: Rebuilt with gemini-3-pro-preview model
+**Service**: Restarted
+
+**Result**: EXTRACTIONS WORKING!
+
+```json
+{
+  "thoughts_processed": 1,
+  "entities_extracted": 4,
+  "relationships_extracted": 0,
+  "observations_extracted": 0,
+  "boundaries_extracted": 0,
+  "staged_for_review": 4,
+  "auto_approved": 0,
+  "extraction_batch_id": "1a4e96e3-78e8-4387-8f5f-f9d62db2dc71",
+  "gemini_session_id": "b0d057ec-cb44-4d9b-b13e-b9fe707a2eec",
+  "thought_ids": ["a3462985-f103-4d62-9902-ecbe0c8a1b81"]
+}
+```
+
+**Analysis**:
+- ✅ 4 entities extracted and staged for review
+- ✅ Gemini 3 Pro Preview working
+- ⚠️ Same thought_id as previous test - Bug 1 (extracted_at marking) likely still present
+- ℹ️ Model upgrade from 2.5 to 3-pro-preview made the difference
+
+---
+
+## Test: 2025-12-24 18:01 CST (Gemini Interactive)
 
 **Action**: Attempted to run `memories_populate(limit=5)` to process backlog.
 **Result**: `MCP error -32600: Tool memories_populate has an output schema but did not return structured content`
