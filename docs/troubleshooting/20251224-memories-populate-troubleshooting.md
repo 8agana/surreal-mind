@@ -248,3 +248,21 @@ Revert the return type in `src/server/router.rs` to use `CallToolResult::structu
 **Operational Cleanup**:
 - **Action**: Manually rejected 50 "garbage" pending memory candidates (e.g., "Sources:", "Based") from the staging area.
 - **Result**: Staging area is clean. Next run will produce only high-quality candidates.
+
+---
+
+## Fix: 2025-12-25 09:40 CST (Codex)
+
+**Changes implemented:**
+- Converted all remaining `RawContent::text` return paths in `router.rs` to `CallToolResult::structured(...)` to satisfy MCP output schemas (fixes the 32600 structured-content error).
+- Default Gemini CLI model set to `gemini-3-pro-preview` in `src/gemini.rs` (env override still respected).
+- Gemini responses are now code-fence stripped before JSON parse; parse errors include session ID + stdout snippet (already in place).
+- Thought processing now records `extracted_at` and returns `thought_ids` in responses (previous fix verified in code).
+
+**Validation:**
+- `cargo fmt`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test` (all tests passing)
+
+**Next Steps:**
+- Re-run `memories_populate` end-to-end to confirm strict-schema clients (Gemini interactive) now accept responses and that `extracted_at` is set. If it fails, capture stdout/stderr snippet now included in errors.

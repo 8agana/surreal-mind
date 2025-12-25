@@ -5,8 +5,8 @@ use rmcp::{
     ErrorData as McpError,
     handler::server::ServerHandler,
     model::{
-        Annotated, CallToolRequestParam, CallToolResult, Implementation, InitializeRequestParam,
-        InitializeResult, ListToolsResult, PaginatedRequestParam, ProtocolVersion, RawContent,
+        CallToolRequestParam, CallToolResult, Implementation, InitializeRequestParam,
+        InitializeResult, ListToolsResult, PaginatedRequestParam, ProtocolVersion,
         ServerCapabilities, ServerInfo, ToolsCapability,
     },
     service::{RequestContext, RoleServer},
@@ -305,29 +305,18 @@ impl SurrealMindServer {
         let thoughts = match self.fetch_thoughts_for_extraction(&params).await {
             Ok(t) => t,
             Err(e) => {
-                return Ok(CallToolResult {
-                    content: vec![Annotated::new(
-                        RawContent::text(
-                            json!({
-                                "thoughts_processed": 0,
-                                "entities_extracted": 0,
-                                "relationships_extracted": 0,
-                                "observations_extracted": 0,
-                                "boundaries_extracted": 0,
-                                "staged_for_review": 0,
-                                "auto_approved": 0,
-                                "extraction_batch_id": "",
-                                "gemini_session_id": "",
-                                "error": e.to_string()
-                            })
-                            .to_string(),
-                        ),
-                        None,
-                    )],
-                    is_error: Some(false),
-                    meta: None,
-                    structured_content: None,
-                });
+                return Ok(CallToolResult::structured(json!({
+                    "thoughts_processed": 0,
+                    "entities_extracted": 0,
+                    "relationships_extracted": 0,
+                    "observations_extracted": 0,
+                    "boundaries_extracted": 0,
+                    "staged_for_review": 0,
+                    "auto_approved": 0,
+                    "extraction_batch_id": "",
+                    "gemini_session_id": "",
+                    "error": e.to_string()
+                })));
             }
         };
         tracing::info!(
@@ -347,15 +336,7 @@ impl SurrealMindServer {
                 "extraction_batch_id": "",
                 "gemini_session_id": ""
             });
-            return Ok(CallToolResult {
-                content: vec![Annotated::new(
-                    RawContent::text(response_value.to_string()),
-                    None,
-                )],
-                is_error: Some(false),
-                meta: None,
-                structured_content: None,
-            });
+            return Ok(CallToolResult::structured(response_value));
         }
 
         // Prepare prompt
@@ -410,58 +391,36 @@ THOUGHTS TO PROCESS:
             match crate::sessions::get_tool_session(&self.db, inherit_from.clone()).await {
                 Ok(sid) => sid,
                 Err(e) => {
-                    return Ok(CallToolResult {
-                        content: vec![Annotated::new(
-                            RawContent::text(
-                                json!({
-                                    "thoughts_processed": 0,
-                                    "entities_extracted": 0,
-                                    "relationships_extracted": 0,
-                                    "observations_extracted": 0,
-                                    "boundaries_extracted": 0,
-                                    "staged_for_review": 0,
-                                    "auto_approved": 0,
-                                    "extraction_batch_id": "",
-                                    "gemini_session_id": "",
-                                    "error": format!("DB error: {}", e)
-                                })
-                                .to_string(),
-                            ),
-                            None,
-                        )],
-                        is_error: Some(false),
-                        meta: None,
-                        structured_content: None,
-                    });
+                    return Ok(CallToolResult::structured(json!({
+                        "thoughts_processed": 0,
+                        "entities_extracted": 0,
+                        "relationships_extracted": 0,
+                        "observations_extracted": 0,
+                        "boundaries_extracted": 0,
+                        "staged_for_review": 0,
+                        "auto_approved": 0,
+                        "extraction_batch_id": "",
+                        "gemini_session_id": "",
+                        "error": format!("DB error: {}", e)
+                    })));
                 }
             }
         } else {
             match crate::sessions::get_tool_session(&self.db, tool_name.to_string()).await {
                 Ok(sid) => sid,
                 Err(e) => {
-                    return Ok(CallToolResult {
-                        content: vec![Annotated::new(
-                            RawContent::text(
-                                json!({
-                                    "thoughts_processed": 0,
-                                    "entities_extracted": 0,
-                                    "relationships_extracted": 0,
-                                    "observations_extracted": 0,
-                                    "boundaries_extracted": 0,
-                                    "staged_for_review": 0,
-                                    "auto_approved": 0,
-                                    "extraction_batch_id": "",
-                                    "gemini_session_id": "",
-                                    "error": format!("DB error: {}", e)
-                                })
-                                .to_string(),
-                            ),
-                            None,
-                        )],
-                        is_error: Some(false),
-                        meta: None,
-                        structured_content: None,
-                    });
+                    return Ok(CallToolResult::structured(json!({
+                        "thoughts_processed": 0,
+                        "entities_extracted": 0,
+                        "relationships_extracted": 0,
+                        "observations_extracted": 0,
+                        "boundaries_extracted": 0,
+                        "staged_for_review": 0,
+                        "auto_approved": 0,
+                        "extraction_batch_id": "",
+                        "gemini_session_id": "",
+                        "error": format!("DB error: {}", e)
+                    })));
                 }
             }
         };
@@ -478,29 +437,18 @@ THOUGHTS TO PROCESS:
                 {
                     Ok(_) => {}
                     Err(e) => {
-                        return Ok(CallToolResult {
-                            content: vec![Annotated::new(
-                                RawContent::text(
-                                    json!({
-                                        "thoughts_processed": 0,
-                                        "entities_extracted": 0,
-                                        "relationships_extracted": 0,
-                                        "observations_extracted": 0,
-                                        "boundaries_extracted": 0,
-                                        "staged_for_review": 0,
-                                        "auto_approved": 0,
-                                        "extraction_batch_id": "",
-                                        "gemini_session_id": "",
-                                        "error": format!("DB error: {}", e)
-                                    })
-                                    .to_string(),
-                                ),
-                                None,
-                            )],
-                            is_error: Some(false),
-                            meta: None,
-                            structured_content: None,
-                        });
+                        return Ok(CallToolResult::structured(json!({
+                            "thoughts_processed": 0,
+                            "entities_extracted": 0,
+                            "relationships_extracted": 0,
+                            "observations_extracted": 0,
+                            "boundaries_extracted": 0,
+                            "staged_for_review": 0,
+                            "auto_approved": 0,
+                            "extraction_batch_id": "",
+                            "gemini_session_id": "",
+                            "error": format!("DB error: {}", e)
+                        })));
                     }
                 }
                 resp
@@ -510,54 +458,35 @@ THOUGHTS TO PROCESS:
                 match crate::sessions::clear_tool_session(&self.db, tool_name.to_string()).await {
                     Ok(_) => {}
                     Err(db_err) => {
-                        return Ok(CallToolResult {
-                            content: vec![Annotated::new(
-                                RawContent::text(
-                                    json!({
-                                        "thoughts_processed": 0,
-                                        "entities_extracted": 0,
-                                        "relationships_extracted": 0,
-                                        "observations_extracted": 0,
-                                        "boundaries_extracted": 0,
-                                        "staged_for_review": 0,
-                                        "auto_approved": 0,
-                                        "extraction_batch_id": "",
-                                        "gemini_session_id": "",
-                                        "error": format!("DB error clearing session: {}", db_err)
-                                    })
-                                    .to_string(),
-                                ),
-                                None,
-                            )],
-                            is_error: Some(false),
-                            meta: None,
-                            structured_content: None,
-                        });
+                        return Ok(CallToolResult::structured(json!({
+                            "thoughts_processed": 0,
+                            "entities_extracted": 0,
+                            "relationships_extracted": 0,
+                            "observations_extracted": 0,
+                            "boundaries_extracted": 0,
+                            "staged_for_review": 0,
+                            "auto_approved": 0,
+                            "extraction_batch_id": "",
+                            "gemini_session_id": "",
+                            "error": format!("DB error clearing session: {}", db_err)
+                        })));
                     }
                 }
                 let resp = match gemini.call(&prompt, None).await {
                     Ok(resp) => resp,
                     Err(gem_err) => {
-                        return Ok(CallToolResult {
-                            content: vec![Annotated::new(
-                                RawContent::text(json!({
-                                    "thoughts_processed": 0,
-                                    "entities_extracted": 0,
-                                    "relationships_extracted": 0,
-                                    "observations_extracted": 0,
-                                    "boundaries_extracted": 0,
-                                    "staged_for_review": 0,
-                                    "auto_approved": 0,
-                                    "extraction_batch_id": "",
-                                    "gemini_session_id": "",
-                                    "error": format!("Gemini error after session reset: {}", gem_err)
-                                }).to_string()),
-                                None,
-                            )],
-                            is_error: Some(false),
-                            meta: None,
-                            structured_content: None,
-                        });
+                        return Ok(CallToolResult::structured(json!({
+                            "thoughts_processed": 0,
+                            "entities_extracted": 0,
+                            "relationships_extracted": 0,
+                            "observations_extracted": 0,
+                            "boundaries_extracted": 0,
+                            "staged_for_review": 0,
+                            "auto_approved": 0,
+                            "extraction_batch_id": "",
+                            "gemini_session_id": "",
+                            "error": format!("Gemini error after session reset: {}", gem_err)
+                        })));
                     }
                 };
                 // Store session after successful retry
@@ -570,57 +499,35 @@ THOUGHTS TO PROCESS:
                 {
                     Ok(_) => {}
                     Err(e) => {
-                        return Ok(CallToolResult {
-                            content: vec![Annotated::new(
-                                RawContent::text(
-                                    json!({
-                                        "thoughts_processed": 0,
-                                        "entities_extracted": 0,
-                                        "relationships_extracted": 0,
-                                        "observations_extracted": 0,
-                                        "boundaries_extracted": 0,
-                                        "staged_for_review": 0,
-                                        "auto_approved": 0,
-                                        "extraction_batch_id": "",
-                                        "gemini_session_id": "",
-                                        "error": format!("DB error storing retry session: {}", e)
-                                    })
-                                    .to_string(),
-                                ),
-                                None,
-                            )],
-                            is_error: Some(false),
-                            meta: None,
-                            structured_content: None,
-                        });
+                        return Ok(CallToolResult::structured(json!({
+                            "thoughts_processed": 0,
+                            "entities_extracted": 0,
+                            "relationships_extracted": 0,
+                            "observations_extracted": 0,
+                            "boundaries_extracted": 0,
+                            "staged_for_review": 0,
+                            "auto_approved": 0,
+                            "extraction_batch_id": "",
+                            "gemini_session_id": "",
+                            "error": format!("DB error storing retry session: {}", e)
+                        })));
                     }
                 }
                 resp
             }
             Err(e) => {
-                return Ok(CallToolResult {
-                    content: vec![Annotated::new(
-                        RawContent::text(
-                            json!({
-                                "thoughts_processed": 0,
-                                "entities_extracted": 0,
-                                "relationships_extracted": 0,
-                                "observations_extracted": 0,
-                                "boundaries_extracted": 0,
-                                "staged_for_review": 0,
-                                "auto_approved": 0,
-                                "extraction_batch_id": "",
-                                "gemini_session_id": "",
-                                "error": format!("Gemini error: {}", e)
-                            })
-                            .to_string(),
-                        ),
-                        None,
-                    )],
-                    is_error: Some(false),
-                    meta: None,
-                    structured_content: None,
-                });
+                return Ok(CallToolResult::structured(json!({
+                    "thoughts_processed": 0,
+                    "entities_extracted": 0,
+                    "relationships_extracted": 0,
+                    "observations_extracted": 0,
+                    "boundaries_extracted": 0,
+                    "staged_for_review": 0,
+                    "auto_approved": 0,
+                    "extraction_batch_id": "",
+                    "gemini_session_id": "",
+                    "error": format!("Gemini error: {}", e)
+                })));
             }
         };
 
@@ -649,29 +556,18 @@ THOUGHTS TO PROCESS:
                     e,
                     resp_snippet
                 );
-                return Ok(CallToolResult {
-                    content: vec![Annotated::new(
-                        RawContent::text(
-                            json!({
-                                "thoughts_processed": 0,
-                                "entities_extracted": 0,
-                                "relationships_extracted": 0,
-                                "observations_extracted": 0,
-                                "boundaries_extracted": 0,
-                                "staged_for_review": 0,
-                                "auto_approved": 0,
-                                "extraction_batch_id": "",
-                                "gemini_session_id": gemini_response.session_id,
-                                "error": format!("Failed to parse Gemini response: {} | snippet: {}", e, resp_snippet)
-                            })
-                            .to_string(),
-                        ),
-                        None,
-                    )],
-                    is_error: Some(false),
-                    meta: None,
-                    structured_content: None,
-                });
+                return Ok(CallToolResult::structured(json!({
+                    "thoughts_processed": 0,
+                    "entities_extracted": 0,
+                    "relationships_extracted": 0,
+                    "observations_extracted": 0,
+                    "boundaries_extracted": 0,
+                    "staged_for_review": 0,
+                    "auto_approved": 0,
+                    "extraction_batch_id": "",
+                    "gemini_session_id": gemini_response.session_id,
+                    "error": format!("Failed to parse Gemini response: {} | snippet: {}", e, resp_snippet)
+                })));
             }
         };
 
@@ -701,56 +597,34 @@ THOUGHTS TO PROCESS:
 
                     if params.auto_approve && confidence >= params.confidence_threshold {
                         if let Err(e) = self.create_memory(&memory, "kg_entities").await {
-                            return Ok(CallToolResult {
-                                content: vec![Annotated::new(
-                                    RawContent::text(
-                                        json!({
-                                            "thoughts_processed": thoughts.len() as u32,
-                                            "entities_extracted": entities_extracted,
-                                            "relationships_extracted": relationships_extracted,
-                                            "observations_extracted": observations_extracted,
-                                            "boundaries_extracted": boundaries_extracted,
-                                            "staged_for_review": staged_for_review,
-                                            "auto_approved": auto_approved,
-                                            "extraction_batch_id": extraction_batch_id,
-                                            "gemini_session_id": gemini_response.session_id,
-                                            "error": format!("Memory creation failed: {}", e)
-                                        })
-                                        .to_string(),
-                                    ),
-                                    None,
-                                )],
-                                is_error: Some(false),
-                                meta: None,
-                                structured_content: None,
-                            });
+                            return Ok(CallToolResult::structured(json!({
+                                "thoughts_processed": thoughts.len() as u32,
+                                "entities_extracted": entities_extracted,
+                                "relationships_extracted": relationships_extracted,
+                                "observations_extracted": observations_extracted,
+                                "boundaries_extracted": boundaries_extracted,
+                                "staged_for_review": staged_for_review,
+                                "auto_approved": auto_approved,
+                                "extraction_batch_id": extraction_batch_id,
+                                "gemini_session_id": gemini_response.session_id,
+                                "error": format!("Memory creation failed: {}", e)
+                            })));
                         }
                         auto_approved += 1;
                     } else {
                         if let Err(e) = self.stage_memory_for_review(&memory).await {
-                            return Ok(CallToolResult {
-                                content: vec![Annotated::new(
-                                    RawContent::text(
-                                        json!({
-                                            "thoughts_processed": thoughts.len() as u32,
-                                            "entities_extracted": entities_extracted,
-                                            "relationships_extracted": relationships_extracted,
-                                            "observations_extracted": observations_extracted,
-                                            "boundaries_extracted": boundaries_extracted,
-                                            "staged_for_review": staged_for_review,
-                                            "auto_approved": auto_approved,
-                                            "extraction_batch_id": extraction_batch_id,
-                                            "gemini_session_id": gemini_response.session_id,
-                                            "error": format!("Staging failed: {}", e)
-                                        })
-                                        .to_string(),
-                                    ),
-                                    None,
-                                )],
-                                is_error: Some(false),
-                                meta: None,
-                                structured_content: None,
-                            });
+                            return Ok(CallToolResult::structured(json!({
+                                "thoughts_processed": thoughts.len() as u32,
+                                "entities_extracted": entities_extracted,
+                                "relationships_extracted": relationships_extracted,
+                                "observations_extracted": observations_extracted,
+                                "boundaries_extracted": boundaries_extracted,
+                                "staged_for_review": staged_for_review,
+                                "auto_approved": auto_approved,
+                                "extraction_batch_id": extraction_batch_id,
+                                "gemini_session_id": gemini_response.session_id,
+                                "error": format!("Staging failed: {}", e)
+                            })));
                         }
                         staged_for_review += 1;
                     }
@@ -809,16 +683,7 @@ THOUGHTS TO PROCESS:
             "thought_ids": thought_ids,
         });
 
-        // Use manual text content to avoid serialization issues with structured content
-        Ok(CallToolResult {
-            content: vec![Annotated::new(
-                RawContent::text(response_value.to_string()),
-                None,
-            )],
-            is_error: Some(false),
-            meta: None,
-            structured_content: None,
-        })
+        Ok(CallToolResult::structured(response_value))
     }
 
     async fn fetch_thoughts_for_extraction(
