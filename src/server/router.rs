@@ -571,6 +571,13 @@ THOUGHTS TO PROCESS:
             }
         };
 
+        // --- TRANSACTION START ---
+        if let Err(e) = self.db.query("BEGIN TRANSACTION;").await {
+            return Ok(CallToolResult::structured(json!({
+                "error": format!("Failed to begin transaction: {}", e)
+            })));
+        }
+
         // Process extractions (simplified counts)
         let extracted_at = Utc::now().to_rfc3339();
         let mut entities_extracted = 0;
@@ -597,6 +604,16 @@ THOUGHTS TO PROCESS:
 
                     if params.auto_approve && confidence >= params.confidence_threshold {
                         if let Err(e) = self.create_memory(&memory, "kg_entities").await {
+                            tracing::error!(
+                                "memories_populate: error creating memory, cancelling transaction: {}",
+                                e
+                            );
+                            if let Err(cancel_err) = self.db.query("CANCEL TRANSACTION;").await {
+                                tracing::error!(
+                                    "memories_populate: FAILED TO CANCEL TRANSACTION: {}",
+                                    cancel_err
+                                );
+                            }
                             return Ok(CallToolResult::structured(json!({
                                 "thoughts_processed": thoughts.len() as u32,
                                 "entities_extracted": entities_extracted,
@@ -613,6 +630,16 @@ THOUGHTS TO PROCESS:
                         auto_approved += 1;
                     } else {
                         if let Err(e) = self.stage_memory_for_review(&memory).await {
+                            tracing::error!(
+                                "memories_populate: error staging memory, cancelling transaction: {}",
+                                e
+                            );
+                            if let Err(cancel_err) = self.db.query("CANCEL TRANSACTION;").await {
+                                tracing::error!(
+                                    "memories_populate: FAILED TO CANCEL TRANSACTION: {}",
+                                    cancel_err
+                                );
+                            }
                             return Ok(CallToolResult::structured(json!({
                                 "thoughts_processed": thoughts.len() as u32,
                                 "entities_extracted": entities_extracted,
@@ -643,13 +670,26 @@ THOUGHTS TO PROCESS:
                 "extracted_at": now_str
             });
 
-            tracing::info!("memories_populate: merging update for thought thoughts:{}", thought.id);
-            
-            // Construct RecordId tuple ("table", "id_string")
-            match self.db.update::<Option<serde_json::Value>>(("thoughts", &thought.id))
-                .merge(update_data)
-                .await
-            {
+            let raw_id = thought.id.strip_prefix("thoughts:").unwrap_or(&thought.id);
+            tracing::info!(
+                "memories_populate: merging update for thought thoughts:{}",
+                thought.id
+            );
+
+            // If the underlying ID is UUID-typed, update must use Uuid (not String)
+            let update_result = if let Ok(uuid_id) = Uuid::parse_str(raw_id) {
+                self.db
+                    .update::<Option<serde_json::Value>>(("thoughts", uuid_id))
+                    .merge(update_data.clone())
+                    .await
+            } else {
+                self.db
+                    .update::<Option<serde_json::Value>>(("thoughts", raw_id))
+                    .merge(update_data)
+                    .await
+            };
+
+            match update_result {
                 Ok(updated) => {
                     if updated.is_none() {
                         tracing::warn!(
@@ -671,6 +711,15 @@ THOUGHTS TO PROCESS:
                     );
                 }
             }
+        }
+
+        // --- TRANSACTION COMMIT ---
+        if let Err(e) = self.db.query("COMMIT TRANSACTION;").await {
+            tracing::error!("memories_populate: FAILED TO COMMIT TRANSACTION: {}", e);
+            // If commit fails, we return an error instead of a success-like response
+            return Ok(CallToolResult::structured(json!({
+                "error": format!("Failed to commit transaction: {}", e)
+            })));
         }
 
         let thought_ids: Vec<String> = thoughts.iter().map(|t| t.id.clone()).collect();
