@@ -298,3 +298,17 @@ The extraction works. The persistence fails. They need different ownership model
 
 ## Summary
 Five comprehensive attempts to fix router.rs orchestration have failed identically across vastly different approaches. The pattern is unambiguous: **orchestration belongs at the LLM layer (Gemini), not in the router.** This isn't a bug—it's an architectural mismatch. Pivoting to delegation pattern (generic tools + LLM control) will resolve this permanently and create a reusable pattern for other workflows.
+
+___
+
+## Resolution Notes (Sam)
+
+- **Resolution**: Shifting to build tools for Gemini CLI to use.
+
+- **Conclusion**: Not relying enough on Gemini CLI. 
+
+- **Lessons Learned**: {Populate from notes above}
+
+- **Implementation Status**: docs/prompts/20251221-memories_populate-implementation.md
+
+___

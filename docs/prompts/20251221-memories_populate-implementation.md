@@ -812,12 +812,13 @@ ___
 
 **Status**: Implemented - Troubleshooting
 **Implementation Date**: 2025-12-23
-**Prompt Docs**: [pending] docs/prompts/20251226-memories_populate-ccr-mistral.md
+**Prompt Docs**: docs/prompts/20251226-legacymind_update-implementation.md
 **Troubleshooting Docs**: 
 - [resolved] docs/troubleshooting/20251221-20251224-memories_populate-troubleshooting.md
 - [resolved] docs/troubleshooting/20251224-memories_populate-troubleshooting.md
 - [resolved] docs/troubleshooting/20251225-memories_populate-gemini-cli-timeout.md
-- [pending] docs/troubleshooting/20251226-memories_populate-processed-issue.md
+- [cancelled] docs/troubleshooting/20251226-memories_populate-processed-issue.md
 **Reference Doc**: docs/troubleshooting/20251221-memories_populate-manual.md
+**Closure Notes**: Follow docs/prompts/20251226-legacymind_update-implementation.md for further updates. 
 
 ___

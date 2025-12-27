@@ -58,6 +58,7 @@ impl ServerHandler for SurrealMindServer {
         // Input schemas
         let legacymind_think_schema_map = crate::schemas::legacymind_think_schema();
         let maintenance_ops_schema_map = crate::schemas::maintenance_ops_schema();
+        let legacymind_update_schema_map = crate::schemas::legacymind_update_schema();
         let kg_create_schema_map = crate::schemas::kg_create_schema();
         let kg_moderate_schema_map = crate::schemas::kg_moderate_schema();
         let detailed_help_schema_map = crate::schemas::detailed_help_schema();
@@ -71,6 +72,7 @@ impl ServerHandler for SurrealMindServer {
         // Output schemas (rmcp 0.11.0+)
         let legacymind_think_output = crate::schemas::legacymind_think_output_schema();
         let maintenance_ops_output = crate::schemas::maintenance_ops_output_schema();
+        let legacymind_update_output = crate::schemas::legacymind_update_output_schema();
         let memories_create_output = crate::schemas::memories_create_output_schema();
         let memories_moderate_output = crate::schemas::memories_moderate_output_schema();
         let detailed_help_output = crate::schemas::detailed_help_output_schema();
@@ -87,6 +89,16 @@ impl ServerHandler for SurrealMindServer {
                 icons: None,
                 annotations: None,
                 output_schema: Some(legacymind_think_output),
+                meta: None,
+            },
+            Tool {
+                name: "legacymind_update".into(),
+                title: Some("LegacyMind Update".into()),
+                description: Some("Update an existing thought's fields".into()),
+                input_schema: legacymind_update_schema_map.clone(),
+                icons: None,
+                annotations: None,
+                output_schema: Some(legacymind_update_output),
                 meta: None,
             },
             Tool {
@@ -224,6 +236,10 @@ impl ServerHandler for SurrealMindServer {
             // Unified thinking tool
             "legacymind_think" => self
                 .handle_legacymind_think(request)
+                .await
+                .map_err(|e| e.into()),
+            "legacymind_update" => self
+                .handle_legacymind_update(request)
                 .await
                 .map_err(|e| e.into()),
 

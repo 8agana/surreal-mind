@@ -44,6 +44,44 @@ pub fn legacymind_think_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
+pub fn legacymind_update_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "thought_id": {"type": "string"},
+            "updates": {
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string"},
+                    "tags": {"type": ["array", "string", "null"], "items": {"type": "string"}},
+                    "chain_id": {"type": ["string", "null"]},
+                    "session_id": {"type": ["string", "null"]},
+                    "previous_thought_id": {"type": ["string", "null"]},
+                    "revises_thought": {"type": ["string", "null"]},
+                    "branch_from": {"type": ["string", "null"]},
+                    "extracted_to_kg": {"type": "boolean"},
+                    "extraction_batch_id": {"type": ["string", "null"]},
+                    "extracted_at": {"type": ["string", "null"]},
+                    "status": {"type": ["string", "null"]},
+                    "significance": {"type": "number"},
+                    "injection_scale": {"type": "integer"},
+                    "access_count": {"type": "integer"},
+                    "last_accessed": {"type": ["string", "null"]},
+                    "submode": {"type": ["string", "null"]},
+                    "framework_enhanced": {"type": ["boolean", "null"]},
+                    "framework_analysis": {"type": ["object", "null"]},
+                    "origin": {"type": ["string", "null"]},
+                    "is_private": {"type": ["boolean", "null"]},
+                    "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0}
+                }
+            },
+            "reembed": {"type": "boolean", "default": true}
+        },
+        "required": ["thought_id", "updates"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
 pub fn search_thoughts_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
@@ -168,6 +206,7 @@ pub fn detailed_help_schema() -> Arc<Map<String, Value>> {
         "properties": {
             "tool": {"type": "string", "enum": [
                 "legacymind_think",
+                "legacymind_update",
                 "memories_create", "memories_moderate", "memories_populate",
                 "legacymind_search",
                 "maintenance_ops", "inner_voice",
@@ -378,6 +417,20 @@ pub fn legacymind_think_output_schema() -> Arc<Map<String, Value>> {
             }
         },
         "required": ["mode_selected", "reason", "delegated_result", "links", "telemetry"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn legacymind_update_output_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "thought_id": {"type": "string"},
+            "updated": {"type": "boolean"},
+            "fields_updated": {"type": "array", "items": {"type": "string"}},
+            "reembedded": {"type": "boolean"}
+        },
+        "required": ["thought_id", "updated", "fields_updated", "reembedded"]
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
