@@ -3,7 +3,7 @@
 **Date**: 2025-12-26
 **Issue Type**: Failed Initial Testing
 **Status**: Cancelled
-**Resolution Date**:
+**Resolution Date**: 2025-12-27
 **Original Prompt**: docs/prompts/20251226-legacymind_update-implementation.md
 
 ___
@@ -192,3 +192,17 @@ The `legacymind_update.rs` implementation has a fundamental issue in how it cons
 
 **Next Action Required**:
 Inspect `src/tools/legacymind_update.rs` to examine the actual UPDATE query being constructed. The issue is deterministic and reproducible across all scenarios.
+
+___
+
+## Resolution Notes (Sam)
+
+- **Resolution**: Removing this tool
+
+- **Conclusion**: This is not the direction we are going. 
+
+- **Lessons Learned**: see docs/prompts/20251226-remove-legacymind_update-memories_populate.md
+
+- **Implementation Status**: docs/prompts/20251221-memories_populate-implementation.md
+
+___
