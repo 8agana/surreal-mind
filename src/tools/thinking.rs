@@ -1,13 +1,12 @@
 //! thinking module: common run_* helpers for think tools and new legacymind_think
 
 use crate::error::{Result, SurrealMindError};
-use crate::frameworks::{ConvoOpts, run_convo as frameworks_run_convo};
 use crate::server::SurrealMindServer;
 use anyhow::Context;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde_json::json;
 use std::collections::HashSet;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 /// Maximum content size in bytes (100KB)
 const MAX_CONTENT_SIZE: usize = 100 * 1024;
@@ -333,7 +332,7 @@ impl SurrealMindServer {
     ) -> Result<(serde_json::Value, ContinuityResult)> {
         let injection_scale_val = injection_scale.unwrap_or(1) as i64;
         let tags = tags.unwrap_or_default();
-        let content_str = content.to_string();
+        // let content_str = content.to_string(); // Unused while frameworks disabled
 
         // Use ThoughtBuilder to create the thought
         let (thought_id, embedding, resolved_continuity) =
@@ -352,54 +351,29 @@ impl SurrealMindServer {
                 .execute()
                 .await?;
 
-        // Framework enhancement (skip for conclude)
-        let enhance_enabled =
-            !is_conclude && std::env::var("SURR_THINK_ENHANCE").unwrap_or("1".to_string()) == "1";
+        // Framework enhancement (Temporarily DISABLED due to module deletion)
+        // This will be re-implemented using the new src/cognitive module in a future step
+        let enhance_enabled = false; 
+            // !is_conclude && std::env::var("SURR_THINK_ENHANCE").unwrap_or("1".to_string()) == "1";
+        
         let verbose_analysis = verbose_analysis.unwrap_or(false);
-        let mut framework_enhanced = false;
-        let mut framework_analysis: Option<serde_json::Value> = None;
+        let framework_enhanced = false;
+        let framework_analysis: Option<serde_json::Value> = None;
+        
+        if enhance_enabled || verbose_analysis {
+            tracing::warn!("Framework enhancement momentarily disabled pending architecture update");
+        }
+
+        /* 
+        // LEGACY FRAMEWORK CODE - REMOVED TO ALLOW COMPILATION
+        // TODO: Re-wire this to use src/cognitive
         if enhance_enabled || verbose_analysis {
             tracing::debug!("Running framework enhancement for thought {}", thought_id);
             let _start = Instant::now();
-            let opts = ConvoOpts {
-                strict_json: std::env::var("SURR_THINK_STRICT_JSON").unwrap_or("1".to_string())
-                    == "1",
-                tag_whitelist: std::env::var("SURR_THINK_TAG_WHITELIST")
-                    .unwrap_or("plan,debug,dx,photography,idea".to_string())
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .collect(),
-                timeout_ms: std::env::var("SURR_THINK_ENHANCE_TIMEOUT_MS")
-                    .unwrap_or("600".to_string())
-                    .parse()
-                    .unwrap_or(600),
-            };
-            match tokio::time::timeout(
-                Duration::from_millis(opts.timeout_ms),
-                frameworks_run_convo(&content_str, &opts),
-            )
-            .await
-            {
-                Ok(Ok(envelope)) => {
-                    framework_enhanced = true;
-                    framework_analysis = Some(serde_json::to_value(&envelope).unwrap_or(json!({})));
-                    tracing::info!("think.convo.enhance.calls");
-                    tracing::info!("think.convo.methodology.{}", envelope.methodology);
-                }
-                Ok(Err(e)) => {
-                    tracing::warn!(
-                        "Framework enhancement failed for thought {}: {}",
-                        thought_id,
-                        e
-                    );
-                    tracing::info!("think.convo.enhance.drop_json");
-                }
-                Err(_) => {
-                    tracing::warn!("Framework enhancement timed out for thought {}", thought_id);
-                    tracing::info!("think.convo.enhance.timeout");
-                }
-            }
+            let opts = ConvoOpts { ... };
+            match tokio::time::timeout(...) { ... }
         }
+        */
 
         // Update thought with enhancement results and merge tags if enhanced
         if framework_enhanced || framework_analysis.is_some() {

@@ -4,17 +4,10 @@ pub mod config;
 pub mod deserializers;
 pub mod embeddings;
 pub mod error;
-pub mod frameworks;
-pub mod gemini;
 pub mod indexes;
-pub mod kg_extractor;
-pub mod prompt_critiques;
-pub mod prompt_metrics;
-pub mod prompts;
 pub mod schemas;
 pub mod serializers;
 pub mod server;
-pub mod sessions;
 pub mod tools;
 pub mod utils;
 
