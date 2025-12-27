@@ -1,15 +1,11 @@
 # memories_populate SQL Syntax Bug
 
-# memories_populate Multiple Issues
-
 **Date**: 2025-12-21 - 2025-12-24
-**Issue Type**: SQL Syntax + Deserialization Errors
-**Status**: Fixes Implemented - Awaiting Testing
-**Prompt Location**: /Users/samuelatagana/Projects/LegacyMind/surreal-mind/docs/prompts/20251221-memories-populate-implementation.md
-**Continued Troubleshooting**: /Users/samuelatagana/Projects/LegacyMind/surreal-mind/docs/troubleshooting/20251224-memories-populate-troubleshooting.md
-**Reference Doc**: /Users/samuelatagana/Projects/LegacyMind/surreal-mind/docs/troubleshooting/20251221-memories-populate-manual.md
-**Status**: Continued
-
+**Issue Type**: SQL Syntax + Deserialization Errors + Record ID Format
+**Status**: ✅ RESOLVED
+**Resolution Date**: 2025-12-24 12:34 CST
+**Original Prompt**: docs/prompts/20251221-memories_populate-implementation.md
+**Reference Doc**: docs/troubleshooting/20251221-memories_populate-manual.md
 
 ---
 
@@ -828,19 +824,19 @@ This forces SurrealDB server to convert types, bypassing the Rust driver's broke
 
 **Next validation step:** Run `memories_populate` against `surreal_mind/consciousness` with `SURR_DEBUG_MEMORIES_POPULATE_ROWS=1` to confirm the enum error is gone and to see rows flow through.
 
----
 
-## Resolution & Handoff (Architectural Decision)
+___
 
-**The Enum Error Solution**: 
-We discovered that the Rust `surrealdb` driver cannot serialize internal types (`Thing`, `Datetime`) directly into `serde_json::Value` without hitting an "enum" representation that fails JSON parsing.
+## Resolution Notes (Sam)
 
-**Architectural Rule**: 
-Do not rely on the driver's default serialization for complex types. 
-**You MUST cast these fields to strings in the SQL query itself** (e.g., `<string> id`, `<string> created_at`). 
-This forces the DB server to do the conversion, ensuring the Rust driver receives clean Strings.
+- **Resolution**: We discovered that the Rust `surrealdb` driver cannot serialize internal types (`Thing`, `Datetime`) directly into `serde_json::Value` without hitting an "enum" representation that fails JSON parsing.
 
-**Next Phase**: 
-Troubleshooting continues in the linked doc (see header) to address Gemini CLI integration issues (Markdown wrapping).
+- **Conclusion**: Architectural Decision
 
-```
+- **Lessons Learned**:
+  - Do not rely on the driver's default serialization for complex types. 
+  - **You MUST cast these fields to strings in the SQL query itself** (e.g., `<string> id`, `<string> created_at`). This forces the DB server to do the conversion, ensuring the Rust driver receives clean Strings.
+
+- **Implementation Status**: docs/troubleshooting/20251224-memories_populate-troubleshooting.md
+
+___

@@ -1,14 +1,13 @@
-# memories_populate SQL Syntax Bug
-
 # memories_populate Multiple Issues
 
 **Date**: 2025-12-24 to 2025-12-25
 **Issue Type**: SQL Syntax + Deserialization Errors + Record ID Format
 **Status**: ✅ RESOLVED
-**Resolution Date**: 2025-12-25 12:34 CST
-**Previous Troubleshooting Doc**: /Users/samuelatagana/Projects/LegacyMind/surreal-mind/docs/troubleshooting/20251221-20251224-memories-populate-troubleshooting.md
-**Prompt Location**: /Users/samuelatagana/Projects/LegacyMind/surreal-mind/docs/prompts/20251221-memories-populate-implementation.md
-**Reference Doc**: /Users/samuelatagana/Projects/LegacyMind/surreal-mind/docs/troubleshooting/20251221-memories-populate-manual.md
+**Resolution Date**: 2025-12-25 10:20 CST
+**Previous Troubleshooting Docs**: 
+- [resolved] docs/troubleshooting/20251221-20251224-memories_populate-troubleshooting.md
+**Original Prompt**: docs/prompts/20251221-memories_populate-implementation.md
+**Reference Doc**: docs/troubleshooting/20251221-memories_populate-manual.md
 
 ---
 
@@ -372,7 +371,7 @@ UPDATE thoughts SET extracted_at = now() WHERE id IN [processed_thought_ids]
 
 ---
 
-## Fix: 2025-12-25 10:20 CST (Codex) — extracted_at stamping + schema compliance
+## Fix: 2025-12-25 10:20 CST — extracted_at stamping + schema compliance
 
 **What changed:**
 - Added explicit `extracted_at` update for processed thoughts (alongside `extracted_to_kg` and `extraction_batch_id`) in the memories_populate handler.
@@ -384,3 +383,17 @@ UPDATE thoughts SET extracted_at = now() WHERE id IN [processed_thought_ids]
 **Next step:** Re-run `memories_populate(limit=5, auto_approve=false)` to verify `extracted_at` now prevents reprocessing and that strict-schema clients accept the structured response without errors.
 
 **Implementation detail:** The thought-updating query now uses `UPDATE type::thing($id)` so SurrealDB treats the bound string as a record id; this should correctly persist `extracted_to_kg`, `extraction_batch_id`, and `extracted_at` for each processed thought. Errors are logged with the thought id if an update fails.
+
+___
+
+## Resolution Notes (Sam)
+
+- **Resolution**:See notes above
+
+- **Conclusion**: Resolved
+
+- **Lessons Learned**: {Populate from notes above}
+
+- **Implementation Status**: 20251225-memories_populate-gemini-cli-timeout.md
+
+___
