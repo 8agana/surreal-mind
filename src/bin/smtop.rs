@@ -3,7 +3,8 @@ use std::io;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use crossterm::{event, execute, terminal};
+use dirs;
+use ratatui::crossterm::{event, execute, terminal};
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 use reqwest::blocking::Client;
@@ -74,7 +75,7 @@ fn main() -> anyhow::Result<()> {
         if event::poll(Duration::from_millis(200))?
             && let event::Event::Key(k) = event::read()?
         {
-            use crossterm::event::{KeyCode, KeyModifiers};
+            use ratatui::crossterm::event::{KeyCode, KeyModifiers};
             match k.code {
                 KeyCode::Char('q') | KeyCode::Esc => break,
                 KeyCode::Char('r') => {
@@ -140,7 +141,7 @@ fn ui(f: &mut Frame, s: &Status) {
             Constraint::Min(8),
             Constraint::Length(3),
         ])
-        .split(f.size());
+        .split(f.area());
 
     let header = Paragraph::new(Line::from(vec![
         Span::styled(

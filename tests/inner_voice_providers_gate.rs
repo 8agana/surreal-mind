@@ -1,5 +1,6 @@
 //! Tests for provider gating and fallback helpers in inner_voice
 
+use std::env;
 use surreal_mind::schemas::Snippet;
 use surreal_mind::tools::inner_voice::InnerVoiceRetrieveParams;
 use surreal_mind::tools::inner_voice::providers::{
@@ -15,6 +16,9 @@ mod tests {
     #[test]
     fn test_allow_grok_default_true() {
         // Default behavior should allow Grok unless explicitly disabled
+        unsafe {
+            env::remove_var("IV_ALLOW_GROK");
+        }
         assert!(allow_grok());
     }
 

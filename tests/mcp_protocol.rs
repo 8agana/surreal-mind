@@ -12,7 +12,7 @@
 //   running_service.cancel().await is called even if the test panics, avoiding
 //   background task leaks.
 
-use futures_util::{FutureExt, StreamExt, stream};
+use futures_util::{StreamExt, future::FutureExt, stream};
 use rmcp::{
     RoleServer,
     model::{
@@ -46,9 +46,12 @@ fn create_test_transport() -> (
 
     // Wrap for Sink/Stream traits
     let poll_sender = PollSender::new(server_tx);
-    let receiver_stream = stream::unfold(server_rx, |mut rx| async {
-        rx.recv().await.map(|msg| (msg, rx))
-    })
+    let receiver_stream = stream::unfold(
+        server_rx,
+        |mut rx: mpsc::Receiver<RxJsonRpcMessage<RoleServer>>| async {
+            rx.recv().await.map(|msg| (msg, rx))
+        },
+    )
     .boxed();
 
     // Create transport for serve_directly
