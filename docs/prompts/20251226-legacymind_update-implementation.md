@@ -3,7 +3,7 @@
 **Date**: 2025-12-26
 **Prompt Type**: Implementation Plan (New Tool)
 **Justification**: Creating tools for Gemini CLI to use when called by surreal-mind. Solving issues with memories_populate and future tools. 
-**Status**: Implemented
+**Status**: Cancelled
 **Implementation Date**: 2025-12-27
 **Previous Connected Prompt**: docs/prompts/20251221-memories_populate-implementation.md
 
@@ -63,6 +63,6 @@ ___
 **Implementation Date**: 2025-12-26
 **Connected Prompt Docs**:
 **Troubleshooting Docs**: 
-- [pending] docs/troubleshooting/20251226-legacymind_update-troubleshooting.md
+- [cancelled] docs/troubleshooting/20251226-legacymind_update-troubleshooting.md
 **Reference Doc**: 
 **Closure Notes**:
