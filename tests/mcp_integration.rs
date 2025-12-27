@@ -150,25 +150,23 @@ async fn test_legacymind_think_with_continuity() {
     let result = result.unwrap();
 
     // Check that the response contains the preserved ID
-    if !result.content.is_empty() {
-        if let Some(first_content) = result.content.first() {
-            // Extract text from RawContent enum
-            if let rmcp::model::RawContent::Text(text_content) = &first_content.raw {
-                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text_content.text) {
-                    if let Some(links) = parsed.get("links") {
-                        if let Some(prev_id) = links.get("previous_thought_id") {
-                            // The ID may be prefixed with "thoughts:" when processed
-                            let expected_with_prefix = format!("thoughts:{}", non_existent_id);
-                            assert!(
-                                prev_id.as_str() == Some(non_existent_id)
-                                    || prev_id.as_str() == Some(&expected_with_prefix),
-                                "Previous thought ID should be preserved (got: {:?})",
-                                prev_id.as_str()
-                            );
-                        }
-                    }
-                }
-            }
+    if !result.content.is_empty()
+        && let Some(first_content) = result.content.first()
+    {
+        // Extract text from RawContent enum
+        if let rmcp::model::RawContent::Text(text_content) = &first_content.raw
+            && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text_content.text)
+            && let Some(links) = parsed.get("links")
+            && let Some(prev_id) = links.get("previous_thought_id")
+        {
+            // The ID may be prefixed with "thoughts:" when processed
+            let expected_with_prefix = format!("thoughts:{}", non_existent_id);
+            assert!(
+                prev_id == non_existent_id || prev_id == &expected_with_prefix,
+                "Previous thought ID should be preserved (found: {}, expected: {})",
+                prev_id,
+                non_existent_id
+            );
         }
     }
 }

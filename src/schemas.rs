@@ -44,44 +44,6 @@ pub fn legacymind_think_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
-pub fn legacymind_update_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "thought_id": {"type": "string"},
-            "updates": {
-                "type": "object",
-                "properties": {
-                    "content": {"type": "string"},
-                    "tags": {"type": ["array", "string", "null"], "items": {"type": "string"}},
-                    "chain_id": {"type": ["string", "null"]},
-                    "session_id": {"type": ["string", "null"]},
-                    "previous_thought_id": {"type": ["string", "null"]},
-                    "revises_thought": {"type": ["string", "null"]},
-                    "branch_from": {"type": ["string", "null"]},
-                    "extracted_to_kg": {"type": "boolean"},
-                    "extraction_batch_id": {"type": ["string", "null"]},
-                    "extracted_at": {"type": ["string", "null"]},
-                    "status": {"type": ["string", "null"]},
-                    "significance": {"type": "number"},
-                    "injection_scale": {"type": "integer"},
-                    "access_count": {"type": "integer"},
-                    "last_accessed": {"type": ["string", "null"]},
-                    "submode": {"type": ["string", "null"]},
-                    "framework_enhanced": {"type": ["boolean", "null"]},
-                    "framework_analysis": {"type": ["object", "null"]},
-                    "origin": {"type": ["string", "null"]},
-                    "is_private": {"type": ["boolean", "null"]},
-                    "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0}
-                }
-            },
-            "reembed": {"type": "boolean", "default": true}
-        },
-        "required": ["thought_id", "updates"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
 pub fn search_thoughts_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
@@ -124,77 +86,6 @@ pub fn kg_search_schema() -> Arc<Map<String, Value>> {
             "query": {"type": "object"},
             "target": {"type": "string", "enum": ["entity", "relationship", "observation", "mixed"], "default": "mixed"},
             "top_k": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 50}
-        }
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn kg_review_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "target": {"type": "string", "enum": ["entity", "relationship", "mixed"], "default": "mixed"},
-            "status": {"type": "string", "enum": ["pending", "approved", "rejected", "auto_approved"], "default": "pending"},
-            "min_conf": {"type": ["number", "string"], "minimum": 0.0, "maximum": 1.0},
-            "limit": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 200, "default": 50},
-            "offset": {"type": ["integer", "number", "string"], "minimum": 0, "default": 0},
-            "query": {"type": "object"}
-        }
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn kg_decide_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "items": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "id": {"type": "string"},
-                        "kind": {"type": "string", "enum": ["entity", "relationship"]},
-                        "decision": {"type": "string", "enum": ["approve", "reject"]},
-                        "feedback": {"type": "string"},
-                        "canonical_id": {"type": "string"}
-                    },
-                    "required": ["id", "kind", "decision"]
-                }
-            }
-        },
-        "required": ["items"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn kg_moderate_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "action": {"type": "string", "enum": ["review", "decide", "review_and_decide"], "default": "review"},
-            "target": {"type": "string", "enum": ["entity", "relationship", "mixed"], "default": "mixed"},
-            "status": {"type": "string", "enum": ["pending", "approved", "rejected", "auto_approved"], "default": "pending"},
-            "min_conf": {"type": ["number", "string"], "minimum": 0.0, "maximum": 1.0},
-            "limit": {"type": ["integer", "number", "string"], "minimum": 1, "maximum": 200, "default": 50},
-            "offset": {"type": ["integer", "number", "string"], "minimum": 0, "default": 0},
-            "cursor": {"type": "string"},
-            "query": {"type": "object"},
-            "items": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "id": {"type": "string"},
-                        "kind": {"type": "string", "enum": ["entity", "relationship"]},
-                        "decision": {"type": "string", "enum": ["approve", "reject", "alias"]},
-                        "feedback": {"type": "string"},
-                        "canonical_id": {"type": "string"}
-                    },
-                    "required": ["id", "kind", "decision"]
-                }
-            },
-            "dry_run": {"type": "boolean", "default": false}
         }
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
@@ -421,20 +312,6 @@ pub fn legacymind_think_output_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
-pub fn legacymind_update_output_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "thought_id": {"type": "string"},
-            "updated": {"type": "boolean"},
-            "fields_updated": {"type": "array", "items": {"type": "string"}},
-            "reembedded": {"type": "boolean"}
-        },
-        "required": ["thought_id", "updated", "fields_updated", "reembedded"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
 pub fn memories_create_output_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
@@ -444,36 +321,6 @@ pub fn memories_create_output_schema() -> Arc<Map<String, Value>> {
             "created": {"type": "boolean", "description": "True if newly created, false if existing found"}
         },
         "required": ["kind", "id", "created"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn memories_moderate_output_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "review": {
-                "type": "object",
-                "properties": {
-                    "items": {"type": "array", "description": "Candidates for review"}
-                },
-                "description": "Review results (when action includes review)"
-            },
-            "results": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "id": {"type": "string"},
-                        "kind": {"type": "string"},
-                        "decision": {"type": "string"},
-                        "success": {"type": "boolean"},
-                        "error": {"type": "string"}
-                    }
-                },
-                "description": "Decision results (when action includes decide)"
-            }
-        }
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
@@ -564,43 +411,6 @@ pub fn detailed_help_output_schema() -> Arc<Map<String, Value>> {
                 "description": "List of prompts (when prompts=true)"
             }
         }
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn memories_populate_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "source": {"type": "string", "enum": ["unprocessed", "chain_id", "date_range"], "default": "unprocessed"},
-            "chain_id": {"type": "string"},
-            "since": {"type": "string"},
-            "until": {"type": "string"},
-            "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 5},
-            "auto_approve": {"type": "boolean", "default": false},
-            "confidence_threshold": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.8},
-            "challenge": {"type": "boolean", "default": false},
-            "inherit_session_from": {"type": "string"}
-        }
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn memories_populate_output_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "thoughts_processed": {"type": "integer"},
-            "entities_extracted": {"type": "integer"},
-            "relationships_extracted": {"type": "integer"},
-            "observations_extracted": {"type": "integer"},
-            "boundaries_extracted": {"type": "integer"},
-            "staged_for_review": {"type": "integer"},
-            "auto_approved": {"type": "integer"},
-            "extraction_batch_id": {"type": "string"},
-            "gemini_session_id": {"type": "string"}
-        },
-        "required": ["thoughts_processed", "entities_extracted", "relationships_extracted", "observations_extracted", "boundaries_extracted", "staged_for_review", "auto_approved", "extraction_batch_id", "gemini_session_id"]
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }

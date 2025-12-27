@@ -19,7 +19,6 @@ fn test_list_tools_returns_expected_tools() {
     let expected_tools = [
         "legacymind_think",
         "memories_create",
-        "memories_moderate",
         "maintenance_ops",
         "detailed_help",
         "inner_voice",
@@ -27,8 +26,8 @@ fn test_list_tools_returns_expected_tools() {
     ];
     assert_eq!(
         expected_tools.len(),
-        7,
-        "Tool roster should list 7 entries after removing photography and brain_store tools"
+        6,
+        "Tool roster should list 6 entries after removing photography and brain_store tools"
     );
 }
 
@@ -79,7 +78,7 @@ fn test_detailed_help_schema_structure() {
     let expected_schema = json!({
         "type": "object",
         "properties": {
-            "tool": {"type": "string", "enum": ["legacymind_think", "memories_create", "memories_moderate", "legacymind_search", "maintenance_ops", "inner_voice", "detailed_help"]},
+            "tool": {"type": "string", "enum": ["legacymind_think", "memories_create", "legacymind_search", "maintenance_ops", "inner_voice", "detailed_help"]},
             "format": {"type": "string", "enum": ["compact", "full"], "default": "full"},
             "prompts": {"type": "boolean"}
         }

@@ -48,7 +48,6 @@ impl SurrealMindServer {
                 let tools = vec![
                     json!({"name": "legacymind_think", "one_liner": "Unified thinking tool with automatic mode routing via triggers/heurs", "key_params": ["content", "hint", "injection_scale", "tags", "significance"]}),
                     json!({"name": "memories_create", "one_liner": "Create entities/relationships/observations in the KG", "key_params": ["kind", "data", "confidence", "source_thought_id"]}),
-                    json!({"name": "memories_moderate", "one_liner": "Review/decide on KG candidates", "key_params": ["action", "target", "status", "items", "dry_run"]}),
                     json!({"name": "legacymind_search", "one_liner": "Unified LM search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]}),
                     json!({"name": "maintenance_ops", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]}),
                     json!({"name": "inner_voice", "one_liner": "Retrieves and synthesizes relevant memories/thoughts into a concise answer; can optionally auto-extract entities/relationships into staged knowledge‑graph candidates for review.", "key_params": ["query", "top_k", "auto_extract_to_kg"]}),
@@ -181,26 +180,9 @@ impl SurrealMindServer {
                 },
                 "returns": {"created": true, "id": "string", "kind": "string"}
             }),
-            "memories_moderate" => json!({
-                "name": "memories_moderate",
-                "description": "Unified moderation: review candidates and/or apply decisions in one call.",
-                "arguments": {
-                    "action": "'review'|'decide'|'review_and_decide' (default: 'review')",
-                    "target": "'entity'|'relationship'|'mixed' (default: 'mixed')",
-                    "status": "'pending'|'approved'|'rejected'|'auto_approved' (default: 'pending')",
-                    "min_conf": "number — minimum confidence filter",
-                    "limit": "integer — page size",
-                    "offset": "integer — page offset",
-                    "cursor": "string — (reserved)",
-                    "items": "array — decisions: [{id, kind, decision, feedback?, canonical_id?}]",
-                    "dry_run": "boolean — simulate decisions without writes"
-                },
-                "returns": {"review": {"items": "array"}, "results": "array"}
-            }),
             // Legacy aliases for KG help (kept as pointers only)
             "knowledgegraph_create" => json!({"alias_of": "memories_create"}),
             "knowledgegraph_search" => json!({"alias_of": "memories_search"}),
-            "knowledgegraph_moderate" => json!({"alias_of": "memories_moderate"}),
             "maintenance_ops" => json!({
                 "name": "maintenance_ops",
                 "description": "Maintenance operations for archival and cleanup of thoughts.",

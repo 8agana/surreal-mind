@@ -29,6 +29,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::PollSender;
 
 // Helper to create transport channels
+#[allow(clippy::type_complexity)]
 fn create_test_transport() -> (
     mpsc::Sender<RxJsonRpcMessage<RoleServer>>,
     mpsc::Receiver<TxJsonRpcMessage<RoleServer>>,
@@ -148,25 +149,25 @@ async fn test_list_tools_protocol() {
                     );
 
                     // The result is a ClientResult, serialize it to check tools
-                    if let Ok(result_json) = serde_json::to_value(&json_response.result) {
-                        if let Some(tools) = result_json.get("tools").and_then(|t| t.as_array()) {
-                            assert!(!tools.is_empty(), "Should have at least one tool");
+                    if let Ok(result_json) = serde_json::to_value(&json_response.result)
+                        && let Some(tools) = result_json.get("tools").and_then(|t| t.as_array())
+                    {
+                        assert!(!tools.is_empty(), "Should have at least one tool");
 
-                            // Check for legacymind_search tool
-                            let tool_names: Vec<String> = tools
-                                .iter()
-                                .filter_map(|t| {
-                                    t.get("name")
-                                        .and_then(|n| n.as_str())
-                                        .map(|s| s.to_string())
-                                })
-                                .collect();
+                        // Check for legacymind_search tool
+                        let tool_names: Vec<String> = tools
+                            .iter()
+                            .filter_map(|t| {
+                                t.get("name")
+                                    .and_then(|n| n.as_str())
+                                    .map(|s| s.to_string())
+                            })
+                            .collect();
 
-                            assert!(
-                                tool_names.contains(&"legacymind_search".to_string()),
-                                "Should include legacymind_search tool"
-                            );
-                        }
+                        assert!(
+                            tool_names.contains(&"legacymind_search".to_string()),
+                            "Should include legacymind_search tool"
+                        );
                     }
                 }
                 _ => panic!("Expected Response, got {:?}", response),
@@ -276,25 +277,22 @@ async fn test_call_tool_continuity_fallback_protocol() {
                     assert_eq!(id_str, "test-continuity", "Response ID should match request");
 
                     // Serialize the ClientResult to check the response
-                    if let Ok(tool_result) = serde_json::to_value(&json_response.result) {
-                        if let Some(content) = tool_result.get("content").and_then(|c| c.as_array()) {
-                            if let Some(first) = content.first() {
-                                // Try to parse the actual thought response
-                                if let Some(text) = first.get("text").and_then(|t| t.as_str()) {
-                                    if let Ok(thought_data) = serde_json::from_str::<serde_json::Value>(text) {
-                                        if let Some(links) = thought_data.get("links") {
-                                            if let Some(prev_id) = links.get("previous_thought_id").and_then(|p| p.as_str()) {
-                                                // ID should be preserved (may have "thoughts:" prefix)
-                                                assert!(
-                                                    prev_id == non_existent_id || prev_id == &format!("thoughts:{}", non_existent_id),
-                                                    "Previous thought ID should be preserved through protocol (got: {})",
-                                                    prev_id
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                    if let Ok(tool_result) = serde_json::to_value(&json_response.result)
+                        && let Some(content) = tool_result.get("content").and_then(|c| c.as_array())
+                        && let Some(first) = content.first()
+                    {
+                        // Try to parse the actual thought response
+                        if let Some(text) = first.get("text").and_then(|t| t.as_str())
+                            && let Ok(thought_data) = serde_json::from_str::<serde_json::Value>(text)
+                            && let Some(links) = thought_data.get("links")
+                            && let Some(prev_id) = links.get("previous_thought_id").and_then(|p| p.as_str())
+                        {
+                            // ID should be preserved (may have "thoughts:" prefix)
+                            assert!(
+                                prev_id == non_existent_id || prev_id == format!("thoughts:{}", non_existent_id),
+                                "Previous thought ID should be preserved through protocol (got: {})",
+                                prev_id
+                            );
                         }
                     }
                 }
