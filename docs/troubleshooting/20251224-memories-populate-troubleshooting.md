@@ -2,12 +2,47 @@
 
 # memories_populate Multiple Issues
 
-**Date**: 2025-12-24
-**Issue Type**: SQL Syntax + Deserialization Errors
-**Status**: Fixes Implemented - Awaiting Testing
+**Date**: 2025-12-24 to 2025-12-25
+**Issue Type**: SQL Syntax + Deserialization Errors + Record ID Format
+**Status**: ✅ RESOLVED
+**Resolution Date**: 2025-12-25 12:34 CST
 **Previous Troubleshooting Doc**: /Users/samuelatagana/Projects/LegacyMind/surreal-mind/docs/troubleshooting/20251221-20251224-memories-populate-troubleshooting.md
 **Prompt Location**: /Users/samuelatagana/Projects/LegacyMind/surreal-mind/docs/prompts/20251221-memories-populate-implementation.md
 **Reference Doc**: /Users/samuelatagana/Projects/LegacyMind/surreal-mind/docs/troubleshooting/20251221-memories-populate-manual.md
+
+---
+
+## Resolution Summary
+
+**Root Cause**: SurrealDB stores record IDs with Unicode angle brackets `⟨⟩` (U+27E8/U+27E9), not backticks. The UPDATE query used backticks, which didn't match the actual record ID format.
+
+**Fix**: Changed `router.rs` line 641 from:
+```sql
+UPDATE thoughts:`{}` SET ...
+```
+to:
+```sql
+UPDATE thoughts:⟨{}⟩ SET ...
+```
+
+**Why CLI tests were misleading**: The SurrealDB CLI accepts BOTH formats (normalizing internally), so manual CLI tests with backticks appeared to work. But Rust code using backticks didn't match actual DB record IDs, causing UPDATE to match 0 rows.
+
+**Key diagnostic that revealed the issue**: Added response logging to UPDATE - SurrealDB UPDATE returns matched records. Empty array `[]` means no match. This revealed the format mismatch.
+
+---
+
+## Archive: Fixes Attempted (2025-12-24 to 2025-12-25)
+
+| Attempt | What | Result |
+|---------|------|--------|
+| 1 | Parameter binding with angle brackets | ❌ No change |
+| 2 | Parameter binding with backticks | ❌ No change |
+| 3 | Direct string interpolation with backticks | ❌ No change |
+| 4 | CLI command with backticks (manual test) | ✅ Worked (misleading) |
+| 5 | Added UPDATE response logging | ✅ Revealed 0 rows matched |
+| 6 | Changed backticks to Unicode angle brackets ⟨⟩ | ✅ **FIXED** |
+
+**Lesson Learned**: Always check what queries RETURN, not just whether they error. Adding observability (response logging) before making more syntax guesses would have found this faster.
 
 ---
 

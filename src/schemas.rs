@@ -523,7 +523,7 @@ pub fn memories_populate_schema() -> Arc<Map<String, Value>> {
             "chain_id": {"type": "string"},
             "since": {"type": "string"},
             "until": {"type": "string"},
-            "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 5},
             "auto_approve": {"type": "boolean", "default": false},
             "confidence_threshold": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.8},
             "challenge": {"type": "boolean", "default": false},

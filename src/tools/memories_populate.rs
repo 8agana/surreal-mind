@@ -38,7 +38,7 @@ fn default_source() -> String {
     "unprocessed".to_string()
 }
 fn default_limit() -> u32 {
-    20
+    5
 }
 fn default_threshold() -> f32 {
     0.8

@@ -525,7 +525,7 @@ impl Default for Config {
                 embed_retries: 3,
                 database_url: "127.0.0.1:8000".to_string(),
                 database_ns: "surreal_mind".to_string(),
-                database_db: "conciousness".to_string(),
+                database_db: "consciousness".to_string(),
                 inject_debounce: 1000,
             },
             retrieval: RetrievalConfig {

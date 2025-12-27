@@ -38,6 +38,7 @@ impl SurrealMindServer {
             DEFINE FIELD embedded_at ON TABLE thoughts TYPE option<datetime>;
             DEFINE FIELD extracted_to_kg ON TABLE thoughts TYPE bool DEFAULT false;
             DEFINE FIELD extraction_batch_id ON TABLE thoughts TYPE option<string>;
+            DEFINE FIELD extracted_at ON TABLE thoughts TYPE option<datetime>;
             -- Continuity fields for thought chaining
             DEFINE FIELD session_id ON TABLE thoughts TYPE option<string>;
             DEFINE FIELD chain_id ON TABLE thoughts TYPE option<string>;

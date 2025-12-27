@@ -636,26 +636,57 @@ THOUGHTS TO PROCESS:
         // Mark processed thoughts as extracted
         let now_str = Utc::now().to_rfc3339();
         for thought in &thoughts {
-            if let Err(e) = self
-                .db
-                .query(
-                    r#"
-                    UPDATE type::thing($id) SET
+            let query = format!(
+                r#"
+                    UPDATE thoughts:⟨{}⟩ SET
                         extracted_to_kg = true,
                         extraction_batch_id = $batch,
                         extracted_at = $now
                 "#,
-                )
-                .bind(("id", thought.id.clone()))
+                thought.id
+            );
+            tracing::info!("memories_populate UPDATE query for thought {}: {}", thought.id, query);
+            match self
+                .db
+                .query(query)
                 .bind(("batch", extraction_batch_id.clone()))
                 .bind(("now", now_str.clone()))
                 .await
             {
-                tracing::error!(
-                    "memories_populate: failed to mark thought {} as extracted: {}",
-                    thought.id,
-                    e
-                );
+                Ok(mut response) => {
+                    // Check what UPDATE returned - should be the updated record(s)
+                    let result: Result<Vec<serde_json::Value>, _> = response.take(0);
+                    match result {
+                        Ok(updated) => {
+                            if updated.is_empty() {
+                                tracing::warn!(
+                                    "memories_populate: UPDATE returned 0 records for thought {} - record may not exist with this ID format",
+                                    thought.id
+                                );
+                            } else {
+                                tracing::info!(
+                                    "memories_populate: successfully marked thought {} as extracted, returned: {:?}",
+                                    thought.id,
+                                    updated
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                "memories_populate: failed to parse UPDATE response for thought {}: {}",
+                                thought.id,
+                                e
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "memories_populate: failed to mark thought {} as extracted: {}",
+                        thought.id,
+                        e
+                    );
+                }
             }
         }
 
