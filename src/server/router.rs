@@ -636,51 +636,36 @@ THOUGHTS TO PROCESS:
         // Mark processed thoughts as extracted
         let now_str = Utc::now().to_rfc3339();
         for thought in &thoughts {
-            let query = r#"
-                UPDATE type::thing('thoughts', $id) SET
-                    extracted_to_kg = true,
-                    extraction_batch_id = $batch,
-                    extracted_at = $now
-            "#;
-            tracing::info!("memories_populate UPDATE query for thought {}: {}", thought.id, query);
-            match self
-                .db
-                .query(query)
-                .bind(("id", thought.id.clone()))
-                .bind(("batch", extraction_batch_id.clone()))
-                .bind(("now", now_str.clone()))
+            // Use SDK merge for robust partial update, bypassing ID syntax issues
+            let update_data = json!({
+                "extracted_to_kg": true,
+                "extraction_batch_id": extraction_batch_id,
+                "extracted_at": now_str
+            });
+
+            tracing::info!("memories_populate: merging update for thought thoughts:{}", thought.id);
+            
+            // Construct RecordId tuple ("table", "id_string")
+            match self.db.update::<Option<serde_json::Value>>(("thoughts", &thought.id))
+                .merge(update_data)
                 .await
             {
-                Ok(mut response) => {
-                    // Check what UPDATE returned - should be the updated record(s)
-                    let result: Result<Vec<serde_json::Value>, _> = response.take(0);
-                    match result {
-                        Ok(updated) => {
-                            if updated.is_empty() {
-                                tracing::warn!(
-                                    "memories_populate: UPDATE returned 0 records for thought {} - record may not exist with this ID format",
-                                    thought.id
-                                );
-                            } else {
-                                tracing::info!(
-                                    "memories_populate: successfully marked thought {} as extracted, returned: {:?}",
-                                    thought.id,
-                                    updated
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            tracing::error!(
-                                "memories_populate: failed to parse UPDATE response for thought {}: {}",
-                                thought.id,
-                                e
-                            );
-                        }
+                Ok(updated) => {
+                    if updated.is_none() {
+                        tracing::warn!(
+                            "memories_populate: merge returned None for thought {} - record may not exist",
+                            thought.id
+                        );
+                    } else {
+                        tracing::info!(
+                            "memories_populate: successfully marked thought {} as extracted",
+                            thought.id
+                        );
                     }
                 }
                 Err(e) => {
                     tracing::error!(
-                        "memories_populate: failed to mark thought {} as extracted: {}",
+                        "memories_populate: failed to merge thought {}: {}",
                         thought.id,
                         e
                     );

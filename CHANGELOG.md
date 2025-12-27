@@ -5,7 +5,7 @@
 - (2025-12-19) Added `curiosity_add`, `curiosity_get`, `curiosity_search` tools for lightweight note-taking with semantic search.
 
 ### Fixed
-- (2025-12-26) Fixed `memories_populate` UPDATE query syntax to use `type::thing('thoughts', $id)` instead of string interpolation with angle brackets, resolving an issue where processed thoughts were not marked correctly.
+- (2025-12-26) Refactored `memories_populate` update logic to use native `db.update().merge()` SDK method instead of raw SQL queries. This definitively resolves record ID binding issues (UUID vs String) that were causing silent update failures.
 - (2025-12-25) `memories_populate` now returns fully structured MCP output (no RawContent paths), records `extracted_at` and `thought_ids`, and defaults Gemini CLI to `gemini-3-pro-preview`; parsing now strips code fences and surfaces stdout snippets on error. Workspace fmt/clippy/tests all passing.
 - (2025-12-24) Cleared clippy `collapsible_if` and `unnecessary_unwrap` across inner_voice, knowledge_graph, maintenance, http, binaries (smtop, reembed_kg, kg_dedupe_plan) and tests; workspace now clippy-clean with full test suite passing.
 - (2025-12-23) Updated `detailed_help` documentation for `legacymind_think` to accurately reflect its return structure (flat JSON, not nested) and clarify that framework analysis is DB-only.
