@@ -636,19 +636,17 @@ THOUGHTS TO PROCESS:
         // Mark processed thoughts as extracted
         let now_str = Utc::now().to_rfc3339();
         for thought in &thoughts {
-            let query = format!(
-                r#"
-                    UPDATE thoughts:⟨{}⟩ SET
-                        extracted_to_kg = true,
-                        extraction_batch_id = $batch,
-                        extracted_at = $now
-                "#,
-                thought.id
-            );
+            let query = r#"
+                UPDATE type::thing('thoughts', $id) SET
+                    extracted_to_kg = true,
+                    extraction_batch_id = $batch,
+                    extracted_at = $now
+            "#;
             tracing::info!("memories_populate UPDATE query for thought {}: {}", thought.id, query);
             match self
                 .db
                 .query(query)
+                .bind(("id", thought.id.clone()))
                 .bind(("batch", extraction_batch_id.clone()))
                 .bind(("now", now_str.clone()))
                 .await

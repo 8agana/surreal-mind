@@ -2,8 +2,8 @@
 
 **Date**: 2025-12-26
 **Issue Type**: Mark Thoughts as Processed Issue
-**Status**: Pending
-**Resolution Date**: 
+**Status**: Resolved
+**Resolution Date**: 2025-12-26
 **Previous Troubleshooting Docs**: 
 - [resolved] docs/troubleshooting/20251221-20251224-memories_populate-troubleshooting.md
 - [resolved] docs/troubleshooting/20251224-memories_populate-troubleshooting.md
@@ -28,4 +28,43 @@ ___
  - The thought ID format being different than expected
  - How SurrealDB handles the compiled query
  
- ___
+## Investigation (Gemini CLI)
+**Date**: 2025-12-26
+**Analyst**: Gemini
+
+Found the root cause in `src/server/router.rs`. The code was using string interpolation with non-standard angle brackets for the record ID, which SurrealDB likely treats as invalid syntax or a different type of identifier in the compiled query context, causing silent failure.
+
+**Problematic Code:**
+```rust
+let query = format!(
+    r#"
+        UPDATE thoughts:⟨{}⟩ SET
+            extracted_to_kg = true,
+            extraction_batch_id = $batch,
+            extracted_at = $now
+    "#,
+    thought.id
+);
+```
+
+## Resolution
+Replaced the string interpolation with a robust, parameterized binding using `type::thing()`. This aligns with the project's binding standards and ensures the ID is correctly interpreted by the database engine regardless of format.
+
+**Fixed Code:**
+```rust
+let query = r#"
+    UPDATE type::thing('thoughts', $id) SET
+        extracted_to_kg = true,
+        extraction_batch_id = $batch,
+        extracted_at = $now
+"#;
+
+// ...
+
+.bind(("id", thought.id.clone()))
+```
+
+**Verification:**
+- `cargo check` passes.
+- Fix committed to `src/server/router.rs`.
+- CHANGELOG updated.
