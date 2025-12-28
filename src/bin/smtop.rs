@@ -3,7 +3,6 @@ use std::io;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use dirs;
 use ratatui::crossterm::{event, execute, terminal};
 use ratatui::prelude::*;
 use ratatui::widgets::*;

@@ -6,7 +6,6 @@ use anyhow::Context;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde_json::json;
 use std::collections::HashSet;
-use std::time::Instant;
 
 /// Maximum content size in bytes (100KB)
 const MAX_CONTENT_SIZE: usize = 100 * 1024;
@@ -322,7 +321,7 @@ impl SurrealMindServer {
         tags: Option<Vec<String>>,
         significance: Option<f32>,
         verbose_analysis: Option<bool>,
-        is_conclude: bool,
+        _is_conclude: bool,
         session_id: Option<String>,
         chain_id: Option<String>,
         previous_thought_id: Option<String>,
@@ -353,18 +352,20 @@ impl SurrealMindServer {
 
         // Framework enhancement (Temporarily DISABLED due to module deletion)
         // This will be re-implemented using the new src/cognitive module in a future step
-        let enhance_enabled = false; 
-            // !is_conclude && std::env::var("SURR_THINK_ENHANCE").unwrap_or("1".to_string()) == "1";
-        
+        let enhance_enabled = false;
+        // !is_conclude && std::env::var("SURR_THINK_ENHANCE").unwrap_or("1".to_string()) == "1";
+
         let verbose_analysis = verbose_analysis.unwrap_or(false);
         let framework_enhanced = false;
         let framework_analysis: Option<serde_json::Value> = None;
-        
+
         if enhance_enabled || verbose_analysis {
-            tracing::warn!("Framework enhancement momentarily disabled pending architecture update");
+            tracing::warn!(
+                "Framework enhancement momentarily disabled pending architecture update"
+            );
         }
 
-        /* 
+        /*
         // LEGACY FRAMEWORK CODE - REMOVED TO ALLOW COMPILATION
         // TODO: Re-wire this to use src/cognitive
         if enhance_enabled || verbose_analysis {

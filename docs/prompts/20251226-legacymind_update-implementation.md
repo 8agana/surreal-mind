@@ -1,13 +1,13 @@
+---
+Date: 2025-12-27
+Prompt Type: Implementation Plan (New Tool)
+Justification: Creating tools for Gemini CLI to use when called by surreal-mind. Solving issues with memories_populate and future tools. 
+Status: Cancelled
+Implementation Date: 2025-12-27
+Previous Connected Prompt: docs/prompts/20251221-memories_populate-implementation.md
+---
+
 # legacymind_update implementation
-
-**Date**: 2025-12-26
-**Prompt Type**: Implementation Plan (New Tool)
-**Justification**: Creating tools for Gemini CLI to use when called by surreal-mind. Solving issues with memories_populate and future tools. 
-**Status**: Cancelled
-**Implementation Date**: 2025-12-27
-**Previous Connected Prompt**: docs/prompts/20251221-memories_populate-implementation.md
-
-___
 
 ## Summary
 Implemented a new `legacymind_update` tool to update existing thoughts (including `extracted_to_kg`) in a direct, tool-visible way. This enables Gemini CLI (and other tool users) to perform safe, auditable updates without relying on hidden orchestration inside `memories_populate`.
@@ -59,10 +59,10 @@ ___
 
 ___
 
-**Status**: Implemented - Troubleshooting
+**Status**: Implemented - Cancelled
 **Implementation Date**: 2025-12-26
 **Connected Prompt Docs**:
 **Troubleshooting Docs**: 
 - [cancelled] docs/troubleshooting/20251226-legacymind_update-troubleshooting.md
 **Reference Doc**: 
-**Closure Notes**:
+**Closure Notes**: Cancelled for future development

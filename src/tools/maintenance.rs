@@ -568,40 +568,31 @@ impl SurrealMindServer {
     }
 
     async fn handle_reembed_kg(&self, limit: usize, dry_run: bool) -> Result<CallToolResult> {
-        // Placeholder: Reembed KG entities and observations
-        // For now, simulate by calling the binary or implement inline
-        // Since the binary exists, perhaps use std::process::Command
-        use std::process::Command;
-        let mut cmd = Command::new("cargo");
-        cmd.arg("run").arg("--bin").arg("reembed_kg");
-        if dry_run {
-            cmd.env("DRY_RUN", "true");
-        }
-        cmd.env("LIMIT", limit.to_string());
-        // Check SURR_ENABLE_SPAWN environment variable
-        let spawn_enabled = std::env::var("SURR_ENABLE_SPAWN")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
+        // Call the library function directly
+        let limit_opt = if limit == 0 { None } else { Some(limit) };
+        let stats = crate::run_reembed_kg(limit_opt, dry_run)
+            .await
+            .map_err(|e| SurrealMindError::Internal {
+                message: format!("KG reembed failed: {}", e),
+            })?;
 
-        if !spawn_enabled {
-            let result = json!({
-                "message": "SURR_ENABLE_SPAWN=1 required to spawn reembed_kg process",
-                "advisory": "Run './target/release/reembed_kg' directly with desired environment variables",
-                "dry_run": dry_run
-            });
-            return Ok(CallToolResult::structured(result));
-        }
-
-        let output = cmd.output().map_err(|e| SurrealMindError::Internal {
-            message: format!("Failed to run reembed_kg: {}", e),
-        })?;
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
         let result = json!({
-            "message": "Reembed KG executed",
-            "stdout": stdout,
-            "stderr": stderr,
-            "success": output.status.success(),
+            "message": "KG reembed completed",
+            "expected_dim": stats.expected_dim,
+            "provider": stats.provider,
+            "model": stats.model,
+            "entities": {
+                "updated": stats.entities_updated,
+                "skipped": stats.entities_skipped,
+                "missing": stats.entities_missing,
+                "mismatched": stats.entities_mismatched
+            },
+            "observations": {
+                "updated": stats.observations_updated,
+                "skipped": stats.observations_skipped,
+                "missing": stats.observations_missing,
+                "mismatched": stats.observations_mismatched
+            },
             "dry_run": dry_run
         });
         Ok(CallToolResult::structured(result))

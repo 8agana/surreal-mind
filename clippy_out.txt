@@ -1,0 +1,247 @@
+    Checking surreal-mind v0.1.1 (/Users/samuelatagana/Projects/LegacyMind/surreal-mind)
+error: this import is redundant
+ --> src/bin/smtop.rs:6:1
+  |
+6 | use dirs;
+  | ^^^^^^^^^ help: remove it entirely
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.92.0/index.html#single_component_path_imports
+  = note: `-D clippy::single-component-path-imports` implied by `-D warnings`
+  = help: to override `-D warnings` add `#[allow(clippy::single_component_path_imports)]`
+
+error: this import is redundant
+ --> src/main.rs:2:1
+  |
+2 | use dirs;
+  | ^^^^^^^^^ help: remove it entirely
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.92.0/index.html#single_component_path_imports
+  = note: `-D clippy::single-component-path-imports` implied by `-D warnings`
+  = help: to override `-D warnings` add `#[allow(clippy::single_component_path_imports)]`
+
+error: could not compile `surreal-mind` (bin "smtop") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error[E0432]: unresolved import `kg_extractor`
+ --> tests/kg_extraction_test.rs:9:9
+  |
+9 |     use kg_extractor::HeuristicExtractor;
+  |         ^^^^^^^^^^^^ use of unresolved module or unlinked crate `kg_extractor`
+  |
+  = help: if you wanted to use a crate named `kg_extractor`, use `cargo add kg_extractor` to add it to your `Cargo.toml`
+
+error[E0432]: unresolved import `kg_extractor`
+  --> tests/kg_extraction_test.rs:70:9
+   |
+70 |     use kg_extractor::HeuristicExtractor;
+   |         ^^^^^^^^^^^^ use of unresolved module or unlinked crate `kg_extractor`
+   |
+   = help: if you wanted to use a crate named `kg_extractor`, use `cargo add kg_extractor` to add it to your `Cargo.toml`
+
+error[E0432]: unresolved import `kg_extractor`
+  --> tests/kg_extraction_test.rs:97:9
+   |
+97 |     use kg_extractor::HeuristicExtractor;
+   |         ^^^^^^^^^^^^ use of unresolved module or unlinked crate `kg_extractor`
+   |
+   = help: if you wanted to use a crate named `kg_extractor`, use `cargo add kg_extractor` to add it to your `Cargo.toml`
+
+error[E0432]: unresolved import `kg_extractor`
+   --> tests/kg_extraction_test.rs:133:9
+    |
+133 |     use kg_extractor::HeuristicExtractor;
+    |         ^^^^^^^^^^^^ use of unresolved module or unlinked crate `kg_extractor`
+    |
+    = help: if you wanted to use a crate named `kg_extractor`, use `cargo add kg_extractor` to add it to your `Cargo.toml`
+
+error[E0432]: unresolved import `kg_extractor`
+   --> tests/kg_extraction_test.rs:183:9
+    |
+183 |     use kg_extractor::HeuristicExtractor;
+    |         ^^^^^^^^^^^^ use of unresolved module or unlinked crate `kg_extractor`
+    |
+    = help: if you wanted to use a crate named `kg_extractor`, use `cargo add kg_extractor` to add it to your `Cargo.toml`
+
+error[E0432]: unresolved import `kg_extractor`
+   --> tests/kg_extraction_test.rs:231:9
+    |
+231 |     use kg_extractor::HeuristicExtractor;
+    |         ^^^^^^^^^^^^ use of unresolved module or unlinked crate `kg_extractor`
+    |
+    = help: if you wanted to use a crate named `kg_extractor`, use `cargo add kg_extractor` to add it to your `Cargo.toml`
+
+error[E0432]: unresolved import `kg_extractor`
+   --> tests/kg_extraction_test.rs:271:9
+    |
+271 |     use kg_extractor::HeuristicExtractor;
+    |         ^^^^^^^^^^^^ use of unresolved module or unlinked crate `kg_extractor`
+    |
+    = help: if you wanted to use a crate named `kg_extractor`, use `cargo add kg_extractor` to add it to your `Cargo.toml`
+
+error[E0432]: unresolved import `surreal_mind::kg_extractor`
+ --> tests/kg_extractor_tests.rs:1:19
+  |
+1 | use surreal_mind::kg_extractor::HeuristicExtractor;
+  |                   ^^^^^^^^^^^^ could not find `kg_extractor` in `surreal_mind`
+
+error: unused import: `surreal_mind::*`
+ --> tests/kg_extraction_test.rs:4:5
+  |
+4 | use surreal_mind::*;
+  |     ^^^^^^^^^^^^^^^
+  |
+  = note: `-D unused-imports` implied by `-D warnings`
+  = help: to override `-D warnings` add `#[allow(unused_imports)]`
+
+error[E0433]: failed to resolve: could not find `kg_extractor` in `surreal_mind`
+  --> tests/kg_debug_test.rs:10:35
+   |
+10 |     let extractor = surreal_mind::kg_extractor::HeuristicExtractor::new();
+   |                                   ^^^^^^^^^^^^ could not find `kg_extractor` in `surreal_mind`
+
+error[E0433]: failed to resolve: could not find `kg_extractor` in `surreal_mind`
+   --> tests/kg_debug_test.rs:233:35
+    |
+233 |     let extractor = surreal_mind::kg_extractor::HeuristicExtractor::new();
+    |                                   ^^^^^^^^^^^^ could not find `kg_extractor` in `surreal_mind`
+
+error[E0282]: type annotations needed
+  --> tests/kg_extraction_test.rs:18:18
+   |
+18 |     let result = extractor.extract(&test_texts).await.unwrap();
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+ --> tests/kg_extractor_tests.rs:7:18
+  |
+7 |     let result = extractor.extract(&[text]).await.unwrap();
+  |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+  --> tests/kg_extraction_test.rs:73:18
+   |
+73 |     let result = extractor.extract(&[]).await.unwrap();
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+   --> tests/kg_extraction_test.rs:106:18
+    |
+106 |     let result = extractor.extract(&test_texts).await.unwrap();
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+   --> tests/kg_extraction_test.rs:141:18
+    |
+141 |     let result = extractor.extract(&test_texts).await.unwrap();
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+  --> tests/kg_extractor_tests.rs:20:18
+   |
+20 |     let result = extractor.extract(&[text]).await.unwrap();
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+  --> tests/kg_debug_test.rs:22:29
+   |
+22 |     let extraction_result = extractor.extract(&test_text).await.unwrap();
+   |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+   --> tests/kg_extraction_test.rs:192:18
+    |
+192 |     let result = extractor.extract(&test_texts).await.unwrap();
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+Some errors have detailed explanations: E0282, E0432.
+For more information about an error, try `rustc --explain E0282`.
+error[E0282]: type annotations needed
+   --> tests/kg_extraction_test.rs:213:40
+    |
+213 |         event_descriptions.iter().any(|desc| desc.contains("fixed")),
+    |                                        ^^^^  ---- type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+213 |         event_descriptions.iter().any(|desc: /* Type */| desc.contains("fixed")),
+    |                                            ++++++++++++
+
+error[E0282]: type annotations needed
+   --> tests/kg_extraction_test.rs:217:40
+    |
+217 |         event_descriptions.iter().any(|desc| desc.contains("added")),
+    |                                        ^^^^  ---- type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+217 |         event_descriptions.iter().any(|desc: /* Type */| desc.contains("added")),
+    |                                            ++++++++++++
+
+error[E0282]: type annotations needed
+   --> tests/kg_extraction_test.rs:239:18
+    |
+239 |     let result = extractor.extract(&test_texts).await.unwrap();
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+   --> tests/kg_extraction_test.rs:256:53
+    |
+256 |             confidences.iter().fold(f32::INFINITY, |a, &b| a.min(b)),
+    |                                                     ^      - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+256 |             confidences.iter().fold(f32::INFINITY, |a: /* Type */, &b| a.min(b)),
+    |                                                      ++++++++++++
+
+error[E0282]: type annotations needed
+   --> tests/kg_extraction_test.rs:257:46
+    |
+257 |             confidences.iter().fold(0.0f32, |a, &b| a.max(b))
+    |                                              ^      - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+257 |             confidences.iter().fold(0.0f32, |a: /* Type */, &b| a.max(b))
+    |                                               ++++++++++++
+
+error[E0282]: type annotations needed
+   --> tests/kg_extraction_test.rs:264:49
+    |
+264 |         confidences.iter().fold(f32::INFINITY, |a, &b| a.min(b)),
+    |                                                 ^      - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+264 |         confidences.iter().fold(f32::INFINITY, |a: /* Type */, &b| a.min(b)),
+    |                                                  ++++++++++++
+
+error[E0282]: type annotations needed
+   --> tests/kg_extraction_test.rs:265:42
+    |
+265 |         confidences.iter().fold(0.0f32, |a, &b| a.max(b))
+    |                                          ^      - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+265 |         confidences.iter().fold(0.0f32, |a: /* Type */, &b| a.max(b))
+    |                                           ++++++++++++
+
+error[E0282]: type annotations needed
+   --> tests/kg_extraction_test.rs:280:18
+    |
+280 |     let result = extractor.extract(&test_texts).await.unwrap();
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error: could not compile `surreal-mind` (bin "smtop" test) due to 1 previous error
+error[E0282]: type annotations needed
+   --> tests/kg_debug_test.rs:239:29
+    |
+239 |     let extraction_result = extractor.extract(&test_text).await.unwrap();
+    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot infer type
+
+error: could not compile `surreal-mind` (test "kg_extractor_tests") due to 3 previous errors
+error: could not compile `surreal-mind` (test "kg_extraction_test") due to 21 previous errors
+Some errors have detailed explanations: E0282, E0433.
+error: could not compile `surreal-mind` (test "kg_debug_test") due to 4 previous errors
+error: could not compile `surreal-mind` (bin "surreal-mind" test) due to 1 previous error
+error: could not compile `surreal-mind` (bin "surreal-mind") due to 1 previous error

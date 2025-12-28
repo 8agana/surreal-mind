@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use dirs;
 use rmcp::{ServiceExt, transport::stdio};
 mod http;
 use std::fs;

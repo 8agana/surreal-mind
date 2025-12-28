@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Main configuration structure loaded from surreal_mind.toml and environment variables
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -7,8 +6,6 @@ pub struct Config {
     pub system: SystemConfig,
     pub retrieval: RetrievalConfig,
     pub orbital_mechanics: OrbitalConfig,
-    /// Deprecated: submodes removed from tool surfaces; kept for backward compatibility
-    pub submodes: HashMap<String, SubmodeConfig>,
     /// Runtime configuration loaded from environment variables
     #[serde(skip)]
     pub runtime: RuntimeConfig,
@@ -62,26 +59,6 @@ pub struct OrbitalConfig {
     pub significance_weight: f32,
     pub recency_weight: f32,
     pub access_weight: f32,
-}
-
-/// Deprecated: Configuration for individual submodes (thinking styles) - no longer used in tool surfaces
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct SubmodeConfig {
-    pub injection_scale: u8,
-    pub significance: f32,
-    pub kg_traverse_depth: u8,
-    pub frameworks: HashMap<String, f32>,
-    pub orbital_weights: OrbitalWeights,
-    pub auto_extract: bool,
-    pub edge_boosts: HashMap<String, f32>,
-}
-
-/// Weights for orbital mechanics calculations
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct OrbitalWeights {
-    pub recency: f32,
-    pub access: f32,
-    pub significance: f32,
 }
 
 /// Configuration for inner_voice.retrieve tool
@@ -486,37 +463,10 @@ impl Config {
             retries: self.system.embed_retries,
         }
     }
-
-    /// Deprecated: Get submode configuration by name, with fallback to "build" mode - no longer used
-    pub fn get_submode(&self, mode: &str) -> &SubmodeConfig {
-        self.submodes.get(mode).unwrap_or_else(|| {
-            self.submodes
-                .get("build")
-                .expect("build submode should exist")
-        })
-    }
 }
 
 impl Default for Config {
     fn default() -> Self {
-        let mut submodes = HashMap::new();
-        submodes.insert(
-            "build".to_string(),
-            SubmodeConfig {
-                injection_scale: 2,
-                significance: 0.5,
-                kg_traverse_depth: 1,
-                frameworks: HashMap::new(),
-                orbital_weights: OrbitalWeights {
-                    recency: 0.4,
-                    access: 0.3,
-                    significance: 0.3,
-                },
-                auto_extract: true,
-                edge_boosts: HashMap::new(),
-            },
-        );
-
         Self {
             system: SystemConfig {
                 embedding_provider: "openai".to_string(),
@@ -550,7 +500,6 @@ impl Default for Config {
                 recency_weight: 0.4,
                 access_weight: 0.3,
             },
-            submodes,
             runtime: RuntimeConfig::default(),
         }
     }
@@ -707,67 +656,5 @@ mod tests {
         // This test would require a test config file, but demonstrates the pattern
         let config = Config::load();
         assert!(config.is_ok() || config.is_err()); // Either way, method works
-    }
-
-    #[test]
-    fn test_submode_fallback() {
-        let mut submodes = HashMap::new();
-        submodes.insert(
-            "build".to_string(),
-            SubmodeConfig {
-                injection_scale: 1,
-                significance: 0.5,
-                kg_traverse_depth: 1,
-                frameworks: HashMap::new(),
-                orbital_weights: OrbitalWeights {
-                    recency: 0.7,
-                    access: 0.2,
-                    significance: 0.1,
-                },
-                auto_extract: false,
-                edge_boosts: HashMap::new(),
-            },
-        );
-
-        let config = Config {
-            system: SystemConfig {
-                embedding_provider: "test".to_string(),
-                embedding_model: "test".to_string(),
-                embedding_dimensions: 768,
-                embed_retries: 3,
-                database_url: "test".to_string(),
-                database_ns: "test".to_string(),
-                database_db: "test".to_string(),
-                inject_debounce: 1000,
-            },
-            retrieval: RetrievalConfig {
-                max_injection_scale: 3,
-                default_injection_scale: 1,
-                kg_only: true,
-                similarity_threshold: 0.5,
-                top_k: 5,
-                db_limit: 100,
-                candidates: 20,
-                submode_tuning: true,
-                t1: 0.6,
-                t2: 0.4,
-                t3: 0.25,
-                floor: 0.15,
-                kg_moderation_threshold: 0.6,
-            },
-            orbital_mechanics: OrbitalConfig {
-                decay_rate: 0.1,
-                access_boost: 0.2,
-                significance_weight: 0.3,
-                recency_weight: 0.4,
-                access_weight: 0.3,
-            },
-            submodes,
-            runtime: RuntimeConfig::default(),
-        };
-
-        let mode = config.get_submode("nonexistent");
-        assert_eq!(mode.injection_scale, 1);
-        assert_eq!(mode.significance, 0.5);
     }
 }

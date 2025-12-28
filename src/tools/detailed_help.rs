@@ -19,28 +19,6 @@ impl SurrealMindServer {
             .get("format")
             .and_then(|v| v.as_str())
             .unwrap_or("full");
-        // Prompt registry view
-        if args
-            .get("prompts")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false)
-        {
-            let reg = crate::prompts::PromptRegistry::new();
-            let list = reg
-                .list()
-                .into_iter()
-                .map(|p| {
-                    json!({
-                        "id": p.id,
-                        "one_liner": p.one_liner,
-                        "version": p.version,
-                        "checksum": p.lineage.checksum,
-                        "inputs": p.inputs,
-                    })
-                })
-                .collect::<Vec<_>>();
-            return Ok(CallToolResult::structured(json!({ "prompts": list })));
-        }
 
         let tool = match maybe_tool {
             None => {
@@ -196,33 +174,6 @@ impl SurrealMindServer {
                 "returns": {"depends on subcommand": "object with counts, paths, or messages"}
             }),
             _ => {
-                // Also allow prompt lookup by id via prompt_id param
-                if let Some(prompt_id) = args.get("prompt_id").and_then(|v| v.as_str()) {
-                    let reg = crate::prompts::PromptRegistry::new();
-                    if let Some(p) = reg.get(prompt_id) {
-                        let out = if format == "compact" {
-                            json!({
-                                "id": p.id,
-                                "one_liner": p.one_liner,
-                                "version": p.version,
-                                "checksum": p.lineage.checksum,
-                                "inputs": p.inputs,
-                            })
-                        } else {
-                            json!({
-                                "id": p.id,
-                                "one_liner": p.one_liner,
-                                "purpose": p.purpose,
-                                "inputs": p.inputs,
-                                "constraints": p.constraints,
-                                "version": p.version,
-                                "lineage": p.lineage,
-                                "template": p.template,
-                            })
-                        };
-                        return Ok(CallToolResult::structured(out));
-                    }
-                }
                 return Err(SurrealMindError::Validation {
                     message: format!("Unknown tool: {}", tool),
                 });
