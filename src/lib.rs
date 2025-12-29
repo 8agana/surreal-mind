@@ -1,4 +1,5 @@
 pub mod bge_embedder;
+pub mod clients;
 pub mod cognitive;
 pub mod config;
 pub mod deserializers;
@@ -201,9 +202,9 @@ pub async fn run_reembed(
 pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<ReembedKgStats> {
     use chrono::Utc;
     use serde_json::Value;
+    use surrealdb::Surreal;
     use surrealdb::engine::remote::ws::Ws;
     use surrealdb::opt::auth::Root;
-    use surrealdb::Surreal;
 
     // Load configuration
     let config = crate::config::Config::load()?;
