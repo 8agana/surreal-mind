@@ -2,7 +2,7 @@
 date: 2025-12-28
 prompt type: Implementation Plan (Tool)
 justification: Enabling "The Federation" by exposing Gemini CLI to SurrealMind with persistence.
-status: Draft
+status: Draft (superseded by PersistedAgent pivot)
 implementation date: TBD
 related_docs:
   - docs/prompts/20251227-gemini-cli-implementation.md
@@ -10,28 +10,37 @@ related_docs:
 
 # Tool Implementation: `delegate_gemini`
 
+Update (2025-12-30): This plan is now folded into the PersistedAgent middleware pivot.
+`delegate_gemini` becomes a thin wrapper around PersistedAgent, which centralizes DB
+persistence and session management for all federation agents.
+
 ## 1. Objective
-Create an MCP tool `delegate_gemini` that allows SurrealMind to spawn non-interactive Gemini tasks.
-Crucially, this tool handles the **SubconsciousLink** (DB Persistence) that the raw client does not.
+Create a PersistedAgent middleware that wraps federation agent calls (Gemini, Codex, Grok,
+Claude, etc.) and centralizes the **SubconsciousLink** (DB persistence + session management).
+`delegate_gemini` is now a thin tool wrapper that forwards to PersistedAgent with agent metadata.
 
 ## 2. Architecture
 
 ### 2.1 Core Principle: Provenance & Separation
 The key architectural insight: **preserve raw logs from internal synthesis**.
-- Raw Gemini output flows into `agent_exchanges` (provenance-aware, immutable)
+- Raw agent output flows into `agent_exchanges` (provenance-aware, immutable)
 - Internal synthesis (thoughts, reasoning) flows into `thoughts` (mutable, frameworks applied)
 - This separation prevents data loss while enabling clean cognitive processing
 
-### 2.2 The Tool Handler
-**Location:** `src/tools/delegate_gemini.rs`
+### 2.2 PersistedAgent Middleware (Shared)
+**Location:** `src/middleware/persisted_agent.rs` (TBD)
 **Responsibility:**
 1.  Retrieve active session ID from SurrealDB (`tool_sessions` table) - atomic upsert pattern
-2.  Invoke `GeminiClient::call()`
+2.  Invoke the target agent client (`GeminiClient`, `CodexClient`, `GrokClient`, etc.)
 3.  Persist raw exchange as `agent_exchange` (immutable provenance record)
 4.  Synthesize internal `thought` from the exchange (cognitive processing)
-5.  Update `tool_sessions` with latest CLI session ID (atomic, single operation)
+5.  Update `tool_sessions` with latest agent session ID (atomic, single operation)
 
-### 2.3 Data Schema & SQL
+### 2.3 Thin Tool Wrapper (delegate_gemini)
+**Location:** `src/tools/delegate_gemini.rs`
+**Responsibility:** pass `agent_source=gemini` + model/task options to PersistedAgent and return IDs.
+
+### 2.4 Data Schema & SQL
 
 **Input (Request):**
 ```json
@@ -53,7 +62,7 @@ The key architectural insight: **preserve raw logs from internal synthesis**.
 }
 ```
 
-### 2.4 Database Schema (Opus Design)
+### 2.5 Database Schema (Opus Design)
 
 **New `agent_exchanges` Table:**
 Separates raw inter-agent communication from internal synthesis.
@@ -114,7 +123,7 @@ END;
 $$ LANGUAGE plpgsql;
 ```
 
-### 2.5 Persistence Logic (The "Self" Memory)
+### 2.6 Persistence Logic (The "Self" Memory)
 
 **Session Lookup (Atomic Upsert Pattern - Codex):**
 ```sql
@@ -135,7 +144,7 @@ INSERT INTO agent_exchanges (
   tool_name, session_id, metadata, timestamp
 ) VALUES (
   gen_id('exchange'),
-  'gemini',
+  $agent_source,
   $model_version,
   $prompt,
   $response,
@@ -158,11 +167,11 @@ INSERT INTO thoughts (
   framework_applied, created_at
 ) VALUES (
   $synthesized_response,
-  'gemini_delegate',
+  'persisted_agent',
   $original_prompt,
   $session_id,
   $exchange_id,
-  'gemini',
+  $agent_source,
   'response_synthesis',
   $framework_if_applied,
   NOW()
@@ -184,20 +193,18 @@ SELECT upsert_tool_session($task_name, $session_id, $exchange_id);
 - [ ] Verify indexes on `agent_exchanges(tool_name, session_id)` and `thoughts(source_exchange_id)`
 
 ### 3.2 Code Structure
-1.  **Dependencies:** Import `GeminiClient` from `crate::clients`
-2.  **Centralized Helpers:** Create `src/utils/db.rs` module with:
+1.  **Dependencies:** Import agent clients (`GeminiClient`, `CodexClient`, `GrokClient`, etc.)
+2.  **PersistedAgent Core:** Create `src/middleware/persisted_agent.rs` (TBD) with:
     - `get_active_session(tool_name)` - retrieves last session ID with row lock
     - `persist_exchange(agent_exchanges_row)` - inserts immutable provenance record
     - `upsert_tool_session(tool_name, session_id, exchange_id)` - atomic DB helper
     - `create_thought_from_exchange(exchange_id, synthesis_type, framework)` - cognitive synthesis
-3.  **Handler:** Implement `handle_delegate_gemini` in `src/tools/delegate_gemini.rs`:
+    - `call(agent_source, prompt, model, task_name, options)` - central orchestration
+3.  **Thin Tool Wrapper:** `delegate_gemini` passes `agent_source=gemini` into PersistedAgent:
     - Get or create session (atomic)
-    - Invoke `GeminiClient::call(prompt, model)`
-    - Persist raw exchange (immutable)
-    - Synthesize thought from exchange (mutable, frameworks applied)
-    - Update session atomically
-    - Return all IDs to caller
-4.  **Registration:** Register the tool in `src/server/router.rs` and `src/tools/mod.rs`
+    - Invoke agent via PersistedAgent
+    - Return response + IDs to caller
+4.  **Registration:** Register the wrapper in `src/server/router.rs` and `src/tools/mod.rs`
 
 ### 3.3 Codex Technical Fixes (Atomic Operations)
 - **Single Atomic Operation:** Use `upsert_tool_session()` helper to prevent race conditions
@@ -206,7 +213,7 @@ SELECT upsert_tool_session($task_name, $session_id, $exchange_id);
 - **Error Handling:** If Gemini call fails, do NOT persist exchange or update session. Return error with context for retry.
 
 ### 3.4 Opus Architectural Vision (Provenance & Synthesis)
-- **Raw Exchange:** Every Gemini interaction flows into `agent_exchanges` immediately (immutable)
+- **Raw Exchange:** Every agent interaction flows into `agent_exchanges` immediately (immutable)
   - Preserves complete context for audit, debugging, and historical analysis
   - Allows reconstruction of entire interaction history without data loss
 - **Synthesized Thought:** Internal processing creates linked `thought` record
@@ -246,11 +253,13 @@ The `agent_exchanges` separation embodies a core principle:
 - **Distributed Agency:** Each agent's contribution is preserved with source attribution
 
 ### 5.3 Integrated Vision
-This tool realizes the **SubconsciousLink** concept:
-- Gemini CLI runs non-interactively (no terminal blocking)
-- Results automatically persist as both raw exchange and synthesized thought
-- Future delegations to Gemini, Codex, or other agents follow identical pattern
-- Federation agents can reason about each other's raw exchanges (provenance) and synthesized thoughts (reasoning)
+PersistedAgent realizes the **SubconsciousLink** concept for the entire federation:
+- Agent calls run non-interactively (no terminal blocking)
+- Results persist as both raw exchange and synthesized thought
+- All federation agents follow the same persistence + session pattern
+- Agents can reason about each other's raw exchanges (provenance) and synthesized thoughts (reasoning)
 - Each agent's work is preserved, attributed, and available for future collaboration
 
-The `delegate_gemini` tool is the first concrete instantiation of this architecture. Subsequent tools (`delegate_codex`, `delegate_grok`) will follow the same provenance + synthesis pattern, creating a unified federation communication substrate where all inter-agent exchanges are logged, attributed, and synthesized according to cognitive frameworks.
+`delegate_gemini` is now a thin wrapper on top of PersistedAgent. Additional tools
+(`delegate_codex`, `delegate_grok`, etc.) follow the same wrapper pattern, while
+PersistedAgent remains the single owner of persistence and session logic.

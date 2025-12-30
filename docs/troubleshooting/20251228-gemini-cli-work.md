@@ -30,6 +30,12 @@ related_docs:
 - HTTP vs stdio: `Transport` enum; `streamable_http_server` with `LocalSessionManager` and SSE keepalive; stdio uses rmcp stdio.
 - No DB sync pattern present in terminal-mcp (no SurrealDB or persistence).
 
+### 3) Pivot: PersistedAgent middleware (2025-12-30)
+- Gemini CLI stays a thin client; DB persistence + session management move into shared middleware.
+- `PersistedAgent` centralizes `agent_exchanges`, `thoughts` synthesis, and `tool_sessions` for **all** federation agents.
+- Tool/client handlers should pass agent/source metadata and prompts to the middleware, not implement DB sync locally.
+
 ## Notes / Next steps
 - If gemini.rs was recently edited, re-run a build to ensure no Result nesting regression.
-- If DB sync is required for Gemini, terminal-mcp does not provide a pattern; look to SurrealMind clients or other MCPs.
+- Align Gemini delegation with `PersistedAgent` (no per-tool session state, no local DB sync in the client).
+- Treat transport reuse (stdio/HTTP) and auth patterns as shared concerns; persistence/session state now lives centrally.
