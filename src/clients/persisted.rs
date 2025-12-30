@@ -64,7 +64,7 @@ impl<A: CognitiveAgent> CognitiveAgent for PersistedAgent<A> {
         let metadata = self.build_metadata(session_id);
 
         let sql = "CREATE agent_exchanges SET created_at = time::now(), agent_source = $arg_source, agent_instance = $instance, prompt = $prompt, response = $response, tool_name = $arg_tool, session_id = $arg_session, metadata = $metadata RETURN <string>id AS id;";
-        let created: Vec<IdResult> = self
+        let mut db_response = self
             .db
             .query(sql)
             .bind(("arg_source", self.agent_source.clone()))
@@ -75,7 +75,14 @@ impl<A: CognitiveAgent> CognitiveAgent for PersistedAgent<A> {
             .bind(("arg_session", response.session_id.clone()))
             .bind(("metadata", metadata))
             .await
-            .map_err(|e| AgentError::CliError(format!("db insert failed: {}", e)))?
+            .map_err(|e| AgentError::CliError(format!("db insert failed: {}", e)))?;
+
+        eprintln!(
+            "[DEBUG persisted.rs] Raw SurrealDB response: {:?}",
+            db_response
+        );
+
+        let created: Vec<IdResult> = db_response
             .take::<Vec<IdResult>>(0)
             .map_err(|e| AgentError::CliError(format!("db response failed: {}", e)))?;
 

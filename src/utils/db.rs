@@ -86,9 +86,15 @@ pub async fn upsert_tool_session(
 ) -> Result<()> {
     let exchange_id = normalize_exchange_id(exchange);
     let sql = r#"
-        BEGIN TRANSACTION;
-        LET $current = SELECT * FROM tool_sessions WHERE tool_name = $arg_tool LIMIT 1;
-        IF array::is_empty($current) {
+        LET $updated = (
+            UPDATE tool_sessions
+            SET exchange_count += 1,
+                last_agent_session_id = $arg_session,
+                last_exchange_id = type::thing($exchange_id),
+                last_updated = time::now()
+            WHERE tool_name = $arg_tool
+        );
+        IF count($updated) = 0 THEN
             CREATE tool_sessions CONTENT {
                 tool_name: $arg_tool,
                 last_agent_session_id: $arg_session,
@@ -96,15 +102,7 @@ pub async fn upsert_tool_session(
                 exchange_count: 1,
                 last_updated: time::now()
             };
-        } ELSE {
-            UPDATE tool_sessions SET
-                last_agent_session_id = $arg_session,
-                last_exchange_id = type::thing($exchange_id),
-                exchange_count += 1,
-                last_updated = time::now()
-            WHERE tool_name = $arg_tool;
-        };
-        COMMIT TRANSACTION;
+        END;
     "#;
 
     db.query(sql)

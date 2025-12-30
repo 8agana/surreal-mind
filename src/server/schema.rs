@@ -108,7 +108,7 @@ impl SurrealMindServer {
             DEFINE INDEX idx_exchanges_tool ON TABLE agent_exchanges FIELDS tool_name;
 
             -- Tool session tracking
-            DEFINE TABLE tool_sessions SCHEMAFULL;
+            DEFINE TABLE tool_sessions SCHEMALESS;
             DEFINE FIELD tool_name ON TABLE tool_sessions TYPE string;
             DEFINE FIELD last_agent_session_id ON TABLE tool_sessions TYPE string;
             DEFINE FIELD last_exchange_id ON TABLE tool_sessions TYPE record<agent_exchanges>;

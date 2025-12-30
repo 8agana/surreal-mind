@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::Deserialize;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
 use tokio::time::timeout;
 
@@ -63,37 +63,20 @@ impl CognitiveAgent for GeminiClient {
     ) -> Result<AgentResponse, AgentError> {
         let mut cmd = Command::new("gemini");
         cmd.kill_on_drop(true)
-            .stdin(Stdio::piped())
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .arg("-m")
             .arg(&self.model)
+            .arg("-e")
+            .arg("")
             .arg("-o")
-            .arg("json")
-            .arg("-p")
-            .arg("-");
+            .arg("json");
         if let Some(sid) = session_id {
             cmd.arg("--resume").arg(sid);
         }
+        cmd.arg(prompt);
         let mut child = cmd.spawn().map_err(map_spawn_err)?;
-
-        let mut stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| AgentError::StdinError("stdin unavailable".to_string()))?;
-        stdin
-            .write_all(prompt.as_bytes())
-            .await
-            .map_err(|e| AgentError::StdinError(e.to_string()))?;
-        stdin
-            .write_all(b"\n")
-            .await
-            .map_err(|e| AgentError::StdinError(e.to_string()))?;
-        stdin
-            .flush()
-            .await
-            .map_err(|e| AgentError::StdinError(e.to_string()))?;
-        drop(stdin);
 
         let stdout = child
             .stdout
