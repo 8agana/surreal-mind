@@ -9,6 +9,9 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use surrealdb::engine::remote::ws::Client as WsClient;
 use surrealdb::Surreal;
+use surrealdb::sql::Number as SurrealNumber;
+use surrealdb::sql::Value as SqlValue;
+use surrealdb::Value as SurrealValue;
 
 const DEFAULT_MODEL: &str = "gemini-2.5-pro";
 const DEFAULT_TIMEOUT_MS: u64 = 60_000;
@@ -112,9 +115,13 @@ async fn fetch_last_session_id(
 ) -> Result<Option<String>> {
     let sql =
         "SELECT last_agent_session_id FROM tool_sessions WHERE tool_name = $tool LIMIT 1;";
-    let rows: Vec<Value> = db.query(sql).bind(("tool", tool_name)).await?.take(0)?;
-    Ok(rows
-        .first()
+    let rows: SurrealValue = db
+        .query(sql)
+        .bind(("tool", tool_name))
+        .await?
+        .take::<surrealdb::Value>(0)?;
+    let rows = to_json_value(rows)?;
+    Ok(first_row(&rows)
         .and_then(|v| v.get("last_agent_session_id"))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string()))
@@ -125,12 +132,15 @@ async fn fetch_last_exchange_id(
     tool_name: String,
 ) -> Result<Option<String>> {
     let sql = "SELECT last_exchange_id FROM tool_sessions WHERE tool_name = $tool LIMIT 1;";
-    let rows: Vec<Value> = db.query(sql).bind(("tool", tool_name)).await?.take(0)?;
-    Ok(rows
-        .first()
+    let rows: SurrealValue = db
+        .query(sql)
+        .bind(("tool", tool_name))
+        .await?
+        .take::<surrealdb::Value>(0)?;
+    let rows = to_json_value(rows)?;
+    Ok(first_row(&rows)
         .and_then(|v| v.get("last_exchange_id"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string()))
+        .and_then(parse_record_id))
 }
 
 fn map_agent_error(err: AgentError) -> SurrealMindError {
@@ -152,4 +162,92 @@ fn map_agent_error(err: AgentError) -> SurrealMindError {
             message: "gemini cli not found".to_string(),
         },
     }
+}
+
+fn parse_record_id(value: &Value) -> Option<String> {
+    if let Some(s) = value.as_str() {
+        return Some(s.to_string());
+    }
+
+    let obj = value.as_object()?;
+    if let Some(record) = obj.get("$record").and_then(|v| v.as_str()) {
+        return Some(record.to_string());
+    }
+    if let Some(thing) = obj.get("$thing") {
+        return parse_record_id(thing);
+    }
+    if let (Some(tb), Some(id_val)) = (obj.get("tb"), obj.get("id")) {
+        let table = tb.as_str()?;
+        let id = parse_record_id_value(id_val)?;
+        return Some(format!("{}:{}", table, id));
+    }
+
+    obj.get("id").and_then(parse_record_id)
+}
+
+fn to_json_value(value: SurrealValue) -> Result<Value> {
+    Ok(to_json_value_inner(value.into()))
+}
+
+fn to_json_value_inner(value: SqlValue) -> Value {
+    match value {
+        SqlValue::None | SqlValue::Null => Value::Null,
+        SqlValue::Bool(value) => Value::Bool(value),
+        SqlValue::Number(number) => number_to_json(number),
+        SqlValue::Strand(value) => Value::String(value.to_string()),
+        SqlValue::Duration(value) => Value::String(value.to_string()),
+        SqlValue::Datetime(value) => Value::String(value.to_string()),
+        SqlValue::Uuid(value) => Value::String(value.to_string()),
+        SqlValue::Array(values) => {
+            Value::Array(values.into_iter().map(to_json_value_inner).collect())
+        }
+        SqlValue::Object(values) => Value::Object(
+            values
+                .into_iter()
+                .map(|(key, value)| (key, to_json_value_inner(value)))
+                .collect(),
+        ),
+        SqlValue::Geometry(value) => Value::String(value.to_string()),
+        SqlValue::Bytes(value) => Value::String(value.to_string()),
+        SqlValue::Thing(value) => Value::String(value.to_string()),
+        other => Value::String(other.to_string()),
+    }
+}
+
+fn number_to_json(number: SurrealNumber) -> Value {
+    match number {
+        SurrealNumber::Int(value) => Value::Number(serde_json::Number::from(value)),
+        SurrealNumber::Float(value) => serde_json::Number::from_f64(value)
+            .map(Value::Number)
+            .unwrap_or_else(|| Value::String(value.to_string())),
+        SurrealNumber::Decimal(value) => Value::String(value.to_string()),
+        _ => Value::String(number.to_string()),
+    }
+}
+
+fn first_row(value: &Value) -> Option<&Value> {
+    match value {
+        Value::Array(values) => values.first(),
+        Value::Null => None,
+        other => Some(other),
+    }
+}
+
+fn parse_record_id_value(value: &Value) -> Option<String> {
+    if let Some(s) = value.as_str() {
+        return Some(s.to_string());
+    }
+    if let Some(n) = value.as_i64() {
+        return Some(n.to_string());
+    }
+    if let Some(n) = value.as_u64() {
+        return Some(n.to_string());
+    }
+    if let Some(uuid) = value.get("$uuid").and_then(|v| v.as_str()) {
+        return Some(uuid.to_string());
+    }
+    if let Some(ulid) = value.get("$ulid").and_then(|v| v.as_str()) {
+        return Some(ulid.to_string());
+    }
+    None
 }

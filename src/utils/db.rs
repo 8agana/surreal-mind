@@ -84,33 +84,42 @@ pub async fn upsert_tool_session(
     session: String,
     exchange: String,
 ) -> Result<()> {
+    let exchange_id = normalize_exchange_id(exchange);
     let sql = r#"
         BEGIN TRANSACTION;
-        LET $current = SELECT * FROM tool_sessions WHERE tool_name = $tool LIMIT 1;
+        LET $current = SELECT * FROM tool_sessions WHERE tool_name = $arg_tool LIMIT 1;
         IF array::is_empty($current) {
             CREATE tool_sessions CONTENT {
-                tool_name: $tool,
-                last_agent_session_id: $session,
-                last_exchange_id: $exchange,
+                tool_name: $arg_tool,
+                last_agent_session_id: $arg_session,
+                last_exchange_id: type::thing($exchange_id),
                 exchange_count: 1,
                 last_updated: time::now()
             };
         } ELSE {
             UPDATE tool_sessions SET
-                last_agent_session_id = $session,
-                last_exchange_id = $exchange,
+                last_agent_session_id = $arg_session,
+                last_exchange_id = type::thing($exchange_id),
                 exchange_count += 1,
                 last_updated = time::now()
-            WHERE tool_name = $tool;
+            WHERE tool_name = $arg_tool;
         };
         COMMIT TRANSACTION;
     "#;
 
     db.query(sql)
-        .bind(("tool", tool))
-        .bind(("session", session))
-        .bind(("exchange", exchange))
+        .bind(("arg_tool", tool))
+        .bind(("arg_session", session))
+        .bind(("exchange_id", exchange_id))
         .await?;
 
     Ok(())
+}
+
+fn normalize_exchange_id(exchange: String) -> String {
+    if exchange.contains(':') {
+        exchange
+    } else {
+        format!("agent_exchanges:{}", exchange)
+    }
 }

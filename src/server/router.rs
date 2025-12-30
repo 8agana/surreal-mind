@@ -70,6 +70,7 @@ impl ServerHandler for SurrealMindServer {
         let detailed_help_output = crate::schemas::detailed_help_output_schema();
         let inner_voice_output = crate::schemas::inner_voice_output_schema();
         let unified_search_output = crate::schemas::legacymind_search_output_schema();
+        let delegate_gemini_output = crate::schemas::delegate_gemini_output_schema();
 
         let mut tools = vec![
             Tool {
@@ -140,7 +141,7 @@ impl ServerHandler for SurrealMindServer {
             input_schema: delegate_gemini_schema.clone(),
             icons: None,
             annotations: None,
-            output_schema: None,
+            output_schema: Some(delegate_gemini_output),
             meta: None,
         });
 

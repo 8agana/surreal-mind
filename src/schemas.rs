@@ -278,6 +278,19 @@ pub fn legacymind_think_output_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
+pub fn delegate_gemini_output_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "response": {"type": "string", "description": "Model response text"},
+            "session_id": {"type": "string", "description": "Gemini session ID"},
+            "exchange_id": {"type": "string", "description": "Persisted exchange record ID"}
+        },
+        "required": ["response", "session_id", "exchange_id"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
 pub fn memories_create_output_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
