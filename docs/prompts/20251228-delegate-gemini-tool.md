@@ -2,7 +2,7 @@
 date: 2025-12-28
 prompt type: Implementation Plan (Tool)
 justification: Enabling "The Federation" by exposing Gemini CLI to SurrealMind with persistence.
-status: Complete
+status: In Progress - Continuity Broken
 implementation date: TBD
 related_docs:
   - docs/prompts/20251227-gemini-cli-implementation.md
@@ -264,35 +264,30 @@ PersistedAgent realizes the **SubconsciousLink** concept for the entire federati
 (`delegate_codex`, `delegate_grok`, etc.) follow the same wrapper pattern, while
 PersistedAgent remains the single owner of persistence and session logic.
 
-## 6. Closure Notes
+## 6. Current Status (2025-12-30)
 
-**Infrastructure** ✓
-- Database schema fully implemented with atomic upsert patterns
-- `agent_exchanges` table (provenance records) operational
-- `tool_sessions` table (session state) fully wired
-- `upsert_tool_session()` helper function active
-- All indexes verified and optimized
+**What Works:**
+- Single delegate_gemini calls succeed
+- Exchange persists to agent_exchanges table
+- Session ID captured and stored in tool_sessions
+- exchange_id returned correctly
 
-**Middleware** ✓
-- `PersistedAgent` middleware fully operational at `src/middleware/persisted_agent.rs`
-- Handles session retrieval, exchange persistence, thought synthesis, and state updates atomically
-- Supports multiple federation agents (Gemini, Codex, Grok, Claude, etc.)
-- Provenance-aware architecture separates raw exchanges from synthesized thoughts
-- Framework-tracking enabled for cognitive processing reproducibility
+**What's Broken:**
+- Session continuity does NOT work
+- Gemini CLI does not persist sessions from subprocess calls
+- The --resume flag fails because Gemini has no record of the session
+- Second call with same task_name times out
 
-**Tool Implementation** ✓
-- `delegate_gemini` thin wrapper complete and functional
-- Registered in `src/server/router.rs` and `src/tools/mod.rs`
-- Returns structured response with session_id, exchange_id, and thought_id
-- Non-blocking federation agent calls now persist automatically
-- Provenance-aware delegation active for Gemini CLI
+**Root Cause:**
+The architecture incorrectly assumed Gemini CLI's --resume would work for non-interactive subprocess calls. It doesn't. Gemini only persists sessions in interactive terminal mode.
 
-**Verification** ✓
-- All schema creation tests passed
-- Atomic session logic verified (idempotent, no race conditions)
-- Provenance storage validated (complete and immutable)
-- Thought synthesis confirmed (proper framework linkage)
-- Session state tracking operational (exchange_count synced)
-- Error handling robust (partial failures don't corrupt DB)
+**Required Fix:**
+PersistedAgent needs to implement context injection:
+1. On call, query previous exchanges from agent_exchanges WHERE tool_name = task_name
+2. Build context string from previous prompt/response pairs
+3. Prepend context to the new prompt
+4. Do NOT use Gemini's --resume flag at all
 
-**Deployment Status**: Build verified. Production ready.
+This makes continuity a SurrealMind feature, not a Gemini CLI feature.
+
+**Deployment Status**: Single calls work. Continuity requires architecture change.
