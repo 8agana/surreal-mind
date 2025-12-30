@@ -1,7 +1,10 @@
 //! Database connection utilities
 
+use crate::error::Result;
 use reqwest::Client;
 use std::time::Duration;
+use surrealdb::engine::remote::ws::Client as WsClient;
+use surrealdb::Surreal;
 
 /// Configuration for HTTP SQL client
 pub struct HttpSqlConfig {
@@ -72,4 +75,42 @@ impl HttpSqlConfig {
             .user_agent(self.user_agent())
             .build()
     }
+}
+
+/// Upsert a tool session row in a single transaction for continuity tracking.
+pub async fn upsert_tool_session(
+    db: &Surreal<WsClient>,
+    tool: String,
+    session: String,
+    exchange: String,
+) -> Result<()> {
+    let sql = r#"
+        BEGIN TRANSACTION;
+        LET $current = SELECT * FROM tool_sessions WHERE tool_name = $tool LIMIT 1;
+        IF array::is_empty($current) {
+            CREATE tool_sessions CONTENT {
+                tool_name: $tool,
+                last_agent_session_id: $session,
+                last_exchange_id: $exchange,
+                exchange_count: 1,
+                last_updated: time::now()
+            };
+        } ELSE {
+            UPDATE tool_sessions SET
+                last_agent_session_id = $session,
+                last_exchange_id = $exchange,
+                exchange_count += 1,
+                last_updated = time::now()
+            WHERE tool_name = $tool;
+        };
+        COMMIT TRANSACTION;
+    "#;
+
+    db.query(sql)
+        .bind(("tool", tool))
+        .bind(("session", session))
+        .bind(("exchange", exchange))
+        .await?;
+
+    Ok(())
 }

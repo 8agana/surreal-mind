@@ -29,6 +29,19 @@ pub fn legacymind_think_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
+pub fn delegate_gemini_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "prompt": {"type": "string"},
+            "task_name": {"type": "string"},
+            "model": {"type": "string"}
+        },
+        "required": ["prompt"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
 pub fn kg_create_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",

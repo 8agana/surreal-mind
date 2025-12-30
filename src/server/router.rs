@@ -61,6 +61,7 @@ impl ServerHandler for SurrealMindServer {
         let curiosity_add_schema = crate::schemas::curiosity_add_schema();
         let curiosity_get_schema = crate::schemas::curiosity_get_schema();
         let curiosity_search_schema = crate::schemas::curiosity_search_schema();
+        let delegate_gemini_schema = crate::schemas::delegate_gemini_schema();
 
         // Output schemas (rmcp 0.11.0+)
         let legacymind_think_output = crate::schemas::legacymind_think_output_schema();
@@ -128,6 +129,18 @@ impl ServerHandler for SurrealMindServer {
             icons: None,
             annotations: None,
             output_schema: Some(inner_voice_output),
+            meta: None,
+        });
+        tools.push(Tool {
+            name: "delegate_gemini".into(),
+            title: Some("Delegate Gemini".into()),
+            description: Some(
+                "Delegate a prompt to Gemini CLI with persisted exchange tracking.".into(),
+            ),
+            input_schema: delegate_gemini_schema.clone(),
+            icons: None,
+            annotations: None,
+            output_schema: None,
             meta: None,
         });
 
@@ -211,6 +224,10 @@ impl ServerHandler for SurrealMindServer {
             // New canonical name
             "inner_voice" => self
                 .handle_inner_voice_retrieve(request)
+                .await
+                .map_err(|e| e.into()),
+            "delegate_gemini" => self
+                .handle_delegate_gemini(request)
                 .await
                 .map_err(|e| e.into()),
             "curiosity_add" => self

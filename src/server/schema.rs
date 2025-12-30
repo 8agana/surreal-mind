@@ -29,6 +29,9 @@ impl SurrealMindServer {
             DEFINE FIELD status ON TABLE thoughts TYPE option<string>;
             -- Origin and privacy fields for retrieval
             DEFINE FIELD origin ON TABLE thoughts TYPE option<string>;
+            -- Provenance fields for agent synthesis
+            DEFINE FIELD source_exchange_id ON TABLE thoughts TYPE option<record<agent_exchanges>>;
+            DEFINE FIELD synthesis_type ON TABLE thoughts TYPE option<string>;
             DEFINE FIELD tags ON TABLE thoughts TYPE option<array<string>>;
             DEFINE FIELD is_private ON TABLE thoughts TYPE option<bool>;
             -- Embedding metadata for future re-embedding
@@ -90,12 +93,28 @@ impl SurrealMindServer {
             DEFINE INDEX idx_kgo_name_src ON TABLE kg_observations FIELDS name, source_thought_id;
             DEFINE INDEX idx_kgo_extraction_batch ON TABLE kg_observations FIELDS extraction_batch_id;
 
+            -- Agent exchange logging
+            DEFINE TABLE agent_exchanges SCHEMAFULL;
+            DEFINE FIELD id ON TABLE agent_exchanges TYPE record<agent_exchanges>;
+            DEFINE FIELD agent_source ON TABLE agent_exchanges TYPE string;
+            DEFINE FIELD agent_instance ON TABLE agent_exchanges TYPE string;
+            DEFINE FIELD prompt ON TABLE agent_exchanges TYPE string;
+            DEFINE FIELD response ON TABLE agent_exchanges TYPE string;
+            DEFINE FIELD tool_name ON TABLE agent_exchanges TYPE string;
+            DEFINE FIELD session_id ON TABLE agent_exchanges TYPE string;
+            DEFINE FIELD metadata ON TABLE agent_exchanges TYPE object;
+            DEFINE FIELD created_at ON TABLE agent_exchanges TYPE datetime DEFAULT time::now();
+            DEFINE INDEX idx_exchanges_session ON TABLE agent_exchanges FIELDS session_id;
+            DEFINE INDEX idx_exchanges_tool ON TABLE agent_exchanges FIELDS tool_name;
+
             -- Tool session tracking
             DEFINE TABLE tool_sessions SCHEMAFULL;
-            DEFINE FIELD tool_name ON tool_sessions TYPE string;
-            DEFINE FIELD gemini_session_id ON tool_sessions TYPE string;
-            DEFINE FIELD last_used ON tool_sessions TYPE datetime;
-            DEFINE INDEX tool_name_idx ON tool_sessions FIELDS tool_name UNIQUE;
+            DEFINE FIELD tool_name ON TABLE tool_sessions TYPE string;
+            DEFINE FIELD last_agent_session_id ON TABLE tool_sessions TYPE string;
+            DEFINE FIELD last_exchange_id ON TABLE tool_sessions TYPE record<agent_exchanges>;
+            DEFINE FIELD exchange_count ON TABLE tool_sessions TYPE int DEFAULT 0;
+            DEFINE FIELD last_updated ON TABLE tool_sessions TYPE datetime DEFAULT time::now();
+            DEFINE INDEX idx_sessions_tool ON TABLE tool_sessions FIELDS tool_name UNIQUE;
 
             -- Approval workflow candidate tables
             DEFINE TABLE kg_entity_candidates SCHEMALESS;
