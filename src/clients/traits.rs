@@ -6,6 +6,7 @@ use thiserror::Error;
 pub struct AgentResponse {
     pub session_id: String,
     pub response: String,
+    pub exchange_id: Option<String>,
 }
 
 #[derive(Debug, Error)]

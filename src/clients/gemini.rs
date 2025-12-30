@@ -143,6 +143,7 @@ impl CognitiveAgent for GeminiClient {
         Ok(AgentResponse {
             session_id: response.session_id,
             response: cleaned,
+            exchange_id: None,
         })
     }
 }
