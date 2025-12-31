@@ -1,10 +1,10 @@
 ---
 id: task-1
 title: Implement kg_populate orchestrator binary
-status: To Do
+status: Done
 assignee: []
 created_date: '2025-12-31 22:10'
-updated_date: '2025-12-31 22:16'
+updated_date: '2025-12-31 23:22'
 labels:
   - kg-orchestration
   - surreal-mind
@@ -58,12 +58,33 @@ Create binary with the following logic:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Binary compiles and runs: cargo run --bin kg_populate
-- [ ] #2 Fetches unextracted thoughts from SurrealDB
-- [ ] #3 Calls delegate_gemini with extraction prompt
-- [ ] #4 Parses JSON response (handles markdown code fences)
-- [ ] #5 Upserts entities/relationships/observations to KG tables
-- [ ] #6 Marks processed thoughts as kg_extracted = true
-- [ ] #7 Idempotent - safe to run multiple times
-- [ ] #8 Logs progress clearly
+- [x] #1 Binary compiles and runs: cargo run --bin kg_populate
+- [x] #2 Fetches unextracted thoughts from SurrealDB
+- [x] #3 Calls delegate_gemini with extraction prompt
+- [x] #4 Parses JSON response (handles markdown code fences)
+- [x] #5 Upserts entities/relationships/observations to KG tables
+- [x] #6 Marks processed thoughts as kg_extracted = true
+- [x] #7 Idempotent - safe to run multiple times
+- [x] #8 Logs progress clearly
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## IMPLEMENTATION NOTES (from doc-3 investigation)
+
+**Codebase patterns verified via Serena:**
+- Config: Use Config::load() for TOML + env loading
+- DB connection: Standard pattern from reembed.rs (Surreal::new → signin → use_ns/use_db)
+- delegate_gemini: Use PersistedAgent wrapper, returns { response, session_id, exchange_id }
+- KG upserts: Entities by name, Edges by (src,dst,rel), Observations by (name,source_thought_id)
+- JSON parsing: Strip ```json fences before serde_json::from_str
+- Error handling: anyhow::Result for binaries
+- Logging: println! with emoji (🚀 ✅ 📊 🔄)
+
+**Critical schema correction:**
+- Field is `extracted_to_kg` (bool, default false), NOT `kg_extracted`
+- Also set: `extraction_batch_id` (string), `extracted_at` (datetime)
+
+**See doc-3 for complete patterns and code examples**
+<!-- SECTION:NOTES:END -->

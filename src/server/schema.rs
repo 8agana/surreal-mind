@@ -131,6 +131,20 @@ impl SurrealMindServer {
             DEFINE TABLE kg_blocklist SCHEMALESS;
             DEFINE INDEX idx_kgb_item ON TABLE kg_blocklist FIELDS item;
 
+            -- KG boundaries (rejected extractions with context)
+            DEFINE TABLE kg_boundaries SCHEMALESS;
+            DEFINE FIELD source_thought_id ON TABLE kg_boundaries TYPE string;
+            DEFINE FIELD rejected ON TABLE kg_boundaries TYPE string;
+            DEFINE FIELD reason ON TABLE kg_boundaries TYPE string;
+            DEFINE FIELD context ON TABLE kg_boundaries TYPE option<string>;
+            DEFINE FIELD confidence ON TABLE kg_boundaries TYPE option<float>;
+            DEFINE FIELD extraction_batch_id ON TABLE kg_boundaries TYPE option<string>;
+            DEFINE FIELD extracted_at ON TABLE kg_boundaries TYPE option<datetime>;
+            DEFINE FIELD extraction_prompt_version ON TABLE kg_boundaries TYPE option<string>;
+            DEFINE INDEX idx_kgbnd_created ON TABLE kg_boundaries FIELDS created_at;
+            DEFINE INDEX idx_kgbnd_thought ON TABLE kg_boundaries FIELDS source_thought_id;
+            DEFINE INDEX idx_kgbnd_batch ON TABLE kg_boundaries FIELDS extraction_batch_id;
+
             -- Agent job tracking for async tool execution
             DEFINE TABLE agent_jobs SCHEMAFULL;
             DEFINE FIELD job_id ON TABLE agent_jobs TYPE string;
