@@ -23,6 +23,12 @@ struct IdResult {
     id: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct ExchangeRow {
+    prompt: String,
+    response: String,
+}
+
 impl<A: CognitiveAgent> PersistedAgent<A> {
     pub fn new(
         agent: A,
@@ -60,7 +66,39 @@ impl<A: CognitiveAgent> CognitiveAgent for PersistedAgent<A> {
         prompt: &str,
         session_id: Option<&str>,
     ) -> Result<AgentResponse, AgentError> {
-        let mut response = self.agent.call(prompt, session_id).await?;
+        let context_sql = "SELECT prompt, response, created_at FROM agent_exchanges WHERE tool_name = $tool_name ORDER BY created_at ASC;";
+        let mut context_response = self
+            .db
+            .query(context_sql)
+            .bind(("tool_name", self.tool_name.clone()))
+            .await
+            .map_err(|e| AgentError::CliError(format!("db context query failed: {}", e)))?;
+        let exchanges: Vec<ExchangeRow> = context_response
+            .take::<Vec<ExchangeRow>>(0)
+            .map_err(|e| AgentError::CliError(format!("db context response failed: {}", e)))?;
+
+        let context = if exchanges.is_empty() {
+            None
+        } else {
+            let mut assembled = String::new();
+            for (idx, exchange) in exchanges.iter().enumerate() {
+                assembled.push_str(&format!(
+                    "Previous exchange {}:\nUser: {}\nAssistant: {}\n\n",
+                    idx + 1,
+                    exchange.prompt,
+                    exchange.response
+                ));
+            }
+            Some(assembled)
+        };
+
+        let prompt_to_send = if let Some(context) = context {
+            format!("{context}\n\nCurrent question:\n{prompt}")
+        } else {
+            prompt.to_string()
+        };
+
+        let mut response = self.agent.call(&prompt_to_send, None).await?;
         let metadata = self.build_metadata(session_id);
 
         let sql = "CREATE agent_exchanges SET created_at = time::now(), agent_source = $arg_source, agent_instance = $instance, prompt = $prompt, response = $response, tool_name = $arg_tool, session_id = $arg_session, metadata = $metadata RETURN <string>id AS id;";

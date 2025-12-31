@@ -1,5 +1,6 @@
 //! Domain-specific error types for surreal-mind
 
+use serde_json::json;
 use thiserror::Error;
 
 /// Main error type for the surreal-mind MCP server
@@ -96,65 +97,81 @@ impl From<chrono::ParseError> for SurrealMindError {
 /// Convert SurrealMindError to MCP error
 impl From<SurrealMindError> for rmcp::ErrorData {
     fn from(err: SurrealMindError) -> Self {
-        let (code, message) = match err {
-            SurrealMindError::Config { .. } => (
+        let (code, label, details) = match err {
+            SurrealMindError::Config { message } => (
                 rmcp::model::ErrorCode::INVALID_PARAMS,
-                format!("Configuration error: {}", err),
+                "Configuration error",
+                message,
             ),
-            SurrealMindError::Database { .. } => (
+            SurrealMindError::Database { message } => (
                 rmcp::model::ErrorCode::INTERNAL_ERROR,
-                format!("Database error: {}", err),
+                "Database error",
+                message,
             ),
-            SurrealMindError::Embedding { .. } => (
+            SurrealMindError::Embedding { message } => (
                 rmcp::model::ErrorCode::INTERNAL_ERROR,
-                format!("Embedding error: {}", err),
+                "Embedding error",
+                message,
             ),
-            SurrealMindError::Mcp { .. } => (
+            SurrealMindError::Mcp { message } => (
                 rmcp::model::ErrorCode::INVALID_PARAMS,
-                format!("MCP protocol error: {}", err),
+                "MCP protocol error",
+                message,
             ),
-            SurrealMindError::Cognitive { .. } => (
+            SurrealMindError::Cognitive { message } => (
                 rmcp::model::ErrorCode::INTERNAL_ERROR,
-                format!("Cognitive framework error: {}", err),
+                "Cognitive framework error",
+                message,
             ),
-            SurrealMindError::KnowledgeGraph { .. } => (
+            SurrealMindError::KnowledgeGraph { message } => (
                 rmcp::model::ErrorCode::INTERNAL_ERROR,
-                format!("Knowledge graph error: {}", err),
+                "Knowledge graph error",
+                message,
             ),
-            SurrealMindError::Serialization { .. } => (
+            SurrealMindError::Serialization { message } => (
                 rmcp::model::ErrorCode::INTERNAL_ERROR,
-                format!("Serialization error: {}", err),
+                "Serialization error",
+                message,
             ),
-            SurrealMindError::Timeout { .. } => (
+            SurrealMindError::Timeout {
+                operation,
+                timeout_ms,
+            } => (
                 rmcp::model::ErrorCode::INTERNAL_ERROR,
-                format!("Operation timeout: {}", err),
+                "Operation timeout",
+                format!("{operation} timed out after {timeout_ms}ms"),
             ),
-            SurrealMindError::Validation { .. } => (
+            SurrealMindError::Validation { message } => (
                 rmcp::model::ErrorCode::INVALID_PARAMS,
-                format!("Validation error: {}", err),
+                "Validation error",
+                message,
             ),
-            SurrealMindError::Internal { .. } => (
+            SurrealMindError::Internal { message } => (
                 rmcp::model::ErrorCode::INTERNAL_ERROR,
-                format!("Internal error: {}", err),
+                "Internal error",
+                message,
             ),
-            SurrealMindError::FeatureDisabled { .. } => (
+            SurrealMindError::FeatureDisabled { message } => (
                 rmcp::model::ErrorCode::INVALID_PARAMS,
-                format!("Feature disabled: {}", err),
+                "Feature disabled",
+                message,
             ),
-            SurrealMindError::EmbedderUnavailable { .. } => (
+            SurrealMindError::EmbedderUnavailable { message } => (
                 rmcp::model::ErrorCode::INTERNAL_ERROR,
-                format!("Embedder unavailable: {}", err),
+                "Embedder unavailable",
+                message,
             ),
-            SurrealMindError::InvalidParams { .. } => (
+            SurrealMindError::InvalidParams { message } => (
                 rmcp::model::ErrorCode::INVALID_PARAMS,
-                format!("Invalid parameters: {}", err),
+                "Invalid parameters",
+                message,
             ),
         };
 
         rmcp::ErrorData {
             code,
-            message: message.into(),
-            data: None,
+            message: format!("{label}: {details}").into(),
+            data: Some(json!({ "details": details })),
         }
     }
 }

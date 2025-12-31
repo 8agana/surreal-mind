@@ -124,20 +124,20 @@ async fn fetch_last_session_id(
 fn map_agent_error(err: AgentError) -> SurrealMindError {
     match err {
         AgentError::Timeout { timeout_ms } => SurrealMindError::Timeout {
-            operation: "gemini".to_string(),
+            operation: "delegate_gemini".to_string(),
             timeout_ms,
         },
         AgentError::CliError(message) => SurrealMindError::Internal {
-            message: format!("gemini cli error: {}", message),
+            message: format!("delegate_gemini failed: {}", message),
         },
         AgentError::ParseError(message) => SurrealMindError::Serialization {
-            message: format!("gemini parse error: {}", message),
+            message: format!("delegate_gemini parse error: {}", message),
         },
         AgentError::StdinError(message) => SurrealMindError::Internal {
-            message: format!("gemini stdin error: {}", message),
+            message: format!("delegate_gemini stdin error: {}", message),
         },
         AgentError::NotFound => SurrealMindError::Internal {
-            message: "gemini cli not found".to_string(),
+            message: "delegate_gemini failed: gemini cli not found".to_string(),
         },
     }
 }

@@ -2,7 +2,7 @@
 date: 2025-12-28
 prompt type: Implementation Plan (Tool)
 justification: Enabling "The Federation" by exposing Gemini CLI to SurrealMind with persistence.
-status: In Progress - Continuity Broken
+status: Complete - Context Injection Working
 implementation date: TBD
 related_docs:
   - docs/prompts/20251227-gemini-cli-implementation.md
@@ -264,30 +264,25 @@ PersistedAgent realizes the **SubconsciousLink** concept for the entire federati
 (`delegate_codex`, `delegate_grok`, etc.) follow the same wrapper pattern, while
 PersistedAgent remains the single owner of persistence and session logic.
 
-## 6. Current Status (2025-12-30)
+## 6. Final Status (2025-12-30)
 
-**What Works:**
-- Single delegate_gemini calls succeed
-- Exchange persists to agent_exchanges table
-- Session ID captured and stored in tool_sessions
-- exchange_id returned correctly
+**Implementation Complete:**
+- Single delegate_gemini calls succeed ✓
+- Exchange persists to agent_exchanges table ✓
+- Session ID captured and stored in tool_sessions ✓
+- exchange_id returned correctly ✓
+- **Session continuity works via context injection** ✓
 
-**What's Broken:**
-- Session continuity does NOT work
-- Gemini CLI does not persist sessions from subprocess calls
-- The --resume flag fails because Gemini has no record of the session
-- Second call with same task_name times out
+**Architecture Decision:**
+Rejected Gemini CLI's native `--resume` flag (doesn't work for subprocess calls). Instead implemented **SurrealMind-native context injection**:
+1. On each call, query previous exchanges from agent_exchanges WHERE tool_name = task_name ORDER BY created_at ASC
+2. Build context string from previous prompt/response pairs formatted as "Previous exchange N:\nUser: {prompt}\nAssistant: {response}\n\n"
+3. Prepend context to the new prompt: "{context}\n\nCurrent question:\n{prompt}"
+4. Pass to agent with session_id=None (no --resume dependency)
 
-**Root Cause:**
-The architecture incorrectly assumed Gemini CLI's --resume would work for non-interactive subprocess calls. It doesn't. Gemini only persists sessions in interactive terminal mode.
+**Verification (2025-12-30):**
+- First call: "My favorite color is blue" → persisted
+- Second call with same task_name: "What is my favorite color?" → Gemini answered "Your favorite color is blue"
+- Context injection confirmed working across multiple calls
 
-**Required Fix:**
-PersistedAgent needs to implement context injection:
-1. On call, query previous exchanges from agent_exchanges WHERE tool_name = task_name
-2. Build context string from previous prompt/response pairs
-3. Prepend context to the new prompt
-4. Do NOT use Gemini's --resume flag at all
-
-This makes continuity a SurrealMind feature, not a Gemini CLI feature.
-
-**Deployment Status**: Single calls work. Continuity requires architecture change.
+**Production Status**: Ready for deployment. Continuity maintained via database-backed context injection, not CLI session persistence.
