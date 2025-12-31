@@ -62,11 +62,14 @@ SurrealMind is the LegacyMind federation's thinking surface: a Rust MCP server t
    ./tests/test_mcp_comprehensive.sh
    ```
 
-## Tool Surface (6)
+## Tool Surface (9)
 - `legacymind_think`: `content` required. Optional `hint` (`debug|build|plan|stuck|question|conclude`), `injection_scale` 0–3, `tags[]`, `significance`, continuity fields (`session_id`, `chain_id`, `previous_thought_id`, `revises_thought`, `branch_from`), `hypothesis` + `needs_verification` with `verify_top_k`, `min_similarity`, `evidence_limit`, `contradiction_patterns`, `verbose_analysis`.
 - `legacymind_search`: Unified KG search; `query` (text/struct), `target` (`entity|relationship|observation|mixed`), `include_thoughts`, `thoughts_content`, `top_k_memories/thoughts`, `sim_thresh`, confidence/date bounds, chain/session filters.
 - `memories_create`: Create KG `entity|relationship|observation`; supports `upsert`, `source_thought_id`, `confidence`, `data`.
-- `memories_moderate`: Review/decide staged KG candidates. `action` (`review|decide|review_and_decide`), `target`, `status`, `min_conf`, paging, optional decisions payload.
+- `delegate_gemini`: Delegate prompts to Gemini CLI with persisted exchange tracking. `prompt` required, optional `task_name`, `model`.
+- `curiosity_add`: Add lightweight curiosity entries. `content` required, optional `tags[]`, `agent`, `topic`, `in_reply_to`.
+- `curiosity_get`: Fetch recent curiosity entries. Optional `limit` (1-100, default 20), `since` (YYYY-MM-DD).
+- `curiosity_search`: Search curiosity entries via embeddings. `query` required, optional `top_k`, `recency_days`.
 - `maintenance_ops`: Operational subcommands:
   - `list_removal_candidates`, `export_removals`, `finalize_removal`
   - `health_check_embeddings`, `health_check_indexes`

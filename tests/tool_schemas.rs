@@ -18,15 +18,19 @@ fn test_list_tools_returns_expected_tools() {
 
     let expected_tools = [
         "legacymind_think",
-        "memories_create",
         "maintenance_ops",
+        "memories_create",
         "detailed_help",
+        "delegate_gemini",
+        "curiosity_add",
+        "curiosity_get",
+        "curiosity_search",
         "legacymind_search",
     ];
     assert_eq!(
         expected_tools.len(),
-        5,
-        "Tool roster should list 5 entries after removing photography, brain_store, and inner_voice tools"
+        9,
+        "Tool roster should list 9 entries (core 5 + delegate_gemini + 3 curiosity tools)"
     );
 }
 
@@ -74,18 +78,17 @@ fn test_legacymind_think_schema_structure() {
 #[test]
 fn test_detailed_help_schema_structure() {
     // Test that detailed_help has the expected schema structure
+    // Note: detailed_help enum covers core tools only, not all 9 exposed tools
     let expected_schema = json!({
         "type": "object",
         "properties": {
             "tool": {"type": "string", "enum": ["legacymind_think", "memories_create", "legacymind_search", "maintenance_ops", "detailed_help"]},
-            "format": {"type": "string", "enum": ["compact", "full"], "default": "full"},
-            "prompts": {"type": "boolean"}
+            "format": {"type": "string", "enum": ["compact", "full"], "default": "full"}
         }
     });
 
     assert!(schema_has_property(&expected_schema, "tool"));
     assert!(schema_has_property(&expected_schema, "format"));
-    assert!(schema_has_property(&expected_schema, "prompts"));
 
     // Verify format has default
     assert_eq!(expected_schema["properties"]["format"]["default"], "full");
