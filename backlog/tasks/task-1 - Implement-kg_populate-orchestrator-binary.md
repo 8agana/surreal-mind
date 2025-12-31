@@ -4,7 +4,7 @@ title: Implement kg_populate orchestrator binary
 status: Done
 assignee: []
 created_date: '2025-12-31 22:10'
-updated_date: '2025-12-31 23:22'
+updated_date: '2025-12-31 23:53'
 labels:
   - kg-orchestration
   - surreal-mind
@@ -17,9 +17,17 @@ dependencies: []
 <!-- SECTION:DESCRIPTION:BEGIN -->
 Rebuild the knowledge graph extraction orchestrator as a standalone Rust binary (src/bin/kg_populate.rs). This bridges raw Gemini compute with knowledge graph storage after memories_populate was removed.
 
+Related Documentation:
+- doc-1: Codex review (Technical Spec)
+- doc-2: CC review (Feasibility)
+- doc-3: Implementation Guide (Codebase Patterns)
+- doc-4: Implementation Summary
+- doc-5: Testing Plan
+- doc-6: Test Execution Log
+
 Core flow:
 1. Load SurrealDB/Gemini config
-2. Fetch unextracted thoughts (WHERE kg_extracted = false)
+2. Fetch unextracted thoughts (WHERE extracted_to_kg = false)
 3. Batch them to Gemini via delegate_gemini with extraction prompt
 4. Parse JSON output (entities, relationships, observations)
 5. Upsert to knowledge graph tables

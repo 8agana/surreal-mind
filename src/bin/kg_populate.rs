@@ -294,7 +294,7 @@ async fn fetch_unextracted_thoughts(
     limit: usize,
 ) -> Result<Vec<ThoughtRecord>> {
     let sql = format!(
-        "SELECT meta::id(id) as id, content FROM thoughts WHERE extracted_to_kg = false ORDER BY created_at ASC LIMIT {}",
+        "SELECT meta::id(id) as id, content, created_at FROM thoughts WHERE extracted_to_kg = false ORDER BY created_at ASC LIMIT {}",
         limit
     );
     let rows: Vec<ThoughtRecord> = db.query(sql).await?.take(0)?;
