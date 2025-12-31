@@ -5,7 +5,7 @@ use crate::clients::{AgentError, GeminiClient, PersistedAgent};
 use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::Client as WsClient;
@@ -36,6 +36,28 @@ pub struct DelegateGeminiParams {
 struct SessionResult {
     #[serde(default)]
     last_agent_session_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum JobStatus {
+    Queued,
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+impl JobStatus {
+    const fn as_str(&self) -> &'static str {
+        match self {
+            JobStatus::Queued => "queued",
+            JobStatus::Running => "running",
+            JobStatus::Completed => "completed",
+            JobStatus::Failed => "failed",
+            JobStatus::Cancelled => "cancelled",
+        }
+    }
 }
 
 impl SurrealMindServer {
@@ -201,9 +223,9 @@ async fn create_job_record(
     // Convert Option<String> to JSON values that SurrealDB can handle
     let model_override_json: Value = model_override.map(Value::String).unwrap_or(Value::Null);
     let cwd_json: Value = cwd.map(Value::String).unwrap_or(Value::Null);
-    
-    let sql = "CREATE agent_jobs SET job_id = $job_id, tool_name = $tool_name, agent_source = $agent_source, agent_instance = $agent_instance, prompt = $prompt, task_name = $task_name, model_override = $model_override, cwd = $cwd, timeout_ms = $timeout_ms, status = 'queued', created_at = time::now();";
-    let mut response = db.query(sql)
+
+    let sql = "CREATE agent_jobs SET job_id = $job_id, tool_name = $tool_name, agent_source = $agent_source, agent_instance = $agent_instance, prompt = $prompt, task_name = $task_name, model_override = $model_override, cwd = $cwd, timeout_ms = $timeout_ms, status = $status, created_at = time::now();";
+    db.query(sql)
         .bind(("job_id", job_id))
         .bind(("tool_name", tool_name))
         .bind(("agent_source", agent_source))
@@ -213,8 +235,8 @@ async fn create_job_record(
         .bind(("model_override", model_override_json))
         .bind(("cwd", cwd_json))
         .bind(("timeout_ms", timeout_ms as i64))
+        .bind(("status", JobStatus::Queued.as_str()))
         .await?;
-    let _: Vec<serde_json::Value> = response.take(0)?;
     Ok(())
 }
 
@@ -225,7 +247,7 @@ async fn complete_job(
     exchange_id: Option<String>,
     duration_ms: i64,
 ) -> Result<()> {
-    let mut sql = "UPDATE agent_jobs SET status = 'completed', completed_at = time::now(), duration_ms = $duration_ms".to_string();
+    let mut sql = "UPDATE agent_jobs SET status = $status, completed_at = time::now(), duration_ms = $duration_ms".to_string();
 
     if session_id.is_some() {
         sql.push_str(", session_id = $session_id");
@@ -238,6 +260,7 @@ async fn complete_job(
     let mut query = db
         .query(&sql)
         .bind(("job_id", job_id))
+        .bind(("status", JobStatus::Completed.as_str()))
         .bind(("duration_ms", duration_ms));
 
     if let Some(sid) = session_id {
@@ -247,8 +270,7 @@ async fn complete_job(
         query = query.bind(("exchange_id", eid));
     }
 
-    let mut response = query.await?;
-    let _: Vec<serde_json::Value> = response.take(0)?;
+    query.await?;
     Ok(())
 }
 
@@ -258,13 +280,13 @@ async fn fail_job(
     error: String,
     duration_ms: i64,
 ) -> Result<()> {
-    let sql = "UPDATE agent_jobs SET status = 'failed', error = $error, completed_at = time::now(), duration_ms = $duration_ms WHERE job_id = $job_id;";
-    let mut response = db.query(sql)
+    let sql = "UPDATE agent_jobs SET status = $status, error = $error, completed_at = time::now(), duration_ms = $duration_ms WHERE job_id = $job_id;";
+    db.query(sql)
         .bind(("job_id", job_id))
+        .bind(("status", JobStatus::Failed.as_str()))
         .bind(("error", error))
         .bind(("duration_ms", duration_ms))
         .await?;
-    let _: Vec<serde_json::Value> = response.take(0)?;
     Ok(())
 }
 
