@@ -14,6 +14,7 @@ related_docs:
   - docs/prompts/20251230-delegate-gemini-cwd.md
   - docs/prompts/20251230-delegate-gemini-timeout.md
 troubleshooting docs:
+  - docs/troubleshooting/20251230-delegate_gemini-async.md
 ---
 
 # Implementation Plan for delegate_gemini tool async execution

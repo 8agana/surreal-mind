@@ -144,8 +144,13 @@ impl SurrealMindServer {
             DEFINE FIELD duration_ms ON TABLE agent_jobs TYPE option<int>;
             DEFINE FIELD error ON TABLE agent_jobs TYPE option<string>;
             DEFINE FIELD session_id ON TABLE agent_jobs TYPE option<string>;
-            DEFINE FIELD exchange_id ON TABLE agent_jobs TYPE option<record<agent_exchanges>>;
+            DEFINE FIELD exchange_id ON TABLE agent_jobs TYPE option<string>;
             DEFINE FIELD metadata ON TABLE agent_jobs TYPE option<object>;
+            DEFINE FIELD prompt ON TABLE agent_jobs TYPE string;
+            DEFINE FIELD task_name ON TABLE agent_jobs TYPE string;
+            DEFINE FIELD model_override ON TABLE agent_jobs TYPE option<string>;
+            DEFINE FIELD cwd ON TABLE agent_jobs TYPE option<string>;
+            DEFINE FIELD timeout_ms ON TABLE agent_jobs TYPE option<int>;
             DEFINE INDEX idx_jobs_job_id ON TABLE agent_jobs FIELDS job_id UNIQUE;
             DEFINE INDEX idx_jobs_status ON TABLE agent_jobs FIELDS status;
             DEFINE INDEX idx_jobs_created ON TABLE agent_jobs FIELDS created_at;

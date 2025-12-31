@@ -71,10 +71,6 @@ impl ServerHandler for SurrealMindServer {
         let memories_create_output = crate::schemas::memories_create_output_schema();
         let detailed_help_output = crate::schemas::detailed_help_output_schema();
         let unified_search_output = crate::schemas::legacymind_search_output_schema();
-        let delegate_gemini_output = crate::schemas::delegate_gemini_output_schema();
-        let agent_job_status_output = crate::schemas::agent_job_status_output_schema();
-        let list_agent_jobs_output = crate::schemas::list_agent_jobs_output_schema();
-        let cancel_agent_job_output = crate::schemas::cancel_agent_job_output_schema();
 
         let mut tools = vec![
             Tool {
@@ -132,7 +128,7 @@ impl ServerHandler for SurrealMindServer {
             input_schema: delegate_gemini_schema.clone(),
             icons: None,
             annotations: None,
-            output_schema: Some(delegate_gemini_output),
+            output_schema: None,
             meta: None,
         });
 
@@ -189,7 +185,7 @@ impl ServerHandler for SurrealMindServer {
             input_schema: agent_job_status_schema.clone(),
             icons: None,
             annotations: None,
-            output_schema: Some(agent_job_status_output),
+            output_schema: None,
             meta: None,
         });
 
@@ -202,7 +198,7 @@ impl ServerHandler for SurrealMindServer {
             input_schema: list_agent_jobs_schema.clone(),
             icons: None,
             annotations: None,
-            output_schema: Some(list_agent_jobs_output),
+            output_schema: None,
             meta: None,
         });
 
@@ -213,7 +209,7 @@ impl ServerHandler for SurrealMindServer {
             input_schema: cancel_agent_job_schema.clone(),
             icons: None,
             annotations: None,
-            output_schema: Some(cancel_agent_job_output),
+            output_schema: None,
             meta: None,
         });
         // (photography tools removed from this server)

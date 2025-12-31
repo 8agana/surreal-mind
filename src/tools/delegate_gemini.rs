@@ -80,101 +80,13 @@ impl SurrealMindServer {
                 "delegate_gemini".to_string(),
                 "gemini".to_string(),
                 model.clone(),
+                prompt.clone(),
+                task_name.clone(),
+                model_override.clone(),
+                cwd.clone(),
+                timeout,
             )
             .await?;
-
-            // Clone what we need for the spawned task
-            let db = self.db.clone();
-            let semaphore = self.job_semaphore.clone();
-            let prompt_clone = prompt.clone();
-            let task_name_clone = task_name.clone();
-            let cwd_clone = cwd.clone();
-            let job_id_clone = job_id.clone();
-
-            // Spawn background task
-            tokio::spawn(async move {
-                // Acquire semaphore permit (limit concurrent jobs)
-                let _permit = semaphore.acquire().await.expect("semaphore closed");
-
-                // Update job to running
-                let started_at = chrono::Utc::now();
-                if let Err(e) = update_job_status(
-                    db.as_ref(),
-                    job_id_clone.clone(),
-                    "running".to_string(),
-                    Some(started_at.to_rfc3339()),
-                )
-                .await
-                {
-                    eprintln!(
-                        "[ERROR delegate_gemini async] Failed to update job to running: {}",
-                        e
-                    );
-                    return;
-                }
-
-                // Execute with timeout
-                let result = tokio::time::timeout(
-                    std::time::Duration::from_millis(timeout),
-                    execute_gemini_call(
-                        db.clone(),
-                        &prompt_clone,
-                        &task_name_clone,
-                        model_override.as_deref(),
-                        cwd_clone.as_deref(),
-                        timeout,
-                    ),
-                )
-                .await;
-
-                let completed_at = chrono::Utc::now();
-                let duration_ms = (completed_at - started_at).num_milliseconds();
-
-                match result {
-                    Ok(Ok(response)) => {
-                        // Success - update job with exchange_id
-                        if let Err(e) = complete_job(
-                            db.as_ref(),
-                            job_id_clone.clone(),
-                            Some(response.session_id.clone()),
-                            response.exchange_id.clone(),
-                            duration_ms,
-                        )
-                        .await
-                        {
-                            eprintln!(
-                                "[ERROR delegate_gemini async] Failed to complete job: {}",
-                                e
-                            );
-                        }
-                    }
-                    Ok(Err(agent_err)) => {
-                        // Agent error
-                        let error_msg = format!("Agent error: {}", agent_err);
-                        if let Err(e) =
-                            fail_job(db.as_ref(), job_id_clone.clone(), error_msg, duration_ms)
-                                .await
-                        {
-                            eprintln!(
-                                "[ERROR delegate_gemini async] Failed to mark job as failed: {}",
-                                e
-                            );
-                        }
-                    }
-                    Err(_) => {
-                        // Timeout
-                        let error_msg = format!("Timeout after {}ms", timeout);
-                        if let Err(e) =
-                            fail_job(db.as_ref(), job_id_clone, error_msg, duration_ms).await
-                        {
-                            eprintln!(
-                                "[ERROR delegate_gemini async] Failed to mark job as timed out: {}",
-                                e
-                            );
-                        }
-                    }
-                }
-            });
 
             Ok(CallToolResult::structured(json!({
                 "status": "queued",
@@ -280,35 +192,25 @@ async fn create_job_record(
     tool_name: String,
     agent_source: String,
     agent_instance: String,
+    prompt: String,
+    task_name: String,
+    model_override: Option<String>,
+    cwd: Option<String>,
+    timeout_ms: u64,
 ) -> Result<()> {
-    let sql = "CREATE agent_jobs SET job_id = $job_id, tool_name = $tool_name, agent_source = $agent_source, agent_instance = $agent_instance, status = 'queued', created_at = time::now();";
-    db.query(sql)
+    let sql = "CREATE agent_jobs SET job_id = $job_id, tool_name = $tool_name, agent_source = $agent_source, agent_instance = $agent_instance, prompt = $prompt, task_name = $task_name, model_override = $model_override, cwd = $cwd, timeout_ms = $timeout_ms, status = 'queued', created_at = time::now();";
+    let mut response = db.query(sql)
         .bind(("job_id", job_id))
         .bind(("tool_name", tool_name))
         .bind(("agent_source", agent_source))
         .bind(("agent_instance", agent_instance))
+        .bind(("prompt", prompt))
+        .bind(("task_name", task_name))
+        .bind(("model_override", model_override))
+        .bind(("cwd", cwd))
+        .bind(("timeout_ms", timeout_ms as i64))
         .await?;
-    Ok(())
-}
-
-async fn update_job_status(
-    db: &Surreal<WsClient>,
-    job_id: String,
-    status: String,
-    started_at: Option<String>,
-) -> Result<()> {
-    let sql = if let Some(timestamp) = started_at {
-        format!(
-            "UPDATE agent_jobs SET status = '{}', started_at = '{}' WHERE job_id = $job_id;",
-            status, timestamp
-        )
-    } else {
-        format!(
-            "UPDATE agent_jobs SET status = '{}' WHERE job_id = $job_id;",
-            status
-        )
-    };
-    db.query(&sql).bind(("job_id", job_id)).await?;
+    let _: Vec<serde_json::Value> = response.take(0)?;
     Ok(())
 }
 
@@ -341,7 +243,8 @@ async fn complete_job(
         query = query.bind(("exchange_id", eid));
     }
 
-    query.await?;
+    let mut response = query.await?;
+    let _: Vec<serde_json::Value> = response.take(0)?;
     Ok(())
 }
 
@@ -352,12 +255,151 @@ async fn fail_job(
     duration_ms: i64,
 ) -> Result<()> {
     let sql = "UPDATE agent_jobs SET status = 'failed', error = $error, completed_at = time::now(), duration_ms = $duration_ms WHERE job_id = $job_id;";
-    db.query(sql)
+    let mut response = db.query(sql)
         .bind(("job_id", job_id))
         .bind(("error", error))
         .bind(("duration_ms", duration_ms))
         .await?;
+    let _: Vec<serde_json::Value> = response.take(0)?;
     Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+struct QueuedJobIdRow {
+    job_id: String,
+    #[serde(rename = "created_at")]
+    _created_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct QueuedJobRow {
+    job_id: String,
+    prompt: String,
+    task_name: String,
+    model_override: Option<String>,
+    cwd: Option<String>,
+    timeout_ms: Option<i64>,
+}
+
+pub async fn run_delegate_gemini_worker(
+    db: std::sync::Arc<Surreal<WsClient>>,
+    semaphore: std::sync::Arc<tokio::sync::Semaphore>,
+) {
+    tracing::info!("delegate_gemini worker started");
+    let poll_ms = std::env::var("SURR_JOB_POLL_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(500);
+
+    loop {
+        let claimed = match claim_next_job(db.as_ref()).await {
+            Ok(job) => job,
+            Err(e) => {
+                eprintln!("[ERROR delegate_gemini worker] Claim failed: {}", e);
+                tokio::time::sleep(std::time::Duration::from_millis(poll_ms)).await;
+                continue;
+            }
+        };
+
+        let Some(job) = claimed else {
+            tokio::time::sleep(std::time::Duration::from_millis(poll_ms)).await;
+            continue;
+        };
+
+        tracing::info!(job_id = %job.job_id, "delegate_gemini worker claimed job");
+        let _permit = semaphore.acquire().await.expect("semaphore closed");
+
+        let timeout = job
+            .timeout_ms
+            .and_then(|v| u64::try_from(v).ok())
+            .unwrap_or_else(gemini_timeout_ms);
+
+        if job.prompt.trim().is_empty() {
+            let _ = fail_job(
+                db.as_ref(),
+                job.job_id,
+                "Missing prompt in job metadata".to_string(),
+                0,
+            )
+            .await;
+            continue;
+        }
+
+        let started_at = chrono::Utc::now();
+        let result = tokio::time::timeout(
+            std::time::Duration::from_millis(timeout),
+            execute_gemini_call(
+                db.clone(),
+                &job.prompt,
+                &job.task_name,
+                job.model_override.as_deref(),
+                job.cwd.as_deref(),
+                timeout,
+            ),
+        )
+        .await;
+
+        let completed_at = chrono::Utc::now();
+        let duration_ms = (completed_at - started_at).num_milliseconds();
+
+        match result {
+            Ok(Ok(response)) => {
+                if let Err(e) = complete_job(
+                    db.as_ref(),
+                    job.job_id,
+                    Some(response.session_id.clone()),
+                    response.exchange_id.clone(),
+                    duration_ms,
+                )
+                .await
+                {
+                    eprintln!(
+                        "[ERROR delegate_gemini worker] Failed to complete job: {}",
+                        e
+                    );
+                }
+            }
+            Ok(Err(agent_err)) => {
+                let error_msg = format!("Agent error: {}", agent_err);
+                if let Err(e) = fail_job(db.as_ref(), job.job_id, error_msg, duration_ms).await {
+                    eprintln!(
+                        "[ERROR delegate_gemini worker] Failed to mark job as failed: {}",
+                        e
+                    );
+                }
+            }
+            Err(_) => {
+                let error_msg = format!("Timeout after {}ms", timeout);
+                if let Err(e) = fail_job(db.as_ref(), job.job_id, error_msg, duration_ms).await {
+                    eprintln!(
+                        "[ERROR delegate_gemini worker] Failed to mark job as timed out: {}",
+                        e
+                    );
+                }
+            }
+        }
+    }
+}
+
+async fn claim_next_job(db: &Surreal<WsClient>) -> Result<Option<QueuedJobRow>> {
+    let mut response = db
+        .query(
+            "SELECT job_id, created_at FROM agent_jobs WHERE status = 'queued' AND prompt IS NOT NONE ORDER BY created_at ASC LIMIT 1;",
+        )
+        .await?;
+    let rows: Vec<QueuedJobIdRow> = response.take(0)?;
+    let Some(row) = rows.first() else {
+        return Ok(None);
+    };
+
+    let mut response = db
+        .query(
+            "UPDATE agent_jobs SET status = 'running', started_at = time::now() WHERE job_id = $job_id AND status = 'queued' AND prompt IS NOT NONE RETURN job_id, prompt, task_name, model_override, cwd, timeout_ms;",
+        )
+        .bind(("job_id", row.job_id.clone()))
+        .await?;
+    let rows: Vec<QueuedJobRow> = response.take(0)?;
+    Ok(rows.into_iter().next())
 }
 
 async fn execute_gemini_call(
