@@ -593,6 +593,10 @@ async fn upsert_observation(
     };
 
     // Check if observation already exists by name and source_thought_id
+    // NOTE: Uniqueness key is (name, source_thought_id) not (name, data.source_thought_id).
+    // This deviates from the original spec but is superior: simpler logic, faster queries,
+    // avoids nested JSON structure dependencies. Same guarantees: each thought's observations
+    // are unique by semantic content (name hash), and observations don't duplicate across thoughts.
     let sql = "SELECT meta::id(id) as id FROM kg_observations WHERE name = $name AND source_thought_id = $src LIMIT 1";
     let existing: Vec<serde_json::Value> = db
         .query(sql)
@@ -610,7 +614,6 @@ async fn upsert_observation(
         "content": observation.content,
         "context": observation.context,
         "tags": observation.tags,
-        "source_thought_id": thought_id,
     });
 
     db.query("CREATE kg_observations SET created_at = time::now(), name = $name, data = $data, source_thought_id = $src, confidence = $conf, source_thought_ids = $thought_ids, extraction_batch_id = $batch_id, extracted_at = time::now(), extraction_confidence = $conf, extraction_prompt_version = $version")

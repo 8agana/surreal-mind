@@ -3,6 +3,7 @@ id: doc-5
 title: Testing Plan - kg_populate binary
 type: other
 created_date: '2025-12-31 23:24'
+updated_date: '2025-12-31 23:51'
 ---
 # Testing Plan — kg_populate binary
 
@@ -77,6 +78,25 @@ created_date: '2025-12-31 23:24'
 - [ ] Individual thought failure doesn't stop batch
 - [ ] Database connection failure exits cleanly
 - [ ] Config load failure shows helpful error
+
+### 9a. Asymmetric Retry Behavior (Intentional Safety Design)
+**Critical Design Decision**: When Gemini fails to parse the response as valid JSON, the entire batch is **NOT** marked as `extracted_to_kg = true`. This is intentional safety behavior.
+
+**Rationale**:
+- Network/timeout failures are temporary and recoverable → retry entire batch
+- JSON parse failures indicate response corruption or schema mismatch → retry entire batch
+- If we marked the batch as extracted despite parse failures, we'd lose those thoughts permanently
+- The cost of re-processing is negligible vs. the cost of losing thoughts
+
+**Test Validation**:
+- [ ] Simulate Gemini returning malformed JSON (invalid JSON structure)
+- [ ] Verify error is logged but thoughts remain `extracted_to_kg = false`
+- [ ] Verify next run re-fetches and reprocesses the same batch
+- [ ] Contrast with partial thought failures (one thought fails in a batch): only that thought stays unprocessed, batch is still marked as extracted
+
+**Asymmetry Explained**:
+- Individual thought processing failure → skip that thought, mark batch extracted (other thoughts processed successfully)
+- Gemini response parsing failure → skip entire batch, don't mark extracted (no thoughts were reliably processed)
 
 ### 10. Batch Size Configuration
 - [ ] Default batch size is 25
