@@ -21,6 +21,9 @@ pub struct DelegateGeminiParams {
     pub task_name: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
+    /// Working directory for the Gemini CLI subprocess
+    #[serde(default)]
+    pub cwd: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -58,11 +61,15 @@ impl SurrealMindServer {
             .unwrap_or_else(|| default_model_name());
 
         let resume_session = fetch_last_session_id(self.db.as_ref(), task_name.clone()).await?;
+        let cwd = normalize_optional_string(params.cwd);
 
-        let gemini = match model_override {
+        let mut gemini = match model_override {
             Some(custom) => GeminiClient::with_timeout_ms(custom, gemini_timeout_ms()),
             None => GeminiClient::new(),
         };
+        if let Some(ref dir) = cwd {
+            gemini = gemini.with_cwd(dir);
+        }
         let agent = PersistedAgent::new(
             gemini,
             self.db.clone(),

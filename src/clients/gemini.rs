@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -25,6 +26,7 @@ pub struct GeminiResponse {
 pub struct GeminiClient {
     model: String,
     timeout: Duration,
+    cwd: Option<PathBuf>,
 }
 
 impl Default for GeminiClient {
@@ -43,6 +45,7 @@ impl GeminiClient {
         Self {
             model,
             timeout: Duration::from_millis(timeout_ms),
+            cwd: None,
         }
     }
 
@@ -50,7 +53,14 @@ impl GeminiClient {
         Self {
             model: model.into(),
             timeout: Duration::from_millis(timeout_ms),
+            cwd: None,
         }
+    }
+
+    /// Set the working directory for the Gemini CLI subprocess
+    pub fn with_cwd(mut self, cwd: impl Into<PathBuf>) -> Self {
+        self.cwd = Some(cwd.into());
+        self
     }
 }
 
@@ -76,6 +86,9 @@ impl CognitiveAgent for GeminiClient {
             cmd.arg("--resume").arg(sid);
         }
         cmd.arg(prompt);
+        if let Some(ref dir) = self.cwd {
+            cmd.current_dir(dir);
+        }
         let mut child = cmd.spawn().map_err(map_spawn_err)?;
 
         let stdout = child
