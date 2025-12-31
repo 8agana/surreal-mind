@@ -94,3 +94,8 @@ None. Build completed cleanly. (clippy/fmt not run in this incident.)
 - Claude Desktop already handled the original schemas; the issue appears specific to CC.
 - Consider reintroducing output schemas once CC MCP client is updated to support `oneOf` and union types.
 
+---
+status: Resolved (client compatibility patch applied)
+implementation date: 2025-12-31
+original prompt:
+  - docs/prompts/20251230-delegate_gemini-async.md

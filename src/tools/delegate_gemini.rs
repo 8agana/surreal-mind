@@ -198,6 +198,10 @@ async fn create_job_record(
     cwd: Option<String>,
     timeout_ms: u64,
 ) -> Result<()> {
+    // Convert Option<String> to JSON values that SurrealDB can handle
+    let model_override_json: Value = model_override.map(Value::String).unwrap_or(Value::Null);
+    let cwd_json: Value = cwd.map(Value::String).unwrap_or(Value::Null);
+    
     let sql = "CREATE agent_jobs SET job_id = $job_id, tool_name = $tool_name, agent_source = $agent_source, agent_instance = $agent_instance, prompt = $prompt, task_name = $task_name, model_override = $model_override, cwd = $cwd, timeout_ms = $timeout_ms, status = 'queued', created_at = time::now();";
     let mut response = db.query(sql)
         .bind(("job_id", job_id))
@@ -206,8 +210,8 @@ async fn create_job_record(
         .bind(("agent_instance", agent_instance))
         .bind(("prompt", prompt))
         .bind(("task_name", task_name))
-        .bind(("model_override", model_override))
-        .bind(("cwd", cwd))
+        .bind(("model_override", model_override_json))
+        .bind(("cwd", cwd_json))
         .bind(("timeout_ms", timeout_ms as i64))
         .await?;
     let _: Vec<serde_json::Value> = response.take(0)?;

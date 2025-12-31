@@ -298,6 +298,29 @@ For semaphore limit of 4:
 - `src/tools/mod.rs` - Added module exports
 - `src/clients/gemini.rs` - Fixed unrelated clippy warning (collapsible_if)
 
+### Critical Bug Fix Applied
+
+**Issue Found:** Serialization error when creating agent_jobs records with Option<String> parameters
+**Error:** `Serialization error: invalid type: enum, expected any valid JSON value`
+**Root Cause:** SurrealDB's `bind()` method cannot directly serialize Rust `Option<String>` enum types
+**Location:** `src/tools/delegate_gemini.rs` in `create_job_record()` function
+
+**Fix Applied:**
+```rust
+// Before (causing serialization error):
+.bind(("model_override", model_override))
+.bind(("cwd", cwd))
+
+// After (fixed):
+let model_override_json: Value = model_override.map(Value::String).unwrap_or(Value::Null);
+let cwd_json: Value = cwd.map(Value::String).unwrap_or(Value::Null);
+// ...
+.bind(("model_override", model_override_json))
+.bind(("cwd", cwd_json))
+```
+
+**Impact:** This fix resolves the MCP error -32603 that occurred when calling delegate_gemini with fire_and_forget=true, ensuring proper JSON serialization of optional string parameters.
+
 ### Implementation Decisions
 
 **Lifetime Management:**
