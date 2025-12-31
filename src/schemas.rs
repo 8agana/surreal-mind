@@ -66,7 +66,6 @@ pub fn detailed_help_schema() -> Arc<Map<String, Value>> {
                 "memories_create",
                 "legacymind_search",
                 "maintenance_ops",
-                "inner_voice",
                 "detailed_help"
             ]},
             "format": {"type": "string", "enum": ["compact", "full"], "default": "full"}
@@ -117,7 +116,7 @@ pub fn unified_search_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
-/// Output structs for inner_voice.retrieve
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Snippet {
     pub id: String,
@@ -135,53 +134,9 @@ pub struct Snippet {
     pub span_end: Option<usize>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Diagnostics {
-    pub provider: String,
-    pub model: String,
-    pub dim: usize,
-    pub k_req: usize,
-    pub k_ret: usize,
-    pub kg_candidates: usize,
-    pub thought_candidates: usize,
-    pub floor_used: f32,
-    pub latency_ms: u64,
-}
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct RetrieveOut {
-    pub snippets: Vec<Snippet>,
-    pub diagnostics: Diagnostics,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub answer: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub synth_provider: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub synth_model: Option<String>,
-}
 
-pub fn inner_voice_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "query": {"type": "string"},
-            "top_k": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
-            "floor": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-            "mix": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.6},
-            "include_private": {"type": "boolean", "default": false},
-            "include_tags": {"type": "array", "items": {"type": "string"}},
-            "exclude_tags": {"type": "array", "items": {"type": "string"}},
-            "auto_extract_to_kg": {"type": "boolean", "default": false},
-            "previous_thought_id": {"type": "string"},
-            "include_feedback": {"type": "boolean", "default": true},
-            "feedback_max_lines": {"type": "integer", "default": 3, "minimum": 1, "maximum": 10},
-            "recency_days": {"type": "integer", "minimum": 1, "maximum": 365},
-            "prefer_recent": {"type": "boolean"}
-        },
-        "required": ["query"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
+
 
 // (photography_search_schema removed in favor of two explicit tools)
 
@@ -339,31 +294,7 @@ pub fn maintenance_ops_output_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
-pub fn inner_voice_output_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "answer": {"type": "string", "description": "Synthesized answer from memories/thoughts"},
-            "synth_thought_id": {"type": "string", "description": "ID of the synthesis thought created"},
-            "feedback": {"type": "string", "description": "Optional feedback text"},
-            "feedback_thought_id": {"type": ["string", "null"], "description": "ID of feedback thought if created"},
-            "sources_compact": {"type": "string", "description": "Compact list of source IDs"},
-            "synth_provider": {"type": "string", "description": "Provider used for synthesis"},
-            "synth_model": {"type": "string", "description": "Model used for synthesis"},
-            "embedding_dim": {"type": "integer", "description": "Embedding dimension used"},
-            "extracted": {
-                "type": "object",
-                "properties": {
-                    "entities": {"type": "integer"},
-                    "relationships": {"type": "integer"}
-                },
-                "description": "Count of entities/relationships extracted to KG (when auto_extract_to_kg=true)"
-            }
-        },
-        "required": ["answer", "synth_thought_id", "sources_compact", "synth_provider", "synth_model", "embedding_dim", "extracted"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
+
 
 pub fn detailed_help_output_schema() -> Arc<Map<String, Value>> {
     let schema = json!({

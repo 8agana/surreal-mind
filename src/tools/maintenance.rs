@@ -159,16 +159,6 @@ impl SurrealMindServer {
             "transport": rt.transport,
             "http": {"bind": rt.http_bind.to_string(), "path": rt.http_path},
             "mcp_no_log": rt.mcp_no_log,
-            "inner_voice": {
-                "topk_default": rt.inner_voice.topk_default,
-                "mix": rt.inner_voice.mix,
-                "min_floor": rt.inner_voice.min_floor,
-                "max_candidates_per_source": rt.inner_voice.max_candidates_per_source,
-                "include_private_default": rt.inner_voice.include_private_default,
-                "recency_half_life_days": rt.inner_voice.recency_half_life_days,
-                "recency_days_default": rt.inner_voice.recency_days_default,
-                "prefer_recent_default": rt.inner_voice.prefer_recent_default,
-            },
         });
         Ok(CallToolResult::structured(out))
     }

@@ -61,150 +61,7 @@ pub struct OrbitalConfig {
     pub access_weight: f32,
 }
 
-/// Configuration for inner_voice.retrieve tool
-#[derive(Debug, Clone)]
-pub struct InnerVoiceConfig {
-    pub enable: bool,
-    pub mix: f32,
-    pub topk_default: usize,
-    pub min_floor: f32,
-    pub max_candidates_per_source: usize,
-    pub include_private_default: bool,
-    pub plan: bool,
-    pub auto_extract_default: bool,
-    pub recency_half_life_days: f32,
-    pub recency_days_default: Option<u32>,
-    pub prefer_recent_default: bool,
-}
 
-impl Default for InnerVoiceConfig {
-    fn default() -> Self {
-        Self {
-            // Default ON to avoid surprising hidden tools in downstream MCP launchers
-            enable: true,
-            mix: 0.6,
-            topk_default: 10,
-            min_floor: 0.15,
-            max_candidates_per_source: 150,
-            include_private_default: false,
-            plan: false,
-            auto_extract_default: true,
-            recency_half_life_days: 14.0,
-            recency_days_default: None,
-            prefer_recent_default: false,
-        }
-    }
-}
-
-impl InnerVoiceConfig {
-    /// Load inner_voice configuration from environment variables
-    pub fn load_from_env() -> Self {
-        let mut config = Self::default();
-
-        // Backward/forward compatible gating semantics:
-        // - SURR_DISABLE_INNER_VOICE=1|true force-disables
-        // - SURR_ENABLE_INNER_VOICE=0|false disables; =1|true enables
-        // - default: enabled
-        if let Ok(disable) = std::env::var("SURR_DISABLE_INNER_VOICE")
-            && (disable == "1" || disable.eq_ignore_ascii_case("true"))
-        {
-            config.enable = false;
-        }
-        if let Ok(enable) = std::env::var("SURR_ENABLE_INNER_VOICE") {
-            if enable == "0" || enable.eq_ignore_ascii_case("false") {
-                config.enable = false;
-            } else if enable == "1" || enable.eq_ignore_ascii_case("true") {
-                config.enable = true;
-            }
-        }
-
-        if let Some(mix) = std::env::var("SURR_INNER_VOICE_MIX")
-            .ok()
-            .and_then(|v| v.parse::<f32>().ok())
-        {
-            config.mix = mix.clamp(0.0, 1.0);
-        }
-
-        if let Some(topk) = std::env::var("SURR_INNER_VOICE_TOPK_DEFAULT")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-        {
-            config.topk_default = topk.clamp(1, 50);
-        }
-
-        if let Some(min_floor) = std::env::var("SURR_INNER_VOICE_MIN_FLOOR")
-            .ok()
-            .and_then(|v| v.parse::<f32>().ok())
-            && (0.0..=1.0).contains(&min_floor)
-        {
-            config.min_floor = min_floor;
-        }
-
-        if let Some(max_candidates) = std::env::var("SURR_INNER_VOICE_MAX_CANDIDATES_PER_SOURCE")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-        {
-            config.max_candidates_per_source = max_candidates.max(3 * config.topk_default);
-        }
-
-        if let Ok(include_private) = std::env::var("SURR_INNER_VOICE_INCLUDE_PRIVATE_DEFAULT") {
-            config.include_private_default =
-                include_private == "1" || include_private.to_lowercase() == "true";
-        }
-
-        if let Ok(plan) = std::env::var("SURR_IV_PLAN") {
-            config.plan = plan == "1" || plan.to_lowercase() == "true";
-        }
-
-        if let Ok(ae) = std::env::var("SURR_IV_AUTO_EXTRACT_KG") {
-            config.auto_extract_default = ae == "1" || ae.to_lowercase() == "true";
-        }
-
-        if let Some(hl) = std::env::var("SURR_IV_RECENCY_HALF_LIFE_DAYS")
-            .ok()
-            .and_then(|v| v.parse::<f32>().ok())
-            && hl > 0.0
-        {
-            config.recency_half_life_days = hl;
-        }
-
-        if let Some(days) = std::env::var("SURR_IV_RECENCY_DEFAULT_DAYS")
-            .ok()
-            .and_then(|v| v.parse::<u32>().ok())
-            && days > 0
-        {
-            config.recency_days_default = Some(days);
-        }
-
-        if let Ok(pref) = std::env::var("SURR_IV_PREFER_RECENT") {
-            config.prefer_recent_default = pref == "1" || pref.eq_ignore_ascii_case("true");
-        }
-
-        config
-    }
-
-    /// Validate the configuration
-    pub fn validate(&self) -> anyhow::Result<()> {
-        if !(0.0..=1.0).contains(&self.mix) {
-            anyhow::bail!("SURR_INNER_VOICE_MIX must be between 0.0 and 1.0");
-        }
-        if !(1..=50).contains(&self.topk_default) {
-            anyhow::bail!("SURR_INNER_VOICE_TOPK_DEFAULT must be between 1 and 50");
-        }
-        if !(0.0..=1.0).contains(&self.min_floor) {
-            anyhow::bail!("SURR_INNER_VOICE_MIN_FLOOR must be between 0.0 and 1.0");
-        }
-        if self.max_candidates_per_source < 3 * self.topk_default {
-            anyhow::bail!(
-                "SURR_INNER_VOICE_MAX_CANDIDATES_PER_SOURCE must be at least 3 * topk_default"
-            );
-        }
-        if self.recency_half_life_days <= 0.0 {
-            anyhow::bail!("SURR_IV_RECENCY_HALF_LIFE_DAYS must be > 0");
-        }
-        Ok(())
-    }
-}
 
 /// Runtime configuration loaded from environment variables
 #[derive(Debug, Clone)]
@@ -233,7 +90,6 @@ pub struct RuntimeConfig {
     pub verify_min_sim: f32,
     pub verify_evidence_limit: usize,
     pub persist_verification: bool,
-    pub inner_voice: InnerVoiceConfig,
     // HTTP transport configuration
     pub transport: String,
     pub http_bind: std::net::SocketAddr,
@@ -274,7 +130,6 @@ impl Default for RuntimeConfig {
             kg_min_edge_strength: 0.0,
             kg_timeout_ms: 5000,
             kg_candidates: 200,
-            inner_voice: InnerVoiceConfig::default(),
             transport: "stdio".to_string(),
             http_bind: "127.0.0.1:8787"
                 .parse()
@@ -306,8 +161,7 @@ impl Config {
             let _ = dotenvy::from_path(".env");
             // Fallback to parent .env if core vars are still missing
             let core_present = std::env::var("SURR_DB_URL").is_ok()
-                || std::env::var("OPENAI_API_KEY").is_ok()
-                || std::env::var("SURR_ENABLE_INNER_VOICE").is_ok();
+                || std::env::var("OPENAI_API_KEY").is_ok();
             if !core_present {
                 let _ = dotenvy::from_path("../.env");
             }
@@ -448,9 +302,6 @@ impl Config {
             ),
         }
 
-        // Validate inner_voice config
-        config.runtime.inner_voice.validate()?;
-
         Ok(config)
     }
 
@@ -586,7 +437,6 @@ impl RuntimeConfig {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(200),
-            inner_voice: InnerVoiceConfig::load_from_env(),
             transport: "stdio".to_string(),
             http_bind: "127.0.0.1:8787"
                 .parse()

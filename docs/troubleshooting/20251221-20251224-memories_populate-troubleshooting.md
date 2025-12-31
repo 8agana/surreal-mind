@@ -694,7 +694,7 @@ Six agents, multiple fix layers applied, root cause still elusive.
 
 **Side Finding: Startup log message is hardcoded**
 ```
-🛠️  Loaded 7 MCP tools: legacymind_think, maintenance_ops, memories_create, memories_moderate, detailed_help, inner_voice, legacymind_search
+🛠️  Loaded 6 MCP tools: legacymind_think, maintenance_ops, memories_create, memories_moderate, detailed_help, legacymind_search
 ```
 This is a static string in `src/main.rs:89` - actual tool count is 11 (includes curiosity_*, memories_populate)
 

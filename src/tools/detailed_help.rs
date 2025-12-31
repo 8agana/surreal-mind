@@ -28,7 +28,6 @@ impl SurrealMindServer {
                     json!({"name": "memories_create", "one_liner": "Create entities/relationships/observations in the KG", "key_params": ["kind", "data", "confidence", "source_thought_id"]}),
                     json!({"name": "legacymind_search", "one_liner": "Unified LM search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]}),
                     json!({"name": "maintenance_ops", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]}),
-                    json!({"name": "inner_voice", "one_liner": "Retrieves and synthesizes relevant memories/thoughts into a concise answer; can optionally auto-extract entities/relationships into staged knowledge‑graph candidates for review.", "key_params": ["query", "top_k", "auto_extract_to_kg"]}),
                     json!({"name": "detailed_help", "one_liner": "Get help for a specific tool or list all tools", "key_params": ["tool", "format", "prompts"]}),
                 ];
                 return Ok(CallToolResult::structured(json!({ "tools": tools })));
@@ -100,22 +99,6 @@ impl SurrealMindServer {
                         "stuck": ["stuck", "unsure", "confused", "not sure", "blocked"]
                     }
                 }
-            }),
-            "inner_voice" => json!({
-                "name": "inner_voice",
-                "description": "Retrieves and synthesizes relevant memories/thoughts into a concise answer; can optionally auto-extract entities/relationships into staged knowledge‑graph candidates for review.",
-                "arguments": {
-                    "query": "string (required) — search query",
-                    "top_k": "integer (1-50; default 10) — max snippets",
-                    "sim_thresh": "number — similarity floor",
-                    "floor": "number — minimum similarity",
-                    "mix": "number (0.0-1.0; default 0.6) — KG/thoughts mix",
-                    "include_private": "boolean (default false)",
-                    "include_tags": "string[] — include thoughts with these tags",
-                    "exclude_tags": "string[] — exclude thoughts with these tags",
-                    "auto_extract_to_kg": "boolean (default false) — stage KG candidates"
-                },
-                "returns": {"answer": "string", "synth_thought_id": "string", "feedback": "string?", "feedback_thought_id": "string?", "sources_compact": "string", "synth_provider": "string", "synth_model": "string", "embedding_dim": "number", "extracted": "object"}
             }),
             "legacymind_search" => json!({
                 "name": "legacymind_search",

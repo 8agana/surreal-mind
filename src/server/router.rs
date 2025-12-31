@@ -56,7 +56,6 @@ impl ServerHandler for SurrealMindServer {
         let maintenance_ops_schema_map = crate::schemas::maintenance_ops_schema();
         let kg_create_schema_map = crate::schemas::kg_create_schema();
         let detailed_help_schema_map = crate::schemas::detailed_help_schema();
-        let inner_voice_schema_map = crate::schemas::inner_voice_schema();
         let unified_schema = crate::schemas::unified_search_schema();
         let curiosity_add_schema = crate::schemas::curiosity_add_schema();
         let curiosity_get_schema = crate::schemas::curiosity_get_schema();
@@ -68,7 +67,6 @@ impl ServerHandler for SurrealMindServer {
         let maintenance_ops_output = crate::schemas::maintenance_ops_output_schema();
         let memories_create_output = crate::schemas::memories_create_output_schema();
         let detailed_help_output = crate::schemas::detailed_help_output_schema();
-        let inner_voice_output = crate::schemas::inner_voice_output_schema();
         let unified_search_output = crate::schemas::legacymind_search_output_schema();
         let delegate_gemini_output = crate::schemas::delegate_gemini_output_schema();
 
@@ -119,19 +117,7 @@ impl ServerHandler for SurrealMindServer {
             },
         ];
 
-        // Always list the tool (visibility), enforce gating inside the handler if disabled
-        tools.push(Tool {
-            name: "inner_voice".into(),
-            title: Some("Inner Voice".into()),
-            description: Some(
-                "Retrieves and synthesizes relevant memories/thoughts into a concise answer; can optionally auto-extract entities/relationships into staged knowledge‑graph candidates for review.".into(),
-            ),
-            input_schema: inner_voice_schema_map.clone(),
-            icons: None,
-            annotations: None,
-            output_schema: Some(inner_voice_output),
-            meta: None,
-        });
+
         tools.push(Tool {
             name: "delegate_gemini".into(),
             title: Some("Delegate Gemini".into()),
@@ -219,12 +205,6 @@ impl ServerHandler for SurrealMindServer {
             // Memory tools
             "memories_create" => self
                 .handle_knowledgegraph_create(request)
-                .await
-                .map_err(|e| e.into()),
-            // Inner voice retrieval
-            // New canonical name
-            "inner_voice" => self
-                .handle_inner_voice_retrieve(request)
                 .await
                 .map_err(|e| e.into()),
             "delegate_gemini" => self

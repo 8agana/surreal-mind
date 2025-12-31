@@ -4,7 +4,7 @@ SurrealMind is the LegacyMind federation's thinking surface: a Rust MCP server t
 
 ## What It Does
 - Unified thinking (`legacymind_think`) with continuity links, optional hypothesis verification, and KG-only injection.
-- Retrieval and synthesis (`legacymind_search`, `inner_voice`) with injection scales and filters.
+- Retrieval and synthesis (`legacymind_search`) with injection scales and filters.
 - Knowledge graph authoring (`memories_create`, `memories_moderate`).
 - Operations and introspection (`maintenance_ops`, `detailed_help`).
 - Transports: stdio by default or streamable HTTP with SSE and bearer auth.
@@ -62,10 +62,9 @@ SurrealMind is the LegacyMind federation's thinking surface: a Rust MCP server t
    ./tests/test_mcp_comprehensive.sh
    ```
 
-## Tool Surface (7)
+## Tool Surface (6)
 - `legacymind_think`: `content` required. Optional `hint` (`debug|build|plan|stuck|question|conclude`), `injection_scale` 0–3, `tags[]`, `significance`, continuity fields (`session_id`, `chain_id`, `previous_thought_id`, `revises_thought`, `branch_from`), `hypothesis` + `needs_verification` with `verify_top_k`, `min_similarity`, `evidence_limit`, `contradiction_patterns`, `verbose_analysis`.
 - `legacymind_search`: Unified KG search; `query` (text/struct), `target` (`entity|relationship|observation|mixed`), `include_thoughts`, `thoughts_content`, `top_k_memories/thoughts`, `sim_thresh`, confidence/date bounds, chain/session filters.
-- `inner_voice`: Retrieval + synthesis with optional auto KG extraction; knobs `top_k`, `floor`, `mix`, `include_private`, tag include/exclude, `auto_extract_to_kg`, `previous_thought_id`, `include_feedback`. Provider chain: Grok (default) → local fallback; CLI providers deprecated. Toggle with `SURR_ENABLE_INNER_VOICE` / `SURR_DISABLE_INNER_VOICE`. Auto-extraction now relies on the LLM to append a JSON `candidates` block at the end of the answer; if absent, nothing is staged (heuristic extractor removed).
 - `memories_create`: Create KG `entity|relationship|observation`; supports `upsert`, `source_thought_id`, `confidence`, `data`.
 - `memories_moderate`: Review/decide staged KG candidates. `action` (`review|decide|review_and_decide`), `target`, `status`, `min_conf`, paging, optional decisions payload.
 - `maintenance_ops`: Operational subcommands:
@@ -81,7 +80,7 @@ SurrealMind is the LegacyMind federation's thinking surface: a Rust MCP server t
 - Retrieval/injection: `SURR_INJECT_T1/T2/T3` (defaults 0.6/0.4/0.25), `SURR_INJECT_FLOOR` (0.15), `SURR_KG_CANDIDATES` (default 200), `SURR_RETRIEVE_CANDIDATES` (default 500), `SURR_CACHE_MAX` (5000), `SURR_CACHE_WARM` (64), `SURR_INJECT_DEBOUNCE`, `SURR_KG_GRAPH_BOOST`, `SURR_KG_MAX_NEIGHBORS`, `SURR_KG_TIMEOUT_MS`.
 - Runtime/logging: `SURR_TOOL_TIMEOUT_MS` (default 15000), `MCP_NO_LOG`, `RUST_LOG`, `SURR_WRITE_STATE=1` to emit state.json.
 - Hypothesis verification defaults: `SURR_VERIFY_TOPK` (100), `SURR_VERIFY_MIN_SIM` (0.70), `SURR_VERIFY_EVIDENCE_LIMIT` (10), `SURR_PERSIST_VERIFICATION`.
-- Inner Voice: `SURR_INNER_VOICE_TOPK_DEFAULT`, `SURR_INNER_VOICE_MIX`, `SURR_INNER_VOICE_MIN_FLOOR`, `SURR_INNER_VOICE_MAX_CANDIDATES_PER_SOURCE`, `SURR_IV_PLAN`, `SURR_IV_AUTO_EXTRACT_KG`, `IV_ALLOW_GROK`, `INNER_VOICE_LOCAL_FALLBACK`.
+
 - Brain datastore: `SURR_ENABLE_BRAIN`, `SURR_BRAIN_URL/NS/DB/USER/PASS`.
 - HTTP transport: `SURR_TRANSPORT`, `SURR_HTTP_BIND`, `SURR_HTTP_PATH`, `SURR_BEARER_TOKEN` or `~/.surr_token`, `SURR_ALLOW_TOKEN_IN_URL`, `SURR_HTTP_SSE_KEEPALIVE_SEC`, `SURR_HTTP_SESSION_TTL_SEC`, `SURR_HTTP_REQUEST_TIMEOUT_MS`, `SURR_HTTP_MCP_OP_TIMEOUT_MS`, `SURR_HTTP_METRICS_MODE`.
 

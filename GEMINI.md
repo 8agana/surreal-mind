@@ -43,7 +43,6 @@ We have successfully separated the *Business Logic* (Photography, Skaters, Order
 -   **Tools:** Consolidated into `src/tools/`.
     -   `legacymind_think`: The primary interface. Handles "Mode Routing" (Debug/Build/Plan).
     -   `memories_create/moderate`: KG manipulation.
-    -   `inner_voice`: RAG/Retrieval.
 -   **Frameworks:** `src/cognitive/` implements OODA, Socratic, etc., via static analysis.
 
 ### Known Issues / Tech Debt
