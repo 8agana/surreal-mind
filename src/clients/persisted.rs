@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Map, Value};
-use surrealdb::engine::remote::ws::Client as WsClient;
 use surrealdb::Surreal;
+use surrealdb::engine::remote::ws::Client as WsClient;
 
 use crate::clients::traits::{AgentError, AgentResponse, CognitiveAgent};
 use crate::utils::db::upsert_tool_session;

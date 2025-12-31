@@ -1,6 +1,6 @@
 use anyhow::Result;
-use surreal_mind::clients::traits::CognitiveAgent;
 use surreal_mind::clients::GeminiClient;
+use surreal_mind::clients::traits::CognitiveAgent;
 
 #[tokio::main]
 async fn main() -> Result<()> {

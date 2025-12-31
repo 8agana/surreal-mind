@@ -1,9 +1,12 @@
 //! Tool handlers for the surreal-mind MCP server
 
+pub mod agent_job_status;
+pub mod cancel_agent_job;
 pub mod curiosity;
 pub mod delegate_gemini;
 pub mod detailed_help;
 pub mod knowledge_graph;
+pub mod list_agent_jobs;
 pub mod maintenance;
 pub mod thinking;
 pub mod unified_search;

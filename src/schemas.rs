@@ -37,9 +37,44 @@ pub fn delegate_gemini_schema() -> Arc<Map<String, Value>> {
             "task_name": {"type": "string"},
             "model": {"type": "string"},
             "cwd": {"type": "string"},
-            "timeout_ms": {"type": "number"}
+            "timeout_ms": {"type": "number"},
+            "fire_and_forget": {"type": "boolean", "default": false}
         },
         "required": ["prompt"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn agent_job_status_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "job_id": {"type": "string"}
+        },
+        "required": ["job_id"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn list_agent_jobs_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
+            "status_filter": {"type": "string", "enum": ["queued", "running", "completed", "failed", "cancelled"]},
+            "tool_name": {"type": "string"}
+        }
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn cancel_agent_job_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "job_id": {"type": "string"}
+        },
+        "required": ["job_id"]
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
@@ -118,7 +153,6 @@ pub fn unified_search_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Snippet {
     pub id: String,
@@ -135,10 +169,6 @@ pub struct Snippet {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub span_end: Option<usize>,
 }
-
-
-
-
 
 // (photography_search_schema removed in favor of two explicit tools)
 
@@ -237,13 +267,87 @@ pub fn legacymind_think_output_schema() -> Arc<Map<String, Value>> {
 
 pub fn delegate_gemini_output_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
+        "oneOf": [
+            {
+                "type": "object",
+                "properties": {
+                    "response": {"type": "string", "description": "Model response text"},
+                    "session_id": {"type": "string", "description": "Gemini session ID"},
+                    "exchange_id": {"type": "string", "description": "Persisted exchange record ID"}
+                },
+                "required": ["response", "session_id", "exchange_id"],
+                "description": "Synchronous response"
+            },
+            {
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string", "enum": ["queued"], "description": "Job status"},
+                    "job_id": {"type": "string", "description": "Job ID for tracking"},
+                    "message": {"type": "string", "description": "Status message"}
+                },
+                "required": ["status", "job_id", "message"],
+                "description": "Asynchronous response (fire_and_forget=true)"
+            }
+        ]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn agent_job_status_output_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
         "type": "object",
         "properties": {
-            "response": {"type": "string", "description": "Model response text"},
-            "session_id": {"type": "string", "description": "Gemini session ID"},
-            "exchange_id": {"type": "string", "description": "Persisted exchange record ID"}
+            "job_id": {"type": "string"},
+            "status": {"type": "string", "enum": ["queued", "running", "completed", "failed", "cancelled"]},
+            "created_at": {"type": "string"},
+            "started_at": {"type": ["string", "null"]},
+            "completed_at": {"type": ["string", "null"]},
+            "duration_ms": {"type": ["integer", "null"]},
+            "error": {"type": ["string", "null"]},
+            "session_id": {"type": ["string", "null"]},
+            "exchange_id": {"type": ["string", "null"]},
+            "metadata": {"type": ["object", "null"]}
         },
-        "required": ["response", "session_id", "exchange_id"]
+        "required": ["job_id", "status", "created_at"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn list_agent_jobs_output_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "jobs": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "job_id": {"type": "string"},
+                        "status": {"type": "string"},
+                        "tool_name": {"type": "string"},
+                        "created_at": {"type": "string"},
+                        "completed_at": {"type": ["string", "null"]},
+                        "duration_ms": {"type": ["integer", "null"]}
+                    }
+                }
+            },
+            "total": {"type": "integer"}
+        },
+        "required": ["jobs", "total"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn cancel_agent_job_output_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "job_id": {"type": "string"},
+            "previous_status": {"type": "string"},
+            "new_status": {"type": "string", "enum": ["cancelled"]},
+            "message": {"type": "string"}
+        },
+        "required": ["job_id", "previous_status", "new_status", "message"]
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
@@ -295,8 +399,6 @@ pub fn maintenance_ops_output_schema() -> Arc<Map<String, Value>> {
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
-
-
 
 pub fn detailed_help_output_schema() -> Arc<Map<String, Value>> {
     let schema = json!({

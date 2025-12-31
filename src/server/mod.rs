@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::Client;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Semaphore};
 
 // Submodules
 pub mod db;
@@ -152,4 +152,5 @@ pub struct SurrealMindServer {
     pub thoughts: Arc<RwLock<LruCache<String, Thought>>>, // Bounded in-memory cache (LRU)
     pub embedder: Arc<dyn Embedder>,
     pub config: Arc<crate::config::Config>, // Retain config to avoid future env reads
+    pub job_semaphore: Arc<Semaphore>,      // Limit concurrent async jobs (default: 4)
 }

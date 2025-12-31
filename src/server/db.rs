@@ -4,7 +4,7 @@ use anyhow::Context;
 use lru::LruCache;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Semaphore};
 use tracing::{info, warn};
 
 impl SurrealMindServer {
@@ -113,11 +113,20 @@ impl SurrealMindServer {
         let thoughts_cache =
             LruCache::new(NonZeroUsize::new(cache_max).unwrap_or(NonZeroUsize::MIN));
 
+        // Initialize job semaphore (limit concurrent async jobs)
+        let job_concurrency_limit: usize = std::env::var("SURR_JOB_CONCURRENCY")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .filter(|&v| v > 0)
+            .unwrap_or(4);
+        let job_semaphore = Arc::new(Semaphore::new(job_concurrency_limit));
+
         let server = Self {
             db: Arc::new(db),
             thoughts: Arc::new(RwLock::new(thoughts_cache)),
             embedder,
             config: Arc::new(config.clone()),
+            job_semaphore,
         };
 
         server

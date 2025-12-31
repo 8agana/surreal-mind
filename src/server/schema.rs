@@ -130,6 +130,26 @@ impl SurrealMindServer {
             -- Optional feedback helpers
             DEFINE TABLE kg_blocklist SCHEMALESS;
             DEFINE INDEX idx_kgb_item ON TABLE kg_blocklist FIELDS item;
+
+            -- Agent job tracking for async tool execution
+            DEFINE TABLE agent_jobs SCHEMAFULL;
+            DEFINE FIELD job_id ON TABLE agent_jobs TYPE string;
+            DEFINE FIELD tool_name ON TABLE agent_jobs TYPE string;
+            DEFINE FIELD agent_source ON TABLE agent_jobs TYPE string;
+            DEFINE FIELD agent_instance ON TABLE agent_jobs TYPE string;
+            DEFINE FIELD status ON TABLE agent_jobs TYPE string;
+            DEFINE FIELD created_at ON TABLE agent_jobs TYPE datetime DEFAULT time::now();
+            DEFINE FIELD started_at ON TABLE agent_jobs TYPE option<datetime>;
+            DEFINE FIELD completed_at ON TABLE agent_jobs TYPE option<datetime>;
+            DEFINE FIELD duration_ms ON TABLE agent_jobs TYPE option<int>;
+            DEFINE FIELD error ON TABLE agent_jobs TYPE option<string>;
+            DEFINE FIELD session_id ON TABLE agent_jobs TYPE option<string>;
+            DEFINE FIELD exchange_id ON TABLE agent_jobs TYPE option<record<agent_exchanges>>;
+            DEFINE FIELD metadata ON TABLE agent_jobs TYPE option<object>;
+            DEFINE INDEX idx_jobs_job_id ON TABLE agent_jobs FIELDS job_id UNIQUE;
+            DEFINE INDEX idx_jobs_status ON TABLE agent_jobs FIELDS status;
+            DEFINE INDEX idx_jobs_created ON TABLE agent_jobs FIELDS created_at;
+            DEFINE INDEX idx_jobs_tool ON TABLE agent_jobs FIELDS tool_name;
         "#
         );
 

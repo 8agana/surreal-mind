@@ -61,8 +61,6 @@ pub struct OrbitalConfig {
     pub access_weight: f32,
 }
 
-
-
 /// Runtime configuration loaded from environment variables
 #[derive(Debug, Clone)]
 pub struct RuntimeConfig {
@@ -160,8 +158,8 @@ impl Config {
             // Current directory .env
             let _ = dotenvy::from_path(".env");
             // Fallback to parent .env if core vars are still missing
-            let core_present = std::env::var("SURR_DB_URL").is_ok()
-                || std::env::var("OPENAI_API_KEY").is_ok();
+            let core_present =
+                std::env::var("SURR_DB_URL").is_ok() || std::env::var("OPENAI_API_KEY").is_ok();
             if !core_present {
                 let _ = dotenvy::from_path("../.env");
             }

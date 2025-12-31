@@ -61,6 +61,9 @@ impl ServerHandler for SurrealMindServer {
         let curiosity_get_schema = crate::schemas::curiosity_get_schema();
         let curiosity_search_schema = crate::schemas::curiosity_search_schema();
         let delegate_gemini_schema = crate::schemas::delegate_gemini_schema();
+        let agent_job_status_schema = crate::schemas::agent_job_status_schema();
+        let list_agent_jobs_schema = crate::schemas::list_agent_jobs_schema();
+        let cancel_agent_job_schema = crate::schemas::cancel_agent_job_schema();
 
         // Output schemas (rmcp 0.11.0+)
         let legacymind_think_output = crate::schemas::legacymind_think_output_schema();
@@ -69,6 +72,9 @@ impl ServerHandler for SurrealMindServer {
         let detailed_help_output = crate::schemas::detailed_help_output_schema();
         let unified_search_output = crate::schemas::legacymind_search_output_schema();
         let delegate_gemini_output = crate::schemas::delegate_gemini_output_schema();
+        let agent_job_status_output = crate::schemas::agent_job_status_output_schema();
+        let list_agent_jobs_output = crate::schemas::list_agent_jobs_output_schema();
+        let cancel_agent_job_output = crate::schemas::cancel_agent_job_output_schema();
 
         let mut tools = vec![
             Tool {
@@ -116,7 +122,6 @@ impl ServerHandler for SurrealMindServer {
                 meta: None,
             },
         ];
-
 
         tools.push(Tool {
             name: "delegate_gemini".into(),
@@ -176,6 +181,41 @@ impl ServerHandler for SurrealMindServer {
             output_schema: Some(unified_search_output),
             meta: None,
         });
+
+        tools.push(Tool {
+            name: "agent_job_status".into(),
+            title: Some("Agent Job Status".into()),
+            description: Some("Get status of an async agent job by job_id".into()),
+            input_schema: agent_job_status_schema.clone(),
+            icons: None,
+            annotations: None,
+            output_schema: Some(agent_job_status_output),
+            meta: None,
+        });
+
+        tools.push(Tool {
+            name: "list_agent_jobs".into(),
+            title: Some("List Agent Jobs".into()),
+            description: Some(
+                "List async agent jobs with optional filtering by status and tool_name".into(),
+            ),
+            input_schema: list_agent_jobs_schema.clone(),
+            icons: None,
+            annotations: None,
+            output_schema: Some(list_agent_jobs_output),
+            meta: None,
+        });
+
+        tools.push(Tool {
+            name: "cancel_agent_job".into(),
+            title: Some("Cancel Agent Job".into()),
+            description: Some("Cancel a running or queued async agent job".into()),
+            input_schema: cancel_agent_job_schema.clone(),
+            icons: None,
+            annotations: None,
+            output_schema: Some(cancel_agent_job_output),
+            meta: None,
+        });
         // (photography tools removed from this server)
 
         Ok(ListToolsResult {
@@ -221,6 +261,18 @@ impl ServerHandler for SurrealMindServer {
                 .map_err(|e| e.into()),
             "curiosity_search" => self
                 .handle_curiosity_search(request)
+                .await
+                .map_err(|e| e.into()),
+            "agent_job_status" => self
+                .handle_agent_job_status(request)
+                .await
+                .map_err(|e| e.into()),
+            "list_agent_jobs" => self
+                .handle_list_agent_jobs(request)
+                .await
+                .map_err(|e| e.into()),
+            "cancel_agent_job" => self
+                .handle_cancel_agent_job(request)
                 .await
                 .map_err(|e| e.into()),
 

@@ -234,10 +234,10 @@ fn extract_json_candidates(text: &str) -> Vec<String> {
             '}' => {
                 if depth > 0 {
                     depth -= 1;
-                    if depth == 0 {
-                        if let Some(s) = start.take() {
-                            candidates.push(text[s..idx + 1].to_string());
-                        }
+                    if depth == 0
+                        && let Some(s) = start.take()
+                    {
+                        candidates.push(text[s..idx + 1].to_string());
                     }
                 }
             }

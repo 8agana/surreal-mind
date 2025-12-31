@@ -3,8 +3,8 @@
 use crate::error::Result;
 use reqwest::Client;
 use std::time::Duration;
-use surrealdb::engine::remote::ws::Client as WsClient;
 use surrealdb::Surreal;
+use surrealdb::engine::remote::ws::Client as WsClient;
 
 /// Configuration for HTTP SQL client
 pub struct HttpSqlConfig {
