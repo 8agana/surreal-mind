@@ -24,6 +24,9 @@ pub struct DelegateGeminiParams {
     /// Working directory for the Gemini CLI subprocess
     #[serde(default)]
     pub cwd: Option<String>,
+    /// Timeout in milliseconds (overrides GEMINI_TIMEOUT_MS env var)
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -62,10 +65,11 @@ impl SurrealMindServer {
 
         let resume_session = fetch_last_session_id(self.db.as_ref(), task_name.clone()).await?;
         let cwd = normalize_optional_string(params.cwd);
+        let timeout = params.timeout_ms.unwrap_or_else(gemini_timeout_ms);
 
         let mut gemini = match model_override {
-            Some(custom) => GeminiClient::with_timeout_ms(custom, gemini_timeout_ms()),
-            None => GeminiClient::new(),
+            Some(custom) => GeminiClient::with_timeout_ms(custom, timeout),
+            None => GeminiClient::with_timeout_ms(default_model_name(), timeout),
         };
         if let Some(ref dir) = cwd {
             gemini = gemini.with_cwd(dir);

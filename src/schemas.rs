@@ -36,7 +36,8 @@ pub fn delegate_gemini_schema() -> Arc<Map<String, Value>> {
             "prompt": {"type": "string"},
             "task_name": {"type": "string"},
             "model": {"type": "string"},
-            "cwd": {"type": "string"}
+            "cwd": {"type": "string"},
+            "timeout_ms": {"type": "number"}
         },
         "required": ["prompt"]
     });
