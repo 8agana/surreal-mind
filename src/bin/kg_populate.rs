@@ -15,7 +15,7 @@ use surrealdb::opt::auth::Root;
 
 const EXTRACTION_PROMPT_VERSION: &str = "v1";
 const DEFAULT_BATCH_SIZE: usize = 25;
-const DEFAULT_GEMINI_MODEL: &str = "gemini-2.5-flash";
+const DEFAULT_GEMINI_MODEL: &str = "gemini-3-flash-preview";
 const DEFAULT_TIMEOUT_MS: u64 = 120_000;
 
 // ============================================================================

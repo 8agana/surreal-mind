@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::Client as WsClient;
 
-const DEFAULT_MODEL: &str = "gemini-2.5-pro";
+const DEFAULT_MODEL: &str = "gemini-3-flash-preview";
 const DEFAULT_TIMEOUT_MS: u64 = 60_000;
 
 /// Parameters for the delegate_gemini tool
