@@ -15,40 +15,40 @@ async fn main() -> Result<()> {
         .ok()
         .and_then(|s| s.parse::<usize>().ok());
 
-    println!("🚀 KG embedding population starting (missing or mismatched only)");
+    println!("===== KG EMBEDDING (missing only) =====");
     if dry_run {
-        println!("🔎 Dry run: no writes to DB");
+        println!("[mode] DRY_RUN: no writes to DB");
     }
+    if let Some(l) = limit {
+        println!("[mode] LIMIT: {} per table", l);
+    }
+    println!();
 
-    // Call the library function
-    let stats = surreal_mind::run_reembed_kg(limit, dry_run).await?;
+    // Call the library function for missing-only embedding
+    let stats = surreal_mind::run_kg_embed(limit, dry_run).await?;
 
-    println!("\n===== KG EMBEDDING SUMMARY =====");
+    println!();
+    println!("===== KG EMBEDDING SUMMARY =====");
     println!(
-        "Entities: updated={}, skipped={}, mismatched={}, missing={}",
-        stats.entities_updated,
-        stats.entities_skipped,
-        stats.entities_mismatched,
-        stats.entities_missing
+        "Entities:     updated={}, skipped={}",
+        stats.entities_updated, stats.entities_skipped
     );
     println!(
-        "Observations: updated={}, skipped={}, mismatched={}, missing={}",
-        stats.observations_updated,
-        stats.observations_skipped,
-        stats.observations_mismatched,
-        stats.observations_missing
+        "Observations: updated={}, skipped={}",
+        stats.observations_updated, stats.observations_skipped
     );
     println!(
-        "Edges: updated={}, skipped={}, mismatched={}, missing={}",
-        stats.edges_updated,
-        stats.edges_skipped,
-        stats.edges_mismatched,
-        stats.edges_missing
+        "Edges:        updated={}, skipped={}",
+        stats.edges_updated, stats.edges_skipped
     );
+    println!();
     println!(
-        "Provider/model: {} / {} ({} dims)",
+        "Provider: {} | Model: {} | Dims: {}",
         stats.provider, stats.model, stats.expected_dim
     );
+    if stats.dry_run {
+        println!("[DRY_RUN] No changes were made");
+    }
 
     Ok(())
 }

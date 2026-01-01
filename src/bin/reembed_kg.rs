@@ -40,10 +40,7 @@ async fn main() -> Result<()> {
     );
     println!(
         "Edges: updated={}, skipped={}, mismatched={}, missing={}",
-        stats.edges_updated,
-        stats.edges_skipped,
-        stats.edges_mismatched,
-        stats.edges_missing
+        stats.edges_updated, stats.edges_skipped, stats.edges_mismatched, stats.edges_missing
     );
     println!(
         "Provider/model: {} / {} ({} dims)",

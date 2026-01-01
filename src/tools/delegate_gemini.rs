@@ -122,7 +122,9 @@ impl SurrealMindServer {
 
             let mut gemini = match model_override {
                 Some(custom) => GeminiClient::with_timeout_ms(custom, timeout),
-                None => GeminiClient::with_timeout_ms(default_model_name(Some(&self.config)), timeout),
+                None => {
+                    GeminiClient::with_timeout_ms(default_model_name(Some(&self.config)), timeout)
+                }
             };
             if let Some(ref dir) = cwd {
                 gemini = gemini.with_cwd(dir);
@@ -160,13 +162,13 @@ fn normalize_optional_string(value: Option<String>) -> Option<String> {
     })
 }
 
-    fn default_model_name(config: Option<&crate::config::Config>) -> String {
-        std::env::var("GEMINI_MODEL").unwrap_or_else(|_| {
-            config
-                .map(|c| c.system.gemini_model.clone())
-                .unwrap_or_else(|| "auto".to_string())
-        })
-    }
+fn default_model_name(config: Option<&crate::config::Config>) -> String {
+    std::env::var("GEMINI_MODEL").unwrap_or_else(|_| {
+        config
+            .map(|c| c.system.gemini_model.clone())
+            .unwrap_or_else(|| "auto".to_string())
+    })
+}
 fn gemini_timeout_ms() -> u64 {
     std::env::var("GEMINI_TIMEOUT_MS")
         .ok()

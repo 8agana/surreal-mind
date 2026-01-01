@@ -17,9 +17,9 @@ const EXTRACTION_PROMPT_VERSION: &str = "v1";
 const DEFAULT_BATCH_SIZE: usize = 5;
 const DEFAULT_TIMEOUT_MS: u64 = 120_000;
 
-// ============================================================================ 
+// ============================================================================
 // Data Structures
-// ============================================================================ 
+// ============================================================================
 
 /// A thought record from the database
 #[derive(Debug, Deserialize)]
@@ -113,9 +113,9 @@ struct ExtractionStats {
     boundaries_created: usize,
 }
 
-// ============================================================================ 
+// ============================================================================
 // Main
-// ============================================================================ 
+// ============================================================================
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -305,9 +305,9 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-// ============================================================================ 
+// ============================================================================
 // Helper Functions
-// ============================================================================ 
+// ============================================================================
 
 /// Fetch thoughts that haven't been extracted yet
 async fn fetch_unextracted_thoughts(
@@ -332,8 +332,7 @@ fn build_extraction_prompt(thoughts: &[ThoughtRecord]) -> String {
     for thought in thoughts {
         prompt.push_str(&format!(
             "---\nThought ID: {}\nContent:\n{}\n\n",
-            thought.id,
-            thought.content
+            thought.id, thought.content
         ));
     }
 
@@ -344,8 +343,8 @@ fn build_extraction_prompt(thoughts: &[ThoughtRecord]) -> String {
 async fn call_gemini_extraction(_db: &Arc<Surreal<WsClient>>, prompt: &str) -> Result<String> {
     // Load config to get the configured model
     let config = Config::load().unwrap_or_default();
-    let model = std::env::var("KG_POPULATE_MODEL")
-        .unwrap_or_else(|_| config.system.gemini_model.clone());
+    let model =
+        std::env::var("KG_POPULATE_MODEL").unwrap_or_else(|_| config.system.gemini_model.clone());
     let timeout = std::env::var("KG_POPULATE_TIMEOUT_MS")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -645,7 +644,7 @@ async fn upsert_observation(
         .query(sql)
         .bind(("name", name.clone()))
         .bind(("src", thought_id.clone()))
-        .await? 
+        .await?
         .take(0)?;
 
     if !existing.is_empty() {

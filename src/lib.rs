@@ -47,6 +47,21 @@ pub struct ReembedKgStats {
     pub edges_mismatched: usize,
 }
 
+/// Stats for kg_embed binary - embeds ONLY records with NULL embeddings
+#[derive(Debug, serde::Serialize)]
+pub struct KgEmbedStats {
+    pub expected_dim: usize,
+    pub provider: String,
+    pub model: String,
+    pub dry_run: bool,
+    pub entities_updated: usize,
+    pub entities_skipped: usize,
+    pub observations_updated: usize,
+    pub observations_skipped: usize,
+    pub edges_updated: usize,
+    pub edges_skipped: usize,
+}
+
 // Load env from a simple, standardized location resolution.
 // This uses dotenvy::dotenv().ok() which loads .env if present and silently ignores if missing.
 pub fn load_env() {
@@ -500,5 +515,363 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
         edges_skipped: skipped_edges,
         edges_missing: missing_edges,
         edges_mismatched: mismatched_edges,
+    })
+}
+
+/// Embed ONLY KG records with NULL embeddings (missing-only, no re-embedding).
+/// This is distinct from run_reembed_kg which also handles mismatched embeddings.
+///
+/// Text templates per spec:
+/// - Entities: "{name} — {description}" (fallback to name if description missing)
+/// - Observations: data.content (fallback to name)
+/// - Edges: "{from} {rel_type} {to} — {description}" (resolve source/target names)
+///
+/// Batch sizes: 100 entities, 100 edges, 50 observations
+/// Idempotent: UPDATE ... WHERE id = $id AND embedding IS NULL
+pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbedStats> {
+    use chrono::Utc;
+    use serde_json::Value;
+    use surrealdb::Surreal;
+    use surrealdb::engine::remote::ws::Ws;
+    use surrealdb::opt::auth::Root;
+
+    const ENTITY_BATCH: usize = 100;
+    const EDGE_BATCH: usize = 100;
+    const OBS_BATCH: usize = 50;
+
+    // Load configuration
+    let config = crate::config::Config::load()?;
+
+    // Embedder
+    let embedder = embeddings::create_embedder(&config).await?;
+    let dims = embedder.dimensions();
+    let prov = config.system.embedding_provider.clone();
+    let model = config.system.embedding_model.clone();
+
+    println!(
+        "[kg_embed] Starting with provider={}, model={}, dims={}",
+        prov, model, dims
+    );
+
+    // DB connection
+    let url = config.system.database_url.clone();
+    let user = config.runtime.database_user.clone();
+    let pass = config.runtime.database_pass.clone();
+    let ns = config.system.database_ns.clone();
+    let dbname = config.system.database_db.clone();
+    let db = Surreal::new::<Ws>(&url).await?;
+    db.signin(Root {
+        username: &user,
+        password: &pass,
+    })
+    .await?;
+    db.use_ns(&ns).use_db(&dbname).await?;
+
+    let mut entities_updated = 0usize;
+    let mut entities_skipped = 0usize;
+    let mut observations_updated = 0usize;
+    let mut observations_skipped = 0usize;
+    let mut edges_updated = 0usize;
+    let mut edges_skipped = 0usize;
+
+    let limit_total = limit.unwrap_or(usize::MAX);
+
+    // ========== ENTITIES ==========
+    println!(
+        "[kg_embed] Processing entities (batch size: {})...",
+        ENTITY_BATCH
+    );
+    let mut entity_remaining = limit_total;
+    loop {
+        if entity_remaining == 0 {
+            break;
+        }
+        let take = entity_remaining.min(ENTITY_BATCH);
+
+        let sql = format!(
+            "SELECT meta::id(id) as id, name, data FROM kg_entities WHERE embedding IS NULL LIMIT {}",
+            take
+        );
+        let rows: Vec<Value> = db.query(&sql).await?.take(0)?;
+        if rows.is_empty() {
+            break;
+        }
+
+        for r in &rows {
+            let id = r
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let name = r
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            // Extract description from data.description
+            let description = r
+                .get("data")
+                .and_then(|d| d.as_object())
+                .and_then(|obj| obj.get("description"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            // Text template: "{name} — {description}" or just "{name}"
+            let text = if description.is_empty() {
+                name.clone()
+            } else {
+                format!("{} — {}", name, description)
+            };
+
+            if dry_run {
+                println!(
+                    "[dry_run] Would embed entity {}: \"{}\"",
+                    id,
+                    &text[..text.len().min(60)]
+                );
+                entities_updated += 1;
+                entity_remaining = entity_remaining.saturating_sub(1);
+                continue;
+            }
+
+            let emb = embedder.embed(&text).await?;
+            let ts = Utc::now().to_rfc3339();
+
+            // Idempotent update: only update if embedding is still NULL
+            let q = format!(
+                "UPDATE kg_entities:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts WHERE embedding IS NULL",
+                id
+            );
+            let result: Vec<Value> = db
+                .query(q)
+                .bind(("emb", emb))
+                .bind(("prov", prov.clone()))
+                .bind(("model", model.clone()))
+                .bind(("dim", dims as i64))
+                .bind(("ts", ts))
+                .await?
+                .take(0)?;
+
+            if result.is_empty() {
+                entities_skipped += 1;
+            } else {
+                entities_updated += 1;
+            }
+            entity_remaining = entity_remaining.saturating_sub(1);
+        }
+
+        if rows.len() < take {
+            break;
+        }
+    }
+    println!(
+        "[kg_embed] Entities: updated={}, skipped={}",
+        entities_updated, entities_skipped
+    );
+
+    // ========== OBSERVATIONS ==========
+    println!(
+        "[kg_embed] Processing observations (batch size: {})...",
+        OBS_BATCH
+    );
+    let mut obs_remaining = limit_total;
+    loop {
+        if obs_remaining == 0 {
+            break;
+        }
+        let take = obs_remaining.min(OBS_BATCH);
+
+        let sql = format!(
+            "SELECT meta::id(id) as id, name, data FROM kg_observations WHERE embedding IS NULL LIMIT {}",
+            take
+        );
+        let rows: Vec<Value> = db.query(&sql).await?.take(0)?;
+        if rows.is_empty() {
+            break;
+        }
+
+        for r in &rows {
+            let id = r
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let name = r
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            // Extract content from data.content, fallback to name
+            let content = r
+                .get("data")
+                .and_then(|d| d.as_object())
+                .and_then(|obj| obj.get("content"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            let text = if content.is_empty() { &name } else { content };
+
+            if dry_run {
+                println!(
+                    "[dry_run] Would embed observation {}: \"{}\"",
+                    id,
+                    &text[..text.len().min(60)]
+                );
+                observations_updated += 1;
+                obs_remaining = obs_remaining.saturating_sub(1);
+                continue;
+            }
+
+            let emb = embedder.embed(text).await?;
+            let ts = Utc::now().to_rfc3339();
+
+            let q = format!(
+                "UPDATE kg_observations:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts WHERE embedding IS NULL",
+                id
+            );
+            let result: Vec<Value> = db
+                .query(q)
+                .bind(("emb", emb))
+                .bind(("prov", prov.clone()))
+                .bind(("model", model.clone()))
+                .bind(("dim", dims as i64))
+                .bind(("ts", ts))
+                .await?
+                .take(0)?;
+
+            if result.is_empty() {
+                observations_skipped += 1;
+            } else {
+                observations_updated += 1;
+            }
+            obs_remaining = obs_remaining.saturating_sub(1);
+        }
+
+        if rows.len() < take {
+            break;
+        }
+    }
+    println!(
+        "[kg_embed] Observations: updated={}, skipped={}",
+        observations_updated, observations_skipped
+    );
+
+    // ========== EDGES ==========
+    println!(
+        "[kg_embed] Processing edges (batch size: {})...",
+        EDGE_BATCH
+    );
+    let mut edge_remaining = limit_total;
+    loop {
+        if edge_remaining == 0 {
+            break;
+        }
+        let take = edge_remaining.min(EDGE_BATCH);
+
+        // Resolve source.name and target.name in the query
+        let sql = format!(
+            "SELECT meta::id(id) as id, source.name as source_name, target.name as target_name, rel_type, data FROM kg_edges WHERE embedding IS NULL LIMIT {}",
+            take
+        );
+        let rows: Vec<Value> = db.query(&sql).await?.take(0)?;
+        if rows.is_empty() {
+            break;
+        }
+
+        for r in &rows {
+            let id = r
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let source_name = r
+                .get("source_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown");
+            let target_name = r
+                .get("target_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown");
+            let rel_type = r
+                .get("rel_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("related_to");
+
+            // Extract description from data.description
+            let description = r
+                .get("data")
+                .and_then(|d| d.as_object())
+                .and_then(|obj| obj.get("description"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            // Text template: "{from} {rel_type} {to} — {description}"
+            let text = if description.is_empty() {
+                format!("{} {} {}", source_name, rel_type, target_name)
+            } else {
+                format!(
+                    "{} {} {} — {}",
+                    source_name, rel_type, target_name, description
+                )
+            };
+
+            if dry_run {
+                println!(
+                    "[dry_run] Would embed edge {}: \"{}\"",
+                    id,
+                    &text[..text.len().min(60)]
+                );
+                edges_updated += 1;
+                edge_remaining = edge_remaining.saturating_sub(1);
+                continue;
+            }
+
+            let emb = embedder.embed(&text).await?;
+            let ts = Utc::now().to_rfc3339();
+
+            let q = format!(
+                "UPDATE kg_edges:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts WHERE embedding IS NULL",
+                id
+            );
+            let result: Vec<Value> = db
+                .query(q)
+                .bind(("emb", emb))
+                .bind(("prov", prov.clone()))
+                .bind(("model", model.clone()))
+                .bind(("dim", dims as i64))
+                .bind(("ts", ts))
+                .await?
+                .take(0)?;
+
+            if result.is_empty() {
+                edges_skipped += 1;
+            } else {
+                edges_updated += 1;
+            }
+            edge_remaining = edge_remaining.saturating_sub(1);
+        }
+
+        if rows.len() < take {
+            break;
+        }
+    }
+    println!(
+        "[kg_embed] Edges: updated={}, skipped={}",
+        edges_updated, edges_skipped
+    );
+
+    Ok(KgEmbedStats {
+        expected_dim: dims,
+        provider: prov,
+        model,
+        dry_run,
+        entities_updated,
+        entities_skipped,
+        observations_updated,
+        observations_skipped,
+        edges_updated,
+        edges_skipped,
     })
 }
