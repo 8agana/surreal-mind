@@ -22,6 +22,7 @@ pub struct SystemConfig {
     pub database_ns: String,
     pub database_db: String,
     pub inject_debounce: u64,
+    pub gemini_model: String,
 }
 
 /// Embedding configuration snapshot for use across components
@@ -326,6 +327,7 @@ impl Default for Config {
                 database_ns: "surreal_mind".to_string(),
                 database_db: "consciousness".to_string(),
                 inject_debounce: 1000,
+                gemini_model: "gemini-3-flash-preview".to_string(),
             },
             retrieval: RetrievalConfig {
                 max_injection_scale: 3,

@@ -10,7 +10,6 @@ use serde_json::{Value, json};
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::Client as WsClient;
 
-const DEFAULT_MODEL: &str = "gemini-3-flash-preview";
 const DEFAULT_TIMEOUT_MS: u64 = 60_000;
 
 /// Parameters for the delegate_gemini tool
@@ -86,7 +85,9 @@ impl SurrealMindServer {
         let task_name = normalize_optional_string(params.task_name)
             .unwrap_or_else(|| "delegate_gemini".to_string());
         let model_override = normalize_optional_string(params.model);
-        let model = model_override.clone().unwrap_or_else(default_model_name);
+        let model = model_override
+            .clone()
+            .unwrap_or_else(|| default_model_name(Some(&self.config)));
         let cwd = normalize_optional_string(params.cwd);
         let timeout = params.timeout_ms.unwrap_or_else(gemini_timeout_ms);
         let fire_and_forget = params.fire_and_forget;
@@ -121,7 +122,7 @@ impl SurrealMindServer {
 
             let mut gemini = match model_override {
                 Some(custom) => GeminiClient::with_timeout_ms(custom, timeout),
-                None => GeminiClient::with_timeout_ms(default_model_name(), timeout),
+                None => GeminiClient::with_timeout_ms(default_model_name(Some(&self.config)), timeout),
             };
             if let Some(ref dir) = cwd {
                 gemini = gemini.with_cwd(dir);
@@ -159,10 +160,13 @@ fn normalize_optional_string(value: Option<String>) -> Option<String> {
     })
 }
 
-fn default_model_name() -> String {
-    std::env::var("GEMINI_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string())
-}
-
+    fn default_model_name(config: Option<&crate::config::Config>) -> String {
+        std::env::var("GEMINI_MODEL").unwrap_or_else(|_| {
+            config
+                .map(|c| c.system.gemini_model.clone())
+                .unwrap_or_else(|| "auto".to_string())
+        })
+    }
 fn gemini_timeout_ms() -> u64 {
     std::env::var("GEMINI_TIMEOUT_MS")
         .ok()
@@ -430,9 +434,10 @@ async fn execute_gemini_call(
         .await
         .map_err(|e| AgentError::CliError(format!("Failed to fetch session: {}", e)))?;
 
+    let config = crate::config::Config::load().ok();
     let model = model_override
         .map(|s| s.to_string())
-        .unwrap_or_else(default_model_name);
+        .unwrap_or_else(|| default_model_name(config.as_ref()));
 
     let mut gemini = GeminiClient::with_timeout_ms(model.clone(), timeout);
     if let Some(dir) = cwd {

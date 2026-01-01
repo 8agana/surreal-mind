@@ -15,7 +15,6 @@ use surrealdb::opt::auth::Root;
 
 const EXTRACTION_PROMPT_VERSION: &str = "v1";
 const DEFAULT_BATCH_SIZE: usize = 5;
-const DEFAULT_GEMINI_MODEL: &str = "gemini-3-flash-preview";
 const DEFAULT_TIMEOUT_MS: u64 = 120_000;
 
 // ============================================================================ 
@@ -343,8 +342,10 @@ fn build_extraction_prompt(thoughts: &[ThoughtRecord]) -> String {
 
 /// Call Gemini for extraction
 async fn call_gemini_extraction(_db: &Arc<Surreal<WsClient>>, prompt: &str) -> Result<String> {
-    let model =
-        std::env::var("KG_POPULATE_MODEL").unwrap_or_else(|_| DEFAULT_GEMINI_MODEL.to_string());
+    // Load config to get the configured model
+    let config = Config::load().unwrap_or_default();
+    let model = std::env::var("KG_POPULATE_MODEL")
+        .unwrap_or_else(|_| config.system.gemini_model.clone());
     let timeout = std::env::var("KG_POPULATE_TIMEOUT_MS")
         .ok()
         .and_then(|v| v.parse().ok())

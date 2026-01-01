@@ -16,7 +16,7 @@ use crate::clients::traits::{AgentError, AgentResponse, CognitiveAgent};
 
 const STDERR_CAP_BYTES: usize = 10 * 1024;
 const DEFAULT_TIMEOUT_MS: u64 = 120_000; // 120s inactivity threshold
-const DEFAULT_MODEL: &str = "gemini-3-flash-preview";
+const DEFAULT_MODEL: &str = "auto";
 const ACTIVITY_CHECK_INTERVAL_MS: u64 = 1000; // Check activity every second
 
 #[derive(Debug, Deserialize)]
@@ -127,10 +127,15 @@ impl CognitiveAgent for GeminiClient {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .arg("-y")
-            .arg("-m")
-            .arg(&self.model)
-            .arg("-e")
+            .arg("-y");
+
+        // Use positional prompt instead of -p flag (deprecated)
+        // Auto-routing: if model is "auto", omit the -m flag
+        if self.model != "auto" && !self.model.is_empty() {
+            cmd.arg("-m").arg(&self.model);
+        }
+
+        cmd.arg("-e")
             .arg("")
             .arg("--output-format")
             .arg("json");

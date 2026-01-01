@@ -3,17 +3,15 @@
 # Enables simplified think(content, mode) API
 
 [system]
-# Embedding configuration
 embedding_provider = "openai"
 embedding_model = "text-embedding-3-small"
 embedding_dimensions = 1536
-embed_retries = 3  # For SURR_EMBED_RETRIES
-# Database configuration
+embed_retries = 3
 database_url = "ws://127.0.0.1:8000"
 database_ns = "surreal_mind"
 database_db = "consciousness"
-# System behavior
-inject_debounce = 1000  # For SURR_INJECT_DEBOUNCE - milliseconds
+inject_debounce = 1000
+gemini_model = "auto"
 
 [retrieval]
 # Core retrieval settings

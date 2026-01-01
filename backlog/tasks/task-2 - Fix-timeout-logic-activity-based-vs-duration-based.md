@@ -4,7 +4,7 @@ title: Fix timeout logic - activity-based vs duration-based
 status: Done
 assignee: []
 created_date: '2026-01-01 00:02'
-updated_date: '2026-01-01 02:28'
+updated_date: '2026-01-01 04:12'
 labels:
   - timeout
   - delegate_gemini
@@ -40,7 +40,7 @@ Real-world evidence: kg_populate batch extraction confirmed Gemini still running
 - [x] #3 Configurable inactivity threshold (default 120s of silence)
 - [x] #4 Works with PersistedAgent wrapper and Gemini CLI integration
 - [x] #5 Backward compatible with existing delegate_gemini calls
-- [ ] #6 Tested with kg_populate batch extraction (25+ thoughts)
+- [x] #6 Tested with kg_populate batch extraction (25+ thoughts)
 <!-- AC:END -->
 
 ## Implementation Notes

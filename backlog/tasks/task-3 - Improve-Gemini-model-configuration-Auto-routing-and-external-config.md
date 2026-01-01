@@ -1,9 +1,10 @@
 ---
 id: task-3
 title: Improve Gemini model configuration - Auto routing and external config
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-01-01 00:20'
+updated_date: '2026-01-01 04:14'
 labels:
   - enhancement
   - gemini
@@ -48,11 +49,11 @@ Benefits:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Model defaults read from external config file (not hardcoded constants)
-- [ ] #2 Support "auto" mode that omits -m flag for Gemini routing
-- [ ] #3 Support explicit model names (gemini-3-flash-preview, gemini-3-pro-preview)
-- [ ] #4 Config changes apply without binary rebuild
-- [ ] #5 Backward compatible with existing env var overrides
-- [ ] #6 Works for both kg_populate and delegate_gemini
-- [ ] #7 Documented in config file with examples
+- [x] #1 Model defaults read from external config file (not hardcoded constants)
+- [x] #2 Support "auto" mode that omits -m flag for Gemini routing
+- [x] #3 Support explicit model names (gemini-3-flash-preview, gemini-3-pro-preview)
+- [x] #4 Config changes apply without binary rebuild
+- [x] #5 Backward compatible with existing env var overrides
+- [x] #6 Works for both kg_populate and delegate_gemini
+- [x] #7 Documented in config file with examples
 <!-- AC:END -->
