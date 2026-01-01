@@ -44,3 +44,8 @@ SELECT job_id, status, started_at, completed_at, duration_ms, error, session_id,
 REMOVE FIELD exchange_id ON TABLE agent_jobs; DEFINE FIELD exchange_id ON TABLE agent_jobs TYPE option<string>;
 CREATE agent_jobs SET job_id = 'cae742ef-96f8-4601-b644-5ba7246e589d', tool_name = 'delegate_gemini', agent_source = 'gemini', agent_instance = 'gemini-2.5-pro', prompt = 'Reply with \\'ok\\' only.', task_name = 'sm-ff-test', model_override = NONE, cwd = NONE, timeout_ms = 15000, status = 'queued', created_at = time::now();
 SELECT job_id, status, started_at, completed_at, duration_ms, error, session_id, exchange_id FROM agent_jobs WHERE job_id = 'cae742ef-96f8-4601-b644-5ba7246e589d';
+SELECT meta::id(id) as id, content, created_at FROM thoughts WHERE extracted_to_kg = false ORDER BY created_at ASC LIMIT 1
+SELECT count() FROM thoughts WHERE extracted_to_kg = false GROUP ALL
+UPDATE thoughts SET extracted_to_kg = false WHERE id = (SELECT id FROM thoughts LIMIT 1)[0].id; SELECT meta::id(id) as id, content, created_at FROM thoughts WHERE extracted_to_kg = false LIMIT 1
+SELECT count() FROM thoughts GROUP ALL
+CREATE thoughts SET content = 'Test thought for KG extraction', extracted_to_kg = false, created_at = time::now()

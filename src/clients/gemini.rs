@@ -14,7 +14,7 @@ use crate::clients::traits::{AgentError, AgentResponse, CognitiveAgent};
 
 const STDERR_CAP_BYTES: usize = 10 * 1024;
 const DEFAULT_TIMEOUT_MS: u64 = 60_000;
-const DEFAULT_MODEL: &str = "gemini-2.5-pro";
+const DEFAULT_MODEL: &str = "gemini-3-flash-preview";
 
 #[derive(Debug, Deserialize)]
 pub struct GeminiResponse {
