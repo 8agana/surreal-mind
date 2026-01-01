@@ -1,20 +1,23 @@
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::time::Duration;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::Deserialize;
-use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
-use tokio::time::timeout;
+use tokio::sync::Mutex;
 
 use crate::clients::traits::{AgentError, AgentResponse, CognitiveAgent};
 
 const STDERR_CAP_BYTES: usize = 10 * 1024;
-const DEFAULT_TIMEOUT_MS: u64 = 60_000;
+const DEFAULT_TIMEOUT_MS: u64 = 120_000; // 120s inactivity threshold
 const DEFAULT_MODEL: &str = "gemini-3-flash-preview";
+const ACTIVITY_CHECK_INTERVAL_MS: u64 = 1000; // Check activity every second
 
 #[derive(Debug, Deserialize)]
 pub struct GeminiResponse {
@@ -22,10 +25,55 @@ pub struct GeminiResponse {
     pub response: String,
 }
 
+/// Tracks activity from child process to detect hangs
+#[derive(Debug)]
+struct ActivityTracker {
+    last_activity: Mutex<Instant>,
+    bytes_since_reset: AtomicUsize,
+    inactivity_threshold: Duration,
+    start_time: Instant,
+}
+
+impl ActivityTracker {
+    fn new(inactivity_threshold: Duration) -> Self {
+        let now = Instant::now();
+        Self {
+            last_activity: Mutex::new(now),
+            bytes_since_reset: AtomicUsize::new(0),
+            inactivity_threshold,
+            start_time: now,
+        }
+    }
+
+    async fn reset(&self, bytes: usize) {
+        let mut last = self.last_activity.lock().await;
+        *last = Instant::now();
+        self.bytes_since_reset.fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    async fn is_inactive(&self) -> bool {
+        let last = self.last_activity.lock().await;
+        last.elapsed() > self.inactivity_threshold
+    }
+
+    async fn inactivity_duration(&self) -> Duration {
+        let last = self.last_activity.lock().await;
+        last.elapsed()
+    }
+
+    fn total_bytes(&self) -> usize {
+        self.bytes_since_reset.load(Ordering::Relaxed)
+    }
+
+    fn total_runtime(&self) -> Duration {
+        self.start_time.elapsed()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct GeminiClient {
     model: String,
-    timeout: Duration,
+    timeout: Duration, // Now represents inactivity threshold, not total duration
     cwd: Option<PathBuf>,
 }
 
@@ -94,50 +142,138 @@ impl CognitiveAgent for GeminiClient {
         }
         let mut child = cmd.spawn().map_err(map_spawn_err)?;
 
-        let stdout = child
+        let mut stdout = child
             .stdout
             .take()
             .ok_or_else(|| AgentError::CliError("stdout unavailable".to_string()))?;
-        let stderr = child
+        let mut stderr = child
             .stderr
             .take()
             .ok_or_else(|| AgentError::CliError("stderr unavailable".to_string()))?;
-        let stdout_task = tokio::spawn(async move { read_all(stdout).await });
-        let stderr_task =
-            tokio::spawn(async move { read_with_cap(stderr, STDERR_CAP_BYTES).await });
 
-        let status = match timeout(self.timeout, child.wait()).await {
-            Ok(res) => res.map_err(|e| AgentError::CliError(e.to_string()))?,
-            Err(_) => {
-                let _ = child.kill().await;
-                stdout_task.abort();
-                stderr_task.abort();
-                return Err(AgentError::Timeout {
-                    timeout_ms: self.timeout.as_millis() as u64,
-                });
+        // Activity-based timeout: track last output, not total duration
+        let tracker = Arc::new(ActivityTracker::new(self.timeout));
+        let mut stdout_buf = Vec::new();
+        let mut stderr_buf = Vec::new();
+        let mut stdout_chunk = [0u8; 4096];
+        let mut stderr_chunk = [0u8; 1024];
+        loop {
+            tokio::select! {
+                // Check for stdout data
+                result = stdout.read(&mut stdout_chunk) => {
+                    match result {
+                        Ok(0) => {
+                            // EOF on stdout - continue, wait for process exit
+                        }
+                        Ok(n) => {
+                            tracker.reset(n).await;
+                            stdout_buf.extend_from_slice(&stdout_chunk[..n]);
+                        }
+                        Err(e) => {
+                            return Err(AgentError::CliError(format!("stdout read error: {}", e)));
+                        }
+                    }
+                }
+
+                // Check for stderr data
+                result = stderr.read(&mut stderr_chunk) => {
+                    match result {
+                        Ok(0) => {
+                            // EOF on stderr
+                        }
+                        Ok(n) => {
+                            tracker.reset(n).await;
+                            // Cap stderr to prevent memory issues
+                            let remaining = STDERR_CAP_BYTES.saturating_sub(stderr_buf.len());
+                            if remaining > 0 {
+                                let take = remaining.min(n);
+                                stderr_buf.extend_from_slice(&stderr_chunk[..take]);
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("stderr read error (non-fatal): {}", e);
+                        }
+                    }
+                }
+
+                // Check process status
+                result = child.wait() => {
+                    match result {
+                        Ok(status) => {
+                            // Process exited, drain remaining output and break
+                            // Drain remaining stdout
+                            loop {
+                                match stdout.read(&mut stdout_chunk).await {
+                                    Ok(0) => break,
+                                    Ok(n) => stdout_buf.extend_from_slice(&stdout_chunk[..n]),
+                                    Err(_) => break,
+                                }
+                            }
+                            // Drain remaining stderr
+                            loop {
+                                match stderr.read(&mut stderr_chunk).await {
+                                    Ok(0) => break,
+                                    Ok(n) => {
+                                        let remaining = STDERR_CAP_BYTES.saturating_sub(stderr_buf.len());
+                                        if remaining > 0 {
+                                            let take = remaining.min(n);
+                                            stderr_buf.extend_from_slice(&stderr_chunk[..take]);
+                                        }
+                                    }
+                                    Err(_) => break,
+                                }
+                            }
+
+                            if !status.success() {
+                                let stderr_str = String::from_utf8_lossy(&stderr_buf);
+                                return Err(AgentError::CliError(format!(
+                                    "gemini exit {}: {}",
+                                    status,
+                                    stderr_str.trim(),
+                                )));
+                            }
+                            break;
+                        }
+                        Err(e) => {
+                            return Err(AgentError::CliError(format!("wait error: {}", e)));
+                        }
+                    }
+                }
+
+                // Periodic inactivity check
+                _ = tokio::time::sleep(Duration::from_millis(ACTIVITY_CHECK_INTERVAL_MS)) => {
+                    if tracker.is_inactive().await {
+                        let inactivity_secs = tracker.inactivity_duration().await.as_secs();
+                        let total_bytes = tracker.total_bytes();
+                        let total_runtime = tracker.total_runtime().as_secs();
+
+                        tracing::warn!(
+                            "Inactivity timeout: {}s since last output, {} bytes seen total, {}s runtime",
+                            inactivity_secs,
+                            total_bytes,
+                            total_runtime
+                        );
+
+                        // Kill the process - kill_on_drop should handle this, but be explicit
+                        let _ = child.kill().await;
+
+                        return Err(AgentError::Timeout {
+                            timeout_ms: self.timeout.as_millis() as u64,
+                        });
+                    }
+                }
             }
-        };
-        let stdout_bytes = stdout_task
-            .await
-            .map_err(|e| AgentError::CliError(e.to_string()))?
-            .map_err(|e| AgentError::CliError(e.to_string()))?;
-        let stderr_bytes = stderr_task
-            .await
-            .map_err(|e| AgentError::CliError(e.to_string()))?
-            .map_err(|e| AgentError::CliError(e.to_string()))?;
-
-        if !status.success() {
-            let stderr_str = String::from_utf8_lossy(&stderr_bytes);
-            return Err(AgentError::CliError(format!(
-                "gemini exit {}: {}",
-                status,
-                stderr_str.trim(),
-            )));
         }
 
-        let stdout_str = String::from_utf8_lossy(&stdout_bytes);
+        let stdout_str = String::from_utf8_lossy(&stdout_buf);
         let response = parse_gemini_response(&stdout_str)?;
         let cleaned = strip_ansi_codes(&response.response).trim().to_string();
+
+        tracing::debug!(
+            "Gemini call completed: {} bytes output, {}s runtime",
+            tracker.total_bytes(),
+            tracker.total_runtime().as_secs()
+        );
 
         Ok(AgentResponse {
             session_id: response.session_id,
@@ -153,36 +289,6 @@ fn map_spawn_err(err: std::io::Error) -> AgentError {
     } else {
         AgentError::CliError(err.to_string())
     }
-}
-
-async fn read_all<R: AsyncRead + Unpin>(mut reader: R) -> std::io::Result<Vec<u8>> {
-    let mut buf = Vec::new();
-    reader.read_to_end(&mut buf).await?;
-    Ok(buf)
-}
-
-async fn read_with_cap<R: AsyncRead + Unpin>(
-    mut reader: R,
-    cap: usize,
-) -> std::io::Result<Vec<u8>> {
-    let mut buf = Vec::new();
-    let mut chunk = [0u8; 1024];
-    loop {
-        let n = reader.read(&mut chunk).await?;
-        if n == 0 {
-            break;
-        }
-        let remaining = cap.saturating_sub(buf.len());
-        if remaining > 0 {
-            let take = remaining.min(n);
-            buf.extend_from_slice(&chunk[..take]);
-        }
-        if buf.len() >= cap {
-            while reader.read(&mut chunk).await? != 0 {}
-            break;
-        }
-    }
-    Ok(buf)
 }
 
 fn parse_gemini_response(output: &str) -> Result<GeminiResponse, AgentError> {

@@ -14,7 +14,7 @@ use surrealdb::engine::remote::ws::{Client as WsClient, Ws};
 use surrealdb::opt::auth::Root;
 
 const EXTRACTION_PROMPT_VERSION: &str = "v1";
-const DEFAULT_BATCH_SIZE: usize = 25;
+const DEFAULT_BATCH_SIZE: usize = 5;
 const DEFAULT_GEMINI_MODEL: &str = "gemini-3-flash-preview";
 const DEFAULT_TIMEOUT_MS: u64 = 120_000;
 
@@ -181,6 +181,17 @@ async fn main() -> Result<()> {
         // Call Gemini for extraction
         match call_gemini_extraction(&db, &prompt).await {
             Ok(response) => {
+                // DEBUG: Log raw response
+                eprintln!(
+                    "\n🔍 DEBUG: Raw Gemini response ({} chars):",
+                    response.len()
+                );
+                eprintln!("First 500 chars: {}", &response[..500.min(response.len())]);
+                eprintln!(
+                    "Last 200 chars: {}",
+                    &response[response.len().saturating_sub(200)..]
+                );
+
                 // Parse the response
                 match parse_extraction_response(&response) {
                     Ok(extraction) => {
@@ -334,16 +345,25 @@ async fn call_gemini_extraction(_db: &Arc<Surreal<WsClient>>, prompt: &str) -> R
     Ok(response.response)
 }
 
-/// Parse the extraction response, handling markdown code fences
+/// Parse the extraction response, handling markdown code fences and preamble text
 fn parse_extraction_response(response: &str) -> Result<ExtractionResponse> {
-    // Strip markdown code fences if present
-    let json_str = response
+    let trimmed = response.trim();
+
+    // Find the start of JSON - either after ```json fence or first {
+    let json_start = if let Some(pos) = trimmed.find("```json") {
+        pos + 7 // Skip past ```json
+    } else if let Some(pos) = trimmed.find("```") {
+        pos + 3 // Skip past ```
+    } else if let Some(pos) = trimmed.find('{') {
+        pos // Start at {
+    } else {
+        return Err(anyhow::anyhow!("No JSON found in response"));
+    };
+
+    let json_str = trimmed[json_start..]
         .trim()
-        .strip_prefix("```json")
-        .or_else(|| response.trim().strip_prefix("```"))
-        .unwrap_or(response)
         .strip_suffix("```")
-        .unwrap_or(response)
+        .unwrap_or(&trimmed[json_start..])
         .trim();
 
     let parsed: ExtractionResponse = serde_json::from_str(json_str)?;

@@ -351,17 +351,16 @@ pub async fn run_delegate_gemini_worker(
             continue;
         }
 
+        // GeminiClient now handles activity-based timeout internally.
+        // No outer timeout wrapper needed - this prevents double-timeout issues.
         let started_at = chrono::Utc::now();
-        let result = tokio::time::timeout(
-            std::time::Duration::from_millis(timeout),
-            execute_gemini_call(
-                db.clone(),
-                &job.prompt,
-                &job.task_name,
-                job.model_override.as_deref(),
-                job.cwd.as_deref(),
-                timeout,
-            ),
+        let result = execute_gemini_call(
+            db.clone(),
+            &job.prompt,
+            &job.task_name,
+            job.model_override.as_deref(),
+            job.cwd.as_deref(),
+            timeout,
         )
         .await;
 
@@ -369,7 +368,7 @@ pub async fn run_delegate_gemini_worker(
         let duration_ms = (completed_at - started_at).num_milliseconds();
 
         match result {
-            Ok(Ok(response)) => {
+            Ok(response) => {
                 if let Err(e) = complete_job(
                     db.as_ref(),
                     job.job_id,
@@ -385,20 +384,11 @@ pub async fn run_delegate_gemini_worker(
                     );
                 }
             }
-            Ok(Err(agent_err)) => {
+            Err(agent_err) => {
                 let error_msg = format!("Agent error: {}", agent_err);
                 if let Err(e) = fail_job(db.as_ref(), job.job_id, error_msg, duration_ms).await {
                     eprintln!(
                         "[ERROR delegate_gemini worker] Failed to mark job as failed: {}",
-                        e
-                    );
-                }
-            }
-            Err(_) => {
-                let error_msg = format!("Timeout after {}ms", timeout);
-                if let Err(e) = fail_job(db.as_ref(), job.job_id, error_msg, duration_ms).await {
-                    eprintln!(
-                        "[ERROR delegate_gemini worker] Failed to mark job as timed out: {}",
                         e
                     );
                 }
