@@ -78,6 +78,7 @@ impl CognitiveAgent for GeminiClient {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            .arg("-y")
             .arg("-m")
             .arg(&self.model)
             .arg("-e")

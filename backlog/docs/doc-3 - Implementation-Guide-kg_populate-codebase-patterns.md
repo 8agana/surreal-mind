@@ -3,7 +3,7 @@ id: doc-3
 title: Implementation Guide - kg_populate codebase patterns
 type: other
 created_date: '2025-12-31 22:50'
-updated_date: '2025-12-31 23:23'
+updated_date: '2026-01-01 01:15'
 ---
 # Implementation Guide — kg_populate codebase patterns
 
@@ -355,5 +355,5 @@ cargo fmt --check                 # SUCCESS
 ### Environment Variables
 
 - `KG_POPULATE_BATCH_SIZE` - Number of thoughts per batch (default: 25)
-- `KG_POPULATE_MODEL` - Gemini model to use (default: gemini-2.5-flash)
+- `KG_POPULATE_MODEL` - Gemini model to use (default: gemini-3-flash-preview)
 - `KG_POPULATE_TIMEOUT_MS` - Timeout for Gemini calls (default: 120000)
