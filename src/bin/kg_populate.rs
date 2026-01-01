@@ -7,7 +7,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use surreal_mind::clients::{CognitiveAgent, GeminiClient, PersistedAgent};
+use surreal_mind::clients::{CognitiveAgent, GeminiClient};
 use surreal_mind::config::Config;
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::{Client as WsClient, Ws};
@@ -264,10 +264,6 @@ async fn main() -> Result<()> {
                 // Don't mark as extracted - will retry next run
             }
         }
-
-        // TEST MODE: Exit after first batch
-        println!("🧪 Test mode: Exiting after first batch.");
-        break;
     }
 
     // Print summary
@@ -323,7 +319,7 @@ fn build_extraction_prompt(thoughts: &[ThoughtRecord]) -> String {
 }
 
 /// Call Gemini for extraction
-async fn call_gemini_extraction(db: &Arc<Surreal<WsClient>>, prompt: &str) -> Result<String> {
+async fn call_gemini_extraction(_db: &Arc<Surreal<WsClient>>, prompt: &str) -> Result<String> {
     let model =
         std::env::var("KG_POPULATE_MODEL").unwrap_or_else(|_| DEFAULT_GEMINI_MODEL.to_string());
     let timeout = std::env::var("KG_POPULATE_TIMEOUT_MS")
@@ -332,16 +328,9 @@ async fn call_gemini_extraction(db: &Arc<Surreal<WsClient>>, prompt: &str) -> Re
         .unwrap_or(DEFAULT_TIMEOUT_MS);
 
     let gemini = GeminiClient::with_timeout_ms(model.clone(), timeout);
-    let agent = PersistedAgent::new(
-        gemini,
-        db.clone(),
-        "gemini",
-        model,
-        "kg_populate".to_string(),
-    );
 
-    // No session resume for extraction - each batch is independent
-    let response = agent.call(prompt, None).await?;
+    // Call GeminiClient directly - each extraction batch is independent, no context needed
+    let response = gemini.call(prompt, None).await?;
     Ok(response.response)
 }
 

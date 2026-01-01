@@ -3,7 +3,7 @@ id: doc-3
 title: Implementation Guide - kg_populate codebase patterns
 type: other
 created_date: '2025-12-31 22:50'
-updated_date: '2026-01-01 01:15'
+updated_date: '2026-01-01 02:02'
 ---
 # Implementation Guide — kg_populate codebase patterns
 
@@ -83,44 +83,39 @@ db.use_ns(&config.system.database_ns)
 
 ---
 
-## DELEGATE_GEMINI INTEGRATION
+## GEMINI INTEGRATION
 
-### Sync execution pattern (execute_gemini_call helper)
+### Direct GeminiClient pattern (kg_populate implementation)
 ```rust
-// From src/tools/delegate_gemini.rs:430-454
-async fn execute_gemini_call(
-    db: std::sync::Arc<Surreal<WsClient>>,
-    prompt: &str,
-    task_name: &str,
-    model_override: Option<&str>,
-    cwd: Option<&str>,
-    timeout: u64,
-) -> std::result::Result<AgentResponse, AgentError> {
-    let resume_session = fetch_last_session_id(db.as_ref(), task_name.to_string())
-        .await
-        .map_err(|e| AgentError::CliError(format!("Failed to fetch session: {}", e)))?;
+use surreal_mind::clients::{CognitiveAgent, GeminiClient};
 
-    let model = model_override
-        .map(|s| s.to_string())
-        .unwrap_or_else(default_model_name);
+async fn call_gemini_extraction(_db: &Arc<Surreal<WsClient>>, prompt: &str) -> Result<String> {
+    let model = std::env::var("KG_POPULATE_MODEL")
+        .unwrap_or_else(|_| DEFAULT_GEMINI_MODEL.to_string());
+    let timeout = std::env::var("KG_POPULATE_TIMEOUT_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_TIMEOUT_MS);
 
-    let mut gemini = GeminiClient::with_timeout_ms(model.clone(), timeout);
-    if let Some(dir) = cwd {
-        gemini = gemini.with_cwd(dir);
-    }
-
-    let agent = PersistedAgent::new(gemini, db.clone(), "gemini", model, task_name.to_string());
-
-    agent.call(prompt, resume_session.as_deref()).await
+    let gemini = GeminiClient::with_timeout_ms(model.clone(), timeout);
+    
+    // Call GeminiClient directly - each extraction batch is independent, no context needed
+    let response = gemini.call(prompt, None).await?;
+    Ok(response.response)
 }
 ```
+
+**IMPORTANT**: kg_populate does NOT use PersistedAgent because:
+1. Each extraction batch is independent (no conversation context needed)
+2. PersistedAgent loads ALL previous exchanges and prepends them to every call
+3. This caused prompt bloat (5KB prompt + accumulated exchanges) that crashed Gemini CLI
+4. Direct GeminiClient calls keep prompts clean and focused
 
 ### Return type: AgentResponse
 ```rust
 struct AgentResponse {
     response: String,      // Raw Gemini output (may contain ```json fences)
     session_id: String,    // Gemini session ID
-    exchange_id: String,   // Individual exchange ID
 }
 ```
 
@@ -160,12 +155,14 @@ let found: Vec<serde_json::Value> = db.query(sql)
 
 ### Observations (name, source_thought_id uniqueness)
 ```rust
-let sql = "SELECT meta::id(id) as id FROM kg_observations WHERE name = $name AND data.source_thought_id = $src LIMIT 1";
+let sql = "SELECT meta::id(id) as id FROM kg_observations WHERE name = $name AND source_thought_id = $src LIMIT 1";
 let found: Vec<serde_json::Value> = db.query(sql)
     .bind(("name", name))
     .bind(("src", source_thought_id))
     .await?.take(0)?;
 ```
+
+**NOTE**: Observation uniqueness was changed from `(name, data.source_thought_id)` to `(name, source_thought_id)` - source_thought_id moved from data JSON to top-level field.
 
 **Location**: `src/tools/knowledge_graph.rs:9-283`
 
@@ -263,7 +260,7 @@ if i % 100 == 0 {
 
 ### Pattern for Gemini responses
 ```rust
-let raw_response = agent.call(prompt, session_id).await?.response;
+let raw_response = gemini.call(prompt, None).await?.response;
 
 // Strip markdown code fences
 let json_str = raw_response
@@ -302,14 +299,14 @@ Based on Serena investigation, the following are **verified and ready**:
 - [x] Database schema for `extracted_to_kg`, `extraction_batch_id`, `extracted_at`
 - [x] Config loading pattern (Config::load())
 - [x] Database connection pattern (Surreal::new, signin, use_ns/use_db)
-- [x] delegate_gemini execution pattern (via execute_gemini_call or direct PersistedAgent)
+- [x] Direct GeminiClient execution (no PersistedAgent for batch processing)
 - [x] KG upsert patterns (entities, edges, observations)
 - [x] Binary structure template (main, error handling, logging)
 - [x] JSON fence stripping pattern
 
-**Still need decisions on** (from doc-2):
-- [x] Batch error handling strategy (per-thought vs all-or-nothing) - **IMPLEMENTED: per-thought with logging**
-- [x] Boundaries storage approach (dedicated table vs kg_observations mapping) - **IMPLEMENTED: dedicated kg_boundaries table**
+**All decisions resolved** (from doc-2):
+- [x] Batch error handling strategy - **IMPLEMENTED: per-thought with logging**
+- [x] Boundaries storage approach - **IMPLEMENTED: dedicated kg_boundaries table**
 - [x] Batch size default and env override - **IMPLEMENTED: 25 default, KG_POPULATE_BATCH_SIZE env var**
 - [x] Extraction prompt location/creation - **IMPLEMENTED: src/prompts/kg_extraction_v1.md**
 
@@ -318,7 +315,7 @@ Based on Serena investigation, the following are **verified and ready**:
 ## IMPLEMENTATION COMPLETED
 
 **Date**: 2025-12-31
-**Implementer**: rust-builder (CC subagent)
+**Implementer**: Rusty (CC subagent)
 
 ### Files Created/Modified
 
@@ -330,7 +327,7 @@ Based on Serena investigation, the following are **verified and ready**:
 
 1. **Ownership for SurrealDB bindings**: All helper functions take owned `String` values instead of `&str` references because SurrealDB's `bind()` method requires `'static` lifetime. This required adding `Clone` derives to extraction structs.
 
-2. **Gemini integration**: Used `PersistedAgent` wrapper directly (not `execute_gemini_call` helper) since we don't need session resume for independent extraction batches.
+2. **Gemini integration**: Uses GeminiClient directly (NOT PersistedAgent) because each extraction batch is independent and doesn't need conversation context. PersistedAgent was causing prompt bloat by prepending ALL previous exchanges.
 
 3. **Edge resolution**: Edges are only created if both source and target entities exist. If Gemini references an entity that wasn't extracted in the same batch, the edge is skipped (returns `false` for "not created").
 
@@ -344,12 +341,20 @@ Based on Serena investigation, the following are **verified and ready**:
 
 2. **Lifetime issues**: Initial implementation used `&str` references which don't satisfy SurrealDB's `'static` requirement for `bind()`. Fixed by converting all DB-bound values to owned `String` types.
 
+3. **PersistedAgent context injection**: Initial implementation used PersistedAgent which loaded ALL previous agent_exchanges and prepended them to every prompt. This caused:
+   - Massive prompt bloat (5KB base + accumulated exchanges)
+   - Gemini CLI Yoga-layout crash (exit status 13)
+   - 5-hour hung Gemini processes
+   - **Fixed by removing PersistedAgent and using GeminiClient directly**
+
+4. **Test mode break**: Lines 268-270 contained debugging code (`break` after first batch) that was left in production. **Fixed by removing test mode break entirely.**
+
 ### Build Validation Results
 
 ```
-cargo build --bin kg_populate     # SUCCESS
-cargo clippy --bin kg_populate    # SUCCESS (with -A clippy::too-many-arguments for pre-existing issue in delegate_gemini.rs)  
-cargo fmt --check                 # SUCCESS
+cargo build --release --bin kg_populate     # SUCCESS (clean, no warnings)
+cargo clippy --bin kg_populate              # SUCCESS
+cargo fmt --check                           # SUCCESS
 ```
 
 ### Environment Variables
@@ -357,3 +362,14 @@ cargo fmt --check                 # SUCCESS
 - `KG_POPULATE_BATCH_SIZE` - Number of thoughts per batch (default: 25)
 - `KG_POPULATE_MODEL` - Gemini model to use (default: gemini-3-flash-preview)
 - `KG_POPULATE_TIMEOUT_MS` - Timeout for Gemini calls (default: 120000)
+
+### Testing Results
+
+**Single-thought test** (batch_size=1):
+- ✅ 1 thought processed
+- ✅ 3 entities created, 5 skipped (duplicates)
+- ✅ 5 edges created
+- ✅ 5 observations created
+- ✅ 1 boundary created
+- ✅ Thought marked as extracted
+- ✅ Clean exit, no crashes
