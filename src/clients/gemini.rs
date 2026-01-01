@@ -331,7 +331,7 @@ fn extract_json_candidates(text: &str) -> Vec<String> {
                 continue;
             }
             match ch {
-                '\' => escape = true,
+                '\\' => escape = true,
                 '"' => in_string = false,
                 _ => {}
             }
