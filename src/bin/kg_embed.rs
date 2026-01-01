@@ -15,7 +15,7 @@ async fn main() -> Result<()> {
         .ok()
         .and_then(|s| s.parse::<usize>().ok());
 
-    println!("🚀 KG re-embed starting (entities + observations)");
+    println!("🚀 KG embedding population starting (missing or mismatched only)");
     if dry_run {
         println!("🔎 Dry run: no writes to DB");
     }
@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
     // Call the library function
     let stats = surreal_mind::run_reembed_kg(limit, dry_run).await?;
 
-    println!("\n===== KG RE-EMBED SUMMARY =====");
+    println!("\n===== KG EMBEDDING SUMMARY =====");
     println!(
         "Entities: updated={}, skipped={}, mismatched={}, missing={}",
         stats.entities_updated,

@@ -41,6 +41,10 @@ pub struct ReembedKgStats {
     pub observations_skipped: usize,
     pub observations_missing: usize,
     pub observations_mismatched: usize,
+    pub edges_updated: usize,
+    pub edges_skipped: usize,
+    pub edges_missing: usize,
+    pub edges_mismatched: usize,
 }
 
 // Load env from a simple, standardized location resolution.
@@ -237,6 +241,10 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
     let mut skipped_obs = 0usize;
     let mut mismatched_obs = 0usize;
     let mut missing_obs = 0usize;
+    let mut updated_edges = 0usize;
+    let mut skipped_edges = 0usize;
+    let mut mismatched_edges = 0usize;
+    let mut missing_edges = 0usize;
 
     // Entities
     {
@@ -393,6 +401,88 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
         }
     }
 
+    // Edges
+    {
+        let sql = match limit {
+            Some(l) => format!("SELECT meta::id(id) as id, source.name as source_name, target.name as target_name, rel_type, data, (IF type::is::array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len, embedding_model FROM kg_edges LIMIT {}", l),
+            None => "SELECT meta::id(id) as id, source.name as source_name, target.name as target_name, rel_type, data, (IF type::is::array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len, embedding_model FROM kg_edges".to_string(),
+        };
+        let rows: Vec<Value> = db.query(sql).await?.take(0)?;
+        for r in &rows {
+            let id = r
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let source_name = r
+                .get("source_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown");
+            let target_name = r
+                .get("target_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown");
+            let rel_type = r
+                .get("rel_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("related_to");
+            let emb_len = r.get("emb_len").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+            let emb_model = r
+                .get("embedding_model")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            // Hygiene counts
+            if emb_len == 0 {
+                missing_edges += 1;
+            }
+            if emb_len != dims
+                || !(emb_model == "text-embedding-3-small"
+                    || emb_model == "BAAI/bge-small-en-v1.5"
+                    || emb_model == "bge-small-en-v1.5")
+            {
+                mismatched_edges += 1;
+            }
+
+            if emb_len == dims
+                && (emb_model == "text-embedding-3-small"
+                    || emb_model == "BAAI/bge-small-en-v1.5"
+                    || emb_model == "bge-small-en-v1.5")
+            {
+                skipped_edges += 1;
+                continue;
+            }
+
+            // Construct text: source_name rel_type target_name - description
+            let mut text = format!("{} {} {}", source_name, rel_type, target_name);
+            if let Some(d) = r.get("data")
+                && let Some(obj) = d.as_object()
+                && let Some(desc) = obj.get("description").and_then(|v| v.as_str())
+            {
+                text.push_str(" - ");
+                text.push_str(desc);
+            }
+
+            let emb = embedder.embed(&text).await?;
+            if !dry_run {
+                let ts = Utc::now().to_rfc3339();
+                let q = format!(
+                    "UPDATE kg_edges:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts",
+                    id
+                );
+                db.query(q)
+                    .bind(("emb", emb))
+                    .bind(("prov", prov.clone()))
+                    .bind(("model", model.clone()))
+                    .bind(("dim", dims as i64))
+                    .bind(("ts", ts))
+                    .await?;
+            }
+            updated_edges += 1;
+        }
+    }
+
     Ok(ReembedKgStats {
         expected_dim: dims,
         provider: prov,
@@ -406,5 +496,9 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
         observations_skipped: skipped_obs,
         observations_missing: missing_obs,
         observations_mismatched: mismatched_obs,
+        edges_updated: updated_edges,
+        edges_skipped: skipped_edges,
+        edges_missing: missing_edges,
+        edges_mismatched: mismatched_edges,
     })
 }

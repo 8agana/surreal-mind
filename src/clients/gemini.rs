@@ -131,7 +131,7 @@ impl CognitiveAgent for GeminiClient {
             .arg(&self.model)
             .arg("-e")
             .arg("")
-            .arg("-o")
+            .arg("--output-format")
             .arg("json");
         if let Some(sid) = session_id {
             cmd.arg("--resume").arg(sid);
