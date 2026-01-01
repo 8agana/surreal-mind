@@ -574,6 +574,16 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
     let mut edges_updated = 0usize;
     let mut edges_skipped = 0usize;
 
+    let mut entities_missing_null = 0usize;
+    let mut entities_missing_none = 0usize;
+    let mut entities_missing_empty = 0usize;
+    let mut observations_missing_null = 0usize;
+    let mut observations_missing_none = 0usize;
+    let mut observations_missing_empty = 0usize;
+    let mut edges_missing_null = 0usize;
+    let mut edges_missing_none = 0usize;
+    let mut edges_missing_empty = 0usize;
+
     let limit_total = limit.unwrap_or(usize::MAX);
 
     // ========== ENTITIES ==========
@@ -589,7 +599,13 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
         let take = entity_remaining.min(ENTITY_BATCH);
 
         let sql = format!(
-            "SELECT meta::id(id) as id, name, data FROM kg_entities WHERE embedding IS NULL LIMIT {}",
+            "SELECT meta::id(id) as id, name, data, \
+                (embedding IS NULL) AS emb_is_null, \
+                (embedding IS NONE) AS emb_is_none, \
+                (IF type::is::array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len \
+             FROM kg_entities \
+             WHERE (embedding IS NULL OR embedding IS NONE OR (type::is::array(embedding) AND array::len(embedding) = 0)) \
+             LIMIT {}",
             take
         );
         let rows: Vec<Value> = db.query(&sql).await?.take(0)?;
@@ -608,6 +624,23 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
+            let emb_is_null = r
+                .get("emb_is_null")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let emb_is_none = r
+                .get("emb_is_none")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let emb_len = r.get("emb_len").and_then(|v| v.as_u64()).unwrap_or(0);
+
+            if emb_is_null {
+                entities_missing_null += 1;
+            } else if emb_is_none {
+                entities_missing_none += 1;
+            } else if emb_len == 0 {
+                entities_missing_empty += 1;
+            }
 
             // Extract description from data.description
             let description = r
@@ -640,24 +673,18 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
 
             // Idempotent update: only update if embedding is still NULL
             let q = format!(
-                "UPDATE kg_entities:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts WHERE embedding IS NULL",
+                "UPDATE kg_entities:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts \
+                 WHERE (embedding IS NULL OR embedding IS NONE OR (type::is::array(embedding) AND array::len(embedding) = 0)) RETURN NONE",
                 id
             );
-            let result: Vec<Value> = db
-                .query(q)
+            db.query(q)
                 .bind(("emb", emb))
                 .bind(("prov", prov.clone()))
                 .bind(("model", model.clone()))
                 .bind(("dim", dims as i64))
                 .bind(("ts", ts))
-                .await?
-                .take(0)?;
-
-            if result.is_empty() {
-                entities_skipped += 1;
-            } else {
-                entities_updated += 1;
-            }
+                .await?;
+            entities_updated += 1;
             entity_remaining = entity_remaining.saturating_sub(1);
         }
 
@@ -666,8 +693,12 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
         }
     }
     println!(
-        "[kg_embed] Entities: updated={}, skipped={}",
-        entities_updated, entities_skipped
+        "[kg_embed] Entities: updated={}, skipped={}, missing(null/none/empty)={}/{}/{}",
+        entities_updated,
+        entities_skipped,
+        entities_missing_null,
+        entities_missing_none,
+        entities_missing_empty
     );
 
     // ========== OBSERVATIONS ==========
@@ -683,7 +714,13 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
         let take = obs_remaining.min(OBS_BATCH);
 
         let sql = format!(
-            "SELECT meta::id(id) as id, name, data FROM kg_observations WHERE embedding IS NULL LIMIT {}",
+            "SELECT meta::id(id) as id, name, data, \
+                (embedding IS NULL) AS emb_is_null, \
+                (embedding IS NONE) AS emb_is_none, \
+                (IF type::is::array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len \
+             FROM kg_observations \
+             WHERE (embedding IS NULL OR embedding IS NONE OR (type::is::array(embedding) AND array::len(embedding) = 0)) \
+             LIMIT {}",
             take
         );
         let rows: Vec<Value> = db.query(&sql).await?.take(0)?;
@@ -702,6 +739,23 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
+            let emb_is_null = r
+                .get("emb_is_null")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let emb_is_none = r
+                .get("emb_is_none")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let emb_len = r.get("emb_len").and_then(|v| v.as_u64()).unwrap_or(0);
+
+            if emb_is_null {
+                observations_missing_null += 1;
+            } else if emb_is_none {
+                observations_missing_none += 1;
+            } else if emb_len == 0 {
+                observations_missing_empty += 1;
+            }
 
             // Extract content from data.content, fallback to name
             let content = r
@@ -728,24 +782,18 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
             let ts = Utc::now().to_rfc3339();
 
             let q = format!(
-                "UPDATE kg_observations:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts WHERE embedding IS NULL",
+                "UPDATE kg_observations:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts \
+                 WHERE (embedding IS NULL OR embedding IS NONE OR (type::is::array(embedding) AND array::len(embedding) = 0)) RETURN NONE",
                 id
             );
-            let result: Vec<Value> = db
-                .query(q)
+            db.query(q)
                 .bind(("emb", emb))
                 .bind(("prov", prov.clone()))
                 .bind(("model", model.clone()))
                 .bind(("dim", dims as i64))
                 .bind(("ts", ts))
-                .await?
-                .take(0)?;
-
-            if result.is_empty() {
-                observations_skipped += 1;
-            } else {
-                observations_updated += 1;
-            }
+                .await?;
+            observations_updated += 1;
             obs_remaining = obs_remaining.saturating_sub(1);
         }
 
@@ -754,8 +802,12 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
         }
     }
     println!(
-        "[kg_embed] Observations: updated={}, skipped={}",
-        observations_updated, observations_skipped
+        "[kg_embed] Observations: updated={}, skipped={}, missing(null/none/empty)={}/{}/{}",
+        observations_updated,
+        observations_skipped,
+        observations_missing_null,
+        observations_missing_none,
+        observations_missing_empty
     );
 
     // ========== EDGES ==========
@@ -772,7 +824,13 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
 
         // Resolve source.name and target.name in the query
         let sql = format!(
-            "SELECT meta::id(id) as id, source.name as source_name, target.name as target_name, rel_type, data FROM kg_edges WHERE embedding IS NULL LIMIT {}",
+            "SELECT meta::id(id) as id, source.name as source_name, target.name as target_name, rel_type, data, \
+                (embedding IS NULL) AS emb_is_null, \
+                (embedding IS NONE) AS emb_is_none, \
+                (IF type::is::array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len \
+             FROM kg_edges \
+             WHERE (embedding IS NULL OR embedding IS NONE OR (type::is::array(embedding) AND array::len(embedding) = 0)) \
+             LIMIT {}",
             take
         );
         let rows: Vec<Value> = db.query(&sql).await?.take(0)?;
@@ -798,6 +856,23 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
                 .get("rel_type")
                 .and_then(|v| v.as_str())
                 .unwrap_or("related_to");
+            let emb_is_null = r
+                .get("emb_is_null")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let emb_is_none = r
+                .get("emb_is_none")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let emb_len = r.get("emb_len").and_then(|v| v.as_u64()).unwrap_or(0);
+
+            if emb_is_null {
+                edges_missing_null += 1;
+            } else if emb_is_none {
+                edges_missing_none += 1;
+            } else if emb_len == 0 {
+                edges_missing_empty += 1;
+            }
 
             // Extract description from data.description
             let description = r
@@ -832,24 +907,18 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
             let ts = Utc::now().to_rfc3339();
 
             let q = format!(
-                "UPDATE kg_edges:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts WHERE embedding IS NULL",
+                "UPDATE kg_edges:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts \
+                 WHERE (embedding IS NULL OR embedding IS NONE OR (type::is::array(embedding) AND array::len(embedding) = 0)) RETURN NONE",
                 id
             );
-            let result: Vec<Value> = db
-                .query(q)
+            db.query(q)
                 .bind(("emb", emb))
                 .bind(("prov", prov.clone()))
                 .bind(("model", model.clone()))
                 .bind(("dim", dims as i64))
                 .bind(("ts", ts))
-                .await?
-                .take(0)?;
-
-            if result.is_empty() {
-                edges_skipped += 1;
-            } else {
-                edges_updated += 1;
-            }
+                .await?;
+            edges_updated += 1;
             edge_remaining = edge_remaining.saturating_sub(1);
         }
 
@@ -858,8 +927,12 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
         }
     }
     println!(
-        "[kg_embed] Edges: updated={}, skipped={}",
-        edges_updated, edges_skipped
+        "[kg_embed] Edges: updated={}, skipped={}, missing(null/none/empty)={}/{}/{}",
+        edges_updated,
+        edges_skipped,
+        edges_missing_null,
+        edges_missing_none,
+        edges_missing_empty
     );
 
     Ok(KgEmbedStats {
