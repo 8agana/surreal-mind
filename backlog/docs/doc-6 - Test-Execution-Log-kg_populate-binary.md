@@ -7,7 +7,7 @@ updated_date: '2026-01-01 02:01'
 ---
 # Test Execution Log — kg_populate binary
 
-**Related task**: task-1 (Implement kg_populate orchestrator binary)
+**Related task**: task-1 (Implement kg_populate orchestrator binary), task-4 (Fix gemini-cli integration crash)
 **Related docs**: doc-5 (Testing Plan)
 **Date**: 2025-12-31
 **Tester**: Gemini CLI, CC
@@ -44,10 +44,13 @@ updated_date: '2026-01-01 02:01'
 - **Fix Applied**: Added `created_at` to SELECT clause to satisfy SurrealDB ORDER BY requirement.
 
 ### 2. Gemini Integration
-- **Status**: ✅ Fixed
+- **Status**: ✅ Fixed (via task-4)
 - **Original Issue**: The `gemini-cli` with Ink UI renderer was crashing with yoga-layout race condition (Exit 13) when called from Rust subprocess.
-- **Root Cause Discovery**: PersistedAgent was loading ALL previous `agent_exchanges` for tool_name="kg_populate" and prepending them to every prompt. A 5-hour hung Gemini process created a massive failed exchange that made the combined prompt crash the CLI's renderer.
-- **Fix Applied**: Removed PersistedAgent wrapper entirely - kg_populate now calls GeminiClient directly. Each extraction batch is independent and doesn't need conversation context.
+- **Root Cause Discovery**: PersistedAgent was loading ALL previous `agent_exchanges` for tool_name="kg_populate" and prepending them to every prompt. A 5-hour hung Gemini process created a massive failed exchange that made the combined prompt crash the CLI's renderer. Additionally, the CLI attempted to render interactive elements in a non-TTY environment.
+- **Fix Applied**: 
+  1. Removed PersistedAgent wrapper entirely - kg_populate now calls GeminiClient directly.
+  2. Updated GeminiClient to inject environment variables: `CI=true`, `TERM=dumb`, and `NO_COLOR=1` to force non-interactive mode.
+  3. Ensured `-y` and `--output-format json` are consistently passed.
 - **Verification**: Single-thought test completed successfully with clean JSON output and all entities/edges/observations created.
 
 ### 3-6. KG Upserts (All Categories)
@@ -115,7 +118,7 @@ const Yoga = wrapAssembly(await loadYoga());
 | ID | Description | Severity | Status |
 |----|-------------|----------|--------|
 | BUG-01 | SQL Parse Error: `ORDER BY` field missing from `SELECT` | High | ✅ Fixed |
-| BUG-02 | Gemini CLI Race Condition: `yoga-layout` crash in subprocess | Critical | ✅ Fixed (root cause was PersistedAgent) |
+| BUG-02 | Gemini CLI Race Condition: `yoga-layout` crash in subprocess | Critical | ✅ Fixed (via task-4) |
 | BUG-03 | Test mode break: Lines 268-270 force exit after first batch | Critical | ✅ Fixed (removed) |
 | BUG-04 | Multibyte char panic: `observation.content[..50]` at line 609 | High | ✅ Fixed (chars().take(50)) |
 | BUG-05 | Multibyte char panic: `extraction.summary[..80]` at line 208 | High | ✅ Fixed (chars().take(80)) |

@@ -49,3 +49,7 @@ SELECT count() FROM thoughts WHERE extracted_to_kg = false GROUP ALL
 UPDATE thoughts SET extracted_to_kg = false WHERE id = (SELECT id FROM thoughts LIMIT 1)[0].id; SELECT meta::id(id) as id, content, created_at FROM thoughts WHERE extracted_to_kg = false LIMIT 1
 SELECT count() FROM thoughts GROUP ALL
 CREATE thoughts SET content = 'Test thought for KG extraction', extracted_to_kg = false, created_at = time::now()
+SELECT id, content FROM thoughts WHERE id = thoughts:51036026 OR id = thoughts:a4175663 OR id = thoughts:3222945d OR id = thoughts:3f3e4d1b OR id = thoughts:9bf2ddf3;
+INFO FOR DB;
+SELECT id, content FROM thoughts LIMIT 10;
+SELECT id, content FROM thoughts WHERE type::string(id) CONTAINS '51036026' OR type::string(id) CONTAINS 'a4175663' OR type::string(id) CONTAINS '3222945d' OR type::string(id) CONTAINS '3f3e4d1b' OR type::string(id) CONTAINS '9bf2ddf3';

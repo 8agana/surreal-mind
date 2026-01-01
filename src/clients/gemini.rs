@@ -123,6 +123,7 @@ impl CognitiveAgent for GeminiClient {
         cmd.kill_on_drop(true)
             .env("CI", "true")
             .env("TERM", "dumb")
+            .env("NO_COLOR", "1")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

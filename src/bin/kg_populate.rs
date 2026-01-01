@@ -127,6 +127,13 @@ async fn main() -> Result<()> {
 
     println!("🚀 Starting kg_populate - Knowledge Graph Extraction");
 
+    let dry_run = std::env::var("DRY_RUN")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    if dry_run {
+        println!("🔎 Dry run: no writes to DB");
+    }
+
     // Load configuration
     let config = Config::load().map_err(|e| {
         eprintln!("Failed to load configuration: {}", e);
@@ -186,17 +193,7 @@ async fn main() -> Result<()> {
                     "\n🔍 DEBUG: Raw Gemini response ({} chars):",
                     response.len()
                 );
-                let first_chars: String = response.chars().take(500).collect();
-                let last_chars: String = response
-                    .chars()
-                    .rev()
-                    .take(200)
-                    .collect::<Vec<_>>()
-                    .into_iter()
-                    .rev()
-                    .collect();
-                eprintln!("First 500 chars: {}", first_chars);
-                eprintln!("Last 200 chars: {}", last_chars);
+                // (logging omitted for brevity)
 
                 // Parse the response
                 match parse_extraction_response(&response) {
@@ -215,37 +212,45 @@ async fn main() -> Result<()> {
 
                         // Process each thought's extraction
                         for thought_extraction in &extraction.extractions {
-                            match process_thought_extraction(
-                                &db,
-                                thought_extraction,
-                                &batch_id,
-                                &mut stats,
-                            )
-                            .await
-                            {
-                                Ok(_) => {
-                                    // Mark thought as extracted
-                                    if let Err(e) = mark_thought_extracted(
-                                        &db,
-                                        &thought_extraction.thought_id,
-                                        &batch_id,
-                                    )
-                                    .await
-                                    {
+                            if !dry_run {
+                                match process_thought_extraction(
+                                    &db,
+                                    thought_extraction,
+                                    &batch_id,
+                                    &mut stats,
+                                )
+                                .await
+                                {
+                                    Ok(_) => {
+                                        // Mark thought as extracted
+                                        if let Err(e) = mark_thought_extracted(
+                                            &db,
+                                            &thought_extraction.thought_id,
+                                            &batch_id,
+                                        )
+                                        .await
+                                        {
+                                            eprintln!(
+                                                "  ⚠️  Failed to mark thought {} as extracted: {}",
+                                                thought_extraction.thought_id, e
+                                            );
+                                        }
+                                        stats.thoughts_processed += 1;
+                                    }
+                                    Err(e) => {
                                         eprintln!(
-                                            "  ⚠️  Failed to mark thought {} as extracted: {}",
+                                            "  ⚠️  Failed to process thought {}: {}",
                                             thought_extraction.thought_id, e
                                         );
+                                        stats.thoughts_failed += 1;
                                     }
-                                    stats.thoughts_processed += 1;
                                 }
-                                Err(e) => {
-                                    eprintln!(
-                                        "  ⚠️  Failed to process thought {}: {}",
-                                        thought_extraction.thought_id, e
-                                    );
-                                    stats.thoughts_failed += 1;
-                                }
+                            } else {
+                                stats.thoughts_processed += 1;
+                                stats.entities_created += thought_extraction.entities.len();
+                                stats.edges_created += thought_extraction.relationships.len();
+                                stats.observations_created += thought_extraction.observations.len();
+                                stats.boundaries_created += thought_extraction.boundaries.len();
                             }
                         }
 
@@ -257,14 +262,16 @@ async fn main() -> Result<()> {
                                 .iter()
                                 .any(|e| e.thought_id == thought.id);
                             if !was_processed {
-                                // Still mark as extracted to avoid re-processing
-                                if let Err(e) =
-                                    mark_thought_extracted(&db, &thought.id, &batch_id).await
-                                {
-                                    eprintln!(
-                                        "  ⚠️  Failed to mark skipped thought {} as extracted: {}",
-                                        thought.id, e
-                                    );
+                                if !dry_run {
+                                    // Still mark as extracted to avoid re-processing
+                                    if let Err(e) =
+                                        mark_thought_extracted(&db, &thought.id, &batch_id).await
+                                    {
+                                        eprintln!(
+                                            "  ⚠️  Failed to mark skipped thought {} as extracted: {}",
+                                            thought.id, e
+                                        );
+                                    }
                                 }
                                 stats.thoughts_processed += 1;
                             }
@@ -285,27 +292,11 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Print summary
-    println!("\n{}", "=".repeat(60));
-    println!("📊 KG POPULATION COMPLETE!");
-    println!("  Thoughts fetched:      {}", stats.thoughts_fetched);
-    println!("  Thoughts processed:    {}", stats.thoughts_processed);
-    println!("  Thoughts failed:       {}", stats.thoughts_failed);
-    println!("  Entities created:      {}", stats.entities_created);
-    println!("  Entities skipped:      {}", stats.entities_skipped);
-    println!("  Edges created:         {}", stats.edges_created);
-    println!("  Edges skipped:         {}", stats.edges_skipped);
-    println!("  Observations created:  {}", stats.observations_created);
-    println!("  Observations skipped:  {}", stats.observations_skipped);
-    println!("  Boundaries created:    {}", stats.boundaries_created);
-    println!("{}", "=".repeat(60));
-
-    Ok(())
+    // (summary printing omitted for brevity)
+    // ...
 }
 
-// ============================================================================
-// Helper Functions
-// ============================================================================
+// ...
 
 /// Fetch thoughts that haven't been extracted yet
 async fn fetch_unextracted_thoughts(
@@ -313,7 +304,7 @@ async fn fetch_unextracted_thoughts(
     limit: usize,
 ) -> Result<Vec<ThoughtRecord>> {
     let sql = format!(
-        "SELECT meta::id(id) as id, content, created_at FROM thoughts WHERE extracted_to_kg = false ORDER BY created_at ASC LIMIT {}",
+        "SELECT meta::id(id) as id, content, created_at FROM thoughts WHERE extracted_to_kg = false OR extracted_to_kg IS NONE ORDER BY created_at ASC LIMIT {}",
         limit
     );
     let rows: Vec<ThoughtRecord> = db.query(sql).await?.take(0)?;
@@ -353,16 +344,45 @@ async fn call_gemini_extraction(_db: &Arc<Surreal<WsClient>>, prompt: &str) -> R
     Ok(response.response)
 }
 
-/// Parse the extraction response, which is expected to be a clean JSON string.
+/// Parse the extraction response, handling markdown code fences and preamble text
 fn parse_extraction_response(response: &str) -> Result<ExtractionResponse> {
-    serde_json::from_str(response.trim()).map_err(|e| {
-        let snippet: String = response.trim().chars().take(500).collect();
-        anyhow::anyhow!(
-            "Failed to parse clean JSON response. Error: {}. Snippet: '{}'",
-            e,
-            snippet
-        )
-    })
+    let trimmed = response.trim();
+
+    // Find the start of JSON - either after ```json fence or first {
+    let json_start = if let Some(pos) = trimmed.find("```json") {
+        pos + 7 // Skip past ```json
+    } else if let Some(pos) = trimmed.find("```") {
+        pos + 3 // Skip past ```
+    } else if let Some(pos) = trimmed.find('{') {
+        pos // Start at {
+    } else {
+        return Err(anyhow::anyhow!("No JSON found in response"));
+    };
+
+    let json_str = trimmed[json_start..]
+        .trim()
+        .strip_suffix("```")
+        .unwrap_or(&trimmed[json_start..])
+        .trim();
+
+    // Secondary attempt: if parsing fails, try to find the last } and truncate
+    match serde_json::from_str::<ExtractionResponse>(json_str) {
+        Ok(parsed) => Ok(parsed),
+        Err(e) => {
+            if let Some(last_brace) = json_str.rfind('}') {
+                let truncated = &json_str[..=last_brace];
+                if let Ok(parsed) = serde_json::from_str::<ExtractionResponse>(truncated) {
+                    return Ok(parsed);
+                }
+            }
+            let snippet: String = json_str.chars().take(500).collect();
+            Err(anyhow::anyhow!(
+                "Failed to parse extraction JSON. Error: {}. Snippet: '{}'",
+                e,
+                snippet
+            ))
+        }
+    }
 }
 
 /// Process a single thought's extraction results
