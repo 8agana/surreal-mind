@@ -18,9 +18,9 @@ const DEFAULT_BATCH_SIZE: usize = 5;
 const DEFAULT_GEMINI_MODEL: &str = "gemini-3-flash-preview";
 const DEFAULT_TIMEOUT_MS: u64 = 120_000;
 
-// ============================================================================
+// ============================================================================ 
 // Data Structures
-// ============================================================================
+// ============================================================================ 
 
 /// A thought record from the database
 #[derive(Debug, Deserialize)]
@@ -114,9 +114,9 @@ struct ExtractionStats {
     boundaries_created: usize,
 }
 
-// ============================================================================
+// ============================================================================ 
 // Main
-// ============================================================================
+// ============================================================================ 
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -188,12 +188,8 @@ async fn main() -> Result<()> {
         // Call Gemini for extraction
         match call_gemini_extraction(&db, &prompt).await {
             Ok(response) => {
-                // DEBUG: Log raw response (safely handle multibyte chars)
-                eprintln!(
-                    "\n🔍 DEBUG: Raw Gemini response ({} chars):",
-                    response.len()
-                );
-                // (logging omitted for brevity)
+                // DEBUG: Log raw response
+                eprintln!("\n🔍 DEBUG: Raw Gemini response ({} chars)", response.len());
 
                 // Parse the response
                 match parse_extraction_response(&response) {
@@ -292,11 +288,27 @@ async fn main() -> Result<()> {
         }
     }
 
-    // (summary printing omitted for brevity)
-    // ...
+    // Print summary
+    println!("\n{}", "=".repeat(60));
+    println!("📊 KG POPULATION COMPLETE!");
+    println!("  Thoughts fetched:      {}", stats.thoughts_fetched);
+    println!("  Thoughts processed:    {}", stats.thoughts_processed);
+    println!("  Thoughts failed:       {}", stats.thoughts_failed);
+    println!("  Entities created:      {}", stats.entities_created);
+    println!("  Entities skipped:      {}", stats.entities_skipped);
+    println!("  Edges created:         {}", stats.edges_created);
+    println!("  Edges skipped:         {}", stats.edges_skipped);
+    println!("  Observations created:  {}", stats.observations_created);
+    println!("  Observations skipped:  {}", stats.observations_skipped);
+    println!("  Boundaries created:    {}", stats.boundaries_created);
+    println!("{}", "=".repeat(60));
+
+    Ok(())
 }
 
-// ...
+// ============================================================================ 
+// Helper Functions
+// ============================================================================ 
 
 /// Fetch thoughts that haven't been extracted yet
 async fn fetch_unextracted_thoughts(
@@ -321,7 +333,8 @@ fn build_extraction_prompt(thoughts: &[ThoughtRecord]) -> String {
     for thought in thoughts {
         prompt.push_str(&format!(
             "---\nThought ID: {}\nContent:\n{}\n\n",
-            thought.id, thought.content
+            thought.id,
+            thought.content
         ));
     }
 
@@ -631,7 +644,7 @@ async fn upsert_observation(
         .query(sql)
         .bind(("name", name.clone()))
         .bind(("src", thought_id.clone()))
-        .await?
+        .await? 
         .take(0)?;
 
     if !existing.is_empty() {
