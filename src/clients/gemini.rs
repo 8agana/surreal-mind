@@ -73,6 +73,8 @@ impl CognitiveAgent for GeminiClient {
     ) -> Result<AgentResponse, AgentError> {
         let mut cmd = Command::new("gemini");
         cmd.kill_on_drop(true)
+            .env("CI", "true")
+            .env("TERM", "dumb")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
