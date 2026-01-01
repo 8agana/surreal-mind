@@ -181,16 +181,22 @@ async fn main() -> Result<()> {
         // Call Gemini for extraction
         match call_gemini_extraction(&db, &prompt).await {
             Ok(response) => {
-                // DEBUG: Log raw response
+                // DEBUG: Log raw response (safely handle multibyte chars)
                 eprintln!(
                     "\n🔍 DEBUG: Raw Gemini response ({} chars):",
                     response.len()
                 );
-                eprintln!("First 500 chars: {}", &response[..500.min(response.len())]);
-                eprintln!(
-                    "Last 200 chars: {}",
-                    &response[response.len().saturating_sub(200)..]
-                );
+                let first_chars: String = response.chars().take(500).collect();
+                let last_chars: String = response
+                    .chars()
+                    .rev()
+                    .take(200)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+                eprintln!("First 500 chars: {}", first_chars);
+                eprintln!("Last 200 chars: {}", last_chars);
 
                 // Parse the response
                 match parse_extraction_response(&response) {
@@ -198,8 +204,10 @@ async fn main() -> Result<()> {
                         println!(
                             "  📊 Extracted {} thought results, summary: {}",
                             extraction.extractions.len(),
-                            if extraction.summary.len() > 80 {
-                                format!("{}...", &extraction.summary[..80])
+                            if extraction.summary.chars().count() > 80 {
+                                let truncated: String =
+                                    extraction.summary.chars().take(80).collect();
+                                format!("{}...", truncated)
                             } else {
                                 extraction.summary.clone()
                             }
@@ -599,8 +607,9 @@ async fn upsert_observation(
     batch_id: String,
 ) -> Result<bool> {
     // Generate a name from the content (first 50 chars)
-    let name = if observation.content.len() > 50 {
-        format!("{}...", &observation.content[..50])
+    let name = if observation.content.chars().count() > 50 {
+        let truncated: String = observation.content.chars().take(50).collect();
+        format!("{}...", truncated)
     } else {
         observation.content.clone()
     };

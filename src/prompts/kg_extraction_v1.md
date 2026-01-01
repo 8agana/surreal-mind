@@ -2,6 +2,8 @@
 
 You are a knowledge graph extraction system. Analyze the following thoughts and extract structured knowledge.
 
+**CRITICAL**: Return the JSON directly in your response. Do NOT save to a file. Do NOT write files. Return ONLY the JSON object.
+
 ## Input Format
 You will receive a batch of thoughts, each with an ID and content.
 

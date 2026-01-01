@@ -117,6 +117,9 @@ const Yoga = wrapAssembly(await loadYoga());
 | BUG-01 | SQL Parse Error: `ORDER BY` field missing from `SELECT` | High | ✅ Fixed |
 | BUG-02 | Gemini CLI Race Condition: `yoga-layout` crash in subprocess | Critical | ✅ Fixed (root cause was PersistedAgent) |
 | BUG-03 | Test mode break: Lines 268-270 force exit after first batch | Critical | ✅ Fixed (removed) |
+| BUG-04 | Multibyte char panic: `observation.content[..50]` at line 609 | High | ✅ Fixed (chars().take(50)) |
+| BUG-05 | Multibyte char panic: `extraction.summary[..80]` at line 208 | High | ✅ Fixed (chars().take(80)) |
+| BUG-06 | Multibyte char panic: Debug logging at line 183 | High | ✅ Fixed (chars().take()) |
 
 ---
 
