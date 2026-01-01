@@ -264,6 +264,10 @@ async fn main() -> Result<()> {
                 // Don't mark as extracted - will retry next run
             }
         }
+        
+        // TEST MODE: Exit after first batch
+        println!("🧪 Test mode: Exiting after first batch.");
+        break;
     }
 
     // Print summary
