@@ -353,29 +353,16 @@ async fn call_gemini_extraction(_db: &Arc<Surreal<WsClient>>, prompt: &str) -> R
     Ok(response.response)
 }
 
-/// Parse the extraction response, handling markdown code fences and preamble text
+/// Parse the extraction response, which is expected to be a clean JSON string.
 fn parse_extraction_response(response: &str) -> Result<ExtractionResponse> {
-    let trimmed = response.trim();
-
-    // Find the start of JSON - either after ```json fence or first {
-    let json_start = if let Some(pos) = trimmed.find("```json") {
-        pos + 7 // Skip past ```json
-    } else if let Some(pos) = trimmed.find("```") {
-        pos + 3 // Skip past ```
-    } else if let Some(pos) = trimmed.find('{') {
-        pos // Start at {
-    } else {
-        return Err(anyhow::anyhow!("No JSON found in response"));
-    };
-
-    let json_str = trimmed[json_start..]
-        .trim()
-        .strip_suffix("```")
-        .unwrap_or(&trimmed[json_start..])
-        .trim();
-
-    let parsed: ExtractionResponse = serde_json::from_str(json_str)?;
-    Ok(parsed)
+    serde_json::from_str(response.trim()).map_err(|e| {
+        let snippet: String = response.trim().chars().take(500).collect();
+        anyhow::anyhow!(
+            "Failed to parse clean JSON response. Error: {}. Snippet: '{}'",
+            e,
+            snippet
+        )
+    })
 }
 
 /// Process a single thought's extraction results

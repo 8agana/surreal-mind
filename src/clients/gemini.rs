@@ -182,6 +182,7 @@ impl CognitiveAgent for GeminiClient {
                             // EOF on stderr
                         }
                         Ok(n) => {
+                            // stderr output IS activity, reset tracker
                             tracker.reset(n).await;
                             // Cap stderr to prevent memory issues
                             let remaining = STDERR_CAP_BYTES.saturating_sub(stderr_buf.len());
@@ -254,6 +255,11 @@ impl CognitiveAgent for GeminiClient {
                             total_runtime
                         );
 
+                        let stdout_str = String::from_utf8_lossy(&stdout_buf);
+                        let stderr_str = String::from_utf8_lossy(&stderr_buf);
+                        tracing::debug!("Captured stdout so far: {}", stdout_str);
+                        tracing::debug!("Captured stderr so far: {}", stderr_str);
+
                         // Kill the process - kill_on_drop should handle this, but be explicit
                         let _ = child.kill().await;
 
@@ -325,7 +331,7 @@ fn extract_json_candidates(text: &str) -> Vec<String> {
                 continue;
             }
             match ch {
-                '\\' => escape = true,
+                '\' => escape = true,
                 '"' => in_string = false,
                 _ => {}
             }

@@ -5,6 +5,7 @@ use surreal_mind::clients::traits::CognitiveAgent;
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
+    tracing_subscriber::fmt::init();
 
     let client = GeminiClient::new();
     let response = client.call("Hello", None).await?;
