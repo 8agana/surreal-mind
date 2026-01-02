@@ -2,6 +2,7 @@ use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
 use anyhow::Context;
 use lru::LruCache;
+use serde::Deserialize;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use tokio::sync::{RwLock, Semaphore};
@@ -445,6 +446,11 @@ impl SurrealMindServer {
 
     /// Check for mixed embedding dimensions across thoughts and KG tables
     pub async fn check_embedding_dims(&self) -> Result<()> {
+        #[derive(Debug, Deserialize)]
+        struct DimRow {
+            dim: Option<i64>,
+        }
+
         // Query distinct embedding dimensions in thoughts
         let thoughts_dims: Vec<i64> = self
             .db
@@ -453,7 +459,10 @@ impl SurrealMindServer {
             .map_err(|e| SurrealMindError::Database {
                 message: format!("Database query error: {}", e),
             })?
-            .take(0)?;
+            .take::<Vec<DimRow>>(0)?
+            .into_iter()
+            .filter_map(|row| row.dim)
+            .collect();
 
         // Query distinct dimensions in KG entities
         let kg_entity_dims: Vec<i64> = self
@@ -463,7 +472,10 @@ impl SurrealMindServer {
             .map_err(|e| SurrealMindError::Database {
                 message: format!("Database query error: {}", e),
             })?
-            .take(0)?;
+            .take::<Vec<DimRow>>(0)?
+            .into_iter()
+            .filter_map(|row| row.dim)
+            .collect();
 
         // Query distinct dimensions in KG observations
         let kg_obs_dims: Vec<i64> = self
@@ -473,7 +485,10 @@ impl SurrealMindServer {
             .map_err(|e| SurrealMindError::Database {
                 message: format!("Database query error: {}", e),
             })?
-            .take(0)?;
+            .take::<Vec<DimRow>>(0)?
+            .into_iter()
+            .filter_map(|row| row.dim)
+            .collect();
 
         let mut all_dims = Vec::new();
         all_dims.extend(thoughts_dims);

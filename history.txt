@@ -53,3 +53,4 @@ SELECT id, content FROM thoughts WHERE id = thoughts:51036026 OR id = thoughts:a
 INFO FOR DB;
 SELECT id, content FROM thoughts LIMIT 10;
 SELECT id, content FROM thoughts WHERE type::string(id) CONTAINS '51036026' OR type::string(id) CONTAINS 'a4175663' OR type::string(id) CONTAINS '3222945d' OR type::string(id) CONTAINS '3f3e4d1b' OR type::string(id) CONTAINS '9bf2ddf3';
+INFO FOR TABLE agent_jobs;

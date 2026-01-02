@@ -1,7 +1,7 @@
 ---
 id: task-7
 title: Fix kg_embed binary - still failing after Codex changes
-status: To Do
+status: Completed
 assignee: []
 created_date: '2026-01-01 22:11'
 labels:
@@ -23,3 +23,5 @@ Source: ~/Projects/LegacyMind/surreal-mind/src/bin/kg_embed.rs
 
 Check Codex's recent commits to see what was changed and why it's still not working.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Complete. See Changelog.
