@@ -604,7 +604,7 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
                 (embedding IS NONE) AS emb_is_none, \
                 (IF type::is::array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len \
              FROM kg_entities \
-             WHERE (embedding IS NULL OR embedding IS NONE OR NOT type::is::array(embedding) OR array::len(embedding) = 0) \
+             WHERE (embedding IS NULL OR embedding IS NONE OR array::len(embedding) = 0) \
              LIMIT {}",
             take
         );
@@ -674,7 +674,7 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
             // Idempotent update: only update if embedding is still NULL
             let q = format!(
                 "UPDATE kg_entities:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts \
-                 WHERE (embedding IS NULL OR embedding IS NONE OR NOT type::is::array(embedding) OR array::len(embedding) = 0) RETURN NONE",
+                 WHERE (embedding IS NULL OR embedding IS NONE OR array::len(embedding) = 0) RETURN NONE",
                 id
             );
             db.query(q)
@@ -719,7 +719,7 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
                 (embedding IS NONE) AS emb_is_none, \
                 (IF type::is::array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len \
              FROM kg_observations \
-             WHERE (embedding IS NULL OR embedding IS NONE OR NOT type::is::array(embedding) OR array::len(embedding) = 0) \
+             WHERE (embedding IS NULL OR embedding IS NONE OR array::len(embedding) = 0) \
              LIMIT {}",
             take
         );
@@ -783,7 +783,7 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
 
             let q = format!(
                 "UPDATE kg_observations:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts \
-                 WHERE (embedding IS NOT DEFINED OR embedding IS NULL OR embedding IS NONE OR (type::is::array(embedding) AND array::len(embedding) = 0)) RETURN NONE",
+                 WHERE (embedding IS NOT DEFINED OR embedding IS NULL OR embedding IS NONE OR array::len(embedding) = 0) RETURN NONE",
                 id
             );
             db.query(q)
@@ -829,7 +829,7 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
                 (embedding IS NONE) AS emb_is_none, \
                 (IF type::is::array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len \
              FROM kg_edges \
-             WHERE (embedding IS NULL OR embedding IS NONE OR NOT type::is::array(embedding) OR array::len(embedding) = 0) \
+             WHERE (embedding IS NULL OR embedding IS NONE OR array::len(embedding) = 0) \
              LIMIT {}",
             take
         );
@@ -908,7 +908,7 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
 
             let q = format!(
                 "UPDATE kg_edges:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts \
-                 WHERE (embedding IS NOT DEFINED OR embedding IS NULL OR embedding IS NONE OR (type::is::array(embedding) AND array::len(embedding) = 0)) RETURN NONE",
+                 WHERE (embedding IS NOT DEFINED OR embedding IS NULL OR embedding IS NONE OR array::len(embedding) = 0) RETURN NONE",
                 id
             );
             db.query(q)
