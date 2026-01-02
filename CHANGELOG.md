@@ -1,6 +1,7 @@
 ## [Unreleased]
 
 ### Added
+- (2026-01-01) kg_populate run successful: 904 thoughts processed (Session 3) + 36 more (Session 4) = 940 total, 97.8%+ success rate. Knowledge graph extraction working: 660+ entities, 799+ edges, 1290+ observations, 259+ boundaries created. Shell aliases added: `kgpop` (kg_populate runner), `kgembed` (re-embedding workflow).
 - (2025-12-20) Implemented `memories_populate` tool: Processes unextracted thoughts via Gemini CLI to populate knowledge graph, with session persistence, auto-approval, and batch tracking. Includes schema updates, session management, and integration with existing KG tables.
 - (2025-12-19) Added `curiosity_add`, `curiosity_get`, `curiosity_search` tools for lightweight note-taking with semantic search.
 
