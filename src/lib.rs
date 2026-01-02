@@ -568,11 +568,11 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
     db.use_ns(&ns).use_db(&dbname).await?;
 
     let mut entities_updated = 0usize;
-    let mut entities_skipped = 0usize;
+    let entities_skipped = 0usize;
     let mut observations_updated = 0usize;
-    let mut observations_skipped = 0usize;
+    let observations_skipped = 0usize;
     let mut edges_updated = 0usize;
-    let mut edges_skipped = 0usize;
+    let edges_skipped = 0usize;
 
     let mut entities_missing_null = 0usize;
     let mut entities_missing_none = 0usize;
@@ -604,7 +604,7 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
                 (embedding IS NONE) AS emb_is_none, \
                 (IF type::is::array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len \
              FROM kg_entities \
-             WHERE (embedding IS NOT DEFINED OR embedding IS NULL OR embedding IS NONE OR NOT type::is::array(embedding) OR array::len(embedding) = 0) \
+             WHERE (embedding IS NULL OR embedding IS NONE OR NOT type::is::array(embedding) OR array::len(embedding) = 0) \
              LIMIT {}",
             take
         );
@@ -719,7 +719,7 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
                 (embedding IS NONE) AS emb_is_none, \
                 (IF type::is::array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len \
              FROM kg_observations \
-             WHERE (embedding IS NOT DEFINED OR embedding IS NULL OR embedding IS NONE OR NOT type::is::array(embedding) OR array::len(embedding) = 0) \
+             WHERE (embedding IS NULL OR embedding IS NONE OR NOT type::is::array(embedding) OR array::len(embedding) = 0) \
              LIMIT {}",
             take
         );
@@ -829,7 +829,7 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
                 (embedding IS NONE) AS emb_is_none, \
                 (IF type::is::array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len \
              FROM kg_edges \
-             WHERE (embedding IS NOT DEFINED OR embedding IS NULL OR embedding IS NONE OR NOT type::is::array(embedding) OR array::len(embedding) = 0) \
+             WHERE (embedding IS NULL OR embedding IS NONE OR NOT type::is::array(embedding) OR array::len(embedding) = 0) \
              LIMIT {}",
             take
         );

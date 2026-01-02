@@ -214,6 +214,7 @@ fn map_agent_error(err: AgentError) -> SurrealMindError {
 
 // Helper functions for async job management
 
+#[allow(clippy::too_many_arguments)]
 async fn create_job_record(
     db: &Surreal<WsClient>,
     job_id: String,
