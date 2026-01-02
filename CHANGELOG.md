@@ -1,3 +1,9 @@
+## [0.1.2] - 2026-01-02
+
+### Fixed
+- **kg_populate**: Initialize `embedding` field to NONE when creating kg_entities, kg_edges, kg_observations, and kg_boundaries. Previously records were created without the field, preventing kg_embed from finding them.
+- **kg_embed**: Enhanced WHERE clauses to include `embedding IS NOT DEFINED` condition as fallback for pre-existing records created without embedding fields.
+
 ## [Unreleased]
 
 ### Added

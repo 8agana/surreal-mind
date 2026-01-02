@@ -511,7 +511,7 @@ async fn upsert_entity(
         "description": entity.description,
     });
 
-    db.query("CREATE kg_entities SET created_at = time::now(), name = $name, entity_type = $etype, data = $data, source_thought_ids = $thought_ids, extraction_batch_id = $batch_id, extracted_at = time::now(), extraction_confidence = $confidence, extraction_prompt_version = $version")
+    db.query("CREATE kg_entities SET created_at = time::now(), name = $name, entity_type = $etype, data = $data, source_thought_ids = $thought_ids, extraction_batch_id = $batch_id, extracted_at = time::now(), extraction_confidence = $confidence, extraction_prompt_version = $version, embedding = NONE")
         .bind(("name", entity.name))
         .bind(("etype", entity.entity_type))
         .bind(("data", data))
@@ -605,7 +605,7 @@ async fn upsert_edge(
         "description": relationship.description,
     });
 
-    db.query("CREATE kg_edges SET created_at = time::now(), source = type::thing($src), target = type::thing($dst), rel_type = $rel, data = $data, source_thought_ids = $thought_ids, extraction_batch_id = $batch_id, extracted_at = time::now(), extraction_confidence = $confidence, extraction_prompt_version = $version")
+    db.query("CREATE kg_edges SET created_at = time::now(), source = type::thing($src), target = type::thing($dst), rel_type = $rel, data = $data, source_thought_ids = $thought_ids, extraction_batch_id = $batch_id, extracted_at = time::now(), extraction_confidence = $confidence, extraction_prompt_version = $version, embedding = NONE")
         .bind(("src", source_thing))
         .bind(("dst", target_thing))
         .bind(("rel", relationship.relation))
@@ -658,7 +658,7 @@ async fn upsert_observation(
         "tags": observation.tags,
     });
 
-    db.query("CREATE kg_observations SET created_at = time::now(), name = $name, data = $data, source_thought_id = $src, confidence = $conf, source_thought_ids = $thought_ids, extraction_batch_id = $batch_id, extracted_at = time::now(), extraction_confidence = $conf, extraction_prompt_version = $version")
+    db.query("CREATE kg_observations SET created_at = time::now(), name = $name, data = $data, source_thought_id = $src, confidence = $conf, source_thought_ids = $thought_ids, extraction_batch_id = $batch_id, extracted_at = time::now(), extraction_confidence = $conf, extraction_prompt_version = $version, embedding = NONE")
         .bind(("name", name))
         .bind(("data", data))
         .bind(("src", thought_id.clone()))
@@ -678,7 +678,7 @@ async fn create_boundary(
     thought_id: String,
     batch_id: String,
 ) -> Result<()> {
-    db.query("CREATE kg_boundaries SET created_at = time::now(), source_thought_id = $src, rejected = $rejected, reason = $reason, context = $context, confidence = $conf, extraction_batch_id = $batch_id, extracted_at = time::now(), extraction_prompt_version = $version")
+    db.query("CREATE kg_boundaries SET created_at = time::now(), source_thought_id = $src, rejected = $rejected, reason = $reason, context = $context, confidence = $conf, extraction_batch_id = $batch_id, extracted_at = time::now(), extraction_prompt_version = $version, embedding = NONE")
         .bind(("src", thought_id))
         .bind(("rejected", boundary.rejected))
         .bind(("reason", boundary.reason))
