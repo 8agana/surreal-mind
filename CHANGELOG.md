@@ -2,7 +2,7 @@
 
 ### Fixed
 - **kg_populate**: Initialize `embedding` field to NONE when creating kg_entities, kg_edges, kg_observations, and kg_boundaries. Previously records were created without the field, preventing kg_embed from finding them.
-- **kg_embed**: Enhanced WHERE clauses to include `embedding IS NOT DEFINED` condition as fallback for pre-existing records created without embedding fields.
+- **kg_embed**: Removed invalid `IS NOT DEFINED` syntax from WHERE clauses (SurrealDB doesn't support this operator). Since kg_populate now initializes all embeddings to NONE, simplified WHERE conditions work correctly for all cases: NULL, NONE, non-arrays, and empty arrays.
 
 ## [Unreleased]
 
