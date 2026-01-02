@@ -3,6 +3,7 @@
 ### Fixed
 - **kg_populate**: Initialize `embedding` field to NONE when creating kg_entities, kg_edges, kg_observations, and kg_boundaries. Previously records were created without the field, preventing kg_embed from finding them.
 - **kg_embed**: Removed invalid `IS NOT DEFINED` syntax from WHERE clauses (SurrealDB doesn't support this operator). Since kg_populate now initializes all embeddings to NONE, simplified WHERE conditions work correctly for all cases: NULL, NONE, non-arrays, and empty arrays.
+- **kg_embed SurrealDB syntax**: Removed invalid `NOT type::is::array(embedding)` and `(type::is::array(embedding) AND array::len(embedding) = 0)` patterns from WHERE clauses in SELECT and UPDATE queries for entities, observations, and edges. Simplified to use only `array::len(embedding) = 0` which safely handles all non-array types and empty arrays. The conditional SELECT already validates type safety with `IF type::is::array()` expressions.
 
 ## [Unreleased]
 
