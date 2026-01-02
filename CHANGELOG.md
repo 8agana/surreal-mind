@@ -13,6 +13,8 @@
 - (2025-12-19) Added `curiosity_add`, `curiosity_get`, `curiosity_search` tools for lightweight note-taking with semantic search.
 
 ### Fixed
+- (2026-01-02) `delegate_gemini` worker now skips legacy queued jobs with missing prompt/task_name by filtering for non-empty string prompts and tolerating optional fields during claim/exec.
+- (2026-01-02) `check_embedding_dims` deserialization corrected to avoid false startup warnings when embedding dimensions are consistent.
 - (2025-12-26) Refactored `memories_populate` update logic to use native `db.update().merge()` SDK method instead of raw SQL queries. This definitively resolves record ID binding issues (UUID vs String) that were causing silent update failures.
 - (2025-12-25) `memories_populate` now returns fully structured MCP output (no RawContent paths), records `extracted_at` and `thought_ids`, and defaults Gemini CLI to `gemini-3-pro-preview`; parsing now strips code fences and surfaces stdout snippets on error. Workspace fmt/clippy/tests all passing.
 - (2025-12-24) Cleared clippy `collapsible_if` and `unnecessary_unwrap` across knowledge_graph, maintenance, http, binaries (smtop, reembed_kg, kg_dedupe_plan) and tests; workspace now clippy-clean with full test suite passing.
