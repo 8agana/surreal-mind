@@ -307,8 +307,8 @@ struct QueuedJobIdRow {
 #[derive(Debug, Deserialize)]
 struct QueuedJobRow {
     job_id: String,
-    prompt: String,
-    task_name: String,
+    prompt: Option<String>,
+    task_name: Option<String>,
     model_override: Option<String>,
     cwd: Option<String>,
     timeout_ms: Option<i64>,
@@ -347,7 +347,8 @@ pub async fn run_delegate_gemini_worker(
             .and_then(|v| u64::try_from(v).ok())
             .unwrap_or_else(gemini_timeout_ms);
 
-        if job.prompt.trim().is_empty() {
+        let prompt = job.prompt.as_deref().unwrap_or("").trim();
+        if prompt.is_empty() {
             let _ = fail_job(
                 db.as_ref(),
                 job.job_id,
@@ -357,14 +358,15 @@ pub async fn run_delegate_gemini_worker(
             .await;
             continue;
         }
+        let task_name = job.task_name.as_deref().unwrap_or("delegate_gemini").trim();
 
         // GeminiClient now handles activity-based timeout internally.
         // No outer timeout wrapper needed - this prevents double-timeout issues.
         let started_at = chrono::Utc::now();
         let result = execute_gemini_call(
             db.clone(),
-            &job.prompt,
-            &job.task_name,
+            prompt,
+            task_name,
             job.model_override.as_deref(),
             job.cwd.as_deref(),
             timeout,
@@ -407,7 +409,7 @@ pub async fn run_delegate_gemini_worker(
 async fn claim_next_job(db: &Surreal<WsClient>) -> Result<Option<QueuedJobRow>> {
     let mut response = db
         .query(
-            "SELECT job_id, created_at FROM agent_jobs WHERE status = 'queued' AND prompt IS NOT NONE ORDER BY created_at ASC LIMIT 1;",
+            "SELECT job_id, created_at FROM agent_jobs WHERE status = 'queued' AND type::is::string(prompt) AND prompt != '' ORDER BY created_at ASC LIMIT 1;",
         )
         .await?;
     let rows: Vec<QueuedJobIdRow> = response.take(0)?;
@@ -417,7 +419,7 @@ async fn claim_next_job(db: &Surreal<WsClient>) -> Result<Option<QueuedJobRow>> 
 
     let mut response = db
         .query(
-            "UPDATE agent_jobs SET status = 'running', started_at = time::now() WHERE job_id = $job_id AND status = 'queued' AND prompt IS NOT NONE RETURN job_id, prompt, task_name, model_override, cwd, timeout_ms;",
+            "UPDATE agent_jobs SET status = 'running', started_at = time::now() WHERE job_id = $job_id AND status = 'queued' AND type::is::string(prompt) AND prompt != '' RETURN job_id, prompt, task_name, model_override, cwd, timeout_ms;",
         )
         .bind(("job_id", row.job_id.clone()))
         .await?;

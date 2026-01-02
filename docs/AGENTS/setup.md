@@ -3,7 +3,7 @@
 - Build: `cargo build --release`
 - Format: `cargo fmt --all`
 - Lint: `cargo clippy --workspace --all-targets -- -D warnings`
-- Tests: `cargo test --workspace --all-features` (plus `./tests/test_mcp_comprehensive.sh` when applicable)
+- Tests: `cargo test --workspace --all-features` (plus `./tests/test_mcp_comprehensive.sh` when applicable). Use `cargo run --bin test_gemini` or `cargo run --bin simple_db_test` for specific component verification.
 - Run stdio: `./target/release/surreal-mind`
 - Run HTTP: `SURR_TRANSPORT=http SURR_BEARER_TOKEN=$(cat ~/.surr_token) SURR_HTTP_BIND=127.0.0.1:8787 ./target/release/surreal-mind`
 - Env templates: see `Docs/AGENTS/connections.md` for transport, `Docs/AGENTS/arch.md` for embeddings defaults. Keep `~/.surr_token` present for HTTP.
