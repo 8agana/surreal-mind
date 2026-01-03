@@ -3,6 +3,7 @@ id: doc-1
 title: Implementation Steps - smtop admin-ops revamp
 type: other
 created_date: '2026-01-03 02:15'
+updated_date: '2026-01-03 02:28'
 ---
 # Implementation Steps - smtop admin-ops revamp
 
@@ -165,3 +166,24 @@ If interactive prompts are too heavy, keep LIMIT/BATCH env-driven and just displ
 - Implement step 9 (logging command results to `combined_log_tail`) by default for better integration with existing logs.
 - Add a loading indicator (e.g., spinner) in the Ops panel when a command is running to improve UX.
 - For the build+restart action, add a confirmation prompt if `ops_auto_restart` is off to prevent accidental restarts.
+
+## Decisions (Answers to Appended Questions/Suggestions)
+
+### Answers
+- TUI framework: `ratatui` + `crossterm` (already used in `src/bin/smtop.rs`).
+- Command execution runtime: use standard library threads + channels (no new async runtime).
+- Health checks: call `scripts/sm_health.sh` and display its output; only fall back to in-process HTTP if script is missing.
+- Error display: prefix output lines with `[err]`, set a colored status line (running/success/fail), and append a one-line summary to `combined_log_tail`.
+- LIMIT/BATCH input: no interactive prompt; rely on env vars and display current values.
+- Dependencies: reuse existing crates (no new deps); `reqwest::blocking` is already in use for HTTP if needed.
+- Default command path: prefer release binaries (`target/release/*`) and fall back to `cargo run --bin ...` if missing.
+
+### Suggestions Disposition
+- Use `VecDeque` for bounded output tail: YES.
+- Color styling for ops/runner: YES.
+- Scrollable command runner: OPTIONAL (only if time allows; separate scroll state).
+- Inherit env vars for child processes: YES (consider `RUST_BACKTRACE=1`).
+- Hotkey to clear ops output: YES (e.g., `x`).
+- Log op results to `combined_log_tail`: YES (default).
+- Loading indicator/spinner while running: YES (simple tick-based spinner).
+- Build+restart confirmation when auto-restart off: NO; instead provide a separate restart hotkey when auto-restart is disabled.
