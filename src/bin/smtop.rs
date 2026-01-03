@@ -229,7 +229,7 @@ fn ui(f: &mut Frame, s: &Status) {
             Constraint::Length(6),
             Constraint::Length(6),
             Constraint::Min(4),
-            Constraint::Length(3),
+            Constraint::Length(4),
         ])
         .split(f.area());
 
@@ -489,17 +489,14 @@ fn ui(f: &mut Frame, s: &Status) {
         .wrap(Wrap { trim: true });
     f.render_widget(logs_p, chunks[4]);
 
-    let help = Paragraph::new(vec![
-        Line::raw("Keys: q/Esc quit • r restart • f/g cloudflared • y/Y/u copy • a auth • s log filter • e end • b beginning • t detail"),
-        Line::raw(" • ops: k/G/i/h/j/m/n • toggles: A/B/D • x clear ops"),
-        Line::raw(format!("Auth mode: {}", if s.use_header_auth { "Authorization header" } else { "query token" })),
-        Line::raw(if s.show_detail {
-            "Detail mode: ON".to_string()
-        } else {
-            "Detail mode: OFF".to_string()
-        }),
-    ])
-    .block(Block::default().borders(Borders::ALL).title("Help"));
+    let help_text = format!(
+        "Keys: q/Esc quit • r restart • f/g cloudflared • y/Y/u copy • a auth • s log filter • e end • b beginning • t detail\n • ops: k/G/i/h/j/m/n • toggles: A/B/D • x clear ops\nAuth: {} • Detail: {}",
+        if s.use_header_auth { "header" } else { "query" },
+        if s.show_detail { "ON" } else { "OFF" }
+    );
+    let help = Paragraph::new(help_text)
+        .block(Block::default().borders(Borders::ALL).title("Help"))
+        .wrap(Wrap { trim: true });
     f.render_widget(help, chunks[5]);
 }
 
