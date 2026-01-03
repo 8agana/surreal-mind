@@ -70,3 +70,4 @@ SELECT status, count() AS count FROM agent_jobs GROUP BY status;
 SELECT id, job_id, status, task_name, created_at FROM agent_jobs WHERE status = 'running';
 DELETE agent_jobs:32hl9pqsjqbx689d9m4z; DELETE agent_jobs:e4g29x6mshsreq50hlvs; DELETE agent_jobs:otvi281th9c7mqe9neww; DELETE agent_jobs:rlrurrbm3cm13e421jid; DELETE agent_jobs:ulhnkobril7q6cdruo8f;
 SELECT status, count() AS count FROM agent_jobs GROUP BY status;
+SELECT * FROM curiosity;
