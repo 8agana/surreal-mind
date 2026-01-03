@@ -26,6 +26,12 @@ pub struct DelegateGeminiParams {
     /// Timeout in milliseconds (overrides GEMINI_TIMEOUT_MS env var)
     #[serde(default)]
     pub timeout_ms: Option<u64>,
+    /// Per-tool timeout in milliseconds (overrides GEMINI_TOOL_TIMEOUT_MS env var)
+    #[serde(default)]
+    pub tool_timeout_ms: Option<u64>,
+    /// Expose streaming events in response
+    #[serde(default)]
+    pub expose_stream: bool,
     /// Fire and forget mode - spawn async background task
     #[serde(default)]
     pub fire_and_forget: bool,
@@ -90,6 +96,12 @@ impl SurrealMindServer {
             .unwrap_or_else(|| default_model_name(Some(&self.config)));
         let cwd = normalize_optional_string(params.cwd);
         let timeout = params.timeout_ms.unwrap_or_else(gemini_timeout_ms);
+        let _tool_timeout = params.tool_timeout_ms.unwrap_or_else(|| {
+            std::env::var("GEMINI_TOOL_TIMEOUT_MS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(300_000) // 5 minutes default
+        });
         let fire_and_forget = params.fire_and_forget;
 
         if fire_and_forget {
@@ -108,6 +120,8 @@ impl SurrealMindServer {
                 model_override.clone(),
                 cwd.clone(),
                 timeout,
+                params.tool_timeout_ms,
+                params.expose_stream,
             )
             .await?;
 
@@ -126,8 +140,15 @@ impl SurrealMindServer {
                     GeminiClient::with_timeout_ms(default_model_name(Some(&self.config)), timeout)
                 }
             };
+            // Apply tool timeout if specified
+            if let Some(tool_timeout) = params.tool_timeout_ms {
+                gemini = gemini.with_tool_timeout_ms(tool_timeout);
+            }
             if let Some(ref dir) = cwd {
                 gemini = gemini.with_cwd(dir);
+            }
+            if params.expose_stream {
+                gemini = gemini.with_expose_stream(true);
             }
             let agent = PersistedAgent::new(
                 gemini,
@@ -226,12 +247,15 @@ async fn create_job_record(
     model_override: Option<String>,
     cwd: Option<String>,
     timeout_ms: u64,
+    tool_timeout_ms: Option<u64>,
+    expose_stream: bool,
 ) -> Result<()> {
     // Convert Option<String> to JSON values that SurrealDB can handle
     let model_override_json: Value = model_override.map(Value::String).unwrap_or(Value::Null);
     let cwd_json: Value = cwd.map(Value::String).unwrap_or(Value::Null);
+    let tool_timeout_json: Value = tool_timeout_ms.map(Value::from).unwrap_or(Value::Null);
 
-    let sql = "CREATE agent_jobs SET job_id = $job_id, tool_name = $tool_name, agent_source = $agent_source, agent_instance = $agent_instance, prompt = $prompt, task_name = $task_name, model_override = $model_override, cwd = $cwd, timeout_ms = $timeout_ms, status = $status, created_at = time::now();";
+    let sql = "CREATE agent_jobs SET job_id = $job_id, tool_name = $tool_name, agent_source = $agent_source, agent_instance = $agent_instance, prompt = $prompt, task_name = $task_name, model_override = $model_override, cwd = $cwd, timeout_ms = $timeout_ms, tool_timeout_ms = $tool_timeout_ms, expose_stream = $expose_stream, status = $status, created_at = time::now();";
     db.query(sql)
         .bind(("job_id", job_id))
         .bind(("tool_name", tool_name))
@@ -242,6 +266,8 @@ async fn create_job_record(
         .bind(("model_override", model_override_json))
         .bind(("cwd", cwd_json))
         .bind(("timeout_ms", timeout_ms as i64))
+        .bind(("tool_timeout_ms", tool_timeout_json))
+        .bind(("expose_stream", expose_stream))
         .bind(("status", JobStatus::Queued.as_str()))
         .await?;
     Ok(())
@@ -312,6 +338,8 @@ struct QueuedJobRow {
     model_override: Option<String>,
     cwd: Option<String>,
     timeout_ms: Option<i64>,
+    tool_timeout_ms: Option<i64>,
+    expose_stream: Option<bool>,
 }
 
 pub async fn run_delegate_gemini_worker(
@@ -347,6 +375,11 @@ pub async fn run_delegate_gemini_worker(
             .and_then(|v| u64::try_from(v).ok())
             .unwrap_or_else(gemini_timeout_ms);
 
+        let tool_timeout = job
+            .tool_timeout_ms
+            .and_then(|v| u64::try_from(v).ok())
+            .unwrap_or(300_000); // 5 minutes default
+
         let prompt = job.prompt.as_deref().unwrap_or("").trim();
         if prompt.is_empty() {
             let _ = fail_job(
@@ -365,11 +398,15 @@ pub async fn run_delegate_gemini_worker(
         let started_at = chrono::Utc::now();
         let result = execute_gemini_call(
             db.clone(),
-            prompt,
-            task_name,
-            job.model_override.as_deref(),
-            job.cwd.as_deref(),
-            timeout,
+            GeminiCallParams {
+                prompt,
+                task_name,
+                model_override: job.model_override.as_deref(),
+                cwd: job.cwd.as_deref(),
+                timeout,
+                tool_timeout,
+                expose_stream: job.expose_stream.unwrap_or(false),
+            },
         )
         .await;
 
@@ -427,29 +464,47 @@ async fn claim_next_job(db: &Surreal<WsClient>) -> Result<Option<QueuedJobRow>> 
     Ok(rows.into_iter().next())
 }
 
+#[derive(Debug)]
+struct GeminiCallParams<'a> {
+    prompt: &'a str,
+    task_name: &'a str,
+    model_override: Option<&'a str>,
+    cwd: Option<&'a str>,
+    timeout: u64,
+    tool_timeout: u64,
+    expose_stream: bool,
+}
+
 async fn execute_gemini_call(
     db: std::sync::Arc<Surreal<WsClient>>,
-    prompt: &str,
-    task_name: &str,
-    model_override: Option<&str>,
-    cwd: Option<&str>,
-    timeout: u64,
+    params: GeminiCallParams<'_>,
 ) -> std::result::Result<crate::clients::traits::AgentResponse, AgentError> {
-    let resume_session = fetch_last_session_id(db.as_ref(), task_name.to_string())
+    let resume_session = fetch_last_session_id(db.as_ref(), params.task_name.to_string())
         .await
         .map_err(|e| AgentError::CliError(format!("Failed to fetch session: {}", e)))?;
 
     let config = crate::config::Config::load().ok();
-    let model = model_override
+    let model = params
+        .model_override
         .map(|s| s.to_string())
         .unwrap_or_else(|| default_model_name(config.as_ref()));
 
-    let mut gemini = GeminiClient::with_timeout_ms(model.clone(), timeout);
-    if let Some(dir) = cwd {
+    let mut gemini = GeminiClient::with_timeout_ms(model.clone(), params.timeout);
+    gemini = gemini.with_tool_timeout_ms(params.tool_timeout);
+    if let Some(dir) = params.cwd {
         gemini = gemini.with_cwd(dir);
     }
+    if params.expose_stream {
+        gemini = gemini.with_expose_stream(true);
+    }
 
-    let agent = PersistedAgent::new(gemini, db.clone(), "gemini", model, task_name.to_string());
+    let agent = PersistedAgent::new(
+        gemini,
+        db.clone(),
+        "gemini",
+        model,
+        params.task_name.to_string(),
+    );
 
-    agent.call(prompt, resume_session.as_deref()).await
+    agent.call(params.prompt, resume_session.as_deref()).await
 }

@@ -8,11 +8,24 @@
 ## [Unreleased]
 
 ### Added
+- (2026-01-02) **Streaming JSON Support for Gemini CLI**: Enhanced `delegate_gemini` tool with real-time streaming JSON event parsing for precise monitoring and hang detection. The implementation uses Gemini CLI's `--output-format stream-json` flag to receive newline-delimited JSON events (init, tool_use, tool_result, content, error, end) during execution, enabling granular tracking of tool execution and content generation.
+
+- (2026-01-02) **Dual Timeout System**: Implemented sophisticated timeout management with two independent mechanisms:
+  - **Inactivity Timeout**: Monitors overall output inactivity (default 120s, configurable via `GEMINI_TIMEOUT_MS`)
+  - **Per-Tool Timeout**: Tracks individual tool execution times (default 300s, configurable via `GEMINI_TOOL_TIMEOUT_MS`)
+  - The system can distinguish between "thinking" (active tools) and "hanging" (stuck tools) states
+
+- (2026-01-02) **Stream Event Exposure**: Added optional `expose_stream` parameter to `delegate_gemini` tool that, when enabled, returns the complete sequence of streaming events in the response. This provides full visibility into the execution process for debugging and monitoring purposes.
+
 - (2026-01-01) kg_populate run successful: 904 thoughts processed (Session 3) + 36 more (Session 4) = 940 total, 97.8%+ success rate. Knowledge graph extraction working: 660+ entities, 799+ edges, 1290+ observations, 259+ boundaries created. Shell aliases added: `kgpop` (kg_populate runner), `kgembed` (re-embedding workflow).
 - (2025-12-20) Implemented `memories_populate` tool: Processes unextracted thoughts via Gemini CLI to populate knowledge graph, with session persistence, auto-approval, and batch tracking. Includes schema updates, session management, and integration with existing KG tables.
 - (2025-12-19) Added `curiosity_add`, `curiosity_get`, `curiosity_search` tools for lightweight note-taking with semantic search.
 
 ### Fixed
+- (2026-01-02) **Gemini CLI Monitoring**: Completely revamped timeout and hang detection logic using streaming JSON events instead of fragile heuristics. The new approach provides real-time visibility into tool execution and can precisely identify which specific tool/subtask is hanging, eliminating false timeouts during legitimate network waits.
+
+- (2026-01-02) **Timeout Configuration**: Added proper environment variable support for both inactivity timeout (`GEMINI_TIMEOUT_MS`) and per-tool timeout (`GEMINI_TOOL_TIMEOUT_MS`) with sensible defaults (120s and 300s respectively).
+
 - (2026-01-02) `delegate_gemini` worker now skips legacy queued jobs with missing prompt/task_name by filtering for non-empty string prompts and tolerating optional fields during claim/exec.
 - (2026-01-02) `check_embedding_dims` deserialization corrected to avoid false startup warnings when embedding dimensions are consistent.
 - (2025-12-26) Refactored `memories_populate` update logic to use native `db.update().merge()` SDK method instead of raw SQL queries. This definitively resolves record ID binding issues (UUID vs String) that were causing silent update failures.
@@ -25,6 +38,10 @@
 - (2025-12-19) Fixed `recency_days` parameter in search tools - was being ignored, now properly filters by date.
 
 ### Changed
+- (2026-01-02) **Gemini CLI Integration**: Changed default output format from regular JSON to streaming JSON (`--output-format stream-json`) for real-time monitoring capabilities. This is a backward-compatible change that enhances functionality without breaking existing usage.
+
+- (2026-01-02) **Agent Response Structure**: Extended `AgentResponse` struct to optionally include streaming events when `expose_stream` is enabled. The new `stream_events` field is conditionally serialized to maintain backward compatibility.
+
 - (2025-12-23) Database migration: Updated 552 thoughts from `extracted_to_kg = NONE` to `extracted_to_kg = false` to make them eligible for memories_populate processing.
 
 ### Known Issues

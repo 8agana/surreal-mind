@@ -7,6 +7,8 @@ pub struct AgentResponse {
     pub session_id: String,
     pub response: String,
     pub exchange_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_events: Option<Vec<crate::clients::gemini::GeminiStreamEvent>>,
 }
 
 #[derive(Debug, Error)]
