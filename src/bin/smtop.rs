@@ -82,6 +82,7 @@ struct Status {
     ops_dry_run: bool,
     ops_batch_size: usize,
     ops_limit: Option<usize>,
+    ops_spinner_frame: usize,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -104,40 +105,40 @@ fn main() -> anyhow::Result<()> {
         }
 
         // Poll for ops events
-        let events: Vec<_> = if let Some(rx) = &ops_rx {
-            let mut e = vec![];
+        if let Some(rx) = &ops_rx {
+            let mut done = false;
             while let Ok(event) = rx.try_recv() {
-                e.push(event);
+                match event {
+                    OpsEvent::Line(line) => {
+                        if status.ops_output_tail.len() >= status.ops_output_limit {
+                            status.ops_output_tail.pop_front();
+                        }
+                        status.ops_output_tail.push_back(line);
+                    }
+                    OpsEvent::Done { exit, duration_ms } => {
+                        status.ops_running = false;
+                        status.ops_last_status = Some(exit);
+                        status.ops_last_duration_ms = Some(duration_ms);
+                        status.ops_last_started_at = None;
+                        done = true;
+                        let summary = format!(
+                            "[ops] {}: {} in {:.1}s",
+                            status.ops_last_cmd.as_deref().unwrap_or("?"),
+                            if exit == 0 { "success" } else { "fail" },
+                            duration_ms as f64 / 1000.0
+                        );
+                        status.combined_log_tail.push(summary);
+                        if status.combined_log_tail.len() > status.log_tail_limit {
+                            let _ = status.combined_log_tail.drain(0..1);
+                        }
+                    }
+                }
             }
-            e
-        } else {
-            vec![]
-        };
-        for event in events {
-            match event {
-                OpsEvent::Line(line) => {
-                    if status.ops_output_tail.len() >= status.ops_output_limit {
-                        status.ops_output_tail.pop_front();
-                    }
-                    status.ops_output_tail.push_back(line);
-                }
-                OpsEvent::Done { exit, duration_ms } => {
-                    status.ops_running = false;
-                    status.ops_last_status = Some(exit);
-                    status.ops_last_duration_ms = Some(duration_ms);
-                    status.ops_last_started_at = None;
-                    ops_rx = None;
-                    let summary = format!(
-                        "[ops] {}: {} in {:.1}s",
-                        status.ops_last_cmd.as_deref().unwrap_or("?"),
-                        if exit == 0 { "success" } else { "fail" },
-                        duration_ms as f64 / 1000.0
-                    );
-                    status.combined_log_tail.push(summary);
-                    if status.combined_log_tail.len() > status.log_tail_limit {
-                        let _ = status.combined_log_tail.drain(0..1);
-                    }
-                }
+            if done {
+                ops_rx = None;
+            }
+            if status.ops_running {
+                status.ops_spinner_frame = (status.ops_spinner_frame + 1) % 4;
             }
         }
 
@@ -324,10 +325,14 @@ fn ui(f: &mut Frame, s: &Status) {
         .style(Style::default().fg(Color::Green));
     f.render_widget(spark, inner[1]);
 
-    // Row 2: Sessions and DB
+    // Row 2: Sessions, DB, and Ops
     let row2 = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .constraints([
+            Constraint::Percentage(30),
+            Constraint::Percentage(30),
+            Constraint::Percentage(40),
+        ])
         .split(chunks[2]);
 
     let sessions_text = Paragraph::new(vec![
@@ -367,20 +372,25 @@ fn ui(f: &mut Frame, s: &Status) {
     .block(Block::default().borders(Borders::ALL).title("SurrealDB"));
     f.render_widget(db_text, row2[1]);
 
-    // Ops panel
+    let spinner = if s.ops_running {
+        ["|", "/", "-", "\\"][s.ops_spinner_frame % 4]
+    } else {
+        " "
+    };
     let ops_lines = vec![
         Line::raw(format!(
-            "k: kg_populate (batch={}, dry_run={})",
+            "k: kg_populate{} (batch={}, dry={})",
+            spinner,
             s.ops_batch_size,
             on_off(s.ops_dry_run)
         )),
         Line::raw(format!(
-            "G: kg_embed (limit={:?}, dry_run={})",
+            "G: kg_embed (limit={:?}, dry={})",
             s.ops_limit,
             on_off(s.ops_dry_run)
         )),
         Line::raw(format!(
-            "i: reembed_kg (limit={:?}, dry_run={})",
+            "i: reembed_kg (limit={:?}, dry={})",
             s.ops_limit,
             on_off(s.ops_dry_run)
         )),
@@ -394,7 +404,7 @@ fn ui(f: &mut Frame, s: &Status) {
     ];
     let ops_p =
         Paragraph::new(ops_lines).block(Block::default().borders(Borders::ALL).title("Ops"));
-    f.render_widget(ops_p, chunks[2]);
+    f.render_widget(ops_p, row2[2]);
 
     // Command Runner pane
     let last_cmd = s.ops_last_cmd.as_deref().unwrap_or("none");
@@ -417,9 +427,19 @@ fn ui(f: &mut Frame, s: &Status) {
         .rev()
         .map(Line::raw)
         .collect();
+    let status_color = if s.ops_running {
+        Color::Yellow
+    } else if let Some(st) = s.ops_last_status {
+        if st == 0 { Color::Green } else { Color::Red }
+    } else {
+        Color::White
+    };
     let runner_lines = vec![
         Line::raw(format!("Last cmd: {}", last_cmd)),
-        Line::raw(format!("Status: {}", status_str)),
+        Line::from(vec![
+            Span::raw("Status: "),
+            Span::styled(status_str, Style::default().fg(status_color)),
+        ]),
         Line::raw(format!("Duration: {}", duration_str)),
     ];
     let mut all_lines = runner_lines;
@@ -519,13 +539,20 @@ fn gather_status(prev: Option<&Status>) -> Status {
         ops_output_tail: prev
             .map(|p| p.ops_output_tail.iter().cloned().collect())
             .unwrap_or_default(),
-        ops_output_limit: prev.map(|p| p.ops_output_limit).unwrap_or(200),
+        ops_output_limit: std::env::var("SMTOP_OPS_TAIL")
+            .unwrap_or_else(|_| "200".to_string())
+            .parse()
+            .unwrap_or(200),
         ops_running: prev.map(|p| p.ops_running).unwrap_or(false),
         ops_auto_restart: prev.map(|p| p.ops_auto_restart).unwrap_or(true),
         ops_use_release_bins: prev.map(|p| p.ops_use_release_bins).unwrap_or(true),
         ops_dry_run: prev.map(|p| p.ops_dry_run).unwrap_or(false),
-        ops_batch_size: prev.map(|p| p.ops_batch_size).unwrap_or(5),
-        ops_limit: prev.and_then(|p| p.ops_limit),
+        ops_batch_size: std::env::var("KG_POPULATE_BATCH_SIZE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(5),
+        ops_limit: std::env::var("LIMIT").ok().and_then(|s| s.parse().ok()),
+        ops_spinner_frame: prev.map(|p| p.ops_spinner_frame).unwrap_or(0),
         ..Default::default()
     };
 
@@ -914,103 +941,96 @@ fn trigger_ops(
     status.ops_last_cmd = Some(cmd_str);
     status.ops_last_started_at = Some(Instant::now());
     status.ops_running = true;
+    status.ops_spinner_frame = 0; // reset spinner
     let (tx, rx) = mpsc::channel();
     *ops_rx = Some(rx);
-    match action {
-        OpsAction::KgPopulate => {
-            let cmd = if status.ops_use_release_bins {
-                "target/release/kg_populate".to_string()
-            } else {
-                "cargo".to_string()
-            };
-            let args: Vec<String> = if status.ops_use_release_bins {
-                vec![]
-            } else {
-                vec![
-                    "run".to_string(),
-                    "--bin".to_string(),
-                    "kg_populate".to_string(),
-                ]
-            };
-            env_vars.push((
-                "KG_POPULATE_BATCH_SIZE".to_string(),
-                status.ops_batch_size.to_string(),
-            ));
-            run_command_async(cmd, args, cwd, env_vars, tx);
-        }
-        OpsAction::KgEmbed => {
-            let cmd = if status.ops_use_release_bins {
-                "target/release/kg_embed".to_string()
-            } else {
-                "cargo".to_string()
-            };
-            let args: Vec<String> = if status.ops_use_release_bins {
-                vec![]
-            } else {
-                vec![
-                    "run".to_string(),
-                    "--bin".to_string(),
-                    "kg_embed".to_string(),
-                ]
-            };
-            if let Some(limit) = status.ops_limit {
-                env_vars.push(("LIMIT".to_string(), limit.to_string()));
-            }
-            run_command_async(cmd, args, cwd, env_vars, tx);
-        }
-        OpsAction::ReembedKg => {
-            let cmd = if status.ops_use_release_bins {
-                "target/release/reembed_kg".to_string()
-            } else {
-                "cargo".to_string()
-            };
-            let args: Vec<String> = if status.ops_use_release_bins {
-                vec![]
-            } else {
-                vec![
-                    "run".to_string(),
-                    "--bin".to_string(),
-                    "reembed_kg".to_string(),
-                ]
-            };
-            if let Some(limit) = status.ops_limit {
-                env_vars.push(("LIMIT".to_string(), limit.to_string()));
-            }
-            run_command_async(cmd, args, cwd, env_vars, tx);
-        }
+
+    let mut env_vars_clone = env_vars.clone();
+    env_vars_clone.push(("RUST_BACKTRACE".to_string(), "1".to_string())); // inherit
+
+    let bin = match action {
+        OpsAction::KgPopulate => "kg_populate",
+        OpsAction::KgEmbed => "kg_embed",
+        OpsAction::ReembedKg => "reembed_kg",
         OpsAction::HealthCheck => {
-            let cmd = "sh".to_string();
-            let args = vec!["scripts/sm_health.sh".to_string()];
-            run_command_async(cmd, args, cwd, env_vars, tx);
+            // special case
+            run_command_async(
+                "sh".to_string(),
+                vec!["scripts/sm_health.sh".to_string()],
+                cwd,
+                env_vars_clone,
+                tx,
+            );
+            return;
         }
         OpsAction::BuildRestart => {
-            let cmd = "sh".to_string();
+            // special case
             let cmd_str = if status.ops_auto_restart {
                 "cargo build --release --bin surreal-mind && launchctl kickstart -k gui/$(id -u)/dev.legacymind.surreal-mind".to_string()
             } else {
                 "cargo build --release --bin surreal-mind".to_string()
             };
-            let args = vec!["-c".to_string(), cmd_str];
-            run_command_async(cmd, args, cwd, env_vars, tx);
+            run_command_async(
+                "sh".to_string(),
+                vec!["-c".to_string(), cmd_str],
+                cwd,
+                env_vars_clone,
+                tx,
+            );
+            return;
         }
         OpsAction::Fmt => {
-            let cmd = "cargo".to_string();
-            let args = vec!["fmt".to_string(), "--all".to_string()];
-            run_command_async(cmd, args, cwd, env_vars, tx);
+            run_command_async(
+                "cargo".to_string(),
+                vec!["fmt".to_string(), "--all".to_string()],
+                cwd,
+                env_vars_clone,
+                tx,
+            );
+            return;
         }
         OpsAction::Clippy => {
-            let cmd = "cargo".to_string();
-            let args = vec![
-                "clippy".to_string(),
-                "--workspace".to_string(),
-                "--all-targets".to_string(),
-                "--".to_string(),
-                "-D".to_string(),
-                "warnings".to_string(),
-            ];
-            run_command_async(cmd, args, cwd, env_vars, tx);
+            run_command_async(
+                "cargo".to_string(),
+                vec![
+                    "clippy".to_string(),
+                    "--workspace".to_string(),
+                    "--all-targets".to_string(),
+                    "--".to_string(),
+                    "-D".to_string(),
+                    "warnings".to_string(),
+                ],
+                cwd,
+                env_vars_clone,
+                tx,
+            );
+            return;
+        }
+    };
+
+    let release_path = format!("target/release/{}", bin);
+    let (cmd, args) = if std::fs::metadata(&release_path).is_ok() {
+        (release_path, vec![])
+    } else {
+        (
+            "cargo".to_string(),
+            vec!["run".to_string(), "--bin".to_string(), bin.to_string()],
+        )
+    };
+
+    if matches!(action, OpsAction::KgPopulate) {
+        env_vars_clone.push((
+            "KG_POPULATE_BATCH_SIZE".to_string(),
+            status.ops_batch_size.to_string(),
+        ));
+    }
+    if matches!(action, OpsAction::KgEmbed | OpsAction::ReembedKg) {
+        if let Some(limit) = status.ops_limit {
+            env_vars_clone.push(("LIMIT".to_string(), limit.to_string()));
         }
     }
+
+    run_command_async(cmd, args, cwd, env_vars_clone, tx);
 }
 
 fn copy_to_clipboard(clip: &str) -> anyhow::Result<()> {

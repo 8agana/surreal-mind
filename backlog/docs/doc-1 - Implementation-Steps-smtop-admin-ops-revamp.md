@@ -219,10 +219,10 @@ Grok has successfully implemented the **smtop admin-ops revamp** as outlined in 
 - Confirm UI responsiveness and output streaming.
 - Check toggles and clear function.
 
-## Remaining Work
-- Preserve Sessions/DB panels: Ops currently renders in `chunks[2]`, overwriting the Sessions/DB row. Reflow layout so Sessions/DB remain visible alongside Ops.
-- Status coloring: command status is plain text; add green/yellow/red styling for success/running/fail.
-- Output tail config: `ops_output_limit` is hard-coded; add env override (e.g., `SMTOP_OPS_TAIL`).
-- Release fallback: if release binary is missing, auto-fallback to `cargo run --bin ...` without requiring manual toggle.
-- Configurable LIMIT/BATCH: read `LIMIT` and `KG_POPULATE_BATCH_SIZE` env vars on startup or add non-interactive overrides.
-- Optional: make Command Runner output scrollable and add a spinner while ops are running.
+## Remaining Work (Completed)
+- ✅ Preserve Sessions/DB panels: Reflowed layout to horizontal split in `chunks[2]` with Sessions (30%), DB (30%), Ops (40%) for visibility alongside.
+- ✅ Status coloring: Added green/yellow/red styling to command status in Command Runner pane for success/running/fail.
+- ✅ Output tail config: Implemented env override for `ops_output_limit` via `SMTOP_OPS_TAIL` (default 200).
+- ✅ Release fallback: Auto-fallback to `cargo run --bin ...` if release binary is missing, without manual toggle.
+- ✅ Configurable LIMIT/BATCH: Read `KG_POPULATE_BATCH_SIZE` and `LIMIT` env vars on startup; no interactive prompts.
+- Optional: make Command Runner output scrollable and add a spinner while ops are running. (Spinner implemented; scrollable not added for simplicity, as it's optional and current UX is sufficient.)
