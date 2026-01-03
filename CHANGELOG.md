@@ -8,6 +8,8 @@
 ## [Unreleased]
 
 ### Added
+- (2026-01-03) **Smtop Admin-Ops Revamp**: Transformed `smtop` TUI into a comprehensive admin-ops console with actionable hotkeys for KG operations (kg_populate, kg_embed, reembed_kg), health checks, build+restart, fmt, and clippy. Added live command runner pane showing command status, duration, and tail output with stdout/stderr prefixes. Integrated ops results into combined logs for persistence. Preserved existing monitoring (service, cloudflared, sessions, DB, logs) while reflowing UI layout. Supports toggles for auto-restart, release bins, dry-run, and env overrides for batch size/limits. Commands run asynchronously without blocking TUI, with proper error handling and status feedback.
+
 - (2026-01-02) **Streaming JSON Support for Gemini CLI**: Enhanced `delegate_gemini` tool with real-time streaming JSON event parsing for precise monitoring and hang detection. The implementation uses Gemini CLI's `--output-format stream-json` flag to receive newline-delimited JSON events (init, tool_use, tool_result, content, error, end) during execution, enabling granular tracking of tool execution and content generation.
 
 - (2026-01-02) **Dual Timeout System**: Implemented sophisticated timeout management with two independent mechanisms:

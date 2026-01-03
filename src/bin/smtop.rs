@@ -1,6 +1,8 @@
+use std::collections::VecDeque;
 use std::fs;
 use std::io;
 use std::process::Command;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use ratatui::crossterm::{event, execute, terminal};
@@ -18,7 +20,24 @@ enum LogFilter {
     Cloudflared,
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
+enum OpsAction {
+    KgPopulate,
+    KgEmbed,
+    ReembedKg,
+    HealthCheck,
+    BuildRestart,
+    Fmt,
+    Clippy,
+}
+
+#[derive(Clone)]
+enum OpsEvent {
+    Line(String),
+    Done { exit: i32, duration_ms: u128 },
+}
+
+#[derive(Default)]
 struct Status {
     service_running: bool,
     cloudflared_running: bool,
@@ -51,6 +70,18 @@ struct Status {
     stdio_sessions: Option<usize>,
     tunnel_url: Option<String>,
     show_detail: bool,
+    ops_last_cmd: Option<String>,
+    ops_last_status: Option<i32>,
+    ops_last_duration_ms: Option<u128>,
+    ops_last_started_at: Option<Instant>,
+    ops_output_tail: VecDeque<String>,
+    ops_output_limit: usize,
+    ops_running: bool,
+    ops_auto_restart: bool,
+    ops_use_release_bins: bool,
+    ops_dry_run: bool,
+    ops_batch_size: usize,
+    ops_limit: Option<usize>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -62,6 +93,7 @@ fn main() -> anyhow::Result<()> {
 
     let mut status = gather_status(None);
     let mut last_refresh = Instant::now();
+    let mut ops_rx: Option<mpsc::Receiver<OpsEvent>> = None;
 
     loop {
         terminal.draw(|f| ui(f, &status))?;
@@ -69,6 +101,44 @@ fn main() -> anyhow::Result<()> {
         if last_refresh.elapsed() >= Duration::from_secs(2) {
             status = gather_status(Some(&status));
             last_refresh = Instant::now();
+        }
+
+        // Poll for ops events
+        let events: Vec<_> = if let Some(rx) = &ops_rx {
+            let mut e = vec![];
+            while let Ok(event) = rx.try_recv() {
+                e.push(event);
+            }
+            e
+        } else {
+            vec![]
+        };
+        for event in events {
+            match event {
+                OpsEvent::Line(line) => {
+                    if status.ops_output_tail.len() >= status.ops_output_limit {
+                        status.ops_output_tail.pop_front();
+                    }
+                    status.ops_output_tail.push_back(line);
+                }
+                OpsEvent::Done { exit, duration_ms } => {
+                    status.ops_running = false;
+                    status.ops_last_status = Some(exit);
+                    status.ops_last_duration_ms = Some(duration_ms);
+                    status.ops_last_started_at = None;
+                    ops_rx = None;
+                    let summary = format!(
+                        "[ops] {}: {} in {:.1}s",
+                        status.ops_last_cmd.as_deref().unwrap_or("?"),
+                        if exit == 0 { "success" } else { "fail" },
+                        duration_ms as f64 / 1000.0
+                    );
+                    status.combined_log_tail.push(summary);
+                    if status.combined_log_tail.len() > status.log_tail_limit {
+                        let _ = status.combined_log_tail.drain(0..1);
+                    }
+                }
+            }
         }
 
         if event::poll(Duration::from_millis(200))?
@@ -118,6 +188,25 @@ fn main() -> anyhow::Result<()> {
                 KeyCode::Char('t') => {
                     status.show_detail = !status.show_detail;
                 }
+                KeyCode::Char('k') => trigger_ops(&mut status, OpsAction::KgPopulate, &mut ops_rx),
+                KeyCode::Char('G') => trigger_ops(&mut status, OpsAction::KgEmbed, &mut ops_rx),
+                KeyCode::Char('i') => trigger_ops(&mut status, OpsAction::ReembedKg, &mut ops_rx),
+                KeyCode::Char('h') => trigger_ops(&mut status, OpsAction::HealthCheck, &mut ops_rx),
+                KeyCode::Char('j') => {
+                    trigger_ops(&mut status, OpsAction::BuildRestart, &mut ops_rx)
+                }
+                KeyCode::Char('m') => trigger_ops(&mut status, OpsAction::Fmt, &mut ops_rx),
+                KeyCode::Char('n') => trigger_ops(&mut status, OpsAction::Clippy, &mut ops_rx),
+                KeyCode::Char('A') => status.ops_auto_restart = !status.ops_auto_restart,
+                KeyCode::Char('B') => status.ops_use_release_bins = !status.ops_use_release_bins,
+                KeyCode::Char('D') => status.ops_dry_run = !status.ops_dry_run,
+                KeyCode::Char('x') => {
+                    status.ops_output_tail.clear();
+                    status.ops_last_cmd = None;
+                    status.ops_last_status = None;
+                    status.ops_last_duration_ms = None;
+                    status.ops_running = false;
+                }
                 KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => break,
                 _ => {}
             }
@@ -137,7 +226,8 @@ fn ui(f: &mut Frame, s: &Status) {
             Constraint::Length(3),
             Constraint::Length(12),
             Constraint::Length(6),
-            Constraint::Min(8),
+            Constraint::Length(6),
+            Constraint::Min(4),
             Constraint::Length(3),
         ])
         .split(f.area());
@@ -277,11 +367,76 @@ fn ui(f: &mut Frame, s: &Status) {
     .block(Block::default().borders(Borders::ALL).title("SurrealDB"));
     f.render_widget(db_text, row2[1]);
 
+    // Ops panel
+    let ops_lines = vec![
+        Line::raw(format!(
+            "k: kg_populate (batch={}, dry_run={})",
+            s.ops_batch_size,
+            on_off(s.ops_dry_run)
+        )),
+        Line::raw(format!(
+            "G: kg_embed (limit={:?}, dry_run={})",
+            s.ops_limit,
+            on_off(s.ops_dry_run)
+        )),
+        Line::raw(format!(
+            "i: reembed_kg (limit={:?}, dry_run={})",
+            s.ops_limit,
+            on_off(s.ops_dry_run)
+        )),
+        Line::raw("h: health check".to_string()),
+        Line::raw(format!(
+            "j: build+restart (auto={})",
+            on_off(s.ops_auto_restart)
+        )),
+        Line::raw("m: fmt".to_string()),
+        Line::raw("n: clippy".to_string()),
+    ];
+    let ops_p =
+        Paragraph::new(ops_lines).block(Block::default().borders(Borders::ALL).title("Ops"));
+    f.render_widget(ops_p, chunks[2]);
+
+    // Command Runner pane
+    let last_cmd = s.ops_last_cmd.as_deref().unwrap_or("none");
+    let status_str = if s.ops_running {
+        "running"
+    } else if let Some(st) = s.ops_last_status {
+        if st == 0 { "success" } else { "fail" }
+    } else {
+        "none"
+    };
+    let duration_str = s
+        .ops_last_duration_ms
+        .map(|d| format!("{:.1}s", d as f64 / 1000.0))
+        .unwrap_or_default();
+    let output_lines: Vec<Line> = s
+        .ops_output_tail
+        .iter()
+        .rev()
+        .take(10)
+        .rev()
+        .map(Line::raw)
+        .collect();
+    let runner_lines = vec![
+        Line::raw(format!("Last cmd: {}", last_cmd)),
+        Line::raw(format!("Status: {}", status_str)),
+        Line::raw(format!("Duration: {}", duration_str)),
+    ];
+    let mut all_lines = runner_lines;
+    all_lines.push(Line::raw("Output:"));
+    all_lines.extend(output_lines);
+    let runner_p = Paragraph::new(all_lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Command Runner"),
+    );
+    f.render_widget(runner_p, chunks[3]);
+
     // Logs pane
     let logs_lines: Vec<Line> = if s.combined_log_tail.is_empty() {
         vec![Line::raw("(no logs yet)")]
     } else {
-        let h = chunks[3].height as usize;
+        let h = chunks[4].height as usize;
         let filtered_logs: Vec<_> = s
             .combined_log_tail
             .iter()
@@ -312,19 +467,20 @@ fn ui(f: &mut Frame, s: &Status) {
             }
         )))
         .wrap(Wrap { trim: true });
-    f.render_widget(logs_p, chunks[3]);
+    f.render_widget(logs_p, chunks[4]);
 
     let help = Paragraph::new(vec![
-        Line::raw("Keys: q/Esc quit • r restart server • f/g start/stop cloudflared • y/Y copy URL/token • u copy tunnel URL • a toggle auth header • s cycle log filter • e end • b beginning • t toggle detail"),
+        Line::raw("Keys: q/Esc quit • r restart • f/g cloudflared • y/Y/u copy • a auth • s log filter • e end • b beginning • t detail"),
+        Line::raw(" • ops: k/G/i/h/j/m/n • toggles: A/B/D • x clear ops"),
         Line::raw(format!("Auth mode: {}", if s.use_header_auth { "Authorization header" } else { "query token" })),
         Line::raw(if s.show_detail {
-            "Detail mode: ON (showing extended info)".to_string()
+            "Detail mode: ON".to_string()
         } else {
             "Detail mode: OFF".to_string()
         }),
     ])
     .block(Block::default().borders(Borders::ALL).title("Help"));
-    f.render_widget(help, chunks[4]);
+    f.render_widget(help, chunks[5]);
 }
 
 fn on_off(b: bool) -> String {
@@ -356,6 +512,20 @@ fn gather_status(prev: Option<&Status>) -> Status {
         use_header_auth: prev.map(|p| p.use_header_auth).unwrap_or(false),
         log_filter: prev.map(|p| p.log_filter.clone()).unwrap_or_default(),
         log_tail_limit: prev.map(|p| p.log_tail_limit).unwrap_or(400),
+        ops_last_cmd: prev.and_then(|p| p.ops_last_cmd.clone()),
+        ops_last_status: prev.and_then(|p| p.ops_last_status),
+        ops_last_duration_ms: prev.and_then(|p| p.ops_last_duration_ms),
+        ops_last_started_at: prev.and_then(|p| p.ops_last_started_at),
+        ops_output_tail: prev
+            .map(|p| p.ops_output_tail.iter().cloned().collect())
+            .unwrap_or_default(),
+        ops_output_limit: prev.map(|p| p.ops_output_limit).unwrap_or(200),
+        ops_running: prev.map(|p| p.ops_running).unwrap_or(false),
+        ops_auto_restart: prev.map(|p| p.ops_auto_restart).unwrap_or(true),
+        ops_use_release_bins: prev.map(|p| p.ops_use_release_bins).unwrap_or(true),
+        ops_dry_run: prev.map(|p| p.ops_dry_run).unwrap_or(false),
+        ops_batch_size: prev.map(|p| p.ops_batch_size).unwrap_or(5),
+        ops_limit: prev.and_then(|p| p.ops_limit),
         ..Default::default()
     };
 
@@ -632,13 +802,224 @@ fn uid() -> String {
         .to_string()
 }
 
-fn copy_to_clipboard(text: &str) -> anyhow::Result<()> {
+fn run_command_async(
+    cmd: String,
+    args: Vec<String>,
+    cwd: String,
+    env_vars: Vec<(String, String)>,
+    tx: mpsc::Sender<OpsEvent>,
+) {
+    std::thread::spawn(move || {
+        let mut child = match Command::new(&cmd)
+            .args(&args)
+            .current_dir(&cwd)
+            .envs(env_vars.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = tx.send(OpsEvent::Line(format!("[err] failed to spawn: {}", e)));
+                let _ = tx.send(OpsEvent::Done {
+                    exit: -1,
+                    duration_ms: 0,
+                });
+                return;
+            }
+        };
+
+        let start = Instant::now();
+
+        let tx_stdout = tx.clone();
+        let tx_stderr = tx.clone();
+
+        if let Some(stdout) = child.stdout.take() {
+            std::thread::spawn(move || {
+                use std::io::BufRead;
+                let reader = std::io::BufReader::new(stdout);
+                for line in reader.lines() {
+                    match line {
+                        Ok(l) => {
+                            let _ = tx_stdout.send(OpsEvent::Line(format!("[out] {}", l)));
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+        }
+
+        if let Some(stderr) = child.stderr.take() {
+            std::thread::spawn(move || {
+                use std::io::BufRead;
+                let reader = std::io::BufReader::new(stderr);
+                for line in reader.lines() {
+                    match line {
+                        Ok(l) => {
+                            let _ = tx_stderr.send(OpsEvent::Line(format!("[err] {}", l)));
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+        }
+
+        let status = child.wait();
+        let duration_ms = start.elapsed().as_millis();
+        let exit = match status {
+            Ok(s) => s.code().unwrap_or(-1),
+            Err(_) => -1,
+        };
+        let _ = tx.send(OpsEvent::Done { exit, duration_ms });
+    });
+}
+
+fn trigger_ops(
+    status: &mut Status,
+    action: OpsAction,
+    ops_rx: &mut Option<mpsc::Receiver<OpsEvent>>,
+) {
+    if status.ops_running {
+        return;
+    }
+    let cwd = "/Users/samuelatagana/Projects/LegacyMind/surreal-mind".to_string();
+    let mut env_vars = Vec::new();
+    if status.ops_dry_run {
+        env_vars.push(("DRY_RUN".to_string(), "1".to_string()));
+    }
+    let cmd_str = match &action {
+        OpsAction::KgPopulate => format!(
+            "kg_populate batch={} dry_run={}",
+            status.ops_batch_size,
+            if status.ops_dry_run { "on" } else { "off" }
+        ),
+        OpsAction::KgEmbed => format!(
+            "kg_embed limit={:?} dry_run={}",
+            status.ops_limit,
+            if status.ops_dry_run { "on" } else { "off" }
+        ),
+        OpsAction::ReembedKg => format!(
+            "reembed_kg limit={:?} dry_run={}",
+            status.ops_limit,
+            if status.ops_dry_run { "on" } else { "off" }
+        ),
+        OpsAction::HealthCheck => "health check".to_string(),
+        OpsAction::BuildRestart => format!(
+            "build+restart auto={}",
+            if status.ops_auto_restart { "on" } else { "off" }
+        ),
+        OpsAction::Fmt => "fmt".to_string(),
+        OpsAction::Clippy => "clippy".to_string(),
+    };
+    status.ops_last_cmd = Some(cmd_str);
+    status.ops_last_started_at = Some(Instant::now());
+    status.ops_running = true;
+    let (tx, rx) = mpsc::channel();
+    *ops_rx = Some(rx);
+    match action {
+        OpsAction::KgPopulate => {
+            let cmd = if status.ops_use_release_bins {
+                "target/release/kg_populate".to_string()
+            } else {
+                "cargo".to_string()
+            };
+            let args: Vec<String> = if status.ops_use_release_bins {
+                vec![]
+            } else {
+                vec![
+                    "run".to_string(),
+                    "--bin".to_string(),
+                    "kg_populate".to_string(),
+                ]
+            };
+            env_vars.push((
+                "KG_POPULATE_BATCH_SIZE".to_string(),
+                status.ops_batch_size.to_string(),
+            ));
+            run_command_async(cmd, args, cwd, env_vars, tx);
+        }
+        OpsAction::KgEmbed => {
+            let cmd = if status.ops_use_release_bins {
+                "target/release/kg_embed".to_string()
+            } else {
+                "cargo".to_string()
+            };
+            let args: Vec<String> = if status.ops_use_release_bins {
+                vec![]
+            } else {
+                vec![
+                    "run".to_string(),
+                    "--bin".to_string(),
+                    "kg_embed".to_string(),
+                ]
+            };
+            if let Some(limit) = status.ops_limit {
+                env_vars.push(("LIMIT".to_string(), limit.to_string()));
+            }
+            run_command_async(cmd, args, cwd, env_vars, tx);
+        }
+        OpsAction::ReembedKg => {
+            let cmd = if status.ops_use_release_bins {
+                "target/release/reembed_kg".to_string()
+            } else {
+                "cargo".to_string()
+            };
+            let args: Vec<String> = if status.ops_use_release_bins {
+                vec![]
+            } else {
+                vec![
+                    "run".to_string(),
+                    "--bin".to_string(),
+                    "reembed_kg".to_string(),
+                ]
+            };
+            if let Some(limit) = status.ops_limit {
+                env_vars.push(("LIMIT".to_string(), limit.to_string()));
+            }
+            run_command_async(cmd, args, cwd, env_vars, tx);
+        }
+        OpsAction::HealthCheck => {
+            let cmd = "sh".to_string();
+            let args = vec!["scripts/sm_health.sh".to_string()];
+            run_command_async(cmd, args, cwd, env_vars, tx);
+        }
+        OpsAction::BuildRestart => {
+            let cmd = "sh".to_string();
+            let cmd_str = if status.ops_auto_restart {
+                "cargo build --release --bin surreal-mind && launchctl kickstart -k gui/$(id -u)/dev.legacymind.surreal-mind".to_string()
+            } else {
+                "cargo build --release --bin surreal-mind".to_string()
+            };
+            let args = vec!["-c".to_string(), cmd_str];
+            run_command_async(cmd, args, cwd, env_vars, tx);
+        }
+        OpsAction::Fmt => {
+            let cmd = "cargo".to_string();
+            let args = vec!["fmt".to_string(), "--all".to_string()];
+            run_command_async(cmd, args, cwd, env_vars, tx);
+        }
+        OpsAction::Clippy => {
+            let cmd = "cargo".to_string();
+            let args = vec![
+                "clippy".to_string(),
+                "--workspace".to_string(),
+                "--all-targets".to_string(),
+                "--".to_string(),
+                "-D".to_string(),
+                "warnings".to_string(),
+            ];
+            run_command_async(cmd, args, cwd, env_vars, tx);
+        }
+    }
+}
+
+fn copy_to_clipboard(clip: &str) -> anyhow::Result<()> {
     let mut child = Command::new("pbcopy")
         .stdin(std::process::Stdio::piped())
         .spawn()?;
     if let Some(mut stdin) = child.stdin.take() {
         use std::io::Write;
-        write!(stdin, "{text}")?;
+        write!(stdin, "{}", clip)?;
     }
     let _ = child.wait()?;
     Ok(())
