@@ -1,0 +1,1108 @@
+{
+  "summary": {
+    "duplicate_groups": 17,
+    "forced_canonical_groups": 4,
+    "delete_candidates": 44
+  },
+  "delete_list": [
+    {
+      "id": "0e6ww7gyy2ap575yc157",
+      "name": "These",
+      "norm": "these",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "181v3lz6itqpj3bnnok2",
+      "name": "Private",
+      "norm": "private",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "1cfno7f7ctspm1ijr0xz",
+      "name": "Let's",
+      "norm": "let",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 1
+    },
+    {
+      "id": "1xpbz06yvo6z2auyo0fg",
+      "name": "Test Entity A",
+      "norm": "test entity a",
+      "reason": "test_type",
+      "degree": 0,
+      "data_keys": 3
+    },
+    {
+      "id": "1y9avsnmi9qfm0s5gw41",
+      "name": "database",
+      "norm": "database",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "2btmj6wkqxli3jfa9c1g",
+      "name": "Ultra",
+      "norm": "ultra",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "2zosak162923w7vesf3l",
+      "name": "ci",
+      "norm": "ci",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "40otqx8sd2xk26oabs4u",
+      "name": "RAM",
+      "norm": "ram",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "43vaj0ow4yut3inh01s6",
+      "name": "ci",
+      "norm": "ci",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "99zy9o2i7ha6v6i8tra2",
+      "name": "Internal",
+      "norm": "internal",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "9f36h8y0fdvsikgwasou",
+      "name": "Internal",
+      "norm": "internal",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "9jkg15spqtgvmkjoes9u",
+      "name": "ci",
+      "norm": "ci",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "am0ei36t8feyus7kh2ba",
+      "name": "Private",
+      "norm": "private",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "bd71b933azv8g743vwxg",
+      "name": "Private",
+      "norm": "private",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 1
+    },
+    {
+      "id": "cc484meoq9tur71vjpry",
+      "name": "TestEntity",
+      "norm": "testentity",
+      "reason": "test_type",
+      "degree": 0,
+      "data_keys": 3
+    },
+    {
+      "id": "dgjwalqczj95f6hpxaob",
+      "name": "These",
+      "norm": "these",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "drnp8x5xv049y4gqqkmz",
+      "name": "Internal",
+      "norm": "internal",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "elld326i7sgnkzw8epyt",
+      "name": "Ultra",
+      "norm": "ultra",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "ftjy7bq9csc4url2ubcx",
+      "name": "test_entity",
+      "norm": "test entity",
+      "reason": "test_type",
+      "degree": 0,
+      "data_keys": 3
+    },
+    {
+      "id": "jzyrtfroovb0h27lj5x1",
+      "name": "ci",
+      "norm": "ci",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 1
+    },
+    {
+      "id": "k5vadqzz6kci1b5q8j8g",
+      "name": "RAM",
+      "norm": "ram",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "kekkweegiiu9mdqjrk4w",
+      "name": "RAM",
+      "norm": "ram",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 1
+    },
+    {
+      "id": "ksaaf3h5szu96k4mrnsr",
+      "name": "Private",
+      "norm": "private",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "m3ufl8yap3w1mjr2q9d6",
+      "name": "Creative",
+      "norm": "creative",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "mmhkbam74gxvn251jvom",
+      "name": "Ultra",
+      "norm": "ultra",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 1
+    },
+    {
+      "id": "msus1hqj36l1xwaslz3x",
+      "name": "test_session_2",
+      "norm": "test session 2",
+      "reason": "test_type",
+      "degree": 0,
+      "data_keys": 3
+    },
+    {
+      "id": "nmk1j6uw9g94sz1xevdw",
+      "name": "ci",
+      "norm": "ci",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "nmoiiyg6hzdi1fpj8p2p",
+      "name": "Creative",
+      "norm": "creative",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "nz5xyrf5ozd657suost3",
+      "name": "Let",
+      "norm": "let",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 1
+    },
+    {
+      "id": "olbxrutqi8e12hp7mjfu",
+      "name": "database",
+      "norm": "database",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "qp25g6cpn4oxj04mik3p",
+      "name": "Creative",
+      "norm": "creative",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 1
+    },
+    {
+      "id": "qs488jw0qb39rzi7d9c9",
+      "name": "Creative",
+      "norm": "creative",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "sfevravrk1s9r19wcfa9",
+      "name": "database",
+      "norm": "database",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 1
+    },
+    {
+      "id": "sxtc27dxaxjv3ohbo5es",
+      "name": "ci",
+      "norm": "ci",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "t5yuaxk7a17ik9nbj5g6",
+      "name": "RAM",
+      "norm": "ram",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "t9of5ipamk9jlzhpgvwy",
+      "name": "Test Entity B",
+      "norm": "test entity b",
+      "reason": "test_type",
+      "degree": 0,
+      "data_keys": 3
+    },
+    {
+      "id": "tkxi99lbk114e124p9ia",
+      "name": "Let's",
+      "norm": "let",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "ul741qt2ypjqicifbnir",
+      "name": "database",
+      "norm": "database",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "w1j67vydf4fk9cu01jss",
+      "name": "RAM",
+      "norm": "ram",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "y943dlfncrb6h7efm7x1",
+      "name": "ci",
+      "norm": "ci",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "ydsj4k6ru7s51w2iu43w",
+      "name": "test_entity",
+      "norm": "test entity",
+      "reason": "test_type",
+      "degree": 0,
+      "data_keys": 2
+    },
+    {
+      "id": "z1eqfw9ph4au7xgggsmu",
+      "name": "Ultra",
+      "norm": "ultra",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "zm43tx4a1lwlr49b99tw",
+      "name": "These",
+      "norm": "these",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    },
+    {
+      "id": "zue4aegh9xeeeghp0lj1",
+      "name": "RAM",
+      "norm": "ram",
+      "reason": "junk_name",
+      "degree": 0,
+      "data_keys": 0
+    }
+  ],
+  "merge_groups": [
+    {
+      "normalized_name": "surreal",
+      "entity_type": "unknown",
+      "winner": {
+        "id": "7u9b0zklp3t89387hh9i",
+        "name": "surreal",
+        "data_keys": 0,
+        "degree": 0,
+        "has_embedding": true
+      },
+      "losers": [
+        {
+          "id": "938rdd2ts52fpblkqol9",
+          "name": "surreal",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "gru8klsqero89yrpmi7m",
+          "name": "surreal",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "hd9abc4s1hqcsbheawwz",
+          "name": "surreal",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "qa55l4xyu7o96q38bsoj",
+          "name": "surreal",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "qwfk1pfvmow4z4pjxcyu",
+          "name": "surreal",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "uqygwcyjc50df7ajkcac",
+          "name": "surreal",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        }
+      ]
+    },
+    {
+      "normalized_name": "inner voice",
+      "entity_type": "unknown",
+      "winner": {
+        "id": "7tpwfcrf2rgk3xnez8ji",
+        "name": "inner_voice",
+        "data_keys": 0,
+        "degree": 0,
+        "has_embedding": true
+      },
+      "losers": [
+        {
+          "id": "9qlmyeigwubz1yinv97k",
+          "name": "inner_voice",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "esgetntbhhmj80fx3ayc",
+          "name": "inner_voice",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "l7slzni0denaligz9obk",
+          "name": "inner_voice",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "tge7awey2etextvcjw6d",
+          "name": "inner_voice",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "w5pq8q24o0l8s27osbjr",
+          "name": "inner_voice",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "y0e01jag880vaa8rsv9x",
+          "name": "inner_voice",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        }
+      ]
+    },
+    {
+      "normalized_name": "sam",
+      "entity_type": "concept",
+      "winner": {
+        "id": "9g7cqjfev3tnp3r8eomf",
+        "name": "Sam",
+        "data_keys": 1,
+        "degree": 3,
+        "has_embedding": true
+      },
+      "losers": [
+        {
+          "id": "0ja76jcvmay8chabvmnx",
+          "name": "Sam's",
+          "data_keys": 1,
+          "degree": 0,
+          "has_embedding": true
+        }
+      ]
+    },
+    {
+      "normalized_name": "junie",
+      "entity_type": "unknown",
+      "winner": {
+        "id": "et7fcnqw1rpey2orosqk",
+        "name": "Junie",
+        "data_keys": 0,
+        "degree": 0,
+        "has_embedding": true
+      },
+      "losers": [
+        {
+          "id": "hsa6qn5sg0fyimh73sdi",
+          "name": "Junie",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "m66lns4ah9fj3ayqnore",
+          "name": "Junie",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "yf3ojd7beqge3brkmzvq",
+          "name": "Junie's",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "ylj0hjnlm4awx3xict1e",
+          "name": "Junie's",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        }
+      ]
+    },
+    {
+      "normalized_name": "sam",
+      "entity_type": "unknown",
+      "winner": {
+        "id": "3ljkcf3hqiwrqreev1mt",
+        "name": "Sam's",
+        "data_keys": 0,
+        "degree": 0,
+        "has_embedding": true
+      },
+      "losers": [
+        {
+          "id": "a8f6udqhc0vn2nu3c55m",
+          "name": "Sam",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "gjlnoxfbq3ei5xgmmg4m",
+          "name": "Sam's",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "ibdkgfbrdwcbr6ybwvp5",
+          "name": "Sam",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "jo2iy3ni117l2qn7z1kq",
+          "name": "Sam",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "pv5ga5sew9ah7n1bq9n3",
+          "name": "Sam's",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "sgw0r9089sg9ghbj3z0u",
+          "name": "Sam",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "t2zz2jdjstqd6fxv396e",
+          "name": "Sam",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "vj4n1myxlvnxkv2t7zti",
+          "name": "Sam",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        }
+      ]
+    },
+    {
+      "normalized_name": "crystal",
+      "entity_type": "unknown",
+      "winner": {
+        "id": "6q16fdkqc9t9lfk5gg72",
+        "name": "Crystal",
+        "data_keys": 0,
+        "degree": 0,
+        "has_embedding": true
+      },
+      "losers": [
+        {
+          "id": "lsf436o1mkzll3p29eob",
+          "name": "Crystal",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "q33qpn9wt325dbhar7h5",
+          "name": "Crystal",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        }
+      ]
+    },
+    {
+      "normalized_name": "federation",
+      "entity_type": "unknown",
+      "winner": {
+        "id": "1iypmrse1tu7pj1u8vm4",
+        "name": "Federation",
+        "data_keys": 0,
+        "degree": 0,
+        "has_embedding": true
+      },
+      "losers": [
+        {
+          "id": "42dwi70vy9dtu84apa4r",
+          "name": "Federation",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "fp4lo3tn9fytoclf95o4",
+          "name": "Federation",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        }
+      ]
+    },
+    {
+      "normalized_name": "cloud",
+      "entity_type": "unknown",
+      "winner": {
+        "id": "3frk6wfmt6xkh5ayfnou",
+        "name": "Cloud",
+        "data_keys": 0,
+        "degree": 0,
+        "has_embedding": true
+      },
+      "losers": [
+        {
+          "id": "m2t1xfe449zef9g0bb5o",
+          "name": "Cloud",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "zne57edn2gly8dwa5nh8",
+          "name": "Cloud",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        }
+      ]
+    },
+    {
+      "normalized_name": "chrome",
+      "entity_type": "unknown",
+      "winner": {
+        "id": "48s7qrb9nroz4dkqg2vi",
+        "name": "chrome",
+        "data_keys": 0,
+        "degree": 0,
+        "has_embedding": true
+      },
+      "losers": [
+        {
+          "id": "ef2og5gnxdp6civm8gga",
+          "name": "chrome",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "mrzr990n6e00lx67ohay",
+          "name": "chrome",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "mxvulcxe7e33vyqovxbw",
+          "name": "Chrome",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "pf5e3y49s27fns02dy8t",
+          "name": "Chrome",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "qtb6rtk6hm8yhd9v6vm0",
+          "name": "Chrome",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        }
+      ]
+    },
+    {
+      "normalized_name": "rerun",
+      "entity_type": "unknown",
+      "winner": {
+        "id": "7zjoq98kpgelauq1v58o",
+        "name": "Rerun",
+        "data_keys": 0,
+        "degree": 0,
+        "has_embedding": true
+      },
+      "losers": [
+        {
+          "id": "y3udyyg48ba92zpvogwa",
+          "name": "Rerun",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "yydsnzpu20fvc8b2zo1p",
+          "name": "Rerun",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        }
+      ]
+    },
+    {
+      "normalized_name": "codex",
+      "entity_type": "unknown",
+      "winner": {
+        "id": "l8yqc64mh6r7e6j9774j",
+        "name": "Codex",
+        "data_keys": 0,
+        "degree": 0,
+        "has_embedding": true
+      },
+      "losers": [
+        {
+          "id": "n8fptzkvmibm2bk3ctl9",
+          "name": "Codex",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "zumvfl1oxcswfsdkcqf9",
+          "name": "Codex",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        }
+      ]
+    },
+    {
+      "normalized_name": "firefox",
+      "entity_type": "unknown",
+      "winner": {
+        "id": "5y1d1b47z55304386ejm",
+        "name": "Firefox",
+        "data_keys": 0,
+        "degree": 0,
+        "has_embedding": true
+      },
+      "losers": [
+        {
+          "id": "6hppr9uzu4loop2poz6s",
+          "name": "firefox",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "6jwpsswvf7ip7zk8s6ao",
+          "name": "Firefox",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "acxxtni7g0gynnoj5pu1",
+          "name": "firefox",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "jyff85bhzh0syxgy81fi",
+          "name": "Firefox",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "wpx1qg25ma5ckys660dc",
+          "name": "firefox",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        }
+      ]
+    },
+    {
+      "normalized_name": "opus",
+      "entity_type": "unknown",
+      "winner": {
+        "id": "1l55n50ksxyz1208z24z",
+        "name": "Opus",
+        "data_keys": 0,
+        "degree": 0,
+        "has_embedding": true
+      },
+      "losers": [
+        {
+          "id": "5l4ylc4ibr7zj9vabice",
+          "name": "Opus",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "uc1s3i2gkggofas78uhy",
+          "name": "Opus",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        }
+      ]
+    },
+    {
+      "normalized_name": "zed",
+      "entity_type": "unknown",
+      "winner": {
+        "id": "fywx7ehltevxg2ldsmba",
+        "name": "Zed's",
+        "data_keys": 0,
+        "degree": 0,
+        "has_embedding": true
+      },
+      "losers": [
+        {
+          "id": "pnv02xkz3v9m043vvlo8",
+          "name": "Zed's",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "uyfehxvrvrg7h0x7jgzd",
+          "name": "Zed's",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        }
+      ]
+    },
+    {
+      "normalized_name": "grok",
+      "entity_type": "unknown",
+      "winner": {
+        "id": "2cvytjpf2gn8hs61agbx",
+        "name": "Grok",
+        "data_keys": 0,
+        "degree": 0,
+        "has_embedding": true
+      },
+      "losers": [
+        {
+          "id": "ryp2h6hx33xi0f0lo8tt",
+          "name": "Grok",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        }
+      ]
+    },
+    {
+      "normalized_name": "adobe",
+      "entity_type": "unknown",
+      "winner": {
+        "id": "6uwhqx0bi5bkz1q69og5",
+        "name": "Adobe",
+        "data_keys": 0,
+        "degree": 0,
+        "has_embedding": true
+      },
+      "losers": [
+        {
+          "id": "ct3hw0i2ppb6dkc478xd",
+          "name": "Adobe",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "mdi1lqykybl69wd6n3uu",
+          "name": "Adobe",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        }
+      ]
+    },
+    {
+      "normalized_name": "sonnet",
+      "entity_type": "unknown",
+      "winner": {
+        "id": "1jbj3ieamlwd8brums7d",
+        "name": "Sonnet",
+        "data_keys": 0,
+        "degree": 0,
+        "has_embedding": true
+      },
+      "losers": [
+        {
+          "id": "h8soojk57tozmcwaztc6",
+          "name": "Sonnet",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        },
+        {
+          "id": "kk3saywd57zz9kvg2cum",
+          "name": "Sonnet",
+          "data_keys": 0,
+          "degree": 0,
+          "has_embedding": true
+        }
+      ]
+    }
+  ],
+  "forced_canonical_groups": [
+    {
+      "canonical_norm": "firefox",
+      "canonical_id": "5y1d1b47z55304386ejm",
+      "members": [
+        {
+          "id": "5y1d1b47z55304386ejm",
+          "name": "Firefox"
+        },
+        {
+          "id": "6hppr9uzu4loop2poz6s",
+          "name": "firefox"
+        },
+        {
+          "id": "6jwpsswvf7ip7zk8s6ao",
+          "name": "Firefox"
+        },
+        {
+          "id": "acxxtni7g0gynnoj5pu1",
+          "name": "firefox"
+        },
+        {
+          "id": "jyff85bhzh0syxgy81fi",
+          "name": "Firefox"
+        },
+        {
+          "id": "wpx1qg25ma5ckys660dc",
+          "name": "firefox"
+        },
+        {
+          "id": "zw95xqs1ypuxsbjumx8t",
+          "name": "Firefox"
+        }
+      ]
+    },
+    {
+      "canonical_norm": "sam atagana",
+      "canonical_id": "7y4siy38zv6gabl0n2gn",
+      "members": [
+        {
+          "id": "0ja76jcvmay8chabvmnx",
+          "name": "Sam's"
+        },
+        {
+          "id": "3ljkcf3hqiwrqreev1mt",
+          "name": "Sam's"
+        },
+        {
+          "id": "9g7cqjfev3tnp3r8eomf",
+          "name": "Sam"
+        },
+        {
+          "id": "a8f6udqhc0vn2nu3c55m",
+          "name": "Sam"
+        },
+        {
+          "id": "gjlnoxfbq3ei5xgmmg4m",
+          "name": "Sam's"
+        },
+        {
+          "id": "ibdkgfbrdwcbr6ybwvp5",
+          "name": "Sam"
+        },
+        {
+          "id": "jo2iy3ni117l2qn7z1kq",
+          "name": "Sam"
+        },
+        {
+          "id": "pv5ga5sew9ah7n1bq9n3",
+          "name": "Sam's"
+        },
+        {
+          "id": "sgw0r9089sg9ghbj3z0u",
+          "name": "Sam"
+        },
+        {
+          "id": "t2zz2jdjstqd6fxv396e",
+          "name": "Sam"
+        },
+        {
+          "id": "vj4n1myxlvnxkv2t7zti",
+          "name": "Sam"
+        }
+      ]
+    },
+    {
+      "canonical_norm": "federation",
+      "canonical_id": "1iypmrse1tu7pj1u8vm4",
+      "members": [
+        {
+          "id": "1iypmrse1tu7pj1u8vm4",
+          "name": "Federation"
+        },
+        {
+          "id": "42dwi70vy9dtu84apa4r",
+          "name": "Federation"
+        },
+        {
+          "id": "8ncqr67lvp55ghjekztf",
+          "name": "Federation"
+        },
+        {
+          "id": "8pieg8bls7i49cpon9zu",
+          "name": "Federation"
+        },
+        {
+          "id": "fp4lo3tn9fytoclf95o4",
+          "name": "Federation"
+        }
+      ]
+    },
+    {
+      "canonical_norm": "chrome",
+      "canonical_id": "3i4o0o4p6mj9hzdt3t4q",
+      "members": [
+        {
+          "id": "3i4o0o4p6mj9hzdt3t4q",
+          "name": "Chrome"
+        },
+        {
+          "id": "48s7qrb9nroz4dkqg2vi",
+          "name": "chrome"
+        },
+        {
+          "id": "ef2og5gnxdp6civm8gga",
+          "name": "chrome"
+        },
+        {
+          "id": "mrzr990n6e00lx67ohay",
+          "name": "chrome"
+        },
+        {
+          "id": "mxvulcxe7e33vyqovxbw",
+          "name": "Chrome"
+        },
+        {
+          "id": "pf5e3y49s27fns02dy8t",
+          "name": "Chrome"
+        },
+        {
+          "id": "qtb6rtk6hm8yhd9v6vm0",
+          "name": "Chrome"
+        }
+      ]
+    }
+  ]
+}
