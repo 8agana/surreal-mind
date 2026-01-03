@@ -40,6 +40,17 @@ pub enum GeminiStreamEvent {
     Content {
         text: String,
     },
+    Message {
+        role: String,
+        content: String,
+        #[serde(default)]
+        delta: bool,
+    },
+    Result {
+        status: String,
+        #[serde(default)]
+        stats: serde_json::Value,
+    },
     Error {
         message: String,
     },
@@ -49,18 +60,18 @@ pub enum GeminiStreamEvent {
 }
 
 /// Simple streaming JSON parser
-struct StreamJsonParser {
+pub struct StreamJsonParser {
     buffer: String,
 }
 
 impl StreamJsonParser {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             buffer: String::new(),
         }
     }
 
-    fn parse_chunk(&mut self, chunk: &str) -> Vec<GeminiStreamEvent> {
+    pub fn parse_chunk(&mut self, chunk: &str) -> Vec<GeminiStreamEvent> {
         self.buffer.push_str(chunk);
         let mut events = Vec::new();
 
@@ -68,10 +79,27 @@ impl StreamJsonParser {
         while let Some(pos) = self.buffer.find('\n') {
             let line = self.buffer.drain(..=pos).collect::<String>();
             let line = line.trim();
-            if !line.is_empty()
-                && let Ok(event) = serde_json::from_str::<GeminiStreamEvent>(line)
-            {
-                events.push(event);
+            
+            if line.is_empty() {
+                continue;
+            }
+            
+            // Strip optional "data:" prefix that some CLI tools add
+            let line = if let Some(stripped) = line.strip_prefix("data:") {
+                stripped.trim()
+            } else {
+                line
+            };
+            
+            // Try to parse as GeminiStreamEvent
+            match serde_json::from_str::<GeminiStreamEvent>(line) {
+                Ok(event) => {
+                    events.push(event);
+                }
+                Err(e) => {
+                    tracing::debug!("Failed to parse stream JSON line: {}", e);
+                    tracing::debug!("Problematic line: {}", line);
+                }
             }
         }
 
@@ -352,6 +380,26 @@ impl CognitiveAgent for GeminiClient {
                                             stream_events.push(event.clone());
                                         }
                                     }
+                                    GeminiStreamEvent::Message { role, content, delta } => {
+                                        // Only capture assistant messages, ignore user/system
+                                        if role == "assistant" {
+                                            if *delta {
+                                                content_buffer.push_str(content);
+                                            } else {
+                                                // Non-delta message: replace buffer
+                                                content_buffer = content.clone();
+                                            }
+                                            if self.expose_stream {
+                                                stream_events.push(event.clone());
+                                            }
+                                        }
+                                    }
+                                    GeminiStreamEvent::Result { status, .. } => {
+                                        if self.expose_stream {
+                                            stream_events.push(event.clone());
+                                        }
+                                        tracing::debug!("Gemini result status: {}", status);
+                                    }
                                     GeminiStreamEvent::Error { message, .. } => {
                                         if self.expose_stream {
                                             stream_events.push(event.clone());
@@ -488,6 +536,30 @@ impl CognitiveAgent for GeminiClient {
                 .unwrap_or_default()
         };
 
+        // Check if response is empty and provide debugging information
+        if response_text.trim().is_empty() {
+            let stdout_str = String::from_utf8_lossy(&stdout_buf);
+            let stderr_str = String::from_utf8_lossy(&stderr_buf);
+            
+            let stdout_snippet = if stdout_str.len() > 200 {
+                format!("{}...", &stdout_str[..200])
+            } else {
+                stdout_str.to_string()
+            };
+            
+            let stderr_snippet = if stderr_str.len() > 200 {
+                format!("{}...", &stderr_str[..200])
+            } else {
+                stderr_str.to_string()
+            };
+            
+            return Err(AgentError::CliError(format!(
+                "Empty Gemini response: no content captured. stdout: {}, stderr: {}",
+                stdout_snippet.trim(),
+                stderr_snippet.trim()
+            )));
+        }
+
         let cleaned = strip_ansi_codes(&response_text).trim().to_string();
 
         tracing::debug!(
@@ -599,4 +671,144 @@ fn truncate_chars(input: &str, max: usize) -> String {
         out.push(ch);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_stream_json_parser_legacy_content_events() {
+        let mut parser = StreamJsonParser::new();
+        
+        // Test legacy Content event
+        let chunk = r#"{"type":"content","text":"Hello world"}
+"#;
+        let events = parser.parse_chunk(chunk);
+        
+        assert_eq!(events.len(), 1);
+        if let GeminiStreamEvent::Content { text } = &events[0] {
+            assert_eq!(text, "Hello world");
+        } else {
+            panic!("Expected Content event");
+        }
+    }
+
+    #[test]
+    fn test_stream_json_parser_new_message_events() {
+        let mut parser = StreamJsonParser::new();
+        
+        // Test new Message event with delta
+        let chunk = r#"{"type":"message","role":"assistant","content":"Hello","delta":true}
+"#;
+        let events = parser.parse_chunk(chunk);
+        
+        assert_eq!(events.len(), 1);
+        if let GeminiStreamEvent::Message { role, content, delta } = &events[0] {
+            assert_eq!(role, "assistant");
+            assert_eq!(content, "Hello");
+            assert_eq!(*delta, true);
+        } else {
+            panic!("Expected Message event");
+        }
+    }
+
+    #[test]
+    fn test_stream_json_parser_mixed_events() {
+        let mut parser = StreamJsonParser::new();
+        
+        // Test mixed old and new event formats
+        let chunk = r#"{"type":"init","session_id":"test123","model":"gemini-pro"}
+{"type":"message","role":"assistant","content":"Response","delta":false}
+{"type":"result","status":"success"}
+{"type":"end","session_id":"test123"}
+"#;
+        
+        let events = parser.parse_chunk(chunk);
+        assert_eq!(events.len(), 4);
+        
+        // Verify each event type
+        if let GeminiStreamEvent::Init { session_id, model } = &events[0] {
+            assert_eq!(session_id, "test123");
+            assert_eq!(model, "gemini-pro");
+        } else {
+            panic!("Expected Init event");
+        }
+        
+        if let GeminiStreamEvent::Message { role, content, delta } = &events[1] {
+            assert_eq!(role, "assistant");
+            assert_eq!(content, "Response");
+            assert_eq!(*delta, false);
+        } else {
+            panic!("Expected Message event");
+        }
+        
+        if let GeminiStreamEvent::Result { status, .. } = &events[2] {
+            assert_eq!(status, "success");
+        } else {
+            panic!("Expected Result event");
+        }
+        
+        if let GeminiStreamEvent::End { session_id } = &events[3] {
+            assert_eq!(session_id, "test123");
+        } else {
+            panic!("Expected End event");
+        }
+    }
+
+    #[test]
+    fn test_stream_json_parser_data_prefix_stripping() {
+        let mut parser = StreamJsonParser::new();
+        
+        // Test "data:" prefix stripping
+        let chunk = r#"data: {"type":"message","role":"assistant","content":"Test"}
+"#;
+        let events = parser.parse_chunk(chunk);
+        
+        assert_eq!(events.len(), 1);
+        if let GeminiStreamEvent::Message { content, .. } = &events[0] {
+            assert_eq!(content, "Test");
+        } else {
+            panic!("Expected Message event after data: prefix");
+        }
+    }
+
+    #[test]
+    fn test_stream_json_parser_empty_lines() {
+        let mut parser = StreamJsonParser::new();
+        
+        // Test that empty lines are ignored
+        let chunk = r#"
+
+{"type":"content","text":"Valid"}
+
+"#;
+        let events = parser.parse_chunk(chunk);
+        
+        assert_eq!(events.len(), 1);
+        if let GeminiStreamEvent::Content { text } = &events[0] {
+            assert_eq!(text, "Valid");
+        } else {
+            panic!("Expected Content event");
+        }
+    }
+
+    #[test]
+    fn test_stream_json_parser_malformed_lines() {
+        let mut parser = StreamJsonParser::new();
+        
+        // Test that malformed JSON lines don't crash the parser
+        let chunk = r#"{"invalid":json
+{"type":"content","text":"Valid"}
+not json at all"#;
+        let events = parser.parse_chunk(chunk);
+        
+        // Should still parse the valid line
+        assert_eq!(events.len(), 1);
+        if let GeminiStreamEvent::Content { text } = &events[0] {
+            assert_eq!(text, "Valid");
+        } else {
+            panic!("Expected Content event despite malformed lines");
+        }
+    }
 }

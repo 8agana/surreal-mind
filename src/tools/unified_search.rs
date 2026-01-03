@@ -214,37 +214,37 @@ pub async fn unified_search_inner(
             sort_by_similarity(&mut scored_entities);
             scored_entities.truncate(top_k_mem);
             items.extend(scored_entities);
+        } else if let Some(ref nl) = name_like {
+            // Fallback to name pattern matching when no embedding available
+            let mut sql =
+                "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities WHERE name ~ $name"
+                    .to_string();
+            if params.chain_id.is_some() {
+                sql.push_str(" AND (data.source_thought_id IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid) OR data.staged_by_thought IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid))");
+            }
+            sql.push_str(&format!(" LIMIT {}", top_k_mem));
+            let mut query = server.db.query(sql).bind(("name", nl.clone()));
+            if let Some(ref cid) = params.chain_id {
+                query = query.bind(("cid", cid.clone()));
+            }
+            let rows: Vec<serde_json::Value> = query.await?.take(0)?;
+            items.extend(rows);
+        } else {
+            // Fallback to recent items when no query or embedding
+            let mut sql =
+                "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities".to_string();
+            if params.chain_id.is_some() {
+                sql.push_str(" WHERE (data.source_thought_id IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid) OR data.staged_by_thought IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid))");
+            }
+            sql.push_str(&format!(" ORDER BY created_at DESC LIMIT {}", top_k_mem));
+            let mut query = server.db.query(sql);
+            #[allow(unused_variables)]
+            if let Some(ref cid) = params.chain_id {
+                query = query.bind(("cid", cid.clone()));
+            }
+            let rows: Vec<serde_json::Value> = query.await?.take(0)?;
+            items.extend(rows);
         }
-    } else if let Some(ref nl) = name_like {
-        // Fallback to name pattern matching when no embedding available
-        let mut sql =
-            "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities WHERE name ~ $name"
-                .to_string();
-        if params.chain_id.is_some() {
-            sql.push_str(" AND (data.source_thought_id IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid) OR data.staged_by_thought IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid))");
-        }
-        sql.push_str(&format!(" LIMIT {}", top_k_mem));
-        let mut query = server.db.query(sql).bind(("name", nl.clone()));
-        if let Some(ref cid) = params.chain_id {
-            query = query.bind(("cid", cid.clone()));
-        }
-        let rows: Vec<serde_json::Value> = query.await?.take(0)?;
-        items.extend(rows);
-    } else {
-        // Fallback to recent items when no query or embedding
-        let mut sql =
-            "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities".to_string();
-        if params.chain_id.is_some() {
-            sql.push_str(" WHERE (data.source_thought_id IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid) OR data.staged_by_thought IN (SELECT meta::id(id) FROM thoughts WHERE chain_id = $cid))");
-        }
-        sql.push_str(&format!(" ORDER BY created_at DESC LIMIT {}", top_k_mem));
-        let mut query = server.db.query(sql);
-        #[allow(unused_variables)]
-        if let Some(ref cid) = params.chain_id {
-            query = query.bind(("cid", cid.clone()));
-        }
-        let rows: Vec<serde_json::Value> = query.await?.take(0)?;
-        items.extend(rows);
     }
     if target == "relationship" || target == "mixed" {
         let mut sql = "SELECT meta::id(id) as id,
