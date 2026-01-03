@@ -38,6 +38,8 @@
 - (2025-12-19) Fixed `recency_days` parameter in search tools - was being ignored, now properly filters by date.
 
 ### Changed
+- (2026-01-02) **Async-Only Execution**: Converted `delegate_gemini` tool to async-only execution model. Removed synchronous execution path and `fire_and_forget` parameter. All calls now queue background jobs and return job IDs for status tracking. This simplifies the architecture and ensures consistent behavior.
+
 - (2026-01-02) **Gemini CLI Integration**: Changed default output format from regular JSON to streaming JSON (`--output-format stream-json`) for real-time monitoring capabilities. This is a backward-compatible change that enhances functionality without breaking existing usage.
 
 - (2026-01-02) **Agent Response Structure**: Extended `AgentResponse` struct to optionally include streaming events when `expose_stream` is enabled. The new `stream_events` field is conditionally serialized to maintain backward compatibility.

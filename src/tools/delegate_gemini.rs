@@ -32,9 +32,6 @@ pub struct DelegateGeminiParams {
     /// Expose streaming events in response
     #[serde(default)]
     pub expose_stream: bool,
-    /// Fire and forget mode - spawn async background task
-    #[serde(default)]
-    pub fire_and_forget: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -102,73 +99,32 @@ impl SurrealMindServer {
                 .and_then(|v| v.parse::<u64>().ok())
                 .unwrap_or(300_000) // 5 minutes default
         });
-        let fire_and_forget = params.fire_and_forget;
 
-        if fire_and_forget {
-            // Async path: spawn background task
-            let job_id = uuid::Uuid::new_v4().to_string();
+        // Async-only: spawn background task
+        let job_id = uuid::Uuid::new_v4().to_string();
 
-            // Create job record
-            create_job_record(
-                self.db.as_ref(),
-                job_id.clone(),
-                "delegate_gemini".to_string(),
-                "gemini".to_string(),
-                model.clone(),
-                prompt.clone(),
-                task_name.clone(),
-                model_override.clone(),
-                cwd.clone(),
-                timeout,
-                params.tool_timeout_ms,
-                params.expose_stream,
-            )
-            .await?;
+        // Create job record
+        create_job_record(
+            self.db.as_ref(),
+            job_id.clone(),
+            "delegate_gemini".to_string(),
+            "gemini".to_string(),
+            model.clone(),
+            prompt.clone(),
+            task_name.clone(),
+            model_override.clone(),
+            cwd.clone(),
+            timeout,
+            params.tool_timeout_ms,
+            params.expose_stream,
+        )
+        .await?;
 
-            Ok(CallToolResult::structured(json!({
-                "status": "queued",
-                "job_id": job_id,
-                "message": "Job queued for background execution. Use agent_job_status to check progress."
-            })))
-        } else {
-            // Sync path: existing behavior
-            let resume_session = fetch_last_session_id(self.db.as_ref(), task_name.clone()).await?;
-
-            let mut gemini = match model_override {
-                Some(custom) => GeminiClient::with_timeout_ms(custom, timeout),
-                None => {
-                    GeminiClient::with_timeout_ms(default_model_name(Some(&self.config)), timeout)
-                }
-            };
-            // Apply tool timeout if specified
-            if let Some(tool_timeout) = params.tool_timeout_ms {
-                gemini = gemini.with_tool_timeout_ms(tool_timeout);
-            }
-            if let Some(ref dir) = cwd {
-                gemini = gemini.with_cwd(dir);
-            }
-            if params.expose_stream {
-                gemini = gemini.with_expose_stream(true);
-            }
-            let agent = PersistedAgent::new(
-                gemini,
-                self.db.clone(),
-                "gemini",
-                model.clone(),
-                task_name.clone(),
-            );
-
-            let response = agent
-                .call(&prompt, resume_session.as_deref())
-                .await
-                .map_err(map_agent_error)?;
-
-            Ok(CallToolResult::structured(json!({
-                "response": response.response,
-                "session_id": response.session_id,
-                "exchange_id": response.exchange_id
-            })))
-        }
+        Ok(CallToolResult::structured(json!({
+            "status": "queued",
+            "job_id": job_id,
+            "message": "Job queued for background execution. Use agent_job_status to check progress."
+        })))
     }
 }
 
@@ -210,27 +166,6 @@ async fn fetch_last_session_id(
     Ok(rows
         .first()
         .and_then(|row| row.last_agent_session_id.clone()))
-}
-
-fn map_agent_error(err: AgentError) -> SurrealMindError {
-    match err {
-        AgentError::Timeout { timeout_ms } => SurrealMindError::Timeout {
-            operation: "delegate_gemini".to_string(),
-            timeout_ms,
-        },
-        AgentError::CliError(message) => SurrealMindError::Internal {
-            message: format!("delegate_gemini failed: {}", message),
-        },
-        AgentError::ParseError(message) => SurrealMindError::Serialization {
-            message: format!("delegate_gemini parse error: {}", message),
-        },
-        AgentError::StdinError(message) => SurrealMindError::Internal {
-            message: format!("delegate_gemini stdin error: {}", message),
-        },
-        AgentError::NotFound => SurrealMindError::Internal {
-            message: "delegate_gemini failed: gemini cli not found".to_string(),
-        },
-    }
 }
 
 // Helper functions for async job management
