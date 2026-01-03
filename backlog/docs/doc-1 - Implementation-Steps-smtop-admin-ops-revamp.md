@@ -3,7 +3,7 @@ id: doc-1
 title: Implementation Steps - smtop admin-ops revamp
 type: other
 created_date: '2026-01-03 02:15'
-updated_date: '2026-01-03 02:28'
+updated_date: '2026-01-03 02:44'
 ---
 # Implementation Steps - smtop admin-ops revamp
 
@@ -219,4 +219,10 @@ Grok has successfully implemented the **smtop admin-ops revamp** as outlined in 
 - Confirm UI responsiveness and output streaming.
 - Check toggles and clear function.
 
-The implementation aligns with the project's rules, including async execution, ASCII strings, and no UI blocking. If issues arise during testing, let me know for refinements!
+## Remaining Work
+- Preserve Sessions/DB panels: Ops currently renders in `chunks[2]`, overwriting the Sessions/DB row. Reflow layout so Sessions/DB remain visible alongside Ops.
+- Status coloring: command status is plain text; add green/yellow/red styling for success/running/fail.
+- Output tail config: `ops_output_limit` is hard-coded; add env override (e.g., `SMTOP_OPS_TAIL`).
+- Release fallback: if release binary is missing, auto-fallback to `cargo run --bin ...` without requiring manual toggle.
+- Configurable LIMIT/BATCH: read `LIMIT` and `KG_POPULATE_BATCH_SIZE` env vars on startup or add non-interactive overrides.
+- Optional: make Command Runner output scrollable and add a spinner while ops are running.
