@@ -32,6 +32,9 @@ impl SurrealMindServer {
                     json!({"name": "curiosity_add", "one_liner": "Add a lightweight note to the curiosity table", "key_params": ["content", "tags", "agent"]}),
                     json!({"name": "curiosity_get", "one_liner": "Get recent curiosity entries", "key_params": ["limit", "since"]}),
                     json!({"name": "curiosity_search", "one_liner": "Search curiosity entries via embeddings", "key_params": ["query", "top_k", "recency_days"]}),
+                    json!({"name": "agent_job_status", "one_liner": "Get status of an async agent job", "key_params": ["job_id"]}),
+                    json!({"name": "list_agent_jobs", "one_liner": "List async agent jobs", "key_params": ["limit", "status_filter", "tool_name"]}),
+                    json!({"name": "cancel_agent_job", "one_liner": "Cancel a running or queued job", "key_params": ["job_id"]}),
                     json!({"name": "detailed_help", "one_liner": "Get help for a specific tool or list all tools", "key_params": ["tool", "format"]}),
                 ];
                 return Ok(CallToolResult::structured(json!({ "tools": tools })));
@@ -42,13 +45,14 @@ impl SurrealMindServer {
         let help = match tool {
             "legacymind_think" => json!({
                 "name": "legacymind_think",
-                "description": "Unified thinking tool that routes to appropriate mode based on triggers, hint, or heuristics. Persists thoughts with optional framework enhancement and memory injection.",
+                "description": "Unified thinking tool that routes to appropriate mode. Persists thoughts with optional memory injection. (Framework enhancement currently disabled).",
                 "arguments": {
                     "content": "string (required) — the thought text",
                     "hint": "string — optional explicit mode ('debug', 'build', 'plan', 'stuck', 'question', 'conclude')",
                     "injection_scale": "integer|string (0-3) — memory injection level (overrides mode default)",
                     "tags": "string[] — optional tags",
                     "significance": "number|string (0.0-1.0) — importance (overrides mode default)",
+                    "verbose_analysis": "boolean — (unused) previously for verbose framework output",
                     "session_id": "string — optional session identifier",
                     "chain_id": "string — optional chain identifier",
                     "previous_thought_id": "string — optional reference to previous thought",
@@ -60,12 +64,11 @@ impl SurrealMindServer {
                     "verify_top_k": "integer (1-500) — candidate pool size for KG search (default 100)",
                     "min_similarity": "number (0.0-1.0) — minimum similarity threshold (default 0.70)",
                     "evidence_limit": "integer (1-25) — max evidence items per bucket (default 10)",
-                    "contradiction_patterns": "string[] — optional custom patterns for contradiction detection (default: ['not', 'no', 'cannot', 'false', 'incorrect', 'fails', 'broken', 'doesn't', 'isn't', 'won't'])"
+                    "contradiction_patterns": "string[] — optional custom patterns for contradiction detection"
                 },
                 "returns": {
                     "thought_id": "string — the ID of the created thought",
-                    "memories_injected": "integer — count of memories injected (content is persisted to DB, not returned)",
-                    "framework_enhanced": "boolean — true if framework analysis was run and persisted (analysis is DB-only)",
+                    "memories_injected": "integer — count of memories injected",
                     "embedding_dim": "integer — dimension of the generated embedding",
                     "embedding_model": "string — model used for embedding",
                     "continuity": {
@@ -77,38 +80,30 @@ impl SurrealMindServer {
                         "confidence": "number? — clamped confidence value",
                         "links_resolved": "object? — details on how links were resolved"
                     },
-                    "verification": "object? — hypothesis verification result (only if needs_verification=true and hypothesis provided)"
+                    "verification": "object? — hypothesis verification result"
                 },
-                "hypothesis_verification": {
-                    "description": "Optional KG-based verification of a provided hypothesis. Embeds the hypothesis, searches similar KG entities/observations, classifies evidence as supporting/contradicting based on pattern matching, and computes a confidence score.",
-                    "example": {
-                        "input": {"hypothesis": "Rust is a memory-safe language", "needs_verification": true, "evidence_limit": 5},
-                        "output": {"verification": {"hypothesis": "Rust is a memory-safe language", "supporting": [{"table": "kg_entities", "id": "kg_entities:123", "text": "Rust prevents memory errors", "similarity": 0.85, "provenance": {"entity_type": "language"}}], "contradicting": [], "confidence_score": 1.0, "suggested_revision": null, "telemetry": {"embedding_dim": 1536, "provider": "openai", "k": 100, "time_ms": 150}}}
-                    },
-                    "notes": ["Verification is deterministic and rule-based (no LLM calls)", "Results may include suggested revisions if confidence < 0.4", "Evidence is sorted by similarity and limited per bucket", "Default patterns detect common contradictions; customize with contradiction_patterns"]
-                },
-                "routing": {
-                    "triggers": {
-                        "debug": "debug time",
-                        "build": "building time",
-                        "plan": "plan/planning time",
-                        "stuck": "i'm stuck / stuck",
-                        "question": "question time",
-                        "conclude": "wrap up / conclude"
-                    },
-                    "heuristics": {
-                        "debug": ["error", "bug", "stack trace", "failed", "exception", "panic"],
-                        "build": ["implement", "create", "add function", "build", "scaffold", "wire"],
-                        "plan": ["architecture", "design", "approach", "how should", "strategy", "trade-off"],
-                        "stuck": ["stuck", "unsure", "confused", "not sure", "blocked"]
-                    }
-                }
+                 "routing": {
+                     "triggers": {
+                         "debug": "debug time",
+                         "build": "building time",
+                         "plan": "plan/planning time",
+                         "stuck": "i'm stuck / stuck",
+                         "question": "question time",
+                         "conclude": "wrap up / conclude"
+                     },
+                     "heuristics": {
+                         "debug": ["error", "bug", "stack trace", "failed", "exception", "panic"],
+                         "build": ["implement", "create", "add function", "build", "scaffold", "wire"],
+                         "plan": ["architecture", "design", "approach", "how should", "strategy", "trade-off"],
+                         "stuck": ["stuck", "unsure", "confused", "not sure", "blocked"]
+                     }
+                 }
             }),
             "legacymind_search" => json!({
                 "name": "legacymind_search",
                 "description": "Unified search in LegacyMind: searches memories by default and, when include_thoughts=true, also searches thoughts. Supports continuity field filters for thoughts.",
                 "arguments": {
-                    "query": "object — used for memories search (e.g., {name})",
+                    "query": "object — {name?, text?} query parameters",
                     "target": "'entity'|'relationship'|'observation'|'mixed' (default 'mixed')",
                     "include_thoughts": "boolean (default false) — also search thoughts",
                     "thoughts_content": "string — optional explicit query text for thoughts",
@@ -141,7 +136,8 @@ impl SurrealMindServer {
                 "arguments": {
                     "kind": "string — 'entity'|'relationship'|'observation'",
                     "data": "object — entity: {name, entity_type?, properties?} | relationship: {source, target, rel_type, properties?} | observation: {source, observation_type, properties?}",
-                    "confidence": "number — optional confidence"
+                    "confidence": "number — optional confidence",
+                    "upsert": "boolean (default true) — whether to find existing matching record or always create new"
                 },
                 "returns": {"created": true, "id": "string", "kind": "string"}
             }),
@@ -159,58 +155,92 @@ impl SurrealMindServer {
             }),
             "delegate_gemini" => json!({
                 "name": "delegate_gemini",
-                "description": "Asynchronously delegates a prompt to the Gemini CLI, returning a job_id. Tracks session history per task_name.",
+                "description": "Delegate a prompt to the Gemini CLI agent as an async background job.",
                 "arguments": {
-                    "prompt": "string (required) - The prompt to send to the agent.",
-                    "task_name": "string - A logical name for the task to maintain session continuity (e.g., 'code_generation', 'research'). Defaults to 'delegate_gemini'.",
-                    "model": "string - The specific Gemini model to use (e.g., 'gemini-pro'). Defaults to 'auto' for automatic selection.",
-                    "cwd": "string - The working directory for the Gemini CLI subprocess.",
-                    "timeout_ms": "integer - Inactivity timeout in milliseconds. Overrides the `GEMINI_TIMEOUT_MS` environment variable.",
-                    "tool_timeout_ms": "integer - Per-tool timeout in milliseconds. Overrides `GEMINI_TOOL_TIMEOUT_MS`.",
-                    "expose_stream": "boolean - If true, the raw streaming events from the Gemini CLI will be included in the final job result."
+                    "prompt": "string (required) — the prompt text",
+                    "task_name": "string (default 'delegate_gemini') — groups related operations",
+                    "model": "string (default 'auto') — override model selection",
+                    "cwd": "string — working directory for the agent",
+                    "timeout_ms": "integer — override global timeout",
+                    "tool_timeout_ms": "integer — per-tool execution timeout",
+                    "expose_stream": "boolean — whether to stream output (if supported)"
                 },
-                "returns": {
-                    "status": "'queued'",
-                    "job_id": "string - The ID of the background job. Use `agent_job_status` to check progress.",
-                    "message": "string - A confirmation message."
-                }
+                "returns": {"status": "queued", "job_id": "string", "message": "string"}
             }),
             "curiosity_add" => json!({
                 "name": "curiosity_add",
-                "description": "Adds a lightweight, embeddable note to the 'curiosity' table for quick thoughts and observations.",
+                "description": "Add a lightweight note to the curiosity table",
                 "arguments": {
-                    "content": "string (required) - The text content of the note.",
-                    "tags": "string[] - A list of tags to categorize the note.",
-                    "agent": "string - The name of the agent or system creating the entry (e.g., 'Gemini', 'Claude').",
-                    "topic": "string - A general topic for the note.",
-                    "in_reply_to": "string - The ID of another entry this note is a reply to."
+                    "content": "string (required) — the content of the note",
+                    "tags": "string[] — optional tags",
+                    "agent": "string — optional agent identifier",
+                    "topic": "string — optional topic classification",
+                    "in_reply_to": "string — optional reference ID"
                 },
-                "returns": {
-                    "id": "string - The ID of the newly created curiosity entry."
-                }
+                "returns": {"id": "string"}
             }),
             "curiosity_get" => json!({
                 "name": "curiosity_get",
-                "description": "Retrieves recent curiosity entries, ordered by creation date.",
+                "description": "Get recent curiosity entries",
                 "arguments": {
-                    "limit": "integer (1-100, default 20) - The maximum number of entries to return.",
-                    "since": "string (YYYY-MM-DD) - The start date to retrieve entries from."
+                    "limit": "integer (default 20) — max entries to return",
+                    "since": "string (YYYY-MM-DD) — optional date filter"
                 },
-                "returns": {
-                    "entries": "array - A list of curiosity entries, each with 'id', 'content', 'tags', 'agent', 'topic', 'in_reply_to', and 'created_at'."
-                }
+                "returns": {"entries": "array"}
             }),
             "curiosity_search" => json!({
                 "name": "curiosity_search",
-                "description": "Performs a semantic search over curiosity entries using vector embeddings.",
+                "description": "Search curiosity entries via embeddings",
                 "arguments": {
-                    "query": "string (required) - The search query.",
-                    "top_k": "integer (1-50, default 10) - The number of top results to return.",
-                    "recency_days": "integer - An optional filter to only search entries from the last N days."
+                    "query": "string (required) — search query",
+                    "top_k": "integer (default 10) — max results",
+                    "recency_days": "integer — optionally limit to recent days"
+                },
+                "returns": {"results": "array", "snippets": "array"}
+            }),
+            "agent_job_status" => json!({
+                "name": "agent_job_status",
+                "description": "Get status of an async agent job",
+                "arguments": {
+                    "job_id": "string (required)"
                 },
                 "returns": {
-                    "results": "array - The raw search results from the database.",
-                    "snippets": "array - A formatted list of snippets, each with 'id', 'text', 'score', and other metadata."
+                    "job_id": "string",
+                    "status": "queued|running|completed|failed|cancelled",
+                    "created_at": "string",
+                    "started_at": "string?",
+                    "completed_at": "string?",
+                    "duration_ms": "integer?",
+                    "error": "string?",
+                    "session_id": "string?",
+                    "exchange_id": "string?",
+                    "metadata": "object?"
+                }
+            }),
+            "list_agent_jobs" => json!({
+                "name": "list_agent_jobs",
+                "description": "List async agent jobs with optional filtering",
+                "arguments": {
+                    "limit": "integer (default 20)",
+                    "status_filter": "string — optional status to filter by",
+                    "tool_name": "string — optional tool name to filter by"
+                },
+                "returns": {
+                    "jobs": "array of job summaries",
+                    "total": "integer"
+                }
+            }),
+            "cancel_agent_job" => json!({
+                "name": "cancel_agent_job",
+                "description": "Cancel a running or queued async agent job",
+                "arguments": {
+                    "job_id": "string (required)"
+                },
+                "returns": {
+                    "job_id": "string",
+                    "previous_status": "string",
+                    "new_status": "string",
+                    "message": "string"
                 }
             }),
             _ => {
