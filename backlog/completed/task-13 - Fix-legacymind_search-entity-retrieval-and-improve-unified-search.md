@@ -1,7 +1,7 @@
 ---
 id: task-13
 title: Fix legacymind_search entity retrieval and improve unified search
-status: To Do
+status: Completed
 assignee: []
 created_date: '2026-01-04 04:13'
 labels:
@@ -28,3 +28,5 @@ Investigate and fix legacymind_search (unified search) not returning entities. A
 - [ ] #4 results include an explicit kind field (entity/relationship/observation)
 - [ ] #5 tests updated or added for entity retrieval paths
 <!-- AC:END -->
+
+- See doc-4 for the implementation details.

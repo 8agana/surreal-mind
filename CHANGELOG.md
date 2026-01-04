@@ -10,6 +10,11 @@
 
 - (2026-01-03) **`curiosity` tools**: Removed `curiosity_add`, `curiosity_get`, and `curiosity_search` tools completely. This includes the deletion of `src/tools/curiosity.rs`, removal of handler references in `router.rs`, and cleanup of documentation in `detailed_help.rs` and `AGENTS/tools.md`. Codebase is now cleaner and focused on `legacymind_think` for cognitive operations.
 
+### Fixed
+
+- (2026-01-03) **`legacymind_search` robustness**: Completely overhauled entity and observation retrieval. Added support for `source_thought_ids` array overlap (supporting `kg_populate` chains), enforced `ORDER BY similarity DESC` for semantic searches (prioritizing relevance over recency), and implemented automatic fallback to name/recency search if semantic queries return empty.
+- (2026-01-03) **`legacymind_search` schema**: Added explicit `kind` field ("entity", "relationship", "observation") to all graph results and normalized `similarity` field presence (default 0.0 for non-semantic results), ensuring consistent consumption by downstream tools.
+
 ## [0.1.2] - 2026-01-02
 
 ### Fixed
