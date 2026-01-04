@@ -291,91 +291,111 @@ impl SurrealMindServer {
     async fn handle_health_check_embeddings(&self, _dry_run: bool) -> Result<CallToolResult> {
         // Determine expected embedding dimension from active embedder
         let expected = self.embedder.dimensions() as i64;
+        let tables = vec!["thoughts", "kg_entities", "kg_observations", "kg_edges"];
+        let mut report = serde_json::Map::new();
 
-        // Thoughts summary
-        let thoughts_total: Vec<serde_json::Value> = self
-            .db
-            .query("SELECT count() AS c FROM thoughts GROUP ALL")
-            .await?
-            .take(0)?;
-        let t_total = thoughts_total
-            .first()
-            .and_then(|v| v.get("c"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+        report.insert("expected_dim".to_string(), json!(expected));
 
-        let thoughts_ok: Vec<serde_json::Value> = self
-            .db
-            .query("SELECT count() AS c FROM thoughts WHERE array::len(embedding) = $d GROUP ALL")
-            .bind(("d", expected))
-            .await?
-            .take(0)?;
-        let t_ok = thoughts_ok
-            .first()
-            .and_then(|v| v.get("c"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+        for table in tables {
+            // 1. Total count
+            let q_total = format!("SELECT count() AS c FROM {} GROUP ALL", table);
+            let total_res: Vec<serde_json::Value> = self.db.query(&q_total).await?.take(0)?;
+            let total = total_res
+                .first()
+                .and_then(|v| v.get("c"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
 
-        let thoughts_bad = t_total.saturating_sub(t_ok);
+            // 2. OK count (valid array of correct length)
+            let q_ok = format!(
+                "SELECT count() AS c FROM {} WHERE type::is::array(embedding) AND array::len(embedding) = $d GROUP ALL",
+                table
+            );
+            let ok_res: Vec<serde_json::Value> =
+                self.db.query(&q_ok).bind(("d", expected)).await?.take(0)?;
+            let ok = ok_res
+                .first()
+                .and_then(|v| v.get("c"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
 
-        // KG entities
-        let kge_total: Vec<serde_json::Value> = self
-            .db
-            .query("SELECT count() AS c FROM kg_entities GROUP ALL")
-            .await?
-            .take(0)?;
-        let kge_t = kge_total
-            .first()
-            .and_then(|v| v.get("c"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+            // 3. Missing count (NONE or NULL)
+            let q_missing = format!(
+                "SELECT count() AS c FROM {} WHERE embedding IS NONE OR embedding = NULL GROUP ALL",
+                table
+            );
+            let missing_res: Vec<serde_json::Value> = self.db.query(&q_missing).await?.take(0)?;
+            let missing = missing_res
+                .first()
+                .and_then(|v| v.get("c"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
 
-        let kge_ok: Vec<serde_json::Value> = self
-            .db
-            .query("SELECT count() AS c FROM kg_entities WHERE type::is::array(embedding) AND array::len(embedding) = $d GROUP ALL")
-            .bind(("d", expected))
-            .await?
-            .take(0)?;
-        let kge_o = kge_ok
-            .first()
-            .and_then(|v| v.get("c"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let kge_bad = kge_t.saturating_sub(kge_o);
+            // 4. Mismatched count (Array but wrong length)
+            let q_mismatched = format!(
+                "SELECT count() AS c FROM {} WHERE type::is::array(embedding) AND array::len(embedding) != $d GROUP ALL",
+                table
+            );
+            let mismatched_res: Vec<serde_json::Value> = self
+                .db
+                .query(&q_mismatched)
+                .bind(("d", expected))
+                .await?
+                .take(0)?;
+            let mismatched = mismatched_res
+                .first()
+                .and_then(|v| v.get("c"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
 
-        // KG observations
-        let kgo_total: Vec<serde_json::Value> = self
-            .db
-            .query("SELECT count() AS c FROM kg_observations GROUP ALL")
-            .await?
-            .take(0)?;
-        let kgo_t = kgo_total
-            .first()
-            .and_then(|v| v.get("c"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+            // 5. Get sample IDs for missing
+            let q_sample_missing = format!(
+                "SELECT meta::id(id) as id FROM {} WHERE embedding IS NONE OR embedding = NULL LIMIT 5",
+                table
+            );
+            let sample_missing_res: Vec<serde_json::Value> =
+                self.db.query(&q_sample_missing).await?.take(0)?;
+            let sample_missing: Vec<String> = sample_missing_res
+                .iter()
+                .filter_map(|v| v.get("id").and_then(|s| s.as_str()).map(|s| s.to_string()))
+                .collect();
 
-        let kgo_ok: Vec<serde_json::Value> = self
-            .db
-            .query("SELECT count() AS c FROM kg_observations WHERE type::is::array(embedding) AND array::len(embedding) = $d GROUP ALL")
-            .bind(("d", expected))
-            .await?
-            .take(0)?;
-        let kgo_o = kgo_ok
-            .first()
-            .and_then(|v| v.get("c"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let kgo_bad = kgo_t.saturating_sub(kgo_o);
+            // 6. Get sample IDs for mismatched
+            let q_sample_mismatched = format!(
+                "SELECT meta::id(id) as id FROM {} WHERE type::is::array(embedding) AND array::len(embedding) != $d LIMIT 5",
+                table
+            );
+            let sample_mismatched_res: Vec<serde_json::Value> = self
+                .db
+                .query(&q_sample_mismatched)
+                .bind(("d", expected))
+                .await?
+                .take(0)?;
+            let sample_mismatched: Vec<String> = sample_mismatched_res
+                .iter()
+                .filter_map(|v| v.get("id").and_then(|s| s.as_str()).map(|s| s.to_string()))
+                .collect();
 
-        let result = serde_json::json!({
-            "expected_dim": expected,
-            "thoughts": {"total": t_total, "ok": t_ok, "mismatched_or_missing": thoughts_bad},
-            "kg_entities": {"total": kge_t, "ok": kge_o, "mismatched_or_missing": kge_bad},
-            "kg_observations": {"total": kgo_t, "ok": kgo_o, "mismatched_or_missing": kgo_bad}
-        });
+            let table_stats = json!({
+                "total": total,
+                "ok": ok,
+                "missing": {
+                    "count": missing,
+                    "samples": sample_missing
+                },
+                "mismatched_dim": {
+                    "count": mismatched,
+                    "samples": sample_mismatched
+                },
+                "unknown_state": total.saturating_sub(ok + missing + mismatched) // Should be 0 if coverage is complete
+            });
 
-        Ok(CallToolResult::structured(result))
+            report.insert(table.to_string(), table_stats);
+        }
+
+        Ok(CallToolResult::structured(serde_json::Value::Object(
+            report,
+        )))
     }
 
     async fn handle_list_removal_candidates(
