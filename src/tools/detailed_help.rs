@@ -143,7 +143,7 @@ impl SurrealMindServer {
             }),
             "maintenance_ops" => json!({
                 "name": "maintenance_ops",
-                "description": "Maintenance operations for archival, cleanup, and health checks.",
+                "description": "Maintenance operations including archival, cleanup, and deep health checks (now covering thoughts, entities, observations, and edges).",
                 "arguments": {
                     "subcommand": "string (required) — 'list_removal_candidates'|'export_removals'|'finalize_removal'|'health_check_embeddings'|'health_check_indexes'|'reembed'|'reembed_kg'|'ensure_continuity_fields'|'echo_config'",
                     "dry_run": "boolean (default: false) — simulate operation without changes",
@@ -151,7 +151,10 @@ impl SurrealMindServer {
                     "format": "string (default: 'json') — export format",
                     "output_dir": "string (default: './archive') — export directory"
                 },
-                "returns": {"depends on subcommand": "object with counts, paths, or messages"}
+                "returns": {
+                    "health_check_embeddings": "object — detailed breakdown per table (total, ok, missing, mismatched) with sample IDs",
+                    "other_subcommands": "object — counts, paths, or messages depending on operation"
+                }
             }),
             "delegate_gemini" => json!({
                 "name": "delegate_gemini",

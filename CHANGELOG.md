@@ -4,6 +4,7 @@
 
 - (2026-01-03) **`detailed_help`**: Updated the `detailed_help` tool to include all 9 tools, removed legacy aliases, and added help for the new tools.
 - (2026-01-03) **`detailed_help` schema alignment**: Comprehensively updated `detailed_help` to match the exact runtime schemas of all tools (including `maintenance_ops`, `legacymind_search`, and `delegate_gemini` parameter updates). Added full documentation for the 3 async agent job tools (`agent_job_status`, `list_agent_jobs`, `cancel_agent_job`), bringing the total documented tool count to 12.
+- (2026-01-03) **`maintenance_ops` expansion**: Enhanced `health_check_embeddings` to include the `kg_edges` table and provide granular reporting per table. The response now differentiates between "missing" records (NULL/NONE) vs "mismatched" dimensions (wrong array length) and includes sample record IDs for debugging.
 
 ## [0.1.2] - 2026-01-02
 
