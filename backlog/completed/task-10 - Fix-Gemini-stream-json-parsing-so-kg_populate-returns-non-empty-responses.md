@@ -1,7 +1,7 @@
 ---
 id: task-10
 title: Fix Gemini stream-json parsing so kg_populate returns non-empty responses
-status: To Do
+status: Completed
 assignee: []
 created_date: '2026-01-03 04:55'
 updated_date: '2026-01-03 04:56'
@@ -39,3 +39,5 @@ Verification:
 - Run `KG_POPULATE_BATCH_SIZE=1 cargo run --bin kg_populate` and confirm no "Raw Gemini response (0 chars)" logs and JSON extraction parses successfully.
 - (Optional) Run a small delegate_gemini job and confirm non-empty response + no parse errors in logs.
 <!-- SECTION:PLAN:END -->
+
+## Completed and tested.
