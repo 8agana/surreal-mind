@@ -57,9 +57,7 @@ impl ServerHandler for SurrealMindServer {
         let kg_create_schema_map = crate::schemas::kg_create_schema();
         let detailed_help_schema_map = crate::schemas::detailed_help_schema();
         let unified_schema = crate::schemas::unified_search_schema();
-        let curiosity_add_schema = crate::schemas::curiosity_add_schema();
-        let curiosity_get_schema = crate::schemas::curiosity_get_schema();
-        let curiosity_search_schema = crate::schemas::curiosity_search_schema();
+
         let delegate_gemini_schema = crate::schemas::delegate_gemini_schema();
         let agent_job_status_schema = crate::schemas::agent_job_status_schema();
         let list_agent_jobs_schema = crate::schemas::list_agent_jobs_schema();
@@ -126,39 +124,6 @@ impl ServerHandler for SurrealMindServer {
                 "Delegate a prompt to Gemini CLI with persisted exchange tracking.".into(),
             ),
             input_schema: delegate_gemini_schema.clone(),
-            icons: None,
-            annotations: None,
-            output_schema: None,
-            meta: None,
-        });
-
-        tools.push(Tool {
-            name: "curiosity_add".into(),
-            title: Some("Curiosity Add".into()),
-            description: Some("Add a curiosity entry (lightweight note) with optional tags/agent/topic/in_reply_to.".into()),
-            input_schema: curiosity_add_schema.clone(),
-            icons: None,
-            annotations: None,
-            output_schema: None,
-            meta: None,
-        });
-        tools.push(Tool {
-            name: "curiosity_get".into(),
-            title: Some("Curiosity Get".into()),
-            description: Some("Fetch recent curiosity entries (limit/since).".into()),
-            input_schema: curiosity_get_schema.clone(),
-            icons: None,
-            annotations: None,
-            output_schema: None,
-            meta: None,
-        });
-        tools.push(Tool {
-            name: "curiosity_search".into(),
-            title: Some("Curiosity Search".into()),
-            description: Some(
-                "Search curiosity entries via embeddings with optional recency filter.".into(),
-            ),
-            input_schema: curiosity_search_schema.clone(),
             icons: None,
             annotations: None,
             output_schema: None,
@@ -247,18 +212,7 @@ impl ServerHandler for SurrealMindServer {
                 .handle_delegate_gemini(request)
                 .await
                 .map_err(|e| e.into()),
-            "curiosity_add" => self
-                .handle_curiosity_add(request)
-                .await
-                .map_err(|e| e.into()),
-            "curiosity_get" => self
-                .handle_curiosity_get(request)
-                .await
-                .map_err(|e| e.into()),
-            "curiosity_search" => self
-                .handle_curiosity_search(request)
-                .await
-                .map_err(|e| e.into()),
+
             "agent_job_status" => self
                 .handle_agent_job_status(request)
                 .await

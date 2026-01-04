@@ -2,7 +2,6 @@
 
 pub mod agent_job_status;
 pub mod cancel_agent_job;
-pub mod curiosity;
 pub mod delegate_gemini;
 pub mod detailed_help;
 pub mod knowledge_graph;

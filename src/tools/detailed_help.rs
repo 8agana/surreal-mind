@@ -29,9 +29,6 @@ impl SurrealMindServer {
                     json!({"name": "legacymind_search", "one_liner": "Unified LM search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]}),
                     json!({"name": "maintenance_ops", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]}),
                     json!({"name": "delegate_gemini", "one_liner": "Delegate a prompt to the Gemini CLI agent", "key_params": ["prompt", "task_name", "model", "cwd"]}),
-                    json!({"name": "curiosity_add", "one_liner": "Add a lightweight note to the curiosity table", "key_params": ["content", "tags", "agent"]}),
-                    json!({"name": "curiosity_get", "one_liner": "Get recent curiosity entries", "key_params": ["limit", "since"]}),
-                    json!({"name": "curiosity_search", "one_liner": "Search curiosity entries via embeddings", "key_params": ["query", "top_k", "recency_days"]}),
                     json!({"name": "agent_job_status", "one_liner": "Get status of an async agent job", "key_params": ["job_id"]}),
                     json!({"name": "list_agent_jobs", "one_liner": "List async agent jobs", "key_params": ["limit", "status_filter", "tool_name"]}),
                     json!({"name": "cancel_agent_job", "one_liner": "Cancel a running or queued job", "key_params": ["job_id"]}),
@@ -170,37 +167,7 @@ impl SurrealMindServer {
                 },
                 "returns": {"status": "queued", "job_id": "string", "message": "string"}
             }),
-            "curiosity_add" => json!({
-                "name": "curiosity_add",
-                "description": "Add a lightweight note to the curiosity table",
-                "arguments": {
-                    "content": "string (required) — the content of the note",
-                    "tags": "string[] — optional tags",
-                    "agent": "string — optional agent identifier",
-                    "topic": "string — optional topic classification",
-                    "in_reply_to": "string — optional reference ID"
-                },
-                "returns": {"id": "string"}
-            }),
-            "curiosity_get" => json!({
-                "name": "curiosity_get",
-                "description": "Get recent curiosity entries",
-                "arguments": {
-                    "limit": "integer (default 20) — max entries to return",
-                    "since": "string (YYYY-MM-DD) — optional date filter"
-                },
-                "returns": {"entries": "array"}
-            }),
-            "curiosity_search" => json!({
-                "name": "curiosity_search",
-                "description": "Search curiosity entries via embeddings",
-                "arguments": {
-                    "query": "string (required) — search query",
-                    "top_k": "integer (default 10) — max results",
-                    "recency_days": "integer — optionally limit to recent days"
-                },
-                "returns": {"results": "array", "snippets": "array"}
-            }),
+
             "agent_job_status" => json!({
                 "name": "agent_job_status",
                 "description": "Get status of an async agent job",
