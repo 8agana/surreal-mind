@@ -78,11 +78,10 @@ fn test_legacymind_think_schema_structure() {
 #[test]
 fn test_detailed_help_schema_structure() {
     // Test that detailed_help has the expected schema structure
-    // Note: detailed_help enum covers core tools only, not all 9 exposed tools
     let expected_schema = json!({
         "type": "object",
         "properties": {
-            "tool": {"type": "string", "enum": ["legacymind_think", "memories_create", "legacymind_search", "maintenance_ops", "detailed_help"]},
+            "tool": {"type": "string", "enum": ["legacymind_think", "memories_create", "legacymind_search", "maintenance_ops", "delegate_gemini", "curiosity_add", "curiosity_get", "curiosity_search", "detailed_help"]},
             "format": {"type": "string", "enum": ["compact", "full"], "default": "full"}
         }
     });

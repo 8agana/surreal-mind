@@ -1,3 +1,8 @@
+## [0.1.2] - 2026-01-03
+
+### Changed
+- (2026-01-03) **`detailed_help`**: Updated the `detailed_help` tool to include all 9 tools, removed legacy aliases, and added help for the new tools.
+
 ## [0.1.2] - 2026-01-02
 
 ### Fixed
@@ -44,7 +49,7 @@
 
 - (2026-01-02) **Gemini CLI Integration**: Changed default output format from regular JSON to streaming JSON (`--output-format stream-json`) for real-time monitoring capabilities. This is a backward-compatible change that enhances functionality without breaking existing usage.
 
-- (2026-01-02) **Agent Response Structure**: Extended `AgentResponse` struct to optionally include streaming events when `expose_stream` is enabled. The new `stream_events` field is conditionally serialized to maintain backward compatibility.
+- (2026-T01-02) **Agent Response Structure**: Extended `AgentResponse` struct to optionally include streaming events when `expose_stream` is enabled. The new `stream_events` field is conditionally serialized to maintain backward compatibility.
 
 - (2025-12-23) Database migration: Updated 552 thoughts from `extracted_to_kg = NONE` to `extracted_to_kg = false` to make them eligible for memories_populate processing.
 

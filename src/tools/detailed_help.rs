@@ -28,7 +28,11 @@ impl SurrealMindServer {
                     json!({"name": "memories_create", "one_liner": "Create entities/relationships/observations in the KG", "key_params": ["kind", "data", "confidence", "source_thought_id"]}),
                     json!({"name": "legacymind_search", "one_liner": "Unified LM search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]}),
                     json!({"name": "maintenance_ops", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]}),
-                    json!({"name": "detailed_help", "one_liner": "Get help for a specific tool or list all tools", "key_params": ["tool", "format", "prompts"]}),
+                    json!({"name": "delegate_gemini", "one_liner": "Delegate a prompt to the Gemini CLI agent", "key_params": ["prompt", "task_name", "model", "cwd"]}),
+                    json!({"name": "curiosity_add", "one_liner": "Add a lightweight note to the curiosity table", "key_params": ["content", "tags", "agent"]}),
+                    json!({"name": "curiosity_get", "one_liner": "Get recent curiosity entries", "key_params": ["limit", "since"]}),
+                    json!({"name": "curiosity_search", "one_liner": "Search curiosity entries via embeddings", "key_params": ["query", "top_k", "recency_days"]}),
+                    json!({"name": "detailed_help", "one_liner": "Get help for a specific tool or list all tools", "key_params": ["tool", "format"]}),
                 ];
                 return Ok(CallToolResult::structured(json!({ "tools": tools })));
             }
@@ -135,26 +139,79 @@ impl SurrealMindServer {
                 "name": "memories_create",
                 "description": "Create personal memory entities or relationships; returns created id.",
                 "arguments": {
-                    "kind": "string — 'entity'|'relationship'",
-                    "data": "object — entity: {name, entity_type?, properties?} | relationship: {source, target, rel_type, properties?}",
+                    "kind": "string — 'entity'|'relationship'|'observation'",
+                    "data": "object — entity: {name, entity_type?, properties?} | relationship: {source, target, rel_type, properties?} | observation: {source, observation_type, properties?}",
                     "confidence": "number — optional confidence"
                 },
                 "returns": {"created": true, "id": "string", "kind": "string"}
             }),
-            // Legacy aliases for KG help (kept as pointers only)
-            "knowledgegraph_create" => json!({"alias_of": "memories_create"}),
-            "knowledgegraph_search" => json!({"alias_of": "memories_search"}),
             "maintenance_ops" => json!({
                 "name": "maintenance_ops",
-                "description": "Maintenance operations for archival and cleanup of thoughts.",
+                "description": "Maintenance operations for archival, cleanup, and health checks.",
                 "arguments": {
-                    "subcommand": "string (required) — 'list_removal_candidates'|'export_removals'|'finalize_removal'",
+                    "subcommand": "string (required) — 'list_removal_candidates'|'export_removals'|'finalize_removal'|'health_check_embeddings'|'health_check_indexes'|'reembed'|'reembed_kg'|'ensure_continuity_fields'|'echo_config'",
                     "dry_run": "boolean (default: false) — simulate operation without changes",
                     "limit": "integer|string (default: 100) — max items to process",
-                    "format": "string (default: 'parquet') — export format",
+                    "format": "string (default: 'json') — export format",
                     "output_dir": "string (default: './archive') — export directory"
                 },
                 "returns": {"depends on subcommand": "object with counts, paths, or messages"}
+            }),
+            "delegate_gemini" => json!({
+                "name": "delegate_gemini",
+                "description": "Asynchronously delegates a prompt to the Gemini CLI, returning a job_id. Tracks session history per task_name.",
+                "arguments": {
+                    "prompt": "string (required) - The prompt to send to the agent.",
+                    "task_name": "string - A logical name for the task to maintain session continuity (e.g., 'code_generation', 'research'). Defaults to 'delegate_gemini'.",
+                    "model": "string - The specific Gemini model to use (e.g., 'gemini-pro'). Defaults to 'auto' for automatic selection.",
+                    "cwd": "string - The working directory for the Gemini CLI subprocess.",
+                    "timeout_ms": "integer - Inactivity timeout in milliseconds. Overrides the `GEMINI_TIMEOUT_MS` environment variable.",
+                    "tool_timeout_ms": "integer - Per-tool timeout in milliseconds. Overrides `GEMINI_TOOL_TIMEOUT_MS`.",
+                    "expose_stream": "boolean - If true, the raw streaming events from the Gemini CLI will be included in the final job result."
+                },
+                "returns": {
+                    "status": "'queued'",
+                    "job_id": "string - The ID of the background job. Use `agent_job_status` to check progress.",
+                    "message": "string - A confirmation message."
+                }
+            }),
+            "curiosity_add" => json!({
+                "name": "curiosity_add",
+                "description": "Adds a lightweight, embeddable note to the 'curiosity' table for quick thoughts and observations.",
+                "arguments": {
+                    "content": "string (required) - The text content of the note.",
+                    "tags": "string[] - A list of tags to categorize the note.",
+                    "agent": "string - The name of the agent or system creating the entry (e.g., 'Gemini', 'Claude').",
+                    "topic": "string - A general topic for the note.",
+                    "in_reply_to": "string - The ID of another entry this note is a reply to."
+                },
+                "returns": {
+                    "id": "string - The ID of the newly created curiosity entry."
+                }
+            }),
+            "curiosity_get" => json!({
+                "name": "curiosity_get",
+                "description": "Retrieves recent curiosity entries, ordered by creation date.",
+                "arguments": {
+                    "limit": "integer (1-100, default 20) - The maximum number of entries to return.",
+                    "since": "string (YYYY-MM-DD) - The start date to retrieve entries from."
+                },
+                "returns": {
+                    "entries": "array - A list of curiosity entries, each with 'id', 'content', 'tags', 'agent', 'topic', 'in_reply_to', and 'created_at'."
+                }
+            }),
+            "curiosity_search" => json!({
+                "name": "curiosity_search",
+                "description": "Performs a semantic search over curiosity entries using vector embeddings.",
+                "arguments": {
+                    "query": "string (required) - The search query.",
+                    "top_k": "integer (1-50, default 10) - The number of top results to return.",
+                    "recency_days": "integer - An optional filter to only search entries from the last N days."
+                },
+                "returns": {
+                    "results": "array - The raw search results from the database.",
+                    "snippets": "array - A formatted list of snippets, each with 'id', 'text', 'score', and other metadata."
+                }
             }),
             _ => {
                 return Err(SurrealMindError::Validation {

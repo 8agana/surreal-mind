@@ -103,6 +103,10 @@ pub fn detailed_help_schema() -> Arc<Map<String, Value>> {
                 "memories_create",
                 "legacymind_search",
                 "maintenance_ops",
+                "delegate_gemini",
+                "curiosity_add",
+                "curiosity_get",
+                "curiosity_search",
                 "detailed_help"
             ]},
             "format": {"type": "string", "enum": ["compact", "full"], "default": "full"}
@@ -115,10 +119,10 @@ pub fn maintenance_ops_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
         "properties": {
-            "subcommand": {"type": "string", "enum": ["list_removal_candidates", "export_removals", "finalize_removal", "health_check_embeddings", "reembed", "reembed_kg", "ensure_continuity_fields"], "description": "Maintenance operation to perform"},
+            "subcommand": {"type": "string", "enum": ["list_removal_candidates", "export_removals", "finalize_removal", "health_check_embeddings", "health_check_indexes", "reembed", "reembed_kg", "ensure_continuity_fields", "echo_config"], "description": "Maintenance operation to perform"},
             "dry_run": {"type": "boolean", "default": false, "description": "Simulate operation without making changes"},
             "limit": {"type": ["integer", "number", "string"], "default": 100, "description": "Maximum number of thoughts to process"},
-            "format": {"type": "string", "enum": ["parquet"], "default": "parquet", "description": "Export format (only parquet supported)"},
+            "format": {"type": "string", "enum": ["json", "parquet"], "default": "json", "description": "Export format"},
             "output_dir": {"type": "string", "default": "./archive", "description": "Directory for export files"}
         },
         "required": ["subcommand"]
