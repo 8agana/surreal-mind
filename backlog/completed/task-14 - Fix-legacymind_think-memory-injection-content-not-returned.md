@@ -137,19 +137,30 @@ Include enriched content in `delegated_result` AND add top-K memory details in m
 - [ ] No clippy warnings (unused variable _enriched is eliminated)
 - [ ] Manual test: call legacymind_think and verify memory content in response
 
-## Testing Evidence Needed
+## Test Results (Completed 2026-01-04)
+
+**Fix Applied**: Modified `thinking.rs` to preserve and return `enriched_content` from `inject_memories()` in both `run_convo()` and `run_technical()` methods.
+
+**Test Case**: CC called `legacymind_think` with hint="debug" after rebuild.
+
+**Result - PASS**:
 
 ```json
 {
-  "delegated_result": {
-    "thought_id": "abc123",
-    "memories_injected": 20,
-    "enriched_content": "Nearby entities:\n- (0.92) EntityName [type]\n- (0.88) AnotherEntity [category]\n...",
-    "embedding_model": "...",
-    "embedding_dim": 384
-  }
+  "memories_injected": 10,
+  "enriched_content": "Nearby entities:\n- (0.59) Session 3 [event]\n- (0.58) A basic connectivity and functionality test of the...\n- (0.56) A clean startup of surreal-mind was achieved at 20...\n- (0.56) Rebuilt surreal-mind with 10-thought timeout_ms im...\n- (0.55) SurrealMind MCP [mcp_server]\n"
 }
 ```
+
+**Acceptance Criteria Status**:
+- [x] legacymind_think response includes the enriched_content string
+- [x] Response shows actual memory entity names and similarity scores
+- [x] Both run_convo() and run_technical() return enriched memories
+- [x] Backward compatibility maintained (mem_count still reported)
+- [x] No clippy warnings (unused variable _enriched is eliminated)
+- [x] Manual test: call legacymind_think and verify memory content in response
+
+**Verification**: The enriched_content field now contains a formatted list of nearby entities with similarity scores (0.59-0.55), entity names, and types. CC can now see exactly what memories were injected during thinking operations.
 
 ## Technical Notes
 
