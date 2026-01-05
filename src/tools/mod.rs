@@ -9,3 +9,4 @@ pub mod list_agent_jobs;
 pub mod maintenance;
 pub mod thinking;
 pub mod unified_search;
+pub mod wander;

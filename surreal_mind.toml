@@ -11,7 +11,7 @@ database_url = "ws://127.0.0.1:8000"
 database_ns = "surreal_mind"
 database_db = "consciousness"
 inject_debounce = 1000
-gemini_model = "auto"
+gemini_model = "gemini-3-pro-preview"
 
 [retrieval]
 # Core retrieval settings

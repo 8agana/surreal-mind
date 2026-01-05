@@ -31,7 +31,7 @@ async fn main() -> Result<()> {
 
     // Check kg_entities
     println!("Checking kg_entities for anomalous embeddings...");
-    let sql = "SELECT meta::id(id) as id, embedding, type::of(embedding) as type FROM kg_entities \
+    let sql = "SELECT meta::id(id) as id, embedding FROM kg_entities \
                WHERE NOT (type::is::array(embedding) AND array::len(embedding) > 0) \
                AND NOT (embedding IS NULL OR embedding IS NONE) \
                LIMIT 5";
@@ -47,7 +47,7 @@ async fn main() -> Result<()> {
 
     // Check kg_observations
     println!("Checking kg_observations for anomalous embeddings...");
-    let sql = "SELECT meta::id(id) as id, embedding, type::of(embedding) as type FROM kg_observations \
+    let sql = "SELECT meta::id(id) as id, embedding FROM kg_observations \
                WHERE NOT (type::is::array(embedding) AND array::len(embedding) > 0) \
                AND NOT (embedding IS NULL OR embedding IS NONE) \
                LIMIT 5";
@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
 
     // Check kg_edges
     println!("Checking kg_edges for anomalous embeddings...");
-    let sql = "SELECT meta::id(id) as id, embedding, type::of(embedding) as type FROM kg_edges \
+    let sql = "SELECT meta::id(id) as id, embedding FROM kg_edges \
                WHERE NOT (type::is::array(embedding) AND array::len(embedding) > 0) \
                AND NOT (embedding IS NULL OR embedding IS NONE) \
                LIMIT 5";

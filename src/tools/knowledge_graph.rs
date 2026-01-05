@@ -383,6 +383,112 @@ impl SurrealMindServer {
         Ok(CallToolResult::structured(result))
     }
 
+    /// Handle the legacymind_manage_proposals tool call
+    pub async fn handle_manage_proposals(
+        &self,
+        request: CallToolRequestParam,
+    ) -> Result<CallToolResult> {
+        let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {
+            message: "Missing parameters".into(),
+        })?;
+
+        let action =
+            args.get("action")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| SurrealMindError::Mcp {
+                    message: "Missing action parameter".into(),
+                })?;
+
+        match action {
+            "list" => {
+                let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(10);
+                let sql = format!(
+                    "SELECT meta::id(id) as id, action, params, rationale, created_at FROM kg_proposals WHERE status = 'pending' ORDER BY created_at ASC LIMIT {}",
+                    limit
+                );
+                let queries: Vec<serde_json::Value> = self.db.query(sql).await?.take(0)?;
+                Ok(CallToolResult::structured(json!({
+                    "success": true,
+                    "proposals": queries
+                })))
+            }
+            "approve" => {
+                let proposal_id = args
+                    .get("proposal_id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .ok_or_else(|| SurrealMindError::Mcp {
+                        message: "Missing proposal_id".into(),
+                    })?;
+
+                // 1. Fetch proposal
+                let sql = "SELECT action, params FROM kg_proposals WHERE id = type::thing('kg_proposals', $id) AND status = 'pending'";
+                let rows: Vec<serde_json::Value> = self
+                    .db
+                    .query(sql)
+                    .bind(("id", proposal_id.clone()))
+                    .await?
+                    .take(0)?;
+
+                let proposal = rows.first().ok_or_else(|| SurrealMindError::Validation {
+                    message: format!("Pending proposal not found: {}", proposal_id),
+                })?;
+
+                // 2. Extract params for creation
+                let params = proposal.get("params").cloned().unwrap_or(json!({}));
+                // Ensure 'kind' is packed effectively if not present in params (though wander packs it)
+                // Actually, handle_knowledgegraph_create expects specific structure.
+                // We assume proposal.params matches handle_knowledgegraph_create args.
+
+                // 3. Execute creation
+                let create_req = CallToolRequestParam {
+                    name: "memories_create".into(), // internal name
+                    arguments: Some(params.as_object().cloned().unwrap_or_default()),
+                };
+
+                // We await the result. If it fails, we abort approval.
+                self.handle_knowledgegraph_create(create_req).await?;
+
+                // 4. Mark approved
+                let _ = self.db.query("UPDATE type::thing('kg_proposals', $id) SET status = 'approved', approved_at = time::now()")
+                    .bind(("id", proposal_id.clone()))
+                    .await?;
+
+                Ok(CallToolResult::structured(json!({
+                    "success": true,
+                    "message": format!("Proposal {} approved and executed.", proposal_id)
+                })))
+            }
+            "reject" => {
+                let proposal_id = args
+                    .get("proposal_id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .ok_or_else(|| SurrealMindError::Mcp {
+                        message: "Missing proposal_id".into(),
+                    })?;
+                let feedback = args
+                    .get("feedback")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "No feedback provided.".to_string());
+
+                let _ = self.db.query("UPDATE type::thing('kg_proposals', $id) SET status = 'rejected', feedback = $fb, rejected_at = time::now()")
+                    .bind(("id", proposal_id.clone()))
+                    .bind(("fb", feedback))
+                    .await?;
+
+                Ok(CallToolResult::structured(json!({
+                    "success": true,
+                    "message": format!("Proposal {} rejected.", proposal_id)
+                })))
+            }
+            _ => Err(SurrealMindError::Validation {
+                message: format!("Unknown action: {}", action),
+            }),
+        }
+    }
+
     /// Helper to ensure KG entities/observations have embedding vectors
     async fn ensure_kg_embedding(
         &self,

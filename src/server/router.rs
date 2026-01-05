@@ -49,6 +49,9 @@ impl ServerHandler for SurrealMindServer {
     ) -> std::result::Result<ListToolsResult, McpError> {
         info!("tools/list requested");
 
+        // use crate::tools::unified_search::SearchQuery; // Removed as likely internal or unused in this scope
+        // use crate::tools::unified_search::UnifiedSearchParams; // Unused
+
         use rmcp::model::Tool;
 
         // Input schemas
@@ -57,6 +60,7 @@ impl ServerHandler for SurrealMindServer {
         let kg_create_schema_map = crate::schemas::kg_create_schema();
         let detailed_help_schema_map = crate::schemas::detailed_help_schema();
         let unified_schema = crate::schemas::unified_search_schema();
+        let wander_schema_map = crate::schemas::wander_schema();
 
         let delegate_gemini_schema = crate::schemas::delegate_gemini_schema();
         let agent_job_status_schema = crate::schemas::agent_job_status_schema();
@@ -79,6 +83,16 @@ impl ServerHandler for SurrealMindServer {
                 icons: None,
                 annotations: None,
                 output_schema: Some(legacymind_think_output),
+                meta: None,
+            },
+            Tool {
+                name: "legacymind_wander".into(),
+                title: Some("LegacyMind Wander".into()),
+                description: Some("Interactively explore the knowledge graph via random, semantic, or meta traversals.".into()),
+                input_schema: wander_schema_map,
+                icons: None,
+                annotations: None,
+                output_schema: None, // Dynamic output, hard to schema-tize strictly or just JSON
                 meta: None,
             },
             Tool {
@@ -177,6 +191,23 @@ impl ServerHandler for SurrealMindServer {
             output_schema: None,
             meta: None,
         });
+
+        let manage_proposals_schema = crate::schemas::legacymind_manage_proposals_schema();
+        let manage_proposals_output = crate::schemas::legacymind_manage_proposals_output_schema();
+
+        tools.push(Tool {
+            name: "legacymind_manage_proposals".into(),
+            title: Some("Manage Knowledge Graph Proposals".into()),
+            description: Some(
+                "Review, approve, or reject pending knowledge graph changes from the Gardener."
+                    .into(),
+            ),
+            input_schema: manage_proposals_schema,
+            icons: None,
+            annotations: None,
+            output_schema: Some(manage_proposals_output),
+            meta: None,
+        });
         // (photography tools removed from this server)
 
         Ok(ListToolsResult {
@@ -199,6 +230,7 @@ impl ServerHandler for SurrealMindServer {
                 .map_err(|e| e.into()),
 
             // Intelligence and utility
+            "legacymind_wander" => self.handle_wander(request).await.map_err(|e| e.into()),
             "maintenance_ops" => self
                 .handle_maintenance_ops(request)
                 .await
@@ -233,6 +265,10 @@ impl ServerHandler for SurrealMindServer {
                 .map_err(|e| e.into()),
             "legacymind_search" => self
                 .handle_unified_search(request)
+                .await
+                .map_err(|e| e.into()),
+            "legacymind_manage_proposals" => self
+                .handle_manage_proposals(request)
                 .await
                 .map_err(|e| e.into()),
             _ => Err(McpError {

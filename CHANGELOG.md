@@ -1,3 +1,19 @@
+## [0.1.3] - 2026-01-04
+
+### Added
+
+- **LLM Review Feedback Loop**: Implemented a comprehensive proposal and review system for the Knowledge Graph.
+  - **`kg_proposals` table**: Staging area for proposed graph modifications (connect, create_entity, observe).
+  - **`legacymind_manage_proposals` tool**: New tool for the Reviewer (LLM/User) to `list` pending proposals, `approve` them (executing the action), or `reject` them with feedback.
+  - **Junior Gardener Protocol**: Transformed `kg_wander` binary to act as a "Junior" agent. It now *proposes* actions instead of executing them and proactively learning from rejected proposals by reading feedback into its prompt context.
+
+### Changed
+
+- **`kg_wander` Logic**:
+  - Replaced direct execution of `connect`, `create_entity`, and `observe` with `submit_proposal` calls.
+  - Added startup logic to fetch recent rejected proposals and inject them into the system prompt to prevent repeated mistakes.
+  - Hardened JSON parsing and prompt instructions to strict JSON-only output.
+
 ## [0.1.2] - 2026-01-03
 
 ### Changed
@@ -6,12 +22,18 @@
 - (2026-01-03) **`detailed_help` schema alignment**: Comprehensively updated `detailed_help` to match the exact runtime schemas of all tools (including `maintenance_ops`, `legacymind_search`, and `delegate_gemini` parameter updates). Added full documentation for the 3 async agent job tools (`agent_job_status`, `list_agent_jobs`, `cancel_agent_job`), bringing the total documented tool count to 12.
 - (2026-01-03) **`maintenance_ops` expansion**: Enhanced `health_check_embeddings` to include the `kg_edges` table and provide granular reporting per table. The response now differentiates between "missing" records (NULL/NONE) vs "mismatched" dimensions (wrong array length) and includes sample record IDs for debugging.
 
+### Added
+
+- Added `legacymind_wander` tool for interactive graph exploration (random, semantic, meta modes).
+
 ### Removed
 
-- (2026-01-03) **`curiosity` tools**: Removed `curiosity_add`, `curiosity_get`, and `curiosity_search` tools completely. This includes the deletion of `src/tools/curiosity.rs`, removal of handler references in `router.rs`, and cleanup of documentation in `detailed_help.rs` and `AGENTS/tools.md`. Codebase is now cleaner and focused on `legacymind_think` for cognitive operations.
+- Removed `curiosity_add`, `curiosity_get`, `curiosity_search` tools (replaced by thoughts/KG). This includes the deletion of `src/tools/curiosity.rs`, removal of handler references in `router.rs`, and cleanup of documentation in `detailed_help.rs` and `AGENTS/tools.md`. Codebase is now cleaner and focused on `legacymind_think` for cognitive operations.
 
 ### Fixed
 
+- (2026-01-03)- Fixed `legacymind_search` robustness (chain_id, ordering, result kinds, fallbacks).
+- Fixed `health_check_indexes` tool failure (SQL syntax error).
 - (2026-01-03) **`legacymind_search` robustness**: Completely overhauled entity and observation retrieval. Added support for `source_thought_ids` array overlap (supporting `kg_populate` chains), enforced `ORDER BY similarity DESC` for semantic searches (prioritizing relevance over recency), and implemented automatic fallback to name/recency search if semantic queries return empty.
 - (2026-01-03) **`legacymind_search` schema**: Added explicit `kind` field ("entity", "relationship", "observation") to all graph results and normalized `similarity` field presence (default 0.0 for non-semantic results), ensuring consistent consumption by downstream tools.
 

@@ -127,6 +127,30 @@ impl SurrealMindServer {
                     {"description": "Search thoughts with confidence >= 0.8 in a date range", "call": {"include_thoughts": true, "confidence_gte": 0.8, "date_from": "2024-01-01", "date_to": "2024-12-31"}}
                 ]
             }),
+            "legacymind_wander" => json!({
+                "name": "legacymind_wander",
+                "description": "Interactively explore the knowledge graph via traversals. Can wander randomly or semantically from a given thought.",
+                "arguments": {
+                    "mode": "string (required) — 'random' or 'semantic'",
+                    "current_thought_id": "string — required for 'semantic' mode, the starting thought ID",
+                    "max_steps": "integer (1-100; default 5) — maximum number of traversal steps",
+                    "include_memories": "boolean (default true) — include related memories in the output",
+                    "include_thoughts": "boolean (default false) — include related thoughts in the output",
+                    "semantic_threshold": "number (0.0-1.0; default 0.7) — similarity threshold for semantic wandering",
+                    "return_format": "string ('summary'|'full'; default 'summary') — level of detail in returned nodes"
+                },
+                "returns": {
+                    "path": "array — ordered list of traversed nodes (thoughts/memories)",
+                    "summary": "string — a textual summary of the wander path",
+                    "nodes_visited": "integer — total number of unique nodes visited",
+                    "edges_traversed": "integer — total number of edges traversed"
+                },
+                "examples": [
+                    {"description": "Wander randomly for 3 steps", "call": {"mode": "random", "max_steps": 3}},
+                    {"description": "Wander semantically from a specific thought, including thoughts", "call": {"mode": "semantic", "current_thought_id": "thoughts:abc", "include_thoughts": true, "max_steps": 7}},
+                    {"description": "Semantic wander with a higher similarity threshold", "call": {"mode": "semantic", "current_thought_id": "thoughts:xyz", "semantic_threshold": 0.85}}
+                ]
+            }),
             "memories_create" => json!({
                 "name": "memories_create",
                 "description": "Create personal memory entities or relationships; returns created id.",

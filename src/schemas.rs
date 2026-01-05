@@ -432,3 +432,60 @@ pub fn detailed_help_output_schema() -> Arc<Map<String, Value>> {
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
+
+pub fn wander_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "current_thought_id": {"type": "string", "description": "Optional starting point thought/entity ID"},
+            "mode": {"type": "string", "enum": ["random", "semantic", "meta"], "description": "Traversal mode"},
+            "visited_ids": {"type": "array", "items": {"type": "string"}, "description": "IDs to avoid preventing loops"},
+            "recency_bias": {"type": "boolean", "default": false, "description": "Whether to prioritize recent memories"}
+        },
+        "required": ["mode"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn legacymind_manage_proposals_schema() -> Arc<Map<String, serde_json::Value>> {
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "description": "Action to perform: 'list' (pending), 'approve' (execute), 'reject' (deny).",
+                "enum": ["list", "approve", "reject"]
+            },
+            "proposal_id": {
+                "type": "string",
+                "description": "The ID of the proposal to act on (required for approve/reject)."
+            },
+            "feedback": {
+                "type": "string",
+                "description": "Reason for rejection (required for reject). Used to train the agent."
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Max proposals to list (default 10)."
+            }
+        },
+        "required": ["action"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn legacymind_manage_proposals_output_schema() -> Arc<Map<String, serde_json::Value>> {
+    let schema = serde_json::json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+            "success": { "type": "boolean" },
+            "message": { "type": "string" },
+            "proposals": {
+                "type": "array",
+                "items": { "type": "object" }
+            }
+        }
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
