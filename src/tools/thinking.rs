@@ -9,7 +9,6 @@ use crate::server::SurrealMindServer;
 use anyhow::Context;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde_json::json;
-use std::collections::HashSet;
 
 /// Maximum content size in bytes (100KB)
 const MAX_CONTENT_SIZE: usize = 100 * 1024;

@@ -20,14 +20,14 @@ impl IndexType {
     pub fn to_definition(&self) -> String {
         match self {
             IndexType::Single(field) => format!(
-                "DEFINE INDEX idx_{} ON TABLE {} FIELDS {}",
+                "DEFINE INDEX idx_{} ON {} FIELDS {}",
                 field, "{table}", field
             ),
             IndexType::Composite(fields) => {
                 let field_list = fields.join(", ");
                 let name = fields.join("_");
                 format!(
-                    "DEFINE INDEX idx_{} ON TABLE {} FIELDS {}",
+                    "DEFINE INDEX idx_{} ON {} FIELDS {}",
                     name, "{table}", field_list
                 )
             }
@@ -129,12 +129,7 @@ pub fn get_expected_indexes() -> Vec<TableIndexes> {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TableInfo {
     pub name: String,
-    pub indexes: HashMap<String, IndexInfo>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct IndexInfo {
-    pub fields: Vec<String>,
+    pub indexes: HashMap<String, String>,
 }
 
 /// Result of index health check

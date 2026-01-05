@@ -56,17 +56,7 @@ impl SurrealMindServer {
             expected.extend(optional);
 
             // Get present indexes
-            let present = table_info
-                .indexes
-                .iter()
-                .map(|(name, info)| {
-                    let fields = info.fields.join(", ");
-                    format!(
-                        "DEFINE INDEX {} ON TABLE {} FIELDS {}",
-                        name, table_def.table, fields
-                    )
-                })
-                .collect::<Vec<_>>();
+            let present = table_info.indexes.values().cloned().collect::<Vec<_>>();
 
             // Calculate missing (required only)
             let required_defs = table_def

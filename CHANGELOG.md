@@ -1,3 +1,14 @@
+## [0.1.4] - 2026-01-05
+
+### Fixed
+
+- **`maintenance_ops` Serialization**: Resolved critical deserialization error in `health_check_indexes`. Updated `src/indexes.rs` to handle index definitions as strings (fixing "expected object-like struct" error).
+- **Build System**: Resolved linker errors via clean release build.
+
+### Changed
+
+- **Cognitive Frameworks**: Re-integrated `src/cognitive` engine into `legacymind_think`. Thoughts are now automatically analyzed by OODA/Socratic frameworks when `SURR_THINK_ENHANCE=1`, enriching the `framework_analysis` field without external LLM calls.
+
 ## [0.1.3] - 2026-01-04
 
 ### Added
@@ -18,6 +29,7 @@
 ### Fixed
 
 - **Memory Injection Response**: `legacymind_think` now correctly returns the enriched content definition (names, types, scores) of injected memories, allowing callers to see exactly what context was provided. Previously this was computed but discarded.
+- **`thinking.rs` Imports**: Removed unused `std::collections::HashSet` import in `src/tools/thinking.rs`.
 
 ## [0.1.2] - 2026-01-03
 
