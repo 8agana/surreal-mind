@@ -430,7 +430,7 @@ impl SurrealMindServer {
         }
 
         // Memory injection (simple cosine similarity over recent thoughts)
-        let (mem_count, _enriched) = self
+        let (mem_count, enriched) = self
             .inject_memories(
                 &thought_id,
                 &embedding,
@@ -446,6 +446,7 @@ impl SurrealMindServer {
             "embedding_model": self.get_embedding_metadata().1,
             "embedding_dim": self.embedder.dimensions(),
             "memories_injected": mem_count,
+            "enriched_content": enriched,
             "framework_enhanced": framework_enhanced
         });
 
@@ -497,7 +498,7 @@ impl SurrealMindServer {
                 .await?;
 
         let tool_name = format!("think_{}", mode);
-        let (mem_count, _enriched) = self
+        let (mem_count, enriched) = self
             .inject_memories(
                 &thought_id,
                 &embedding,
@@ -512,7 +513,8 @@ impl SurrealMindServer {
             "thought_id": thought_id,
             "embedding_model": self.get_embedding_metadata().1,
             "embedding_dim": self.embedder.dimensions(),
-            "memories_injected": mem_count
+            "memories_injected": mem_count,
+            "enriched_content": enriched
         });
 
         Ok((original_result, resolved_continuity))

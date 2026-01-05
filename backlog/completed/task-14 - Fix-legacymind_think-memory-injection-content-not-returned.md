@@ -1,7 +1,7 @@
 # Bug: legacymind_think Memory Injection Content Not Included in Response
 
 **ID**: `legacymind_think_memory_injection_bug`  
-**Status**: Pending  
+**Status**: Fixed  
 **Priority**: high  
 **Created**: 2026-01-04  
 **Component**: `legacymind_think` tool, memory injection telemetry
@@ -10,7 +10,8 @@
 
 The `legacymind_think` tool reports memory injection metrics in its response telemetry, but **the actual injected memory content is NOT included in the response payload**.
 
-### What CC sees:
+### What CC sees
+
 ```json
 {
   "delegated_result": {
@@ -24,12 +25,14 @@ The `legacymind_think` tool reports memory injection metrics in its response tel
 }
 ```
 
-### What CC needs:
+### What CC needs
+
 The actual memory content that was injected - the entity names, types, and similarity scores that enriched the thought. This is critical for CC's reasoning to understand what context was provided.
 
 ## Root Cause Analysis
 
-### Call Stack:
+### Call Stack
+
 1. **`thinking.rs:run_convo()` or `run_technical()` lines ~330-380**
    - These methods call `inject_memories()` and get back `(mem_count, enriched_content)`
    - The tuple return is: `Result<(usize, Option<String>)>`
@@ -39,6 +42,7 @@ The actual memory content that was injected - the entity names, types, and simil
    - Correctly retrieves similar entities from KG
    - Correctly scores by cosine similarity
    - Correctly builds enriched text (lines ~330-345):
+
      ```rust
      let enriched = if !selected.is_empty() {
          let mut s = String::new();
@@ -49,6 +53,7 @@ The actual memory content that was injected - the entity names, types, and simil
          }
      }
      ```
+
    - Returns: `Ok((memory_ids.len(), enriched))`
    - **This part is correct** - the enriched content exists and is computed
 
@@ -57,11 +62,12 @@ The actual memory content that was injected - the entity names, types, and simil
    - Gets back: `(delegated_result, continuity_result)`
    - **Builds response with ONLY delegated_result** - never accesses the enriched memory content
 
-### The Exact Issue:
+### The Exact Issue
 
 **File**: `/Users/samuelatagana/Projects/LegacyMind/surreal-mind/src/tools/thinking.rs`
 
 **Lines ~370-380** (in `run_technical`):
+
 ```rust
 let (mem_count, _enriched) = self
     .inject_memories(
@@ -88,18 +94,21 @@ let original_result = json!({
 ## Solution Approach
 
 ### Option 1: Include enriched_content in delegated_result
+
 Add the enriched content string to the JSON response so CC can see what memories were actually injected.
 
 **Pros**: Simple, CC gets the data in the main result object
 **Cons**: Adds string content to response, may increase message size
 
 ### Option 2: Create separate memories field in response
+
 Structure the response to include a `memories` object with both count and content.
 
 **Pros**: Cleaner separation of concerns
 **Cons**: Requires response structure change in callers
 
 ### Option 3: Both - for maximum transparency
+
 Include enriched content in `delegated_result` AND add top-K memory details in main response.
 
 **Pros**: Full transparency about what was injected

@@ -15,6 +15,10 @@
   - Hardened JSON parsing to handle LLM output variability.
   - Added comprehensive logging for agent decisions ("Rationale" tracking).
 
+### Fixed
+
+- **Memory Injection Response**: `legacymind_think` now correctly returns the enriched content definition (names, types, scores) of injected memories, allowing callers to see exactly what context was provided. Previously this was computed but discarded.
+
 ## [0.1.2] - 2026-01-03
 
 ### Changed
