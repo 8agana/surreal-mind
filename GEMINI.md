@@ -60,6 +60,17 @@ We have successfully separated the *Business Logic* (Photography, Skaters, Order
 
 ## 4. WORK LOG
 
+### 2026-01-04: The Active Gardener
+
+- **Pivot:** Abandoned the "Proposal/Junior Agent" safety rails for `kg_wander`.
+- **Implementation:** Deployed `kg_wander` as a fully active, autonomous binary (`Active Gardener` mode).
+- **Result:** The agent demonstrated high-level reasoning:
+  - Identified "Entity Search" bugs.
+  - Traversed to technical root causes ("Dimension Mismatch").
+  - Created missing entities (`Embedding Dimension Hygiene`) and linked them.
+- **Lesson:** Trust the agent. Over-engineering safety layers stifled the very semantic curiosity we built the system for.
+- **Status:** `kg_wander` is live and autonomously gardening.
+
 ### 2025-12-31: Verification
 
 - **Action:** Ran `cargo check` after cleanup operations.
@@ -87,3 +98,5 @@ We have successfully separated the *Business Logic* (Photography, Skaters, Order
 - [x] **Cleanup:** Remove dead legacy tool handlers.
 - [x] **Config:** Prune the "multiverse timeout" hallucinations from `surreal_mind.toml`.
 - [x] **Verification:** Run a final health check / compile to ensure no broken refs.
+- [ ] **Review Integration:** (Deferred) Consider creating a "Review Mode" for `legacymind_wander` only if manual oversight becomes necessary again.
+- [ ] **Maintenance:** Continue to monitor `kg_wander` logs for semantic drift.

@@ -2,17 +2,18 @@
 
 ### Added
 
-- **LLM Review Feedback Loop**: Implemented a comprehensive proposal and review system for the Knowledge Graph.
-  - **`kg_proposals` table**: Staging area for proposed graph modifications (connect, create_entity, observe).
-  - **`legacymind_manage_proposals` tool**: New tool for the Reviewer (LLM/User) to `list` pending proposals, `approve` them (executing the action), or `reject` them with feedback.
-  - **Junior Gardener Protocol**: Transformed `kg_wander` binary to act as a "Junior" agent. It now *proposes* actions instead of executing them and proactively learning from rejected proposals by reading feedback into its prompt context.
+- **Autonomous Knowledge Gardener (`kg_wander`)**:
+  - **Active Agent**: Shipped the first fully autonomous binary that explores the graph and *modifies it in real-time*.
+  - **Cognitive Loop**: Implemented a "Look, Think, Act" loop using `gemini-3-flash-preview`.
+  - **Capabilities**: Can `wander` (semantic/random/meta), `connect` unrelated nodes, `create_entity` for missing concepts, and `observe` insights.
+  - **Self-Correction**: Includes logic to prioritize semantic wandering but fallback to random jumps if stuck.
 
 ### Changed
 
 - **`kg_wander` Logic**:
-  - Replaced direct execution of `connect`, `create_entity`, and `observe` with `submit_proposal` calls.
-  - Added startup logic to fetch recent rejected proposals and inject them into the system prompt to prevent repeated mistakes.
-  - Hardened JSON parsing and prompt instructions to strict JSON-only output.
+  - Upgraded from a passive read-only explorer to an active participant with write permissions.
+  - Hardened JSON parsing to handle LLM output variability.
+  - Added comprehensive logging for agent decisions ("Rationale" tracking).
 
 ## [0.1.2] - 2026-01-03
 
