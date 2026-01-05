@@ -1,5 +1,9 @@
 //! thinking module: common run_* helpers for think tools and new legacymind_think
 
+use crate::cognitive::{
+    CognitiveEngine,
+    profile::{Submode, profile_for},
+};
 use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
 use anyhow::Context;
@@ -321,7 +325,7 @@ impl SurrealMindServer {
         tags: Option<Vec<String>>,
         significance: Option<f32>,
         verbose_analysis: Option<bool>,
-        _is_conclude: bool,
+        is_conclude: bool,
         session_id: Option<String>,
         chain_id: Option<String>,
         previous_thought_id: Option<String>,
@@ -350,83 +354,44 @@ impl SurrealMindServer {
                 .execute()
                 .await?;
 
-        // Framework enhancement (Temporarily DISABLED due to module deletion)
-        // This will be re-implemented using the new src/cognitive module in a future step
-        let enhance_enabled = false;
-        // !is_conclude && std::env::var("SURR_THINK_ENHANCE").unwrap_or("1".to_string()) == "1";
+        // Framework enhancement
+        let enhance_enabled = std::env::var("SURR_THINK_ENHANCE").unwrap_or("1".to_string()) == "1";
 
         let verbose_analysis = verbose_analysis.unwrap_or(false);
-        let framework_enhanced = false;
-        let framework_analysis: Option<serde_json::Value> = None;
+        let mut framework_enhanced = false;
+        let mut framework_analysis: Option<serde_json::Value> = None;
 
         if enhance_enabled || verbose_analysis {
-            tracing::warn!(
-                "Framework enhancement momentarily disabled pending architecture update"
-            );
+            let submode = if is_conclude {
+                Submode::Sarcastic
+            } else {
+                Submode::Philosophical
+            };
+            let profile = profile_for(submode);
+            let engine = CognitiveEngine::new();
+
+            let analysis = engine.blend(content, &profile.weights);
+
+            framework_enhanced = true;
+            match serde_json::to_value(&analysis) {
+                Ok(val) => framework_analysis = Some(val),
+                Err(e) => tracing::error!("Failed to serialize framework analysis: {}", e),
+            }
         }
 
-        /*
-        // LEGACY FRAMEWORK CODE - REMOVED TO ALLOW COMPILATION
-        // TODO: Re-wire this to use src/cognitive
-        if enhance_enabled || verbose_analysis {
-            tracing::debug!("Running framework enhancement for thought {}", thought_id);
-            let _start = Instant::now();
-            let opts = ConvoOpts { ... };
-            match tokio::time::timeout(...) { ... }
-        }
-        */
-
-        // Update thought with enhancement results and merge tags if enhanced
         if framework_enhanced || framework_analysis.is_some() {
-            let mut query = "UPDATE type::thing('thoughts', $id) SET framework_enhanced = $enhanced, framework_analysis = $analysis".to_string();
-            let mut binds = vec![
-                ("id", serde_json::Value::String(thought_id.clone())),
-                ("enhanced", serde_json::Value::Bool(framework_enhanced)),
-                (
+            let query = "UPDATE type::thing('thoughts', $id) SET framework_enhanced = $enhanced, framework_analysis = $analysis RETURN NONE;";
+            self.db
+                .query(query)
+                .bind(("id", thought_id.clone()))
+                .bind(("enhanced", framework_enhanced))
+                .bind((
                     "analysis",
                     framework_analysis
                         .clone()
                         .unwrap_or(serde_json::Value::Null),
-                ),
-            ];
-            if framework_enhanced
-                && let Some(env) = framework_analysis.as_ref().and_then(|a| a.as_object())
-                && let Some(data) = env.get("data").and_then(|d| d.as_object())
-                && let Some(tags_from_analysis) = data.get("tags").and_then(|t| t.as_array())
-            {
-                // Merge tags, then filter by whitelist to ensure only allowed tags persist
-                let existing_tags: Vec<String> = tags.clone();
-                let envelope_tags: Vec<String> = tags_from_analysis
-                    .iter()
-                    .filter_map(|t| t.as_str())
-                    .map(|s| s.to_string())
-                    .collect();
-                let mut merged_set: HashSet<String> = existing_tags.into_iter().collect();
-                merged_set.extend(envelope_tags.into_iter());
-                // Build whitelist from env (same source used by framework)
-                let whitelist: HashSet<String> = std::env::var("SURR_THINK_TAG_WHITELIST")
-                    .unwrap_or("plan,debug,dx,photography,idea".to_string())
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .collect();
-                let merged: Vec<String> = merged_set
-                    .into_iter()
-                    .filter(|t| whitelist.contains(t))
-                    .collect();
-                query.push_str(", tags = $merged_tags");
-                binds.push((
-                    "merged_tags",
-                    serde_json::Value::Array(
-                        merged.into_iter().map(serde_json::Value::String).collect(),
-                    ),
-                ));
-            }
-            query.push_str(" RETURN NONE;");
-            let mut db_query = self.db.query(&query);
-            for (k, v) in binds {
-                db_query = db_query.bind((k, v));
-            }
-            db_query.await?;
+                ))
+                .await?;
         }
 
         // Memory injection (simple cosine similarity over recent thoughts)
@@ -461,7 +426,7 @@ impl SurrealMindServer {
         injection_scale: Option<u8>,
         tags: Option<Vec<String>>,
         significance: Option<f32>,
-        _verbose_analysis: Option<bool>,
+        verbose_analysis: Option<bool>,
         mode: &str,
         session_id: Option<String>,
         chain_id: Option<String>,
@@ -497,6 +462,41 @@ impl SurrealMindServer {
                 .execute()
                 .await?;
 
+        // Framework enhancement
+        let enhance_enabled = std::env::var("SURR_THINK_ENHANCE").unwrap_or("1".to_string()) == "1";
+        let verbose = verbose_analysis.unwrap_or(false);
+
+        let mut framework_enhanced = false;
+        let mut framework_analysis: Option<serde_json::Value> = None;
+
+        if enhance_enabled || verbose {
+            let submode = Submode::from_str(mode);
+            let profile = profile_for(submode);
+            let engine = CognitiveEngine::new();
+            let analysis = engine.blend(content, &profile.weights);
+
+            framework_enhanced = true;
+            match serde_json::to_value(&analysis) {
+                Ok(val) => framework_analysis = Some(val),
+                Err(e) => tracing::error!("Failed to serialize framework analysis: {}", e),
+            }
+        }
+
+        if framework_enhanced || framework_analysis.is_some() {
+            let query = "UPDATE type::thing('thoughts', $id) SET framework_enhanced = $enhanced, framework_analysis = $analysis RETURN NONE;";
+            self.db
+                .query(query)
+                .bind(("id", thought_id.clone()))
+                .bind(("enhanced", framework_enhanced))
+                .bind((
+                    "analysis",
+                    framework_analysis
+                        .clone()
+                        .unwrap_or(serde_json::Value::Null),
+                ))
+                .await?;
+        }
+
         let tool_name = format!("think_{}", mode);
         let (mem_count, enriched) = self
             .inject_memories(
@@ -514,7 +514,8 @@ impl SurrealMindServer {
             "embedding_model": self.get_embedding_metadata().1,
             "embedding_dim": self.embedder.dimensions(),
             "memories_injected": mem_count,
-            "enriched_content": enriched
+            "enriched_content": enriched,
+            "framework_enhanced": framework_enhanced
         });
 
         Ok((original_result, resolved_continuity))

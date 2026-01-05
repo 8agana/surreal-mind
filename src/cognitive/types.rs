@@ -1,6 +1,6 @@
 //! Types for cognitive framework outputs.
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[allow(dead_code)]
 pub struct FrameworkOutput {
     pub insights: Vec<String>,
