@@ -1,3 +1,9 @@
+## [0.1.5] - 2026-01-06
+
+### Changed
+
+- **thinking.rs Modularization (task-25)**: Extracted shared types from `thinking.rs` into dedicated `src/tools/thinking/types.rs` module. Includes `ThinkMode`, `LegacymindThinkParams`, `ContinuityResult`, `EvidenceItem`, `VerificationResult`, and `process_continuity_query_result()`. Establishes foundation for subsequent modular extractions (tasks 16-20). Reduces cognitive load for agents working on specific thinking subsystems.
+
 ## [0.1.4] - 2026-01-05
 
 ### Fixed
