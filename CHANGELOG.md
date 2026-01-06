@@ -16,6 +16,8 @@
 
 - **QUICKSTART.md (task-24)**: Created `docs/QUICKSTART.md` with practical examples for `legacymind_think`, `unified_search`, `delegate_gemini`, and `knowledgegraph_create` tools. Includes hints reference table.
 
+- **Mode Router Extraction (task-16)**: Extracted mode routing logic into `src/tools/thinking/mode_router.rs`. Provides `route_mode()` function with metadata generation for transparency. Includes 4 unit tests.
+
 ## [0.1.4] - 2026-01-05
 
 ### Fixed

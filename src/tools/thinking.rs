@@ -5,9 +5,11 @@
 //! - `mode_detection`: Heuristics for detecting thinking mode from content
 //! - `runners`: Execution paths for conversational and technical thinking
 //! - `continuity`: Continuity link resolution and validation
+//! - `mode_router`: Mode selection with routing metadata
 
 pub mod continuity;
 pub mod mode_detection;
+pub mod mode_router;
 pub mod runners;
 pub mod types;
 
