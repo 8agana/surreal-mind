@@ -135,6 +135,15 @@ pub async fn unified_search_inner(
         name_like = Some(n.to_string());
     }
 
+    // Extract entity ID for direct lookup if provided
+    let mut id_query: Option<String> = None;
+    if let Some(q) = &params.query
+        && let Some(id) = q.get("id").and_then(|v| v.as_str())
+        && !id.is_empty()
+    {
+        id_query = Some(id.to_string());
+    }
+
     // Determine content for embedding
     let mut content = params.thoughts_content.clone().unwrap_or_default();
     if content.is_empty()
@@ -182,7 +191,42 @@ pub async fn unified_search_inner(
         // Flag to track if we found anything via semantic search
         let mut found_semantic = false;
 
-        if let Some(ref q_emb_val) = q_emb {
+        // Direct ID lookup takes priority over semantic search
+        if let Some(ref entity_id) = id_query {
+            // Parse table and ID from formats like "kg_entities:abc123" or just "abc123"
+            let (table, bare_id) = if entity_id.contains(':') {
+                let parts: Vec<&str> = entity_id.splitn(2, ':').collect();
+                (parts[0], parts[1])
+            } else {
+                ("kg_entities", entity_id.as_str())
+            };
+            
+            if table == "kg_entities" || !entity_id.contains(':') {
+                let sql = "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities WHERE meta::id(id) = $id LIMIT 1";
+                let rows: Vec<serde_json::Value> = server.db.query(sql)
+                    .bind(("id", bare_id.to_string()))
+                    .await?
+                    .take(0)?;
+                
+                items.extend(rows.into_iter().map(|mut v| {
+                    if let Some(obj) = v.as_object_mut() {
+                        // Add full qualified ID
+                        if let Some(id) = obj.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()) {
+                            obj.insert("id".to_string(), json!(format!("kg_entities:{}", id)));
+                        }
+                        obj.insert("kind".to_string(), json!("entity"));
+                        obj.insert("similarity".to_string(), json!(1.0)); // Exact match
+                    }
+                    v
+                }));
+                
+                if !items.is_empty() {
+                    found_semantic = true; // Skip semantic search since we found by ID
+                }
+            }
+        }
+
+        if !found_semantic && let Some(ref q_emb_val) = q_emb {
             // Semantic search using embeddings
             let q_dim = q_emb_val.len() as i64;
             // UPDATED: Order by similarity DESC (not created_at) for semantic search
@@ -326,7 +370,40 @@ pub async fn unified_search_inner(
     if target == "observation" || target == "mixed" {
         let mut found_semantic_obs = false;
 
-        if let Some(ref q_emb_val) = q_emb {
+        // Direct ID lookup for observations
+        if let Some(ref entity_id) = id_query {
+            let (table, bare_id) = if entity_id.contains(':') {
+                let parts: Vec<&str> = entity_id.splitn(2, ':').collect();
+                (parts[0], parts[1])
+            } else {
+                ("kg_observations", entity_id.as_str())
+            };
+            
+            if table == "kg_observations" {
+                let sql = "SELECT meta::id(id) as id, name, data, created_at FROM kg_observations WHERE meta::id(id) = $id LIMIT 1";
+                let rows: Vec<serde_json::Value> = server.db.query(sql)
+                    .bind(("id", bare_id.to_string()))
+                    .await?
+                    .take(0)?;
+                
+                items.extend(rows.into_iter().map(|mut v| {
+                    if let Some(obj) = v.as_object_mut() {
+                        if let Some(id) = obj.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()) {
+                            obj.insert("id".to_string(), json!(format!("kg_observations:{}", id)));
+                        }
+                        obj.insert("kind".to_string(), json!("observation"));
+                        obj.insert("similarity".to_string(), json!(1.0));
+                    }
+                    v
+                }));
+                
+                if !items.is_empty() {
+                    found_semantic_obs = true;
+                }
+            }
+        }
+
+        if !found_semantic_obs && let Some(ref q_emb_val) = q_emb {
             // Semantic search using embeddings
             let q_dim = q_emb_val.len() as i64;
             let mut sql = "SELECT meta::id(id) as id, name, data, created_at, vector::similarity::cosine(embedding, $q) AS similarity

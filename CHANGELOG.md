@@ -26,6 +26,8 @@
 
 - **Entity IDs in Enriched Content (task-15)**: Modified `inject_memories()` in `src/server/db.rs` to include entity IDs in enriched_content format. New format: `[kg_entities:abc123] (0.85) Name [type]`. Enables click-to-expand context injection.
 
+- **Direct ID Lookup in Search**: Added `query.id` parameter to `legacymind_search` for direct entity/observation lookup by ID. Supports formats: `kg_entities:abc123` or just `abc123`.
+
 ## [0.1.4] - 2026-01-05
 
 ### Fixed
