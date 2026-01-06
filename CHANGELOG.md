@@ -18,6 +18,12 @@
 
 - **Mode Router Extraction (task-16)**: Extracted mode routing logic into `src/tools/thinking/mode_router.rs`. Provides `route_mode()` function with metadata generation for transparency. Includes 4 unit tests.
 
+- **Verification Extraction (task-20)**: Extracted `run_hypothesis_verification()` and `build_kg_text()` into `src/tools/thinking/verification.rs` (265 lines). Reduces thinking.rs to 673 lines (53% reduction from original 1446).
+
+- **Reembed Module Extraction (task-21)**: Moved reembed functions from `lib.rs` to `src/maintenance/reembed.rs` (930 lines). Reduces lib.rs from 947 to 25 lines (97% reduction). Backwards compatible via re-exports.
+
+- **Admin Binary Consolidation (task-22)**: Consolidated 6 debug utilities (`kg_inspect`, `sanity_cosine`, `db_check`, `check_db_contents`, `simple_db_test`, `fix_dimensions`) into `src/bin/admin.rs` with clap subcommands. Reduces binary count from 16 to 11.
+
 ## [0.1.4] - 2026-01-05
 
 ### Fixed
