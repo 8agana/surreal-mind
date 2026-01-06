@@ -24,6 +24,8 @@
 
 - **Admin Binary Consolidation (task-22)**: Consolidated 6 debug utilities (`kg_inspect`, `sanity_cosine`, `db_check`, `check_db_contents`, `simple_db_test`, `fix_dimensions`) into `src/bin/admin.rs` with clap subcommands. Reduces binary count from 16 to 11.
 
+- **Entity IDs in Enriched Content (task-15)**: Modified `inject_memories()` in `src/server/db.rs` to include entity IDs in enriched_content format. New format: `[kg_entities:abc123] (0.85) Name [type]`. Enables click-to-expand context injection.
+
 ## [0.1.4] - 2026-01-05
 
 ### Fixed

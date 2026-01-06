@@ -1,7 +1,7 @@
 ---
 id: task-15
 title: Add entity IDs to enriched_content for click-to-expand context injection
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-01-05 22:15'
 updated_date: '2026-01-05 22:15'

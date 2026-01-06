@@ -409,11 +409,12 @@ impl SurrealMindServer {
                 s.push_str(&format!("Submode: {}\n", sm));
             }
             s.push_str("Nearby entities:\n");
-            for (i, (_id, sim, name, etype)) in selected.iter().take(5).enumerate() {
+            for (i, (id, sim, name, etype)) in selected.iter().take(5).enumerate() {
+                // Include full entity ID for click-to-expand context injection
                 if etype.is_empty() {
-                    s.push_str(&format!("- ({:.2}) {}\n", sim, name));
+                    s.push_str(&format!("- [{}] ({:.2}) {}\n", id, sim, name));
                 } else {
-                    s.push_str(&format!("- ({:.2}) {} [{}]\n", sim, name, etype));
+                    s.push_str(&format!("- [{}] ({:.2}) {} [{}]\n", id, sim, name, etype));
                 }
                 if i >= 4 {
                     break;
