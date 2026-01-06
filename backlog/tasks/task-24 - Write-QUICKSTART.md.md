@@ -1,7 +1,7 @@
 ---
 id: task-24
 title: Write QUICKSTART.md
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-01-06 03:57'
 labels:

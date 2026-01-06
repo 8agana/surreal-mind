@@ -2,7 +2,13 @@
 //!
 //! Submodules:
 //! - `types`: Shared types and constants for thinking operations
+//! - `mode_detection`: Heuristics for detecting thinking mode from content
+//! - `runners`: Execution paths for conversational and technical thinking
+//! - `continuity`: Continuity link resolution and validation
 
+pub mod continuity;
+pub mod mode_detection;
+pub mod runners;
 pub mod types;
 
 // Re-export types for external use
@@ -11,10 +17,9 @@ pub use types::{
     CONTRADICTION_PATTERNS, MAX_CONTENT_SIZE, process_continuity_query_result,
 };
 
-use crate::cognitive::{
-    CognitiveEngine,
-    profile::{Submode, profile_for},
-};
+// Re-export mode detection for internal use
+use mode_detection::detect_mode;
+
 use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
 use anyhow::Context;
@@ -188,422 +193,6 @@ impl<'a> ThoughtBuilder<'a> {
 }
 
 impl SurrealMindServer {
-    /// Run conversational think (with framework enhancement, origin='human')
-    #[allow(clippy::too_many_arguments)]
-    pub async fn run_convo(
-        &self,
-        content: &str,
-        injection_scale: Option<u8>,
-        tags: Option<Vec<String>>,
-        significance: Option<f32>,
-        verbose_analysis: Option<bool>,
-        is_conclude: bool,
-        session_id: Option<String>,
-        chain_id: Option<String>,
-        previous_thought_id: Option<String>,
-        revises_thought: Option<String>,
-        branch_from: Option<String>,
-        confidence: Option<f32>,
-    ) -> Result<(serde_json::Value, ContinuityResult)> {
-        let injection_scale_val = injection_scale.unwrap_or(1) as i64;
-        let tags = tags.unwrap_or_default();
-        // let content_str = content.to_string(); // Unused while frameworks disabled
-
-        // Use ThoughtBuilder to create the thought
-        let (thought_id, embedding, resolved_continuity) =
-            ThoughtBuilder::new(self, content, "human")
-                .scale(Some(injection_scale_val as u8))
-                .tags(Some(tags.clone()))
-                .significance(significance)
-                .confidence(confidence)
-                .continuity(
-                    session_id,
-                    chain_id,
-                    previous_thought_id,
-                    revises_thought,
-                    branch_from,
-                )
-                .execute()
-                .await?;
-
-        // Framework enhancement
-        let enhance_enabled = std::env::var("SURR_THINK_ENHANCE").unwrap_or("1".to_string()) == "1";
-
-        let verbose_analysis = verbose_analysis.unwrap_or(false);
-        let mut framework_enhanced = false;
-        let mut framework_analysis: Option<serde_json::Value> = None;
-
-        if enhance_enabled || verbose_analysis {
-            let submode = if is_conclude {
-                Submode::Sarcastic
-            } else {
-                Submode::Philosophical
-            };
-            let profile = profile_for(submode);
-            let engine = CognitiveEngine::new();
-
-            let analysis = engine.blend(content, &profile.weights);
-
-            framework_enhanced = true;
-            match serde_json::to_value(&analysis) {
-                Ok(val) => framework_analysis = Some(val),
-                Err(e) => tracing::error!("Failed to serialize framework analysis: {}", e),
-            }
-        }
-
-        if framework_enhanced || framework_analysis.is_some() {
-            let query = "UPDATE type::thing('thoughts', $id) SET framework_enhanced = $enhanced, framework_analysis = $analysis RETURN NONE;";
-            self.db
-                .query(query)
-                .bind(("id", thought_id.clone()))
-                .bind(("enhanced", framework_enhanced))
-                .bind((
-                    "analysis",
-                    framework_analysis
-                        .clone()
-                        .unwrap_or(serde_json::Value::Null),
-                ))
-                .await?;
-        }
-
-        // Memory injection (simple cosine similarity over recent thoughts)
-        let (mem_count, enriched) = self
-            .inject_memories(
-                &thought_id,
-                &embedding,
-                injection_scale_val,
-                None,
-                Some("think_convo"),
-            )
-            .await
-            .unwrap_or((0, None));
-
-        let original_result = json!({
-            "thought_id": thought_id.clone(),
-            "embedding_model": self.get_embedding_metadata().1,
-            "embedding_dim": self.embedder.dimensions(),
-            "memories_injected": mem_count,
-            "enriched_content": enriched,
-            "framework_enhanced": framework_enhanced
-        });
-
-        Ok((original_result, resolved_continuity))
-    }
-
-    /// Run technical think (no framework, origin='tool', mode-specific defaults)
-    #[allow(clippy::too_many_arguments)]
-    pub async fn run_technical(
-        &self,
-        content: &str,
-        injection_scale: Option<u8>,
-        tags: Option<Vec<String>>,
-        significance: Option<f32>,
-        verbose_analysis: Option<bool>,
-        mode: &str,
-        session_id: Option<String>,
-        chain_id: Option<String>,
-        previous_thought_id: Option<String>,
-        revises_thought: Option<String>,
-        branch_from: Option<String>,
-        confidence: Option<f32>,
-    ) -> Result<(serde_json::Value, ContinuityResult)> {
-        let (default_injection_scale, default_significance) = match mode {
-            "debug" => (3u8, 0.8_f32),
-            "build" => (2u8, 0.6_f32),
-            "plan" => (3u8, 0.7_f32),
-            "stuck" => (3u8, 0.9_f32),
-            _ => (2u8, 0.6_f32), // fallback
-        };
-        let injection_scale_val = injection_scale.unwrap_or(default_injection_scale) as i64;
-        let tags = tags.unwrap_or_default();
-
-        // Use ThoughtBuilder
-        let (thought_id, embedding, resolved_continuity) =
-            ThoughtBuilder::new(self, content, "tool")
-                .scale(Some(injection_scale_val as u8))
-                .tags(Some(tags.clone()))
-                .significance(significance.or(Some(default_significance)))
-                .confidence(confidence)
-                .continuity(
-                    session_id,
-                    chain_id,
-                    previous_thought_id,
-                    revises_thought,
-                    branch_from,
-                )
-                .execute()
-                .await?;
-
-        // Framework enhancement
-        let enhance_enabled = std::env::var("SURR_THINK_ENHANCE").unwrap_or("1".to_string()) == "1";
-        let verbose = verbose_analysis.unwrap_or(false);
-
-        let mut framework_enhanced = false;
-        let mut framework_analysis: Option<serde_json::Value> = None;
-
-        if enhance_enabled || verbose {
-            let submode = Submode::from_str(mode);
-            let profile = profile_for(submode);
-            let engine = CognitiveEngine::new();
-            let analysis = engine.blend(content, &profile.weights);
-
-            framework_enhanced = true;
-            match serde_json::to_value(&analysis) {
-                Ok(val) => framework_analysis = Some(val),
-                Err(e) => tracing::error!("Failed to serialize framework analysis: {}", e),
-            }
-        }
-
-        if framework_enhanced || framework_analysis.is_some() {
-            let query = "UPDATE type::thing('thoughts', $id) SET framework_enhanced = $enhanced, framework_analysis = $analysis RETURN NONE;";
-            self.db
-                .query(query)
-                .bind(("id", thought_id.clone()))
-                .bind(("enhanced", framework_enhanced))
-                .bind((
-                    "analysis",
-                    framework_analysis
-                        .clone()
-                        .unwrap_or(serde_json::Value::Null),
-                ))
-                .await?;
-        }
-
-        let tool_name = format!("think_{}", mode);
-        let (mem_count, enriched) = self
-            .inject_memories(
-                &thought_id,
-                &embedding,
-                injection_scale_val,
-                None,
-                Some(&tool_name),
-            )
-            .await
-            .unwrap_or((0, None));
-
-        let original_result = json!({
-            "thought_id": thought_id,
-            "embedding_model": self.get_embedding_metadata().1,
-            "embedding_dim": self.embedder.dimensions(),
-            "memories_injected": mem_count,
-            "enriched_content": enriched,
-            "framework_enhanced": framework_enhanced
-        });
-
-        Ok((original_result, resolved_continuity))
-    }
-
-    /// Detect mode from content if no hint
-    fn detect_mode(&self, content: &str) -> ThinkMode {
-        let content_lower = content.to_lowercase();
-        let keywords = [
-            (
-                "debug",
-                vec![
-                    "error",
-                    "bug",
-                    "stack trace",
-                    "failed",
-                    "exception",
-                    "panic",
-                ],
-            ),
-            (
-                "build",
-                vec![
-                    "implement",
-                    "create",
-                    "add function",
-                    "build",
-                    "scaffold",
-                    "wire",
-                ],
-            ),
-            (
-                "plan",
-                vec![
-                    "architecture",
-                    "design",
-                    "approach",
-                    "how should",
-                    "strategy",
-                    "trade-off",
-                ],
-            ),
-            (
-                "stuck",
-                vec!["stuck", "unsure", "confused", "not sure", "blocked"],
-            ),
-        ];
-        let mut best_mode = "question";
-        let mut best_score = 0;
-        for (mode, kw) in keywords.iter() {
-            let score = kw.iter().filter(|k| content_lower.contains(*k)).count();
-            if score > best_score {
-                best_score = score;
-                best_mode = mode;
-            }
-        }
-        if best_score == 0 {
-            ThinkMode::Question
-        } else {
-            match best_mode {
-                "debug" => ThinkMode::Debug,
-                "build" => ThinkMode::Build,
-                "plan" => ThinkMode::Plan,
-                "stuck" => ThinkMode::Stuck,
-                _ => ThinkMode::Question,
-            }
-        }
-    }
-
-    /// Resolve continuity links with validation and normalization
-    #[allow(clippy::single_match, clippy::redundant_pattern_matching)]
-    async fn resolve_continuity_links(
-        &self,
-        new_thought_id: &str,
-        previous_thought_id: Option<String>,
-        revises_thought: Option<String>,
-        branch_from: Option<String>,
-    ) -> Result<ContinuityResult> {
-        let mut links_resolved = serde_json::Map::new();
-
-        let mut resolved = ContinuityResult {
-            session_id: None,
-            chain_id: None,
-            previous_thought_id: None,
-            revises_thought: None,
-            branch_from: None,
-            confidence: None,
-            links_resolved: serde_json::Value::Object(serde_json::Map::new()),
-        };
-
-        // Helper function to resolve and validate a thought reference
-        let resolve_thought = |id: String| async move {
-            // Determine the full ID format for querying
-            let full_id = if id.starts_with("thoughts:") {
-                id.clone()
-            } else {
-                format!("thoughts:{}", id)
-            };
-
-            // Query the database to check if the record exists
-            let check_query = "SELECT id FROM type::thing($id) LIMIT 1";
-            let query_result = match self
-                .db
-                .query(check_query)
-                .bind(("id", full_id.clone()))
-                .await
-            {
-                Ok(mut response) => response
-                    .take::<Vec<serde_json::Value>>(0)
-                    .unwrap_or_default(),
-                Err(e) => {
-                    tracing::warn!("Failed to query continuity link {}: {}", full_id, e);
-                    Vec::new()
-                }
-            };
-
-            // Process the query result to determine how to handle the ID
-            process_continuity_query_result(id, query_result)
-        };
-
-        // Resolve each link
-        if let Some(id) = previous_thought_id {
-            let (resolved_id, resolution_type) = resolve_thought(id).await;
-            resolved.previous_thought_id = resolved_id;
-            links_resolved.insert(
-                "previous_thought_id".to_string(),
-                serde_json::Value::String(resolution_type.to_string()),
-            );
-        }
-
-        if let Some(id) = revises_thought {
-            let (resolved_id, resolution_type) = resolve_thought(id).await;
-            resolved.revises_thought = resolved_id;
-            links_resolved.insert(
-                "revises_thought".to_string(),
-                serde_json::Value::String(resolution_type.to_string()),
-            );
-        }
-
-        if let Some(id) = branch_from {
-            let (resolved_id, resolution_type) = resolve_thought(id).await;
-            resolved.branch_from = resolved_id;
-            links_resolved.insert(
-                "branch_from".to_string(),
-                serde_json::Value::String(resolution_type.to_string()),
-            );
-        }
-
-        // Prevent self-links
-        if resolved
-            .previous_thought_id
-            .as_ref()
-            .map(|id| id.contains(new_thought_id))
-            .unwrap_or(false)
-        {
-            resolved.previous_thought_id = None;
-            links_resolved.insert(
-                "previous_thought_id".to_string(),
-                serde_json::Value::String("dropped_self_link".to_string()),
-            );
-        }
-        if resolved
-            .revises_thought
-            .as_ref()
-            .map(|id| id.contains(new_thought_id))
-            .unwrap_or(false)
-        {
-            resolved.revises_thought = None;
-            links_resolved.insert(
-                "revises_thought".to_string(),
-                serde_json::Value::String("dropped_self_link".to_string()),
-            );
-        }
-        if resolved
-            .branch_from
-            .as_ref()
-            .map(|id| id.contains(new_thought_id))
-            .unwrap_or(false)
-        {
-            resolved.branch_from = None;
-            links_resolved.insert(
-                "branch_from".to_string(),
-                serde_json::Value::String("dropped_self_link".to_string()),
-            );
-        }
-
-        // Deduplicate (keep first occurrence)
-        let mut seen_ids = std::collections::HashSet::new();
-        if let Some(ref id) = resolved.previous_thought_id {
-            seen_ids.insert(id.clone());
-        }
-        if let Some(ref id) = resolved.revises_thought {
-            if seen_ids.contains(id) {
-                resolved.revises_thought = None;
-                links_resolved.insert(
-                    "revises_thought".to_string(),
-                    serde_json::Value::String("dropped_duplicate".to_string()),
-                );
-            } else {
-                seen_ids.insert(id.clone());
-            }
-        }
-        if let Some(ref id) = resolved.branch_from
-            && seen_ids.contains(id)
-        {
-            resolved.branch_from = None;
-            links_resolved.insert(
-                "branch_from".to_string(),
-                serde_json::Value::String("dropped_duplicate".to_string()),
-            );
-        }
-
-        resolved.links_resolved = serde_json::Value::Object(links_resolved);
-        Ok(resolved)
-    }
-
     /// Build text from KG entity or observation for embedding
     fn build_kg_text(name: &str, data: Option<&serde_json::Value>) -> String {
         let mut text = name.to_string();
@@ -873,7 +462,7 @@ impl SurrealMindServer {
                 "stuck" => ThinkMode::Stuck,
                 "question" => ThinkMode::Question,
                 "conclude" => ThinkMode::Conclude,
-                _ => self.detect_mode(&params.content),
+                _ => detect_mode(&params.content),
             }
         } else if content_lower.contains("debug time") {
             ThinkMode::Debug
@@ -888,7 +477,7 @@ impl SurrealMindServer {
         } else if content_lower.contains("wrap up") || content_lower.contains("conclude") {
             ThinkMode::Conclude
         } else {
-            self.detect_mode(&params.content)
+            detect_mode(&params.content)
         };
 
         let (mode_selected, reason, trigger_matched, heuristics) = match mode {

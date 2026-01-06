@@ -1,7 +1,7 @@
 ---
 id: task-18
 title: Extract Runners from thinking.rs
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-01-06 03:35'
 labels:

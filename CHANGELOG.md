@@ -4,6 +4,18 @@
 
 - **thinking.rs Modularization (task-25)**: Extracted shared types from `thinking.rs` into dedicated `src/tools/thinking/types.rs` module. Includes `ThinkMode`, `LegacymindThinkParams`, `ContinuityResult`, `EvidenceItem`, `VerificationResult`, and `process_continuity_query_result()`. Establishes foundation for subsequent modular extractions (tasks 16-20). Reduces cognitive load for agents working on specific thinking subsystems.
 
+- **Mode Detection Extraction (task-17)**: Extracted `detect_mode()` function into `src/tools/thinking/mode_detection.rs` with 4 keyword constant arrays (`DEBUG_KEYWORDS`, `BUILD_KEYWORDS`, `PLAN_KEYWORDS`, `STUCK_KEYWORDS`) and 6 unit tests. Clean, testable mode detection logic now isolated from routing.
+
+- **Runners Extraction (task-18)**: Extracted `run_convo()` and `run_technical()` into `src/tools/thinking/runners.rs` using Rust's split impl pattern. Added comprehensive documentation for mode-specific defaults.
+
+- **Continuity Extraction (task-19)**: Extracted `resolve_continuity_links()` into `src/tools/thinking/continuity.rs`. Handles link validation, self-link prevention, and deduplication with detailed documentation.
+
+- **Cognitive Engine Tests (task-23)**: Added 6 unit tests for `CognitiveEngine::blend()` covering empty input, zero weights, proportional allocation, deduplication, channel limits, and meta recording.
+
+### Added
+
+- **QUICKSTART.md (task-24)**: Created `docs/QUICKSTART.md` with practical examples for `legacymind_think`, `unified_search`, `delegate_gemini`, and `knowledgegraph_create` tools. Includes hints reference table.
+
 ## [0.1.4] - 2026-01-05
 
 ### Fixed
