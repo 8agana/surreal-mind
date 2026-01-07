@@ -147,8 +147,7 @@ async fn inspect() -> Result<()> {
 
 /// Run sanity check comparing freshly computed vs stored embeddings
 async fn sanity_cosine() -> Result<()> {
-    use surreal_mind::bge_embedder::BGEEmbedder;
-    use surreal_mind::embeddings::Embedder;
+    use surreal_mind::embeddings::create_embedder;
     use surrealdb::engine::remote::ws::Ws;
     use surrealdb::opt::auth::Root;
     use surrealdb::Surreal;
@@ -173,6 +172,9 @@ async fn sanity_cosine() -> Result<()> {
     }
 
     dotenvy::dotenv().ok();
+    // Load config to get embedder settings
+    let config = surreal_mind::config::Config::load()?;
+    
     let db = Surreal::new::<Ws>(
         std::env::var("SURR_DB_URL").unwrap_or("127.0.0.1:8000".into()),
     )
@@ -206,8 +208,8 @@ async fn sanity_cosine() -> Result<()> {
         content.chars().take(60).collect::<String>()
     );
 
-    let embedder = BGEEmbedder::new()?;
-    let q = embedder.embed(&content).await?;
+    let embedder = create_embedder(&config).await?;
+    let q: Vec<f32> = embedder.embed(&content).await?;
     let stored: Vec<serde_json::Value> = db
         .query("SELECT embedding FROM thoughts WHERE id = type::thing('thoughts', $id) LIMIT 1")
         .bind(("id", id.clone()))

@@ -44,6 +44,9 @@ pub enum SurrealMindError {
 
     #[error("Invalid parameters: {message}")]
     InvalidParams { message: String },
+
+    #[error("Tool execution failed: {tool} error: {error}")]
+    ToolExecutionFailed { tool: String, error: String },
 }
 
 impl From<anyhow::Error> for SurrealMindError {
@@ -165,6 +168,11 @@ impl From<SurrealMindError> for rmcp::ErrorData {
                 rmcp::model::ErrorCode::INVALID_PARAMS,
                 "Invalid parameters",
                 message,
+            ),
+            SurrealMindError::ToolExecutionFailed { tool, error } => (
+                rmcp::model::ErrorCode::INTERNAL_ERROR,
+                "Tool execution failed",
+                format!("Tool '{}' failed: {}", tool, error),
             ),
         };
 

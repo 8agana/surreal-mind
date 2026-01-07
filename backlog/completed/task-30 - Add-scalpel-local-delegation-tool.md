@@ -2,23 +2,23 @@
 
 **Status:** Proposed
 **Owner:** Gemini (Antigravity)
-**Context:** The user wants to offload routine, high-volume operations (file reads, minor code edits, summarization) to a local model (Ministral 8B) running via `mistral.rs`. This saves API costs and primary LLM context window.
+**Context:** The user wants to offload routine, high-volume operations (file reads, minor code edits, summarization) to a local model (Ministral 3B) running via `mistral.rs`. This saves API costs and primary LLM context window.
 
 ## Architecture
 
 We will implement a "Sidecar Pattern":
 1. **Primary LLM (Gemini/Claude)**: Handles reasoning and decisions.
 2. **Surreal-Mind (MCP)**: exposing a new tool `scalpel`.
-3. **Ministral 8B (mistral.rs)**: Running locally as an OpenAI-compatible server.
+3. **Ministral 3B (mistral.rs)**: Running locally as an OpenAI-compatible server.
 
 ```
-[Gemini/Claude] -> [surreal-mind: scalpel()] -> [mistral.rs: Ministral 8B]
+[Gemini/Claude] -> [surreal-mind: scalpel()] -> [mistral.rs: Ministral 3B]
 ```
 
 ## Proposed Changes
 
 ### 1. New Dependency (External)
-- `mistral.rs` running in server mode (`mistralrs-server --model mistral-8b-instruct`).
+- `mistral.rs` running in server mode (`mistralrs-server --model mistral-3b-instruct`).
 - Env vars for configuration:
   - `SURR_SCALPEL_ENABLED` (default false)
   - `SURR_SCALPEL_ENDPOINT` (default http://localhost:8080)
@@ -30,7 +30,7 @@ A general-purpose delegation tool.
 ```json
 {
   "name": "scalpel",
-  "description": "Delegate routine operations to a fast local model (Ministral 8B). Use for file analysis, summarization, or minor code transformations.",
+  "description": "Delegate routine operations to a fast local model (Ministral 3B). Use for file analysis, summarization, or minor code transformations.",
   "inputSchema": {
     "type": "object",
     "properties": {

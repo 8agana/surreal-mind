@@ -1,4 +1,5 @@
 pub mod gemini;
+pub mod local;
 pub mod persisted;
 pub mod traits;
 

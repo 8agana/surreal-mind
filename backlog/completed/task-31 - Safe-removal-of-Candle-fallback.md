@@ -1,6 +1,6 @@
 # Task 31: Remove Candle/Local Embeddings Fallback
 
-**Status:** Proposed
+**Status:** Completed
 **Owner:** Gemini (Antigravity)
 **Context:** We are removing the local Candle-based embedding fallback. It is better for the system to fail explicitly if OpenAI is unreachable than to silently generate 384-dim embeddings that corrupt the 1536-dim vector space.
 

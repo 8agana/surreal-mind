@@ -66,6 +66,7 @@ impl ServerHandler for SurrealMindServer {
         let call_status_schema = crate::schemas::call_status_schema();
         let call_jobs_schema = crate::schemas::call_jobs_schema();
         let call_cancel_schema = crate::schemas::call_cancel_schema();
+        let scalpel_schema = crate::schemas::scalpel_schema();
 
         // Output schemas (rmcp 0.11.0+)
         // Output schemas removed as they are no longer used or needed for simple tool defs
@@ -148,6 +149,17 @@ impl ServerHandler for SurrealMindServer {
             meta: None,
         });
 
+        tools.push(Tool {
+            name: "scalpel".into(),
+            title: Some("Scalpel".into()),
+            description: Some("Delegate routine operations to a fast local model (Ministral 3B)".into()),
+            input_schema: scalpel_schema,
+            icons: None,
+            annotations: None,
+            output_schema: None,
+            meta: None,
+        });
+
 tools.push(Tool {
             name: "call_status".into(),
             title: Some("Call Status".into()),
@@ -216,6 +228,7 @@ tools.push(Tool {
             // Help
             "howto" => self.handle_detailed_help(request).await.map_err(|e| e.into()),
             "search" => self.handle_unified_search(request).await.map_err(|e| e.into()),
+            "scalpel" => self.handle_scalpel(request).await.map_err(|e| e.into()),
             
             _ => Err(McpError {
                 code: rmcp::model::ErrorCode::METHOD_NOT_FOUND,

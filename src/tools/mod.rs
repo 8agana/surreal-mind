@@ -7,6 +7,7 @@ pub mod detailed_help;
 pub mod knowledge_graph;
 pub mod list_agent_jobs;
 pub mod maintenance;
+pub mod scalpel;
 pub mod thinking;
 pub mod unified_search;
 pub mod wander;

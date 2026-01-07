@@ -193,3 +193,22 @@ pub fn wander_schema() -> Arc<Map<String, Value>> {
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
+
+pub fn scalpel_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "task": {
+                "type": "string",
+                "description": "The operation to perform (natural language)"
+            },
+            "context": {
+                "type": "object",
+                "description": "Additional context (file paths, code snippets, etc.)"
+            },
+            "format": {"type": "string", "enum": ["text", "json", "code"]}
+        },
+        "required": ["task"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
