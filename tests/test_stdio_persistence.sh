@@ -18,7 +18,7 @@ TEST_ID="stdio-test-$(date +%Y%m%d-%H%M%S)"
 TEST_CONTENT="Testing stdio persistence with rmcp 0.6.4 at $(date)"
 
 echo "1. Creating test thought via stdio..."
-echo '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"legacymind_think","arguments":{"content":"'$TEST_CONTENT'","hint":"debug"}},"id":1}' | /Users/samuelatagana/Projects/LegacyMind/surreal-mind/target/release/surreal-mind
+echo '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"think","arguments":{"content":"'$TEST_CONTENT'","hint":"debug"}},"id":1}' | /Users/samuelatagana/Projects/LegacyMind/surreal-mind/target/release/surreal-mind
 
 echo ""
 echo "2. Waiting 2 seconds for DB write..."
@@ -26,7 +26,7 @@ sleep 2
 
 echo ""
 echo "3. Searching for the thought..."
-echo '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"legacymind_search","arguments":{"thoughts_content":"rmcp 0.6.4","top_k_thoughts":5}},"id":2}' | /Users/samuelatagana/Projects/LegacyMind/surreal-mind/target/release/surreal-mind
+echo '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"search","arguments":{"thoughts_content":"rmcp 0.6.4","top_k_thoughts":5}},"id":2}' | /Users/samuelatagana/Projects/LegacyMind/surreal-mind/target/release/surreal-mind
 
 echo ""
 echo "=== Test Complete ==="

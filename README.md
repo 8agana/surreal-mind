@@ -1,13 +1,15 @@
 # SurrealMind – Consciousness Persistence MCP Server
 
-SurrealMind is the LegacyMind federation's thinking surface: a Rust MCP server that stores thoughts and knowledge in SurrealDB, injects relevant memories with orbital mechanics, and exposes eight curated tools for continuity.
+SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server that stores thoughts and knowledge in SurrealDB, injects relevant memories with orbital mechanics, and exposes 10 curated tools for continuity.
 
 ## What It Does
 
-- Unified thinking (`legacymind_think`) with continuity links, optional hypothesis verification, and KG-only injection.
-- Retrieval and synthesis (`legacymind_search`) with injection scales and filters.
-- Knowledge graph authoring (`memories_create`, `memories_moderate`).
-- Operations and introspection (`maintenance_ops`, `detailed_help`).
+- **Unified thinking** (`think`) with continuity links, optional hypothesis verification, and KG-only injection.
+- **Retrieval and synthesis** (`search`) with injection scales and filters.
+- **Knowledge graph authoring** (`remember`).
+- **Curiosity-driven exploration** (`wander`) for discovering connections.
+- **Operations and introspection** (`maintain`, `howto`).
+- **Agent delegation** (`call_gem`, `call_status`, `call_jobs`, `call_cancel`).
 - Transports: stdio by default or streamable HTTP with SSE and bearer auth.
 
 ## Transports
@@ -77,22 +79,20 @@ SurrealMind is the LegacyMind federation's thinking surface: a Rust MCP server t
    ./tests/test_mcp_comprehensive.sh
    ```
 
-## Tool Surface (9)
+## Tool Surface (10)
 
-- `legacymind_think`: `content` required. Optional `hint` (`debug|build|plan|stuck|question|conclude`), `injection_scale` 0–3, `tags[]`, `significance`, continuity fields (`session_id`, `chain_id`, `previous_thought_id`, `revises_thought`, `branch_from`), `hypothesis` + `needs_verification` with `verify_top_k`, `min_similarity`, `evidence_limit`, `contradiction_patterns`, `verbose_analysis`.
-- `legacymind_search`: Unified KG search; `query` (text/struct), `target` (`entity|relationship|observation|mixed`), `include_thoughts`, `thoughts_content`, `top_k_memories/thoughts`, `sim_thresh`, confidence/date bounds, chain/session filters.
-- `memories_create`: Create KG `entity|relationship|observation`; supports `upsert`, `source_thought_id`, `confidence`, `data`.
-- `delegate_gemini`: Delegate prompts to Gemini CLI with persisted exchange tracking. `prompt` required, optional `task_name`, `model`.
-- `agent_job_status`, `list_agent_jobs`, `cancel_agent_job`: Manage background agent tasks.
-- `curiosity_add`: Add lightweight curiosity entries. `content` required, optional `tags[]`, `agent`, `topic`, `in_reply_to`.
-- `curiosity_get`: Fetch recent curiosity entries. Optional `limit` (1-100, default 20), `since` (YYYY-MM-DD).
-- `curiosity_search`: Search curiosity entries via embeddings. `query` required, optional `top_k`, `recency_days`.
-- `maintenance_ops`: Operational subcommands:
-  - `list_removal_candidates`, `export_removals`, `finalize_removal`
-  - `health_check_embeddings`, `health_check_indexes`
-  - `reembed`, `reembed_kg`, `ensure_continuity_fields`
-  - `echo_config` (safe runtime snapshot)
-- `detailed_help`: Deterministic schemas for tools/prompts.
+| Tool | Description |
+|------|-------------|
+| `think` | Unified thinking with continuity links, hypothesis verification, KG injection. Required: `content`. Optional: `hint`, `injection_scale` 0–3, `tags[]`, `significance`, continuity fields. |
+| `search` | Unified KG + thoughts search. Optional: `query`, `target`, `include_thoughts`, `top_k_memories/thoughts`, similarity/confidence filters. |
+| `remember` | Create KG `entity\|relationship\|observation`. Supports `upsert`, `source_thought_id`, `confidence`, `data`. |
+| `wander` | Explore the knowledge graph. Modes: `random`, `semantic`, `meta`. Returns actionable guidance for KG improvement. |
+| `maintain` | System maintenance: `health_check_embeddings`, `reembed`, `reembed_kg`, `list_removal_candidates`, `export_removals`, `finalize_removal`, `echo_config`. |
+| `howto` | Get help for any tool. Optional: `tool`, `format` (`compact\|full`). |
+| `call_gem` | Delegate prompts to Gemini CLI. Required: `prompt`. Optional: `task_name`, `model`, `cwd`, `timeout_ms`. |
+| `call_status` | Check status of a background agent job. Required: `job_id`. |
+| `call_jobs` | List active/recent agent jobs. Optional: `limit`, `status_filter`, `tool_name`. |
+| `call_cancel` | Cancel a running agent job. Required: `job_id`. |
 
 ## Configuration Quick Reference
 
@@ -109,12 +109,14 @@ SurrealMind is the LegacyMind federation's thinking surface: a Rust MCP server t
 
 - Injection scales: 1→5 entities @0.6, 2→10 @0.4, 3→20 @0.25. Floor `SURR_INJECT_FLOOR` clamps low-sim hits. KG-only injection by default.
 
+## Binaries
+
 - `surreal-mind` (MCP server, stdio or http)
-- `reembed`, `reembed_kg`, `fix_dimensions` (dimension hygiene)
-- `db_check`, `check_db_contents`, `simple_db_test` (connectivity smoke)
-- `kg_inspect`, `kg_apply_from_plan`, `kg_dedupe_plan`, `kg_populate` (KG ops)
-- `kg_debug_tool`, `kg_embed`, `test_gemini` (debugging/utility)
-- `migration`, `smtop`, `sanity_cosine`
+- `reembed`, `reembed_kg` (dimension hygiene)
+- `kg_apply_from_plan`, `kg_dedupe_plan`, `kg_populate`, `kg_embed` (KG ops)
+- `kg_debug_tool`, `kg_wander` (exploration/debugging)
+- `migration`, `smtop`, `admin` (consolidated admin utilities)
+
 Run with `cargo build --release` to produce all.
 
 ## Testing & CI
@@ -122,16 +124,16 @@ Run with `cargo build --release` to produce all.
 ```bash
 cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace --all-features           # 52 tests currently
+cargo test --workspace --all-features
 ./tests/test_mcp_comprehensive.sh               # MCP end-to-end
 ```
 
 ## Change Log Highlights
 
-- 2026-01-02: Documentation synced with codebase; added agent job tools and missing binaries.
-- 2025-11-29: Cognitive kernel cleanup; legacy photography binaries removed; tool surface fixed at 8 (now 7 after brain_store removal on 2025-12-05).
+- 2026-01-06: Tool rename (v0.7.5): `think`, `search`, `remember`, `wander`, `maintain`, `howto`, `call_*`. Dead code cleanup (~220 lines removed).
+- 2026-01-02: Documentation synced with codebase; added agent job tools.
+- 2025-11-29: Cognitive kernel cleanup; legacy photography binaries removed.
 - 2025-11-24: Photography split finalized; all photo MCP tools removed (now in photography-mind).
-- 2025-11-20–22: Safety hardening, fuzzy competition matching (now lives in photography-mind), clippy clean.
 
 ## License
 

@@ -157,7 +157,7 @@ async fn test_list_tools_protocol() {
                     {
                         assert!(!tools.is_empty(), "Should have at least one tool");
 
-                        // Check for legacymind_search tool
+                        // Check for search tool
                         let tool_names: Vec<String> = tools
                             .iter()
                             .filter_map(|t| {
@@ -168,8 +168,8 @@ async fn test_list_tools_protocol() {
                             .collect();
 
                         assert!(
-                            tool_names.contains(&"legacymind_search".to_string()),
-                            "Should include legacymind_search tool"
+                            tool_names.contains(&"search".to_string()),
+                            "Should include search tool"
                         );
                     }
                 }
@@ -203,7 +203,7 @@ async fn test_call_tool_protocol_invalid_params() {
         .as_object()
         .unwrap()
         .clone();
-        let request = make_call_tool_request("legacymind_think", args);
+        let request = make_call_tool_request("think", args);
 
         // Send request (client sends RxJsonRpcMessage to server)
         let request_msg = build_jsonrpc_request(request, "test-invalid-call");
@@ -263,7 +263,7 @@ async fn test_call_tool_continuity_fallback_protocol() {
         .as_object()
         .unwrap()
         .clone();
-        let request = make_call_tool_request("legacymind_think", args);
+        let request = make_call_tool_request("think", args);
 
         // Send request (client sends RxJsonRpcMessage to server)
         let request_msg = build_jsonrpc_request(request, "test-continuity");

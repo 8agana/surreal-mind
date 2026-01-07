@@ -1,16 +1,40 @@
-## [0.1.5] - 2026-01-06
+## [0.7.5] - 2026-01-06
+
+### Added
+- Actionable guidance in `wander` tool response to prompt Knowledge Graph improvements.
+- Support for direct ID lookups in `search` (formerly `legacymind_search`).
 
 ### Changed
+- Simplified core tool names for better UX:
+    - `legacymind_think` -> `think`
+    - `legacymind_search` -> `search`
+    - `legacymind_wander` -> `wander`
+    - `memories_create` -> `remember`
+    - `maintenance_ops` -> `maintain`
+    - `detailed_help` -> `howto`
+- Simplified delegation tool names:
+    - `delegate_gemini` -> `call_gem`
+    - `agent_job_status` -> `call_status`
+    - `list_agent_jobs` -> `call_jobs`
+    - `cancel_agent_job` -> `call_cancel`
+- Updated tool descriptions in `list_tools` and `howto`.
 
-- **thinking.rs Modularization (task-25)**: Extracted shared types from `thinking.rs` into dedicated `src/tools/thinking/types.rs` module. Includes `ThinkMode`, `LegacymindThinkParams`, `ContinuityResult`, `EvidenceItem`, `VerificationResult`, and `process_continuity_query_result()`. Establishes foundation for subsequent modular extractions (tasks 16-20). Reduces cognitive load for agents working on specific thinking subsystems.
+### Removed
+- Obsolete `legacymind_manage_proposals` tool and associated schemas.
+- Legacy output schemas from `router.rs`.
+- Dead `curiosity_*` schemas (~40 lines).
+- Unused output schema functions (~180 lines) - were defined but never called.
 
-- **Mode Detection Extraction (task-17)**: Extracted `detect_mode()` function into `src/tools/thinking/mode_detection.rs` with 4 keyword constant arrays (`DEBUG_KEYWORDS`, `BUILD_KEYWORDS`, `PLAN_KEYWORDS`, `STUCK_KEYWORDS`) and 6 unit tests. Clean, testable mode detection logic now isolated from routing.
+### Fixed
+- Updated stale tool list in `main.rs` startup log.
+- Resolved all clippy warnings in core library:
+  - Added `Default` impl for `StreamJsonParser`
+  - Fixed bool assertion comparisons in `gemini.rs` tests
+  - Added type alias `ModeMetadata` to reduce complexity in `mode_router.rs`
+  - Collapsed nested if statements in `mode_router.rs`
 
-- **Runners Extraction (task-18)**: Extracted `run_convo()` and `run_technical()` into `src/tools/thinking/runners.rs` using Rust's split impl pattern. Added comprehensive documentation for mode-specific defaults.
 
-- **Continuity Extraction (task-19)**: Extracted `resolve_continuity_links()` into `src/tools/thinking/continuity.rs`. Handles link validation, self-link prevention, and deduplication with detailed documentation.
-
-- **Cognitive Engine Tests (task-23)**: Added 6 unit tests for `CognitiveEngine::blend()` covering empty input, zero weights, proportional allocation, deduplication, channel limits, and meta recording.
+## [0.1.5] - 2026-01-06
 
 ### Added
 

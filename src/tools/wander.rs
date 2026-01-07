@@ -88,11 +88,13 @@ impl SurrealMindServer {
         };
 
         // 3. Construct Response
+        let guidance = "DISCOVERY GUIDANCE: You are in 'Curiosity Mode'. Use this discovery to better the Knowledge Graph. Ask yourself: Is this information accurate? What context is missing? Are there related entities or observations you can link? Use the 'remember' tool to commit improvements or 'think' to reason about the connection.";
         let response = json!({
             "previous_id": params.current_thought_id,
             "current_node": next_node,
             "mode_used": params.mode,
             "affordances": affordances,
+            "guidance": guidance,
             "message": if next_node.is_none() { "Dead end or invalid start." } else { "Wander step complete." }
         });
 

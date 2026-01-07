@@ -55,89 +55,82 @@ impl ServerHandler for SurrealMindServer {
         use rmcp::model::Tool;
 
         // Input schemas
-        let legacymind_think_schema_map = crate::schemas::legacymind_think_schema();
-        let maintenance_ops_schema_map = crate::schemas::maintenance_ops_schema();
-        let kg_create_schema_map = crate::schemas::kg_create_schema();
-        let detailed_help_schema_map = crate::schemas::detailed_help_schema();
-        let unified_schema = crate::schemas::unified_search_schema();
+        let think_schema_map = crate::schemas::think_schema();
+        let maintain_schema_map = crate::schemas::maintain_schema();
+        let remember_schema_map = crate::schemas::remember_schema();
+        let howto_schema_map = crate::schemas::howto_schema();
+        let search_schema_map = crate::schemas::search_schema();
         let wander_schema_map = crate::schemas::wander_schema();
 
-        let delegate_gemini_schema = crate::schemas::delegate_gemini_schema();
-        let agent_job_status_schema = crate::schemas::agent_job_status_schema();
-        let list_agent_jobs_schema = crate::schemas::list_agent_jobs_schema();
-        let cancel_agent_job_schema = crate::schemas::cancel_agent_job_schema();
+        let call_gem_schema = crate::schemas::call_gem_schema();
+        let call_status_schema = crate::schemas::call_status_schema();
+        let call_jobs_schema = crate::schemas::call_jobs_schema();
+        let call_cancel_schema = crate::schemas::call_cancel_schema();
 
         // Output schemas (rmcp 0.11.0+)
-        let legacymind_think_output = crate::schemas::legacymind_think_output_schema();
-        let maintenance_ops_output = crate::schemas::maintenance_ops_output_schema();
-        let memories_create_output = crate::schemas::memories_create_output_schema();
-        let detailed_help_output = crate::schemas::detailed_help_output_schema();
-        let unified_search_output = crate::schemas::legacymind_search_output_schema();
+        // Output schemas removed as they are no longer used or needed for simple tool defs
+        
 
         let mut tools = vec![
             Tool {
-                name: "legacymind_think".into(),
-                title: Some("LegacyMind Think".into()),
-                description: Some("Unified thinking tool with automatic mode routing".into()),
-                input_schema: legacymind_think_schema_map.clone(),
+                name: "think".into(),
+                title: Some("Think".into()),
+                description: Some("Unified thinking tool with automatic mode routing (Plan, Build, Debug, Stuck)".into()),
+                input_schema: think_schema_map.clone(),
                 icons: None,
                 annotations: None,
-                output_schema: Some(legacymind_think_output),
+                output_schema: None,
                 meta: None,
             },
             Tool {
-                name: "legacymind_wander".into(),
-                title: Some("LegacyMind Wander".into()),
-                description: Some("Interactively explore the knowledge graph via random, semantic, or meta traversals.".into()),
+                name: "wander".into(),
+                title: Some("Wander".into()),
+                description: Some("Explore the knowledge graph to form new connections, provide context, and verify information. Use this for curiosity-driven exploration, not goal-directed search.".into()),
                 input_schema: wander_schema_map,
                 icons: None,
                 annotations: None,
-                output_schema: None, // Dynamic output, hard to schema-tize strictly or just JSON
+                output_schema: None,
                 meta: None,
             },
             Tool {
-                name: "maintenance_ops".into(),
-                title: Some("Maintenance Operations".into()),
-                description: Some("Maintenance operations for archival and cleanup".into()),
-                input_schema: maintenance_ops_schema_map,
+                name: "maintain".into(),
+                title: Some("Maintain".into()),
+                description: Some("Maintenance operations for archival, cleanup, and health checks".into()),
+                input_schema: maintain_schema_map,
                 icons: None,
                 annotations: None,
-                output_schema: Some(maintenance_ops_output),
+                output_schema: None,
                 meta: None,
             },
             // (legacy think_search removed — use legacymind_search)
             Tool {
-                name: "memories_create".into(),
-                title: Some("Create Memories".into()),
-                description: Some(
-                    "Create entities and relationships in personal memory graph".into(),
-                ),
-                input_schema: kg_create_schema_map,
+                name: "remember".into(),
+                title: Some("Remember".into()),
+                description: Some("Create entities, relationships, or observations in the knowledge graph".into()),
+                input_schema: remember_schema_map,
                 icons: None,
                 annotations: None,
-                output_schema: Some(memories_create_output),
+                output_schema: None,
                 meta: None,
             },
             // (legacy memories_search removed — use legacymind_search)
             Tool {
-                name: "detailed_help".into(),
-                title: Some("Detailed Help".into()),
-                description: Some("Get detailed help for a specific tool".into()),
-                input_schema: detailed_help_schema_map,
+                name: "howto".into(),
+                title: Some("How To".into()),
+                description: Some("Get detailed help and usage examples for available tools".into()),
+                input_schema: howto_schema_map,
                 icons: None,
                 annotations: None,
-                output_schema: Some(detailed_help_output),
+                output_schema: None,
                 meta: None,
             },
         ];
 
         tools.push(Tool {
-            name: "delegate_gemini".into(),
-            title: Some("Delegate Gemini".into()),
-            description: Some(
-                "Delegate a prompt to Gemini CLI with persisted exchange tracking.".into(),
-            ),
-            input_schema: delegate_gemini_schema.clone(),
+            name: "call_gem".into(),
+            title: Some("Call Gem".into()),
+            description: Some("Delegate a task to Gemini CLI with full context and tracking".into()),
+            input_schema: call_gem_schema.clone(),
             icons: None,
             annotations: None,
             output_schema: None,
@@ -145,23 +138,21 @@ impl ServerHandler for SurrealMindServer {
         });
 
         tools.push(Tool {
-            name: "legacymind_search".into(),
-            title: Some("LegacyMind Search".into()),
-            description: Some(
-                "Unified LegacyMind search: memories (default) + optional thoughts".into(),
-            ),
-            input_schema: unified_schema,
+            name: "search".into(),
+            title: Some("Search".into()),
+            description: Some("Unified search for entities, observations, and thoughts".into()),
+            input_schema: search_schema_map,
             icons: None,
             annotations: None,
-            output_schema: Some(unified_search_output),
+            output_schema: None,
             meta: None,
         });
 
-        tools.push(Tool {
-            name: "agent_job_status".into(),
-            title: Some("Agent Job Status".into()),
-            description: Some("Get status of an async agent job by job_id".into()),
-            input_schema: agent_job_status_schema.clone(),
+tools.push(Tool {
+            name: "call_status".into(),
+            title: Some("Call Status".into()),
+            description: Some("Check the status and results of a delegated agent job".into()),
+            input_schema: call_status_schema.clone(),
             icons: None,
             annotations: None,
             output_schema: None,
@@ -169,12 +160,10 @@ impl ServerHandler for SurrealMindServer {
         });
 
         tools.push(Tool {
-            name: "list_agent_jobs".into(),
-            title: Some("List Agent Jobs".into()),
-            description: Some(
-                "List async agent jobs with optional filtering by status and tool_name".into(),
-            ),
-            input_schema: list_agent_jobs_schema.clone(),
+            name: "call_jobs".into(),
+            title: Some("Call Jobs".into()),
+            description: Some("List active or completed delegated agent jobs".into()),
+            input_schema: call_jobs_schema.clone(),
             icons: None,
             annotations: None,
             output_schema: None,
@@ -182,32 +171,19 @@ impl ServerHandler for SurrealMindServer {
         });
 
         tools.push(Tool {
-            name: "cancel_agent_job".into(),
-            title: Some("Cancel Agent Job".into()),
-            description: Some("Cancel a running or queued async agent job".into()),
-            input_schema: cancel_agent_job_schema.clone(),
+            name: "call_cancel".into(),
+            title: Some("Call Cancel".into()),
+            description: Some("Cancel an active delegated agent job".into()),
+            input_schema: call_cancel_schema.clone(),
             icons: None,
             annotations: None,
             output_schema: None,
             meta: None,
         });
 
-        let manage_proposals_schema = crate::schemas::legacymind_manage_proposals_schema();
-        let manage_proposals_output = crate::schemas::legacymind_manage_proposals_output_schema();
+        
 
-        tools.push(Tool {
-            name: "legacymind_manage_proposals".into(),
-            title: Some("Manage Knowledge Graph Proposals".into()),
-            description: Some(
-                "Review, approve, or reject pending knowledge graph changes from the Gardener."
-                    .into(),
-            ),
-            input_schema: manage_proposals_schema,
-            icons: None,
-            annotations: None,
-            output_schema: Some(manage_proposals_output),
-            meta: None,
-        });
+        
         // (photography tools removed from this server)
 
         Ok(ListToolsResult {
@@ -224,53 +200,23 @@ impl ServerHandler for SurrealMindServer {
         // Route to appropriate tool handler
         match request.name.as_ref() {
             // Unified thinking tool
-            "legacymind_think" => self
-                .handle_legacymind_think(request)
-                .await
-                .map_err(|e| e.into()),
+            "think" => self.handle_legacymind_think(request).await.map_err(|e| e.into()),
 
             // Intelligence and utility
-            "legacymind_wander" => self.handle_wander(request).await.map_err(|e| e.into()),
-            "maintenance_ops" => self
-                .handle_maintenance_ops(request)
-                .await
-                .map_err(|e| e.into()),
+            "wander" => self.handle_wander(request).await.map_err(|e| e.into()),
+            "maintain" => self.handle_maintenance_ops(request).await.map_err(|e| e.into()),
             // Memory tools
-            "memories_create" => self
-                .handle_knowledgegraph_create(request)
-                .await
-                .map_err(|e| e.into()),
-            "delegate_gemini" => self
-                .handle_delegate_gemini(request)
-                .await
-                .map_err(|e| e.into()),
+            "remember" => self.handle_knowledgegraph_create(request).await.map_err(|e| e.into()),
+            "call_gem" => self.handle_delegate_gemini(request).await.map_err(|e| e.into()),
 
-            "agent_job_status" => self
-                .handle_agent_job_status(request)
-                .await
-                .map_err(|e| e.into()),
-            "list_agent_jobs" => self
-                .handle_list_agent_jobs(request)
-                .await
-                .map_err(|e| e.into()),
-            "cancel_agent_job" => self
-                .handle_cancel_agent_job(request)
-                .await
-                .map_err(|e| e.into()),
+            "call_status" => self.handle_agent_job_status(request).await.map_err(|e| e.into()),
+            "call_jobs" => self.handle_list_agent_jobs(request).await.map_err(|e| e.into()),
+            "call_cancel" => self.handle_cancel_agent_job(request).await.map_err(|e| e.into()),
 
             // Help
-            "detailed_help" => self
-                .handle_detailed_help(request)
-                .await
-                .map_err(|e| e.into()),
-            "legacymind_search" => self
-                .handle_unified_search(request)
-                .await
-                .map_err(|e| e.into()),
-            "legacymind_manage_proposals" => self
-                .handle_manage_proposals(request)
-                .await
-                .map_err(|e| e.into()),
+            "howto" => self.handle_detailed_help(request).await.map_err(|e| e.into()),
+            "search" => self.handle_unified_search(request).await.map_err(|e| e.into()),
+            
             _ => Err(McpError {
                 code: rmcp::model::ErrorCode::METHOD_NOT_FOUND,
                 message: format!("Unknown tool: {}", request.name).into(),

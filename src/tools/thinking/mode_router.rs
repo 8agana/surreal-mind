@@ -6,6 +6,9 @@
 use super::mode_detection::{detect_mode, DEBUG_KEYWORDS, BUILD_KEYWORDS, PLAN_KEYWORDS, STUCK_KEYWORDS};
 use super::types::ThinkMode;
 
+/// Type alias for mode metadata return value
+type ModeMetadata = (String, String, Option<String>, Option<(Vec<String>, usize)>);
+
 /// Metadata about how a mode was selected
 #[derive(Debug, Clone)]
 pub struct ModeRoutingResult {
@@ -75,14 +78,14 @@ fn generate_metadata(
     mode: &ThinkMode,
     hint: Option<&str>,
     content_lower: &str,
-) -> (String, String, Option<String>, Option<(Vec<String>, usize)>) {
+) -> ModeMetadata {
     let mode_name = mode.as_str();
     
     // Check if hint was used
-    if let Some(h) = hint {
-        if h == mode_name {
-            return (mode_name.to_string(), "hint specified".to_string(), None, None);
-        }
+    if let Some(h) = hint
+        && h == mode_name
+    {
+        return (mode_name.to_string(), "hint specified".to_string(), None, None);
     }
     
     // Check trigger phrases

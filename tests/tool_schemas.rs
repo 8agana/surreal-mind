@@ -17,26 +17,27 @@ fn test_list_tools_returns_expected_tools() {
     // For now, we're testing the expected structure
 
     let expected_tools = [
-        "legacymind_think",
-        "maintenance_ops",
-        "memories_create",
-        "detailed_help",
-        "delegate_gemini",
-        "curiosity_add",
-        "curiosity_get",
-        "curiosity_search",
-        "legacymind_search",
+        "think",
+        "remember",
+        "search",
+        "maintain",
+        "call_gem",
+        "call_status",
+        "call_jobs",
+        "call_cancel",
+        "wander",
+        "howto",
     ];
     assert_eq!(
         expected_tools.len(),
-        9,
-        "Tool roster should list 9 entries (core 5 + delegate_gemini + 3 curiosity tools)"
+        10,
+        "Tool roster should list entries for all 10 tools"
     );
 }
 
 #[test]
-fn test_legacymind_think_schema_structure() {
-    // Test that legacymind_think has the expected schema structure
+fn test_think_schema_structure() {
+    // Test that think has the expected schema structure
     let expected_schema = json!({
         "type": "object",
         "properties": {
@@ -76,12 +77,12 @@ fn test_legacymind_think_schema_structure() {
 }
 
 #[test]
-fn test_detailed_help_schema_structure() {
-    // Test that detailed_help has the expected schema structure
+fn test_howto_schema_structure() {
+    // Test that howto has the expected schema structure
     let expected_schema = json!({
         "type": "object",
         "properties": {
-            "tool": {"type": "string", "enum": ["legacymind_think", "memories_create", "legacymind_search", "maintenance_ops", "delegate_gemini", "curiosity_add", "curiosity_get", "curiosity_search", "detailed_help"]},
+            "tool": {"type": "string", "enum": ["think", "remember", "search", "maintain", "call_gem", "curiosity_add", "curiosity_get", "curiosity_search", "howto"]},
             "format": {"type": "string", "enum": ["compact", "full"], "default": "full"}
         }
     });
@@ -190,7 +191,7 @@ fn test_tech_think_accepts_valid_params() {
 }
 
 #[test]
-fn test_legacymind_think_rejects_invalid_significance() {
+fn test_think_rejects_invalid_significance() {
     // Test that significance value of -1 is rejected
     let invalid_params = json!({
         "content": "Test thought",

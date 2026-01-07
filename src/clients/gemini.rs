@@ -64,6 +64,12 @@ pub struct StreamJsonParser {
     buffer: String,
 }
 
+impl Default for StreamJsonParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StreamJsonParser {
     pub fn new() -> Self {
         Self {
@@ -707,7 +713,7 @@ mod tests {
         if let GeminiStreamEvent::Message { role, content, delta } = &events[0] {
             assert_eq!(role, "assistant");
             assert_eq!(content, "Hello");
-            assert_eq!(*delta, true);
+            assert!(*delta);
         } else {
             panic!("Expected Message event");
         }
@@ -738,7 +744,7 @@ mod tests {
         if let GeminiStreamEvent::Message { role, content, delta } = &events[1] {
             assert_eq!(role, "assistant");
             assert_eq!(content, "Response");
-            assert_eq!(*delta, false);
+            assert!(!*delta);
         } else {
             panic!("Expected Message event");
         }

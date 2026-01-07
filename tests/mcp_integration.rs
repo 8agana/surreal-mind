@@ -85,7 +85,7 @@ async fn test_database_schema() {
 
 // Test the internal handler functions directly (they don't require RequestContext)
 #[tokio::test]
-async fn test_legacymind_think_handler() {
+async fn test_think_handler() {
     if std::env::var("RUN_DB_TESTS").is_err() {
         eprintln!("Skipping integration test - set RUN_DB_TESTS=1 to run");
         return;
@@ -95,7 +95,7 @@ async fn test_legacymind_think_handler() {
 
     // Test with valid params
     let request = CallToolRequestParam {
-        name: "legacymind_think".into(),
+        name: "think".into(),
         arguments: Some(
             json!({
                 "content": "Test thought content"
@@ -107,15 +107,15 @@ async fn test_legacymind_think_handler() {
     };
 
     // Call the internal handler directly
-    let result = server.handle_legacymind_think(request).await;
-    assert!(result.is_ok(), "legacymind_think handler should succeed");
+    let result = server.handle_think(request).await;
+    assert!(result.is_ok(), "think handler should succeed");
 
     let result = result.unwrap();
     assert!(!result.content.is_empty(), "Should return content");
 }
 
 #[tokio::test]
-async fn test_legacymind_think_with_continuity() {
+async fn test_think_with_continuity() {
     if std::env::var("RUN_DB_TESTS").is_err() {
         eprintln!("Skipping integration test - set RUN_DB_TESTS=1 to run");
         return;
@@ -126,7 +126,7 @@ async fn test_legacymind_think_with_continuity() {
     // Test with non-existent previous_thought_id
     let non_existent_id = "non_existent_thought_id_12345";
     let request = CallToolRequestParam {
-        name: "legacymind_think".into(),
+        name: "think".into(),
         arguments: Some(
             json!({
                 "content": "Test thought with non-existent previous_thought_id",
@@ -139,7 +139,7 @@ async fn test_legacymind_think_with_continuity() {
     };
 
     // Call the internal handler directly
-    let result = server.handle_legacymind_think(request).await;
+    let result = server.handle_think(request).await;
 
     // Should succeed despite non-existent ID
     assert!(
@@ -172,7 +172,7 @@ async fn test_legacymind_think_with_continuity() {
 }
 
 #[tokio::test]
-async fn test_legacymind_think_invalid_params() {
+async fn test_think_invalid_params() {
     if std::env::var("RUN_DB_TESTS").is_err() {
         eprintln!("Skipping integration test - set RUN_DB_TESTS=1 to run");
         return;
@@ -182,7 +182,7 @@ async fn test_legacymind_think_invalid_params() {
 
     // Test with invalid params (missing required 'content' field)
     let request = CallToolRequestParam {
-        name: "legacymind_think".into(),
+        name: "think".into(),
         arguments: Some(
             json!({
                 "invalid_param": "this parameter doesn't exist"
@@ -194,7 +194,7 @@ async fn test_legacymind_think_invalid_params() {
     };
 
     // Call the internal handler directly
-    let result = server.handle_legacymind_think(request).await;
+    let result = server.handle_think(request).await;
 
     // Should return an error for missing required field
     assert!(result.is_err(), "Should fail with invalid parameters");

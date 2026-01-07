@@ -1,7 +1,7 @@
 use serde_json::{Map, Value, json};
 use std::sync::Arc;
 
-pub fn legacymind_think_schema() -> Arc<Map<String, Value>> {
+pub fn think_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
         "properties": {
@@ -29,7 +29,7 @@ pub fn legacymind_think_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
-pub fn delegate_gemini_schema() -> Arc<Map<String, Value>> {
+pub fn call_gem_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
         "properties": {
@@ -45,7 +45,7 @@ pub fn delegate_gemini_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
-pub fn agent_job_status_schema() -> Arc<Map<String, Value>> {
+pub fn call_status_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
         "properties": {
@@ -56,7 +56,7 @@ pub fn agent_job_status_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
-pub fn list_agent_jobs_schema() -> Arc<Map<String, Value>> {
+pub fn call_jobs_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
         "properties": {
@@ -68,7 +68,7 @@ pub fn list_agent_jobs_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
-pub fn cancel_agent_job_schema() -> Arc<Map<String, Value>> {
+pub fn call_cancel_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
         "properties": {
@@ -79,7 +79,7 @@ pub fn cancel_agent_job_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
-pub fn kg_create_schema() -> Arc<Map<String, Value>> {
+pub fn remember_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
         "properties": {
@@ -94,20 +94,21 @@ pub fn kg_create_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
-pub fn detailed_help_schema() -> Arc<Map<String, Value>> {
+pub fn howto_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
         "properties": {
             "tool": {"type": "string", "enum": [
-                "legacymind_think",
-                "memories_create",
-                "legacymind_search",
-                "maintenance_ops",
-                "delegate_gemini",
-                "curiosity_add",
-                "curiosity_get",
-                "curiosity_search",
-                "detailed_help"
+                "think",
+                "remember",
+                "search",
+                "maintain",
+                "call_gem",
+                "call_status",
+                "call_jobs",
+                "call_cancel",
+                "wander",
+                "howto"
             ]},
             "format": {"type": "string", "enum": ["compact", "full"], "default": "full"}
         }
@@ -115,7 +116,7 @@ pub fn detailed_help_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
-pub fn maintenance_ops_schema() -> Arc<Map<String, Value>> {
+pub fn maintain_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
         "properties": {
@@ -130,7 +131,7 @@ pub fn maintenance_ops_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
-pub fn unified_search_schema() -> Arc<Map<String, Value>> {
+pub fn search_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
         "properties": {
@@ -174,264 +175,10 @@ pub struct Snippet {
     pub span_end: Option<usize>,
 }
 
-// (photography_search_schema removed in favor of two explicit tools)
+// (curiosity_add_schema, curiosity_get_schema, curiosity_search_schema removed - tools deleted)
 
-pub fn curiosity_add_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "content": {"type": "string"},
-            "tags": {"type": "array", "items": {"type": "string"}},
-            "agent": {"type": "string"},
-            "topic": {"type": "string"},
-            "in_reply_to": {"type": "string"}
-        },
-        "required": ["content"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn curiosity_get_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
-            "since": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"}
-        }
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn curiosity_search_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "query": {"type": "string"},
-            "top_k": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
-            "recency_days": {"type": "integer", "minimum": 1, "maximum": 365}
-        },
-        "required": ["query"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-// ============================================================================
-// OUTPUT SCHEMAS (rmcp 0.11.0+)
-// These define the structure of tool responses for schema validation
-// ============================================================================
-
-pub fn legacymind_think_output_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "mode_selected": {"type": "string", "description": "The thinking mode that was selected"},
-            "reason": {"type": "string", "description": "Why this mode was selected"},
-            "delegated_result": {
-                "type": "object",
-                "properties": {
-                    "thought_id": {"type": "string"},
-                    "embedding_model": {"type": "string"},
-                    "embedding_dim": {"type": "integer"},
-                    "memories_injected": {"type": "integer"}
-                },
-                "description": "Result from the delegated thinking mode"
-            },
-            "links": {
-                "type": "object",
-                "properties": {
-                    "session_id": {"type": ["string", "null"]},
-                    "chain_id": {"type": ["string", "null"]},
-                    "previous_thought_id": {"type": ["string", "null"]},
-                    "revises_thought": {"type": ["string", "null"]},
-                    "branch_from": {"type": ["string", "null"]},
-                    "confidence": {"type": ["number", "null"]}
-                },
-                "description": "Resolved continuity links"
-            },
-            "telemetry": {
-                "type": "object",
-                "description": "Trigger matching and heuristic info"
-            },
-            "verification": {
-                "type": "object",
-                "properties": {
-                    "hypothesis": {"type": "string"},
-                    "supporting": {"type": "array"},
-                    "contradicting": {"type": "array"},
-                    "confidence_score": {"type": "number"},
-                    "suggested_revision": {"type": ["string", "null"]}
-                },
-                "description": "Optional hypothesis verification result"
-            }
-        },
-        "required": ["mode_selected", "reason", "delegated_result", "links", "telemetry"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn delegate_gemini_output_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "oneOf": [
-            {
-                "type": "object",
-                "properties": {
-                    "response": {"type": "string", "description": "Model response text"},
-                    "session_id": {"type": "string", "description": "Gemini session ID"},
-                    "exchange_id": {"type": "string", "description": "Persisted exchange record ID"}
-                },
-                "required": ["response", "session_id", "exchange_id"],
-                "description": "Synchronous response"
-            },
-            {
-                "type": "object",
-                "properties": {
-                    "status": {"type": "string", "enum": ["queued"], "description": "Job status"},
-                    "job_id": {"type": "string", "description": "Job ID for tracking"},
-                    "message": {"type": "string", "description": "Status message"}
-                },
-                "required": ["status", "job_id", "message"],
-                "description": "Asynchronous response (fire_and_forget=true)"
-            }
-        ]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn agent_job_status_output_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "job_id": {"type": "string"},
-            "status": {"type": "string", "enum": ["queued", "running", "completed", "failed", "cancelled"]},
-            "created_at": {"type": "string"},
-            "started_at": {"type": ["string", "null"]},
-            "completed_at": {"type": ["string", "null"]},
-            "duration_ms": {"type": ["integer", "null"]},
-            "error": {"type": ["string", "null"]},
-            "session_id": {"type": ["string", "null"]},
-            "exchange_id": {"type": ["string", "null"]},
-            "metadata": {"type": ["object", "null"]}
-        },
-        "required": ["job_id", "status", "created_at"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn list_agent_jobs_output_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "jobs": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "job_id": {"type": "string"},
-                        "status": {"type": "string"},
-                        "tool_name": {"type": "string"},
-                        "created_at": {"type": "string"},
-                        "completed_at": {"type": ["string", "null"]},
-                        "duration_ms": {"type": ["integer", "null"]}
-                    }
-                }
-            },
-            "total": {"type": "integer"}
-        },
-        "required": ["jobs", "total"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn cancel_agent_job_output_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "job_id": {"type": "string"},
-            "previous_status": {"type": "string"},
-            "new_status": {"type": "string", "enum": ["cancelled"]},
-            "message": {"type": "string"}
-        },
-        "required": ["job_id", "previous_status", "new_status", "message"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn memories_create_output_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "kind": {"type": "string", "enum": ["entity", "relationship", "observation"]},
-            "id": {"type": "string", "description": "The created record ID"},
-            "created": {"type": "boolean", "description": "True if newly created, false if existing found"}
-        },
-        "required": ["kind", "id", "created"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn legacymind_search_output_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "memories": {
-                "type": "object",
-                "properties": {
-                    "items": {"type": "array", "description": "Memory items found"}
-                },
-                "description": "Memory search results"
-            },
-            "thoughts": {
-                "type": "object",
-                "properties": {
-                    "total": {"type": "integer"},
-                    "results": {"type": "array"}
-                },
-                "description": "Thought search results (when include_thoughts=true)"
-            }
-        }
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn maintenance_ops_output_schema() -> Arc<Map<String, Value>> {
-    // Maintenance ops returns different structures based on subcommand
-    // Using a permissive schema that allows any object structure
-    let schema = json!({
-        "type": "object",
-        "additionalProperties": true,
-        "description": "Output varies by subcommand. Common fields: expected_dim, thoughts, kg_entities, kg_observations for health_check; candidates, archived for removal ops."
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn detailed_help_output_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "tools": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string"},
-                        "one_liner": {"type": "string"},
-                        "key_params": {"type": "array", "items": {"type": "string"}}
-                    }
-                },
-                "description": "List of available tools (when no specific tool requested)"
-            },
-            "name": {"type": "string", "description": "Tool name (when specific tool requested)"},
-            "description": {"type": "string"},
-            "arguments": {"type": "object"},
-            "returns": {"type": "object"},
-            "prompts": {
-                "type": "array",
-                "description": "List of prompts (when prompts=true)"
-            }
-        }
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
+// Note: Output schemas (legacymind_think_output_schema, etc.) were defined for rmcp 0.11.0+
+// but never used. Removed in 0.7.5 cleanup to reduce dead code.
 
 pub fn wander_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
@@ -443,49 +190,6 @@ pub fn wander_schema() -> Arc<Map<String, Value>> {
             "recency_bias": {"type": "boolean", "default": false, "description": "Whether to prioritize recent memories"}
         },
         "required": ["mode"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn legacymind_manage_proposals_schema() -> Arc<Map<String, serde_json::Value>> {
-    let schema = serde_json::json!({
-        "type": "object",
-        "properties": {
-            "action": {
-                "type": "string",
-                "description": "Action to perform: 'list' (pending), 'approve' (execute), 'reject' (deny).",
-                "enum": ["list", "approve", "reject"]
-            },
-            "proposal_id": {
-                "type": "string",
-                "description": "The ID of the proposal to act on (required for approve/reject)."
-            },
-            "feedback": {
-                "type": "string",
-                "description": "Reason for rejection (required for reject). Used to train the agent."
-            },
-            "limit": {
-                "type": "integer",
-                "description": "Max proposals to list (default 10)."
-            }
-        },
-        "required": ["action"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn legacymind_manage_proposals_output_schema() -> Arc<Map<String, serde_json::Value>> {
-    let schema = serde_json::json!({
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "type": "object",
-        "properties": {
-            "success": { "type": "boolean" },
-            "message": { "type": "string" },
-            "proposals": {
-                "type": "array",
-                "items": { "type": "object" }
-            }
-        }
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }

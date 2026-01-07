@@ -92,11 +92,32 @@ We have successfully separated the *Business Logic* (Photography, Skaters, Order
 
 ---
 
-## 5. PLANS & TODOS
+## 5. ANTIGRAVITY MCP CONFIGURATION
+
+**Discovered 2026-01-06:** Claude Opus 4.5 in AntiGravity has strict system prompt limits. Loading too many MCP tools crashes the agent on initialization.
+
+### Stable Configuration (Opus-Compatible)
+| MCP | Status | Tools | Role |
+|-----|--------|-------|------|
+| `surreal-mind` | ✅ Enabled | 10 | Cognition/persistence (`think`, `search`, `remember`, `wander`, etc.) |
+| `serena` | ✅ Enabled | ~20 | Code navigation/symbols |
+| `desktop-commander` | ✅ Enabled (10 tools) | 10 | System ops (processes, PDFs, screenshots) |
+| `backlog` | ❌ Disabled | - | **Crashes Opus.** Delegate via `call_gem` to CC instead. |
+
+### Key Findings
+- **50-tool threshold**: AntiGravity warns about agent performance above 50 tools.
+- **Backlog incompatibility**: The `backlog-mcp-surreal-mind` binary causes Opus to terminate. Root cause TBD (likely schema validation or startup timeout).
+- **Workaround**: Use `call_gem(prompt: "Update task-XX...", ...)` to delegate backlog ops to Claude Code.
+
+---
+
+## 6. PLANS & TODOS
 
 - [x] **Cleanup:** Remove photography-specific binaries from `src/bin/`.
 - [x] **Cleanup:** Remove dead legacy tool handlers.
 - [x] **Config:** Prune the "multiverse timeout" hallucinations from `surreal_mind.toml`.
 - [x] **Verification:** Run a final health check / compile to ensure no broken refs.
-- [ ] **Review Integration:** (Deferred) Consider creating a "Review Mode" for `legacymind_wander` only if manual oversight becomes necessary again.
+- [x] **Tool Rename:** Simplified all tool names (`think`, `search`, `remember`, `wander`, `maintain`, `howto`, `call_*`).
+- [ ] **Review Integration:** (Deferred) Consider creating a "Review Mode" for `wander` only if manual oversight becomes necessary again.
 - [ ] **Maintenance:** Continue to monitor `kg_wander` logs for semantic drift.
+- [ ] **Backlog Absorption:** Migrate backlog functionality into surreal-mind to eliminate external dependency.

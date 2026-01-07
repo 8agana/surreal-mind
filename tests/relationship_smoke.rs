@@ -22,7 +22,7 @@ async fn relationship_flow_smoke() {
     a_args.insert("upsert".into(), serde_json::Value::Bool(true));
     let e1 = server
         .handle_knowledgegraph_create(CallToolRequestParam {
-            name: "memories_create".into(),
+            name: "remember".into(),
             arguments: Some(a_args),
         })
         .await
@@ -44,7 +44,7 @@ async fn relationship_flow_smoke() {
     b_args.insert("upsert".into(), serde_json::Value::Bool(true));
     let e2 = server
         .handle_knowledgegraph_create(CallToolRequestParam {
-            name: "memories_create".into(),
+            name: "remember".into(),
             arguments: Some(b_args),
         })
         .await
@@ -70,7 +70,7 @@ async fn relationship_flow_smoke() {
     r_args.insert("upsert".into(), serde_json::Value::Bool(true));
     let rel = server
         .handle_knowledgegraph_create(CallToolRequestParam {
-            name: "memories_create".into(),
+            name: "remember".into(),
             arguments: Some(r_args),
         })
         .await
@@ -93,7 +93,7 @@ async fn relationship_flow_smoke() {
     s_args.insert("top_k".into(), serde_json::Value::Number(10u64.into()));
     let items_val = server
         .handle_unified_search(CallToolRequestParam {
-            name: "legacymind_search".into(),
+            name: "search".into(),
             arguments: Some(s_args),
         })
         .await

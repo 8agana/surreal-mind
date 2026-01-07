@@ -24,15 +24,16 @@ impl SurrealMindServer {
             None => {
                 // Canonical tools roster (wrapped in object for rmcp 0.11.0 schema validation)
                 let tools = vec![
-                    json!({"name": "legacymind_think", "one_liner": "Unified thinking tool with automatic mode routing via triggers/heurs", "key_params": ["content", "hint", "injection_scale", "tags", "significance"]}),
-                    json!({"name": "memories_create", "one_liner": "Create entities/relationships/observations in the KG", "key_params": ["kind", "data", "confidence", "source_thought_id"]}),
-                    json!({"name": "legacymind_search", "one_liner": "Unified LM search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]}),
-                    json!({"name": "maintenance_ops", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]}),
-                    json!({"name": "delegate_gemini", "one_liner": "Delegate a prompt to the Gemini CLI agent", "key_params": ["prompt", "task_name", "model", "cwd"]}),
-                    json!({"name": "agent_job_status", "one_liner": "Get status of an async agent job", "key_params": ["job_id"]}),
-                    json!({"name": "list_agent_jobs", "one_liner": "List async agent jobs", "key_params": ["limit", "status_filter", "tool_name"]}),
-                    json!({"name": "cancel_agent_job", "one_liner": "Cancel a running or queued job", "key_params": ["job_id"]}),
-                    json!({"name": "detailed_help", "one_liner": "Get help for a specific tool or list all tools", "key_params": ["tool", "format"]}),
+                    json!({"name": "think", "one_liner": "Unified thinking tool with automatic mode routing via triggers/heurs", "key_params": ["content", "hint", "injection_scale", "tags", "significance"]}),
+                    json!({"name": "remember", "one_liner": "Create entities/relationships/observations in the KG", "key_params": ["kind", "data", "confidence", "source_thought_id"]}),
+                    json!({"name": "search", "one_liner": "Unified LM search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]}),
+                    json!({"name": "maintain", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]}),
+                    json!({"name": "call_gem", "one_liner": "Delegate a prompt to the Gemini CLI agent", "key_params": ["prompt", "task_name", "model", "cwd"]}),
+                    json!({"name": "call_status", "one_liner": "Get status of an async agent job", "key_params": ["job_id"]}),
+                    json!({"name": "call_jobs", "one_liner": "List async agent jobs", "key_params": ["limit", "status_filter", "tool_name"]}),
+                    json!({"name": "call_cancel", "one_liner": "Cancel a running or queued job", "key_params": ["job_id"]}),
+                    json!({"name": "howto", "one_liner": "Get help for a specific tool or list all tools", "key_params": ["tool", "format"]}),
+                    json!({"name": "wander", "one_liner": "Explore the knowledge graph for curiosity-driven discovery", "key_params": ["mode", "current_thought_id", "visited_ids", "recency_bias"]}),
                 ];
                 return Ok(CallToolResult::structured(json!({ "tools": tools })));
             }
@@ -40,8 +41,8 @@ impl SurrealMindServer {
         };
 
         let help = match tool {
-            "legacymind_think" => json!({
-                "name": "legacymind_think",
+            "think" => json!({
+                "name": "think",
                 "description": "Unified thinking tool that routes to appropriate mode. Persists thoughts with optional memory injection. (Framework enhancement currently disabled).",
                 "arguments": {
                     "content": "string (required) — the thought text",
@@ -96,8 +97,8 @@ impl SurrealMindServer {
                      }
                  }
             }),
-            "legacymind_search" => json!({
-                "name": "legacymind_search",
+            "search" => json!({
+                "name": "search",
                 "description": "Unified search in LegacyMind: searches memories by default and, when include_thoughts=true, also searches thoughts. Supports continuity field filters for thoughts.",
                 "arguments": {
                     "query": "object — {name?, text?} query parameters",
@@ -127,8 +128,8 @@ impl SurrealMindServer {
                     {"description": "Search thoughts with confidence >= 0.8 in a date range", "call": {"include_thoughts": true, "confidence_gte": 0.8, "date_from": "2024-01-01", "date_to": "2024-12-31"}}
                 ]
             }),
-            "legacymind_wander" => json!({
-                "name": "legacymind_wander",
+            "wander" => json!({
+                "name": "wander",
                 "description": "Interactively explore the knowledge graph via traversals. Can wander randomly or semantically from a given thought.",
                 "arguments": {
                     "mode": "string (required) — 'random' or 'semantic'",
@@ -151,8 +152,8 @@ impl SurrealMindServer {
                     {"description": "Semantic wander with a higher similarity threshold", "call": {"mode": "semantic", "current_thought_id": "thoughts:xyz", "semantic_threshold": 0.85}}
                 ]
             }),
-            "memories_create" => json!({
-                "name": "memories_create",
+            "remember" => json!({
+                "name": "remember",
                 "description": "Create personal memory entities or relationships; returns created id.",
                 "arguments": {
                     "kind": "string — 'entity'|'relationship'|'observation'",
@@ -162,8 +163,8 @@ impl SurrealMindServer {
                 },
                 "returns": {"created": true, "id": "string", "kind": "string"}
             }),
-            "maintenance_ops" => json!({
-                "name": "maintenance_ops",
+            "maintain" => json!({
+                "name": "maintain",
                 "description": "Maintenance operations including archival, cleanup, and deep health checks (now covering thoughts, entities, observations, and edges).",
                 "arguments": {
                     "subcommand": "string (required) — 'list_removal_candidates'|'export_removals'|'finalize_removal'|'health_check_embeddings'|'health_check_indexes'|'reembed'|'reembed_kg'|'ensure_continuity_fields'|'echo_config'",
@@ -177,8 +178,8 @@ impl SurrealMindServer {
                     "other_subcommands": "object — counts, paths, or messages depending on operation"
                 }
             }),
-            "delegate_gemini" => json!({
-                "name": "delegate_gemini",
+            "call_gem" => json!({
+                "name": "call_gem",
                 "description": "Delegate a prompt to the Gemini CLI agent as an async background job.",
                 "arguments": {
                     "prompt": "string (required) — the prompt text",
@@ -192,8 +193,8 @@ impl SurrealMindServer {
                 "returns": {"status": "queued", "job_id": "string", "message": "string"}
             }),
 
-            "agent_job_status" => json!({
-                "name": "agent_job_status",
+            "call_status" => json!({
+                "name": "call_status",
                 "description": "Get status of an async agent job",
                 "arguments": {
                     "job_id": "string (required)"
@@ -211,8 +212,8 @@ impl SurrealMindServer {
                     "metadata": "object?"
                 }
             }),
-            "list_agent_jobs" => json!({
-                "name": "list_agent_jobs",
+            "call_jobs" => json!({
+                "name": "call_jobs",
                 "description": "List async agent jobs with optional filtering",
                 "arguments": {
                     "limit": "integer (default 20)",
@@ -224,8 +225,8 @@ impl SurrealMindServer {
                     "total": "integer"
                 }
             }),
-            "cancel_agent_job" => json!({
-                "name": "cancel_agent_job",
+            "call_cancel" => json!({
+                "name": "call_cancel",
                 "description": "Cancel a running or queued async agent job",
                 "arguments": {
                     "job_id": "string (required)"
