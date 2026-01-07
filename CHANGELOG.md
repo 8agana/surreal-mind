@@ -3,6 +3,14 @@
 ### Added
 - Actionable guidance in `wander` tool response to prompt Knowledge Graph improvements.
 - Support for direct ID lookups in `search` (formerly `legacymind_search`).
+- **Scalpel agentic tool (Task 33/34)**: Local LLM delegation with tool access
+  - `LocalClient` for `mistralrs-server` sidecar communication
+  - Agentic loop with max 10 iterations  
+  - File I/O tools: `read_file`, `write_file`
+  - Shell access: `run_command`
+  - KG tools: `think`, `search`, `remember` (prompt tuning needed)
+  - Default model: `deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct` via `-a deepseekv2`
+  - Default endpoint: `http://127.0.0.1:8111`
 
 ### Changed
 - Simplified core tool names for better UX:

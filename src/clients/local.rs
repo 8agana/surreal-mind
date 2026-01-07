@@ -14,7 +14,7 @@ pub struct LocalClient {
 impl LocalClient {
     pub fn new() -> Self {
         let endpoint = env::var("SURR_SCALPEL_ENDPOINT")
-            .unwrap_or_else(|_| "http://localhost:8080".to_string());
+            .unwrap_or_else(|_| "http://127.0.0.1:8111".to_string());
         
         // Ensure endpoint has the correct path if not provided
         let endpoint = if endpoint.ends_with("/v1/chat/completions") {
@@ -24,7 +24,7 @@ impl LocalClient {
         };
 
         let model = env::var("SURR_SCALPEL_MODEL")
-            .unwrap_or_else(|_| "mistralai/Ministral-3B-Instruct-v0.1".to_string());
+            .unwrap_or_else(|_| "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct".to_string());
             
         let timeout = env::var("SURR_SCALPEL_TIMEOUT_MS")
             .ok()
@@ -65,6 +65,42 @@ impl LocalClient {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(500),
+            "temperature": 0.1
+        });
+
+        let res = self.client
+            .post(&self.endpoint)
+            .json(&body)
+            .send()
+            .await
+            .context("Failed to connect to local model endpoint")?;
+
+        if !res.status().is_success() {
+            let status = res.status();
+            let text = res.text().await.unwrap_or_default();
+            anyhow::bail!("Local model returned error {}: {}", status, text);
+        }
+
+        let response_json: Value = res.json().await.context("Failed to parse local model response")?;
+        
+        let content = response_json["choices"][0]["message"]["content"]
+            .as_str()
+            .unwrap_or("")
+            .trim()
+            .to_string();
+
+        Ok(content)
+    }
+
+    /// Call model with raw messages array (for agentic loop)
+    pub async fn call_with_messages(&self, messages: &[Value]) -> Result<String> {
+        let body = json!({
+            "model": self.model,
+            "messages": messages,
+            "max_tokens": env::var("SURR_SCALPEL_MAX_TOKENS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(1000),
             "temperature": 0.1
         });
 
