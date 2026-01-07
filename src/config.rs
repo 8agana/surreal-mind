@@ -281,20 +281,7 @@ impl Config {
                     config.system.embedding_model
                 ),
             },
-            "candle" | "local" => {
-                if config.system.embedding_model != "bge-small-en-v1.5" {
-                    tracing::warn!(
-                        "Candle/local provider expects 'bge-small-en-v1.5' model, got '{}'",
-                        config.system.embedding_model
-                    );
-                }
-                if config.system.embedding_dimensions != 384 {
-                    tracing::warn!(
-                        "Candle/local BGE model expects 384 dimensions, got {}",
-                        config.system.embedding_dimensions
-                    );
-                }
-            }
+
             _ => tracing::warn!(
                 "Unknown embedding provider '{}', validation skipped",
                 config.system.embedding_provider

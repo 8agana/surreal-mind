@@ -223,17 +223,7 @@ pub async fn create_embedder(config: &crate::config::Config) -> Result<Arc<dyn E
             || t.eq_ignore_ascii_case("changeme")
     };
 
-    // Helper to build BGE
-    let make_bge = || -> Result<Arc<dyn Embedder>> {
-        let b = crate::bge_embedder::BGEEmbedder::new()?;
-        Ok(Arc::new(b))
-    };
-
     match provider.as_str() {
-        "candle" | "local" => {
-            info!("Using Candle (local) BGE-small-en-v1.5 embeddings (384 dims)");
-            make_bge()
-        }
         "openai" | "" => {
             let key = config.runtime.openai_api_key.clone().unwrap_or_default();
             if !is_placeholder(&key) && !key.is_empty() {
@@ -251,31 +241,12 @@ pub async fn create_embedder(config: &crate::config::Config) -> Result<Arc<dyn E
                     config.system.embed_retries,
                 )?))
             } else {
-                info!("OPENAI_API_KEY not set; using Candle BGE-small (384)");
-                make_bge()
+                anyhow::bail!("OPENAI_API_KEY is not set or valid. Cannot Initialize Embeddings.");
             }
         }
         _ => {
-            // Unknown provider → try OpenAI if key exists, else Candle
-            let key = config.runtime.openai_api_key.clone().unwrap_or_default();
-            if !is_placeholder(&key) && !key.is_empty() {
-                let model = config.system.embedding_model.clone();
-                let dims = dim_override.or(Some(1536));
-                info!(
-                    "Using OpenAI embeddings (model={}, dims={})",
-                    model,
-                    dims.unwrap()
-                );
-                Ok(Arc::new(OpenAIEmbedder::new(
-                    key,
-                    model,
-                    dims,
-                    config.system.embed_retries,
-                )?))
-            } else {
-                info!("Unknown provider and no OpenAI key; using Candle BGE-small (384)");
-                make_bge()
-            }
+            // Unknown provider - fail explicitly
+            anyhow::bail!("Unknown or unsupported embedding provider: '{}'. Only 'openai' is supported.", provider);
         }
     }
 }

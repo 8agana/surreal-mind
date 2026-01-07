@@ -12,9 +12,7 @@ axum = { version = "0.7", default-features = false, features = [
   "json",
   "tokio",
 ] }
-candle-core = { version = "0.9.1", features = ["metal"] }
-candle-nn = { version = "0.9.1" }
-candle-transformers = { version = "0.9.1", features = ["metal"] }
+
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.9.0"
 clap = { version = "4.0", features = ["derive"] }
@@ -49,7 +47,7 @@ strsim = "0.11"
 surrealdb = { version = "2.0", features = ["protocol-ws"] }
 thiserror = "1.0"
 time = { version = "0.3", features = ["formatting", "parsing"] }
-tokenizers = "0.22.0"
+
 # Core dependencies
 tokio = { version = "1.0", features = ["full"] }
 tokio-util = "0.7"

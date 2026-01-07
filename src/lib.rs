@@ -1,4 +1,4 @@
-pub mod bge_embedder;
+
 pub mod clients;
 pub mod cognitive;
 pub mod config;
