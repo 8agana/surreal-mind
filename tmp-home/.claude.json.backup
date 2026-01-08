@@ -1,0 +1,32 @@
+{
+  "cachedStatsigGates": {
+    "tengu_prompt_suggestion": true,
+    "tengu_streaming_tool_execution2": false
+  },
+  "cachedDynamicConfigs": {
+    "tengu_1p_event_batch_config": {
+      "scheduledDelayMillis": 5000,
+      "maxExportBatchSize": 200,
+      "maxQueueSize": 8192
+    }
+  },
+  "cachedGrowthBookFeatures": {
+    "tengu_mcp_tool_search": false,
+    "tengu_disable_bypass_permissions_mode": false,
+    "tengu_tool_pear": false,
+    "tengu_thinkback": false,
+    "strawberry_granite_flag": "N/A",
+    "persimmon_marble_flag": "N/A",
+    "tengu_tool_search_unsupported_models": null
+  },
+  "userID": "d1422a5fab77fe93e3a18d3d19bc1c46e99f11282f24ab88dd7b84d2acc1a911",
+  "firstStartTime": "2026-01-08T21:16:46.570Z",
+  "sonnet45MigrationComplete": true,
+  "opus45MigrationComplete": true,
+  "thinkingMigrationComplete": true,
+  "githubRepoPaths": {
+    "8agana/surreal-mind": [
+      "/Users/samuelatagana/Projects/LegacyMind/surreal-mind"
+    ]
+  }
+}

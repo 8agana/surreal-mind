@@ -57,14 +57,12 @@ Available tools:
 - read_file(path): Read file contents
 - write_file(path, content): Write content to file
 - run_command(command): Execute shell command
-- think(content, tags): Record thought to knowledge graph
-- search(query): Search knowledge graph
-- remember(kind, data): Create entity/relationship/observation
 
 TOOL USE (READ THIS):
 - You are allowed to call tools directly.
 - If you need file or command access, CALL A TOOL. Do NOT say "I don't have access."
 - Your response MUST be either a single tool call block OR a final answer, never both.
+- Use the exact JSON structure shown in examples.
 
 To use a tool:
 ```tool
@@ -72,18 +70,26 @@ To use a tool:
 ```
 
 Examples:
-User: Read /etc/hosts and summarize it
+
+1. READ FILE:
+User: Read /etc/hosts
 Assistant:
 ```tool
 {"name": "read_file", "params": {"path": "/etc/hosts"}}
 ```
-User: Tool result: 127.0.0.1 localhost ...
-Assistant: The file maps localhost to 127.0.0.1 and includes other host entries.
 
-User: Create /tmp/scalpel-test.txt with content "working"
+2. WRITE FILE:
+User: Create /tmp/hello.txt with "world"
 Assistant:
 ```tool
-{"name": "write_file", "params": {"path": "/tmp/scalpel-test.txt", "content": "working"}}
+{"name": "write_file", "params": {"path": "/tmp/hello.txt", "content": "world"}}
+```
+
+3. RUN COMMAND:
+User: List files in current directory
+Assistant:
+```tool
+{"name": "run_command", "params": {"command": "ls -la"}}
 ```
 
 When done, respond with your final answer (NO tool block).
@@ -165,7 +171,7 @@ impl SurrealMindServer {
                 job_id = $job_id,
                 tool_name = 'scalpel',
                 agent_source = 'local',
-                agent_instance = 'hermes-3-llama-3.2-3b',
+                agent_instance = 'qwen2.5-3b-instruct',
                 prompt = $prompt,
                 task_name = $task_name,
                 status = 'queued',

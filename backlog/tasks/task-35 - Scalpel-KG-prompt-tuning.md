@@ -1,35 +1,90 @@
-# Task 35: Scalpel KG Tool Prompt Tuning
+# Task 35: Scalpel Simplification (Surgical Knife Mode)
 
 ## Problem
-The Scalpel agentic loop works with file I/O (`read_file`, `write_file`, `run_command`) but hits max iterations when attempting KG tools (`think`, `search`, `remember`).
+Scalpel is currently over-engineered with Knowledge Graph access (`think`, `search`, `remember`) which complicates the system prompt and increases failure rates. It has not yet reliably demonstrated basic file operations.
 
-**Root cause:** DeepSeek-Coder-V2-Lite may not be formatting KG tool calls correctly per the expected format:
-```
-```tool
-{"name": "think", "params": {"content": "...", "tags": [...]}}
-```
-```
+## Goal
+Simplify Scalpel to be a pure **Code/File Operator** ("Surgical Knife"). Its only purpose is to perform file I/O and shell commands on behalf of the main agent to save context and tokens.
 
-## Solution Options
+## Scope of Changes
 
-1. **Few-shot examples in system prompt**
-   - Add concrete examples of each KG tool call format
-   - Pros: Simple, no code changes
-   - Cons: Uses context tokens
+1. **Remove KG Tools from Prompt**
+   - Remove `think`, `search`, `remember` from `SSG_EDIT_PROMPT`.
+   - Remove examples related to KG tools.
 
-2. **Structured output mode**
-   - Use DeepSeek's native function calling if supported
-   - Requires checking mistralrs-server function calling support
+2. **Refine Prompt for Core Operations**
+   - Focus `SSG_EDIT_PROMPT` exclusively on:
+     - `read_file`
+     - `write_file`
+     - `run_command`
+   - Add explicit, robust examples for these three tools to ensure reliable JSON formatting.
 
-3. **Response format validation**
-   - Add regex hints in prompt
-   - Tell model to double-check format before responding
+3. **Code Cleanup (Optional/Later)**
+   - The backing code in `scalpel_helpers.rs` and `execute_tool` can remain for now (invisible to the model) or be commented out to prevent accidental usage. For this task, we will just hide them from the prompt.
 
 ## Acceptance Criteria
-- [ ] `think` tool works end-to-end
-- [ ] `search` tool returns results
-- [ ] `remember` tool creates entities
-- [ ] No infinite loops / max iteration hits
+- [ ] Scalpel prompt no longer advertises KG tools.
+- [ ] Scalpel reliably performs `read_file`.
+- [ ] Scalpel reliably performs `write_file`.
+- [ ] Scalpel reliably performs `run_command`.
 
-## Recommended Approach
-Start with Option 1 (few-shot examples). Update `SSG_SYSTEM_PROMPT` in `src/tools/scalpel.rs` with explicit examples.
+## Implementation Plan
+
+Modify `src/tools/scalpel.rs`:
+
+```rust
+pub const SSG_EDIT_PROMPT: &str = r#"You are SSG Scalpel, a precision code executor.
+
+Available tools:
+- read_file(path): Read file contents
+- write_file(path, content): Write content to file
+- run_command(command): Execute shell command
+
+TOOL USE (READ THIS):
+- You are allowed to call tools directly.
+- If you need file or command access, CALL A TOOL. Do NOT say "I don't have access."
+- Your response MUST be either a single tool call block OR a final answer, never both.
+- Use the exact JSON structure shown in examples.
+
+To use a tool:
+```tool
+{"name": "tool_name", "params": {"key": "value"}}
+```
+
+Examples:
+
+1. READ FILE:
+User: Read /etc/hosts
+Assistant:
+```tool
+{"name": "read_file", "params": {"path": "/etc/hosts"}}
+```
+
+2. WRITE FILE:
+User: Create /tmp/hello.txt with "world"
+Assistant:
+```tool
+{"name": "write_file", "params": {"path": "/tmp/hello.txt", "content": "world"}}
+```
+
+3. RUN COMMAND:
+User: List files in current directory
+Assistant:
+```tool
+{"name": "run_command", "params": {"command": "ls -la"}}
+```
+
+When done, respond with your final answer (NO tool block).
+Execute decisively. Stay in scope. Verify completion."#;
+```
+
+## Test Findings (2026-01-08)
+- **Overall Status:** FAILED. The tool is currently a "Blunt Mallet," not a Scalpel.
+- **Critical Failures:**
+    - **Destructive Writing:** In `edit` mode, the tool repeatedly overwrote entire files with small snippets of text, even when explicitly provided with the full content to preserve. It failed to distinguish between "append" and "replace."
+    - **Path Blindness:** The tool failed to locate files using relative paths, requiring absolute paths (`/Users/...`) to function, which is brittle and inconsistent with standard agent expectations.
+    - **Instruction Drift:** Even when given synchronous, step-by-step instructions via `fire_and_forget: false`, the underlying Ministral 3B agent failed to follow logical constraints (e.g., "do not overwrite").
+- **Partial Successes:**
+    - **Read Operations:** Successfully read and summarized `surreal-mind/README.md` ONLY when provided with an absolute path.
+    - **Shell Execution:** Successfully appended text to this file ONLY by bypassing its own `write_file` logic and using a raw shell command (`printf >>`). 
+- **Conclusion:** Scalpel is currently unreliable for any surgical file operations. The acceptance criteria for `read_file`, `write_file`, and `run_command` remain UNMET in any production-ready sense.

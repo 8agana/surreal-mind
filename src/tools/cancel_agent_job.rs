@@ -1,6 +1,7 @@
 //! cancel_agent_job tool handler to cancel running/queued jobs
 
 use crate::error::{Result, SurrealMindError};
+use crate::registry;
 use crate::server::SurrealMindServer;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde::Deserialize;
@@ -79,13 +80,80 @@ async fn cancel_job(db: &Surreal<WsClient>, job_id: String) -> Result<Value> {
         .bind(("job_id", job_id.clone()))
         .await?;
 
-    // Note: Task abort is handled via the JoinHandle in the spawning code
-    // The database update serves as the signal for cancellation
+    // Attempt immediate abort via registry (delegates and other registered jobs)
+    let was_running = registry::abort_job(&job_id);
+
+    let message = if was_running {
+        "Job found and aborted immediately."
+    } else {
+        "Job status marked cancelled. If running via polling-based worker, will terminate on next check."
+    };
 
     Ok(json!({
         "job_id": job_id,
         "previous_status": current_status.status,
         "new_status": "cancelled",
-        "message": "Job cancellation requested. Task will be terminated if still running."
+        "was_running_in_registry": was_running,
+        "message": message
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_cancel_idempotent() {
+        // Calling cancel twice should be safe and idempotent
+        // This test verifies the function doesn't panic and returns sensible responses
+
+        // Verify that calling cancel on a non-existent job is safe
+        // (In real usage, the job must exist in DB first)
+        let job_id = "test-job-456";
+        let was_running_1 = registry::abort_job(job_id);
+        let was_running_2 = registry::abort_job(job_id);
+
+        // First should return false (not registered)
+        // Second should also return false (already removed)
+        assert!(!was_running_1);
+        assert!(!was_running_2);
+    }
+
+    #[tokio::test]
+    async fn test_cancel_registered_job() {
+        let job_id = "test-job-cancel-001";
+
+        // Register a dummy job
+        let handle = tokio::spawn(async { std::future::pending::<()>().await });
+        registry::register_job(job_id.to_string(), handle);
+
+        // Verify it's in the registry
+        assert_eq!(registry::registry_size(), 1);
+
+        // Call cancel (the part that looks up in registry)
+        let was_aborted = registry::abort_job(job_id);
+
+        // Should have been found and aborted
+        assert!(was_aborted);
+        assert_eq!(registry::registry_size(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_cancel_idempotent_registry() {
+        let job_id = "test-job-idempotent-001";
+
+        // Register a job
+        let handle = tokio::spawn(async {});
+        registry::register_job(job_id.to_string(), handle);
+
+        // First abort - should succeed
+        let first = registry::abort_job(job_id);
+        assert!(first);
+
+        // Second abort - should fail safely (job already removed)
+        let second = registry::abort_job(job_id);
+        assert!(!second);
+
+        // Both cases should not panic - this verifies idempotence
+    }
 }

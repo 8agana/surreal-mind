@@ -30,7 +30,7 @@ impl LocalClient {
         };
 
         let model = env::var("SURR_SCALPEL_MODEL")
-            .unwrap_or_else(|_| "NousResearch/Hermes-3-Llama-3.2-3B-GGUF".to_string());
+            .unwrap_or_else(|_| "Qwen/Qwen2.5-3B-Instruct".to_string());
 
         let timeout = env::var("SURR_SCALPEL_TIMEOUT_MS")
             .ok()

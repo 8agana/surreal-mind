@@ -4513,6 +4513,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "clap",
+ "dashmap",
  "dirs",
  "dotenvy",
  "futures-util",
