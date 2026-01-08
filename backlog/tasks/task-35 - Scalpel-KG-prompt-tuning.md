@@ -88,3 +88,24 @@ Execute decisively. Stay in scope. Verify completion."#;
     - **Read Operations:** Successfully read and summarized `surreal-mind/README.md` ONLY when provided with an absolute path.
     - **Shell Execution:** Successfully appended text to this file ONLY by bypassing its own `write_file` logic and using a raw shell command (`printf >>`). 
 - **Conclusion:** Scalpel is currently unreliable for any surgical file operations. The acceptance criteria for `read_file`, `write_file`, and `run_command` remain UNMET in any production-ready sense.
+
+## New Remediation Plan (Safe Surgical Knife)
+
+### 1. Fix Path Blindness
+- Implement `resolve_path(path: &str) -> PathBuf` helper.
+- If path is relative, join with `std::env::current_dir()`.
+- Canonicalize resulting path to resolve `..` and symlinks.
+
+### 2. Prevent Destructive Writes
+- **Action:** Modify `write_file` implementation.
+- **Logic:** check if file exists. If yes, return Error: "File exists. Use 'append_file' to add content or 'run_command' to overwrite/patch."
+- **Note:** We can add an `overwrite: true` param later if needed, but safety first.
+
+### 3. Add `append_file` Tool
+- **New Tool:** `append_file(path, content)`
+- **Implementation:** Use `fs::OpenOptions::new().append(true).open(path)`.
+- **Why:** Safest way for a smaller model (3B) to add content without reading/rewriting the whole file (context limits) or risking data loss.
+
+### 4. Update System Prompt
+- Add `append_file` to tool list.
+- Explicitly warn about `write_file` safety check.

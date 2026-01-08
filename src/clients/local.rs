@@ -30,7 +30,7 @@ impl LocalClient {
         };
 
         let model = env::var("SURR_SCALPEL_MODEL")
-            .unwrap_or_else(|_| "Qwen/Qwen2.5-3B-Instruct".to_string());
+            .expect("SURR_SCALPEL_MODEL environment variable must be set");
 
         let timeout = env::var("SURR_SCALPEL_TIMEOUT_MS")
             .ok()

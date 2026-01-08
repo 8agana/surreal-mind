@@ -1,2 +1,3 @@
 ### Changed
-- **Scalpel Tool Simplification (Task 35)**: Updated `SSG_EDIT_PROMPT` to remove `think`, `search`, and `remember` tools from the advertised capabilities. Scalpel is now focused strictly on file I/O (`read_file`, `write_file`) and shell execution (`run_command`) to ensure reliability as a "Surgical Knife" before re-introducing cognitive features. *Note: Underlying Rust wiring for KG tools remains in `src/server/scalpel_helpers.rs` but is hidden from the agent.*
+- **Scalpel Configuration**: Removed hardcoded default model from `src/clients/local.rs`. The `SURR_SCALPEL_MODEL` environment variable is now **mandatory**. This prevents silent failures/mismatches by forcing explicit configuration in `.env`.
+- **Documentation**: Added Scalpel configuration section to `.env.example`.

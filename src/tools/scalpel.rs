@@ -55,7 +55,8 @@ pub const SSG_EDIT_PROMPT: &str = r#"You are SSG Scalpel, a precision code execu
 
 Available tools:
 - read_file(path): Read file contents
-- write_file(path, content): Write content to file
+- write_file(path, content): CREATE NEW file with content (Fails if file exists)
+- append_file(path, content): APPEND content to existing file
 - run_command(command): Execute shell command
 
 TOOL USE (READ THIS):
@@ -78,14 +79,21 @@ Assistant:
 {"name": "read_file", "params": {"path": "/etc/hosts"}}
 ```
 
-2. WRITE FILE:
+2. CREATE NEW FILE:
 User: Create /tmp/hello.txt with "world"
 Assistant:
 ```tool
 {"name": "write_file", "params": {"path": "/tmp/hello.txt", "content": "world"}}
 ```
 
-3. RUN COMMAND:
+3. APPEND TO FILE:
+User: Add "entry" to log.txt
+Assistant:
+```tool
+{"name": "append_file", "params": {"path": "log.txt", "content": "\nentry"}}
+```
+
+4. RUN COMMAND:
 User: List files in current directory
 Assistant:
 ```tool
@@ -171,7 +179,7 @@ impl SurrealMindServer {
                 job_id = $job_id,
                 tool_name = 'scalpel',
                 agent_source = 'local',
-                agent_instance = 'qwen2.5-3b-instruct',
+                agent_instance = 'hermes-3-llama-3.2-3b-gguf',
                 prompt = $prompt,
                 task_name = $task_name,
                 status = 'queued',
@@ -331,10 +339,20 @@ fn normalize_tool_call(value: Value) -> Option<ToolCall> {
     Some(ToolCall { name, params })
 }
 
+/// Resolves relative paths to absolute paths based on CWD
+fn resolve_path(path: &str) -> std::path::PathBuf {
+    let p = std::path::Path::new(path);
+    if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        std::env::current_dir().unwrap_or_default().join(p)
+    }
+}
+
 async fn execute_tool(tool: &ToolCall, server: &SurrealMindServer, mode: &ScalpelMode) -> String {
     if *mode == ScalpelMode::Intel {
         match tool.name.as_str() {
-            "write_file" | "think" | "remember" => {
+            "write_file" | "append_file" | "think" | "remember" => {
                 return format!("Tool '{}' not available in intel mode", tool.name);
             }
             _ => {}
@@ -343,18 +361,53 @@ async fn execute_tool(tool: &ToolCall, server: &SurrealMindServer, mode: &Scalpe
 
     match tool.name.as_str() {
         "read_file" => {
-            let path = tool.params["path"].as_str().unwrap_or("");
-            match fs::read_to_string(path).await {
+            let path_str = tool.params["path"].as_str().unwrap_or("");
+            let path = resolve_path(path_str);
+            match fs::read_to_string(&path).await {
                 Ok(content) => content,
-                Err(e) => format!("Error: {}", e),
+                Err(e) => format!("Error reading {}: {}", path.display(), e),
             }
         }
         "write_file" => {
-            let path = tool.params["path"].as_str().unwrap_or("");
+            let path_str = tool.params["path"].as_str().unwrap_or("");
             let content = tool.params["content"].as_str().unwrap_or("");
-            match fs::write(path, content).await {
-                Ok(_) => format!("Wrote {} bytes to {}", content.len(), path),
-                Err(e) => format!("Error: {}", e),
+            let path = resolve_path(path_str);
+
+            if path.exists() {
+                return format!(
+                    "Error: File {} exists. Use 'append_file' to add content or 'run_command' (rm/mv) if you really mean to overwrite.",
+                    path.display()
+                );
+            }
+
+            match fs::write(&path, content).await {
+                Ok(_) => format!(
+                    "Created file {} with {} bytes",
+                    path.display(),
+                    content.len()
+                ),
+                Err(e) => format!("Error creating {}: {}", path.display(), e),
+            }
+        }
+        "append_file" => {
+            let path_str = tool.params["path"].as_str().unwrap_or("");
+            let content = tool.params["content"].as_str().unwrap_or("");
+            let path = resolve_path(path_str);
+
+            match tokio::fs::OpenOptions::new()
+                .write(true)
+                .append(true)
+                .open(&path)
+                .await
+            {
+                Ok(mut file) => {
+                    use tokio::io::AsyncWriteExt;
+                    match file.write_all(content.as_bytes()).await {
+                        Ok(_) => format!("Appended {} bytes to {}", content.len(), path.display()),
+                        Err(e) => format!("Error appending to {}: {}", path.display(), e),
+                    }
+                }
+                Err(e) => format!("Error opening {}: {}", path.display(), e),
             }
         }
         "run_command" => {
