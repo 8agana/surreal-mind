@@ -1,3 +1,8 @@
+## [Unreleased]
+
+### Fixed
+- **agent_job_status query**: Removed `<string>` casting on `exchange_id` field which caused "cannot convert NONE into a string" errors when querying running (incomplete) async jobs. The JobRow struct uses `Option<T>` fields, allowing serde to naturally deserialize NONE values as None.
+
 ## [0.7.5] - 2026-01-06
 
 ### Added
