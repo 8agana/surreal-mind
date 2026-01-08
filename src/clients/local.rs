@@ -24,12 +24,12 @@ impl LocalClient {
         };
 
         let model = env::var("SURR_SCALPEL_MODEL")
-            .unwrap_or_else(|_| "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct".to_string());
+            .unwrap_or_else(|_| "NousResearch/Hermes-3-Llama-3.2-3B-GGUF".to_string());
             
         let timeout = env::var("SURR_SCALPEL_TIMEOUT_MS")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(30000);
+            .unwrap_or(120000);
 
         let client = Client::builder()
             .timeout(Duration::from_millis(timeout))

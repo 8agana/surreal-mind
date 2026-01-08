@@ -64,9 +64,17 @@ async fn cancel_job(db: &Surreal<WsClient>, job_id: String) -> Result<Value> {
             message: format!("Cannot cancel job in '{}' status", current_status.status),
         });
     }
+    if current_status.status == "cancelled" {
+        return Ok(json!({
+            "job_id": job_id,
+            "previous_status": current_status.status,
+            "new_status": "cancelled",
+            "message": "Job already cancelled."
+        }));
+    }
 
     // Update status to cancelled
-    let cancel_sql = "UPDATE agent_jobs SET status = 'cancelled', completed_at = time::now(), duration_ms = math::round((time::now() - started_at) / 1000000) WHERE job_id = $job_id;";
+    let cancel_sql = "UPDATE agent_jobs SET status = 'cancelled', completed_at = time::now(), duration_ms = 0 WHERE job_id = $job_id;";
     db.query(cancel_sql)
         .bind(("job_id", job_id.clone()))
         .await?;

@@ -8,9 +8,15 @@
   - Agentic loop with max 10 iterations  
   - File I/O tools: `read_file`, `write_file`
   - Shell access: `run_command`
-  - KG tools: `think`, `search`, `remember` (prompt tuning needed)
-  - Default model: `deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct` via `-a deepseekv2`
-  - Default endpoint: `http://127.0.0.1:8111`
+  - KG tools: `think`, `search`, `remember`
+- **Task 36**: `fire_and_forget` (default: true) and `mode: intel | edit` parameters
+- **Task 38**: Hermes-3-Llama-3.2-3B-GGUF with Metal GPU acceleration
+  - Model: `NousResearch/Hermes-3-Llama-3.2-3B-GGUF` (Q4_K_M quantization)
+  - Reinstalled `mistralrs-server` with `--features metal` from git
+  - 78 T/s on Metal vs 32 T/s on CPU
+  - Parser now handles bare JSON output (Hermes-3 style)
+  - Timeout increased to 120s for cold starts
+  - launchd service: `~/Library/LaunchAgents/com.legacymind.scalpel.plist`
 
 ### Changed
 - Simplified core tool names for better UX:
@@ -145,6 +151,11 @@
 
 ### Fixed
 
+- (2026-01-08) Scalpel tool-use prompts now explicitly authorize tool calls with examples; parser scans fenced blocks and accepts legacy schema; added unit tests for tool parsing.
+- (2026-01-08) delegate_gemini worker now honors cancellations, avoids overwriting cancelled jobs, and claims include tool_timeout/expose_stream; call_cancel is idempotent and handles queued jobs without started_at.
+- (2026-01-08) call_status now surfaces delegate_gemini responses via exchange_id for easier retrieval.
+- (2026-01-08) delegate_gemini now casts exchange_id to record type, marks jobs failed on completion update errors, and auto-fails malformed queued jobs; call_cancel uses a simpler update to avoid SurrealQL IF issues.
+- (2026-01-08) call_status now deserializes exchange_id as Thing or string to avoid errors after schema change.
 - (2026-01-02) **Gemini CLI Monitoring**: Completely revamped timeout and hang detection logic using streaming JSON events instead of fragile heuristics. The new approach provides real-time visibility into tool execution and can precisely identify which specific tool/subtask is hanging, eliminating false timeouts during legitimate network waits.
 
 - (2026-01-02) **Timeout Configuration**: Added proper environment variable support for both inactivity timeout (`GEMINI_TIMEOUT_MS`) and per-tool timeout (`GEMINI_TOOL_TIMEOUT_MS`) with sensible defaults (120s and 300s respectively).

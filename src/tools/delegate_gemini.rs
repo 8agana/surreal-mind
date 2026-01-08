@@ -4,6 +4,8 @@ use crate::clients::traits::CognitiveAgent;
 use crate::clients::{AgentError, GeminiClient, PersistedAgent};
 use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
+use once_cell::sync::Lazy;
+use regex::Regex;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -11,6 +13,10 @@ use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::Client as WsClient;
 
 const DEFAULT_TIMEOUT_MS: u64 = 60_000;
+const DEFAULT_CANCEL_POLL_MS: u64 = 1000;
+
+static INVALID_PROMPT_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"record `(?P<id>agent_jobs:[^`]+)`").unwrap());
 
 /// Parameters for the delegate_gemini tool
 #[derive(Debug, Deserialize)]
@@ -40,6 +46,11 @@ struct SessionResult {
     last_agent_session_id: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct JobStatusRow {
+    status: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum JobStatus {
@@ -60,6 +71,11 @@ impl JobStatus {
             JobStatus::Cancelled => "cancelled",
         }
     }
+}
+
+enum JobOutcome {
+    Completed(std::result::Result<crate::clients::traits::AgentResponse, AgentError>),
+    Cancelled,
 }
 
 impl SurrealMindServer {
@@ -210,7 +226,7 @@ async fn create_job_record(
 
 async fn complete_job(
     db: &Surreal<WsClient>,
-    job_id: String,
+    job_id: &str,
     session_id: Option<String>,
     exchange_id: Option<String>,
     duration_ms: i64,
@@ -221,13 +237,13 @@ async fn complete_job(
         sql.push_str(", session_id = $session_id");
     }
     if exchange_id.is_some() {
-        sql.push_str(", exchange_id = $exchange_id");
+        sql.push_str(", exchange_id = type::thing($exchange_id)");
     }
-    sql.push_str(" WHERE job_id = $job_id;");
+    sql.push_str(" WHERE job_id = $job_id AND status != 'cancelled';");
 
     let mut query = db
         .query(&sql)
-        .bind(("job_id", job_id))
+        .bind(("job_id", job_id.to_string()))
         .bind(("status", JobStatus::Completed.as_str()))
         .bind(("duration_ms", duration_ms));
 
@@ -244,15 +260,38 @@ async fn complete_job(
 
 async fn fail_job(
     db: &Surreal<WsClient>,
-    job_id: String,
+    job_id: &str,
     error: String,
     duration_ms: i64,
 ) -> Result<()> {
-    let sql = "UPDATE agent_jobs SET status = $status, error = $error, completed_at = time::now(), duration_ms = $duration_ms WHERE job_id = $job_id;";
+    let sql = "UPDATE agent_jobs SET status = $status, error = $error, completed_at = time::now(), duration_ms = $duration_ms WHERE job_id = $job_id AND status != 'cancelled';";
     db.query(sql)
-        .bind(("job_id", job_id))
+        .bind(("job_id", job_id.to_string()))
         .bind(("status", JobStatus::Failed.as_str()))
         .bind(("error", error))
+        .bind(("duration_ms", duration_ms))
+        .await?;
+    Ok(())
+}
+
+async fn is_job_cancelled(db: &Surreal<WsClient>, job_id: &str) -> Result<bool> {
+    let sql = "SELECT status FROM agent_jobs WHERE job_id = $job_id LIMIT 1;";
+    let mut response = db.query(sql).bind(("job_id", job_id.to_string())).await?;
+    let rows: Vec<JobStatusRow> = response.take(0)?;
+    Ok(rows
+        .first()
+        .map(|row| row.status.as_str() == "cancelled")
+        .unwrap_or(false))
+}
+
+async fn mark_job_cancelled(
+    db: &Surreal<WsClient>,
+    job_id: &str,
+    duration_ms: i64,
+) -> Result<()> {
+    let sql = "UPDATE agent_jobs SET status = 'cancelled', completed_at = time::now(), duration_ms = $duration_ms WHERE job_id = $job_id;";
+    db.query(sql)
+        .bind(("job_id", job_id.to_string()))
         .bind(("duration_ms", duration_ms))
         .await?;
     Ok(())
@@ -286,12 +325,24 @@ pub async fn run_delegate_gemini_worker(
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(500);
+    let cancel_poll_ms = std::env::var("SURR_JOB_CANCEL_POLL_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_CANCEL_POLL_MS);
 
     loop {
         let claimed = match claim_next_job(db.as_ref()).await {
             Ok(job) => job,
             Err(e) => {
-                eprintln!("[ERROR delegate_gemini worker] Claim failed: {}", e);
+                let err_msg = e.to_string();
+                if err_msg.contains("Found NONE for field `prompt`") {
+                    if let Some(caps) = INVALID_PROMPT_RE.captures(&err_msg) {
+                        if let Some(id) = caps.name("id") {
+                            let _ = fail_invalid_prompt(db.as_ref(), id.as_str()).await;
+                        }
+                    }
+                }
+                eprintln!("[ERROR delegate_gemini worker] Claim failed: {}", err_msg);
                 tokio::time::sleep(std::time::Duration::from_millis(poll_ms)).await;
                 continue;
             }
@@ -304,6 +355,14 @@ pub async fn run_delegate_gemini_worker(
 
         tracing::info!(job_id = %job.job_id, "delegate_gemini worker claimed job");
         let _permit = semaphore.acquire().await.expect("semaphore closed");
+
+        if is_job_cancelled(db.as_ref(), &job.job_id)
+            .await
+            .unwrap_or(false)
+        {
+            let _ = mark_job_cancelled(db.as_ref(), &job.job_id, 0).await;
+            continue;
+        }
 
         let timeout = job
             .timeout_ms
@@ -319,7 +378,7 @@ pub async fn run_delegate_gemini_worker(
         if prompt.is_empty() {
             let _ = fail_job(
                 db.as_ref(),
-                job.job_id,
+                &job.job_id,
                 "Missing prompt in job metadata".to_string(),
                 0,
             )
@@ -331,28 +390,67 @@ pub async fn run_delegate_gemini_worker(
         // GeminiClient now handles activity-based timeout internally.
         // No outer timeout wrapper needed - this prevents double-timeout issues.
         let started_at = chrono::Utc::now();
-        let result = execute_gemini_call(
-            db.clone(),
-            GeminiCallParams {
-                prompt,
-                task_name,
-                model_override: job.model_override.as_deref(),
-                cwd: job.cwd.as_deref(),
-                timeout,
-                tool_timeout,
-                expose_stream: job.expose_stream.unwrap_or(false),
-            },
-        )
-        .await;
+        let job_id = job.job_id.clone();
+        let prompt = prompt.to_string();
+        let task_name = task_name.to_string();
+        let model_override = job.model_override.clone();
+        let cwd = job.cwd.clone();
+        let expose_stream = job.expose_stream.unwrap_or(false);
+        let mut handle = tokio::spawn({
+            let db = db.clone();
+            async move {
+                execute_gemini_call(
+                    db,
+                    GeminiCallParams {
+                        prompt: prompt.as_str(),
+                        task_name: task_name.as_str(),
+                        model_override: model_override.as_deref(),
+                        cwd: cwd.as_deref(),
+                        timeout,
+                        tool_timeout,
+                        expose_stream,
+                    },
+                )
+                .await
+            }
+        });
+
+        let mut cancel_interval = tokio::time::interval(std::time::Duration::from_millis(
+            cancel_poll_ms,
+        ));
+        let result = loop {
+            tokio::select! {
+                res = &mut handle => {
+                    let output = match res {
+                        Ok(inner) => inner,
+                        Err(err) => Err(AgentError::CliError(format!("delegate_gemini task join error: {}", err))),
+                    };
+                    break JobOutcome::Completed(output);
+                }
+                _ = cancel_interval.tick() => {
+                    match is_job_cancelled(db.as_ref(), &job_id).await {
+                        Ok(true) => {
+                            handle.abort();
+                            let _ = handle.await;
+                            break JobOutcome::Cancelled;
+                        }
+                        Ok(false) => {}
+                        Err(e) => {
+                            tracing::warn!(job_id = %job_id, "cancel check failed: {}", e);
+                        }
+                    }
+                }
+            }
+        };
 
         let completed_at = chrono::Utc::now();
         let duration_ms = (completed_at - started_at).num_milliseconds();
 
         match result {
-            Ok(response) => {
+            JobOutcome::Completed(Ok(response)) => {
                 if let Err(e) = complete_job(
                     db.as_ref(),
-                    job.job_id,
+                    &job_id,
                     Some(response.session_id.clone()),
                     response.exchange_id.clone(),
                     duration_ms,
@@ -363,16 +461,26 @@ pub async fn run_delegate_gemini_worker(
                         "[ERROR delegate_gemini worker] Failed to complete job: {}",
                         e
                     );
+                    let _ = fail_job(
+                        db.as_ref(),
+                        &job_id,
+                        format!("Completion update failed: {}", e),
+                        duration_ms,
+                    )
+                    .await;
                 }
             }
-            Err(agent_err) => {
+            JobOutcome::Completed(Err(agent_err)) => {
                 let error_msg = format!("Agent error: {}", agent_err);
-                if let Err(e) = fail_job(db.as_ref(), job.job_id, error_msg, duration_ms).await {
+                if let Err(e) = fail_job(db.as_ref(), &job_id, error_msg, duration_ms).await {
                     eprintln!(
                         "[ERROR delegate_gemini worker] Failed to mark job as failed: {}",
                         e
                     );
                 }
+            }
+            JobOutcome::Cancelled => {
+                let _ = mark_job_cancelled(db.as_ref(), &job_id, duration_ms).await;
             }
         }
     }
@@ -391,12 +499,22 @@ async fn claim_next_job(db: &Surreal<WsClient>) -> Result<Option<QueuedJobRow>> 
 
     let mut response = db
         .query(
-            "UPDATE agent_jobs SET status = 'running', started_at = time::now() WHERE job_id = $job_id AND status = 'queued' AND type::is::string(prompt) AND prompt != '' RETURN job_id, prompt, task_name, model_override, cwd, timeout_ms;",
+            "UPDATE agent_jobs SET status = 'running', started_at = time::now() WHERE job_id = $job_id AND status = 'queued' AND type::is::string(prompt) AND prompt != '' RETURN job_id, prompt, task_name, model_override, cwd, timeout_ms, tool_timeout_ms, expose_stream;",
         )
         .bind(("job_id", row.job_id.clone()))
         .await?;
     let rows: Vec<QueuedJobRow> = response.take(0)?;
     Ok(rows.into_iter().next())
+}
+
+async fn fail_invalid_prompt(db: &Surreal<WsClient>, record_id: &str) -> Result<()> {
+    let record_id = record_id.to_string();
+    let sql = "UPDATE $record SET status = 'failed', error = $error, prompt = '', completed_at = time::now(), duration_ms = 0";
+    db.query(sql)
+        .bind(("record", record_id))
+        .bind(("error", "Invalid prompt in job record"))
+        .await?;
+    Ok(())
 }
 
 #[derive(Debug)]

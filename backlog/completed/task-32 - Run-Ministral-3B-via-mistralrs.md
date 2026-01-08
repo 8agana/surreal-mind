@@ -3,7 +3,8 @@
 ## Objective
 Get `mistralai/Ministral-3-3B-Instruct-2512` running locally via `mistralrs-server` as the Scalpel backend.
 
-**Model is non-negotiable.** This was a consensus decision.
+## Current State
+Get `mistralai/Ministral-3-3B-Instruct-2512` running locally via `mistralrs-server` as the Scalpel backend.
 
 ---
 

@@ -3,28 +3,50 @@
 use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
 use serde_json::{json, Value};
-use surrealdb::sql::Thing;
+use uuid::Uuid;
 
 impl SurrealMindServer {
     /// Internal think method for Scalpel
     pub async fn think_internal(&self, content: &str, tags: Vec<String>) -> Result<String> {
         let embedding = self.embedder.embed(content).await?;
+        let thought_id = Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
         
-        let id: Option<Thing> = self.db.create("thoughts")
-            .content(json!({
-                "content": content,
-                "created_at": chrono::Utc::now().to_rfc3339(),
-                "embedding": embedding,
-                "tags": tags,
-                "origin": "scalpel",
-                "significance": 0.5,
-            }))
-            .await
-            .map_err(|e| SurrealMindError::Database {
-                message: e.to_string(),
-            })?;
+        // Use raw SQL INSERT to match main think implementation
+        self.db.query(
+            "INSERT INTO thoughts {
+                id: $id,
+                content: $content,
+                created_at: $created_at,
+                embedding: $embedding,
+                tags: $tags,
+                origin: 'scalpel',
+                significance: 0.5,
+                access_count: 0,
+                injected_memories: [],
+                injection_scale: 0,
+                enriched_content: NONE,
+                submode: NONE,
+                framework_enhanced: false,
+                extracted_to_kg: false,
+                embedding_model: $embed_model,
+                embedding_dim: $embed_dim,
+                embedding_provider: 'openai'
+            }"
+        )
+        .bind(("id", format!("thoughts:{}", thought_id)))
+        .bind(("content", content.to_string()))
+        .bind(("created_at", now))
+        .bind(("embedding", embedding))
+        .bind(("tags", tags))
+        .bind(("embed_model", "text-embedding-3-small".to_string()))
+        .bind(("embed_dim", 1536i64))
+        .await
+        .map_err(|e| SurrealMindError::Database {
+            message: e.to_string(),
+        })?;
         
-        Ok(id.map(|t: Thing| t.to_string()).unwrap_or_else(|| "unknown".to_string()))
+        Ok(format!("thoughts:{}", thought_id))
     }
     
     /// Internal search method for Scalpel
@@ -88,22 +110,31 @@ impl SurrealMindServer {
                 // Create embedding from name + observations
                 let embed_text = format!("{}: {}", name, observations.join("; "));
                 let embedding = self.embedder.embed(&embed_text).await?;
+                let entity_id = Uuid::new_v4().to_string();
                 
-                let id: Option<Thing> = self.db.create("kg_entities")
-                    .content(json!({
-                        "name": name,
-                        "entity_type": entity_type,
-                        "observations": observations,
-                        "embedding": embedding,
-                        "created_at": chrono::Utc::now().to_rfc3339(),
-                        "origin": "scalpel",
-                    }))
-                    .await
-                    .map_err(|e| SurrealMindError::Database {
-                        message: e.to_string(),
-                    })?;
+                self.db.query(
+                    "INSERT INTO kg_entities {
+                        id: $id,
+                        name: $name,
+                        entity_type: $entity_type,
+                        observations: $observations,
+                        embedding: $embedding,
+                        created_at: $created_at,
+                        origin: 'scalpel'
+                    }"
+                )
+                .bind(("id", format!("kg_entities:{}", entity_id)))
+                .bind(("name", name))
+                .bind(("entity_type", entity_type))
+                .bind(("observations", observations))
+                .bind(("embedding", embedding))
+                .bind(("created_at", chrono::Utc::now().to_rfc3339()))
+                .await
+                .map_err(|e| SurrealMindError::Database {
+                    message: e.to_string(),
+                })?;
                 
-                Ok(id.map(|t: Thing| t.to_string()).unwrap_or_else(|| "unknown".to_string()))
+                Ok(format!("kg_entities:{}", entity_id))
             }
             "relationship" => {
                 let from = data.get("from").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -114,20 +145,29 @@ impl SurrealMindServer {
                     return Ok("Error: 'from' and 'to' are required".to_string());
                 }
                 
-                let id: Option<Thing> = self.db.create("kg_relationships")
-                    .content(json!({
-                        "from_entity": from,
-                        "to_entity": to,
-                        "relationship_type": rel_type,
-                        "created_at": chrono::Utc::now().to_rfc3339(),
-                        "origin": "scalpel",
-                    }))
-                    .await
-                    .map_err(|e| SurrealMindError::Database {
-                        message: e.to_string(),
-                    })?;
+                let rel_id = Uuid::new_v4().to_string();
                 
-                Ok(id.map(|t: Thing| t.to_string()).unwrap_or_else(|| "unknown".to_string()))
+                self.db.query(
+                    "INSERT INTO kg_relationships {
+                        id: $id,
+                        from_entity: $from,
+                        to_entity: $to,
+                        relationship_type: $rel_type,
+                        created_at: $created_at,
+                        origin: 'scalpel'
+                    }"
+                )
+                .bind(("id", format!("kg_relationships:{}", rel_id)))
+                .bind(("from", from))
+                .bind(("to", to))
+                .bind(("rel_type", rel_type))
+                .bind(("created_at", chrono::Utc::now().to_rfc3339()))
+                .await
+                .map_err(|e| SurrealMindError::Database {
+                    message: e.to_string(),
+                })?;
+                
+                Ok(format!("kg_relationships:{}", rel_id))
             }
             "observation" => {
                 let entity = data.get("entity").and_then(|v| v.as_str()).unwrap_or("").to_string();

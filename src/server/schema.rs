@@ -158,7 +158,7 @@ impl SurrealMindServer {
             DEFINE FIELD duration_ms ON TABLE agent_jobs TYPE option<int>;
             DEFINE FIELD error ON TABLE agent_jobs TYPE option<string>;
             DEFINE FIELD session_id ON TABLE agent_jobs TYPE option<string>;
-            DEFINE FIELD exchange_id ON TABLE agent_jobs TYPE option<string>;
+            DEFINE FIELD exchange_id ON TABLE agent_jobs TYPE option<record<agent_exchanges>>;
             DEFINE FIELD metadata ON TABLE agent_jobs TYPE option<object>;
             DEFINE FIELD prompt ON TABLE agent_jobs TYPE string;
             DEFINE FIELD task_name ON TABLE agent_jobs TYPE string;

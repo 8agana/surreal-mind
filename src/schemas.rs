@@ -38,6 +38,8 @@ pub fn call_gem_schema() -> Arc<Map<String, Value>> {
             "model": {"type": "string"},
             "cwd": {"type": "string"},
             "timeout_ms": {"type": "number"},
+            "tool_timeout_ms": {"type": "number"},
+            "expose_stream": {"type": "boolean"},
             "fire_and_forget": {"type": "boolean", "default": false}
         },
         "required": ["prompt"]
@@ -206,7 +208,18 @@ pub fn scalpel_schema() -> Arc<Map<String, Value>> {
                 "type": "object",
                 "description": "Additional context (file paths, code snippets, etc.)"
             },
-            "format": {"type": "string", "enum": ["text", "json", "code"]}
+            "format": {"type": "string", "enum": ["text", "json", "code"]},
+            "fire_and_forget": {
+                "type": "boolean",
+                "default": true,
+                "description": "If true (default), run in background and return job_id for polling via call_status"
+            },
+            "mode": {
+                "type": "string",
+                "enum": ["intel", "edit"],
+                "default": "edit",
+                "description": "intel = read-only (read_file, run_command, search); edit = full access"
+            }
         },
         "required": ["task"]
     });
