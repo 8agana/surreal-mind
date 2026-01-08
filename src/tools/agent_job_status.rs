@@ -44,7 +44,7 @@ impl SurrealMindServer {
 }
 
 async fn fetch_job_status(db: &Surreal<WsClient>, job_id: String) -> Result<Value> {
-    // Query all job fields, casting exchange_id to string to avoid Record serialization issues
+    // Query all job fields. NONE values deserialize naturally to Option::None
     let sql = "SELECT
             job_id,
             status,
@@ -54,7 +54,7 @@ async fn fetch_job_status(db: &Surreal<WsClient>, job_id: String) -> Result<Valu
             duration_ms,
             error,
             session_id,
-            <string>exchange_id as exchange_id,
+            exchange_id,
             metadata,
             prompt,
             task_name,
@@ -74,7 +74,8 @@ async fn fetch_job_status(db: &Surreal<WsClient>, job_id: String) -> Result<Valu
     };
 
     // Define a struct to deserialize the job row
-    // Using <string> cast in SQL allows safe deserialization without Record type issues
+    // Option<T> fields allow NONE values to deserialize as None, fixing the issue
+    // where <string> casting would fail on NONE values for running jobs
     #[derive(Deserialize)]
     struct JobRow {
         job_id: String,

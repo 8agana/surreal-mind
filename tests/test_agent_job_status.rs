@@ -181,3 +181,75 @@ async fn test_agent_job_status_with_exchange_id() {
         .bind(("exchange_id", exchange_id))
         .await;
 }
+
+#[tokio::test]
+async fn test_agent_job_status_running_job_with_none_values() {
+    let server = get_server().await.expect("Failed to initialize server");
+
+    // Create a test job record with NONE values (simulating a running job)
+    let job_id = uuid::Uuid::new_v4().to_string();
+    let sql = "
+        CREATE agent_jobs SET
+            job_id = $job_id,
+            tool_name = 'test_tool',
+            agent_source = 'test',
+            agent_instance = 'test',
+            status = 'running',
+            prompt = 'test prompt',
+            task_name = 'test_task',
+            created_at = time::now(),
+            started_at = time::now()
+            // Note: completed_at, duration_ms, exchange_id, error are NONE
+    ";
+
+    server
+        .db
+        .query(sql)
+        .bind(("job_id", job_id.clone()))
+        .await
+        .expect("Failed to create running test job");
+
+    // Test the agent_job_status functionality on a running job
+    // This should NOT fail with "cannot convert NONE into a string" error
+    let result = server
+        .handle_agent_job_status(rmcp::model::CallToolRequestParam {
+            name: "agent_job_status".into(),
+            arguments: Some(
+                serde_json::json!({
+                    "job_id": job_id
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
+        })
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "agent_job_status should succeed on running job with NONE values: {:?}",
+        result.err()
+    );
+    let response = result.unwrap();
+
+    // Verify the response contains expected fields
+    let response_json = serde_json::to_value(&response.structured_content).unwrap();
+    let response_value: Value = response_json;
+
+    assert_eq!(response_value["job_id"], job_id);
+    assert_eq!(response_value["status"], "running");
+    assert!(response_value["created_at"].is_string());
+    assert!(response_value["started_at"].is_string());
+    // These should be null since the job is still running
+    assert!(response_value["completed_at"].is_null());
+    assert!(response_value["duration_ms"].is_null());
+    assert!(response_value["exchange_id"].is_null());
+    assert!(response_value["error"].is_null());
+
+    // Clean up
+    let _ = server
+        .db
+        .query("DELETE agent_jobs WHERE job_id = $job_id")
+        .bind(("job_id", job_id))
+        .await;
+}
