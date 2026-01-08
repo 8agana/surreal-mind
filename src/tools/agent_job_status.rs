@@ -44,7 +44,9 @@ impl SurrealMindServer {
 }
 
 async fn fetch_job_status(db: &Surreal<WsClient>, job_id: String) -> Result<Value> {
-    // Query all job fields. NONE values deserialize naturally to Option::None
+    // Query all job fields that exist in the schema.
+    // For exchange_id (Record<agent_exchanges>), use IF THEN ELSE to safely convert to string
+    // when the value exists, or return null when it's NONE.
     let sql = "SELECT
             job_id,
             status,
@@ -54,15 +56,13 @@ async fn fetch_job_status(db: &Surreal<WsClient>, job_id: String) -> Result<Valu
             duration_ms,
             error,
             session_id,
-            exchange_id,
+            IF exchange_id != NONE THEN type::string(exchange_id) ELSE null END as exchange_id,
             metadata,
             prompt,
             task_name,
             model_override,
             cwd,
-            timeout_ms,
-            tool_timeout_ms,
-            expose_stream
+            timeout_ms
         FROM agent_jobs WHERE job_id = $job_id LIMIT 1;";
 
     let mut response = match db.query(sql).bind(("job_id", job_id.clone())).await {
@@ -74,8 +74,8 @@ async fn fetch_job_status(db: &Surreal<WsClient>, job_id: String) -> Result<Valu
     };
 
     // Define a struct to deserialize the job row
-    // Option<T> fields allow NONE values to deserialize as None, fixing the issue
-    // where <string> casting would fail on NONE values for running jobs
+    // Option<T> fields allow NONE/null values to deserialize as None
+    // Only include fields that actually exist in the schema
     #[derive(Deserialize)]
     struct JobRow {
         job_id: String,
@@ -93,8 +93,6 @@ async fn fetch_job_status(db: &Surreal<WsClient>, job_id: String) -> Result<Valu
         model_override: Option<String>,
         cwd: Option<String>,
         timeout_ms: Option<i64>,
-        tool_timeout_ms: Option<i64>,
-        expose_stream: Option<bool>,
     }
 
     let rows: Vec<JobRow> = match response.take(0) {
@@ -130,8 +128,6 @@ async fn fetch_job_status(db: &Surreal<WsClient>, job_id: String) -> Result<Valu
         "task_name": row.task_name,
         "model_override": row.model_override,
         "cwd": row.cwd,
-        "timeout_ms": row.timeout_ms,
-        "tool_timeout_ms": row.tool_timeout_ms,
-        "expose_stream": row.expose_stream
+        "timeout_ms": row.timeout_ms
     }))
 }

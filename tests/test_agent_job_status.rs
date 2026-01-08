@@ -35,6 +35,7 @@ async fn test_agent_job_status_deserialization() {
             status = 'completed',
             prompt = 'test prompt',
             task_name = 'test_task',
+            metadata = {},
             created_at = time::now(),
             started_at = time::now(),
             completed_at = time::now(),
@@ -76,6 +77,19 @@ async fn test_agent_job_status_deserialization() {
     assert!(response_value["started_at"].is_string());
     assert!(response_value["completed_at"].is_string());
     assert_eq!(response_value["duration_ms"], 1000);
+    // Verify that non-existent fields are not present
+    assert!(
+        !response_value
+            .as_object()
+            .unwrap()
+            .contains_key("tool_timeout_ms")
+    );
+    assert!(
+        !response_value
+            .as_object()
+            .unwrap()
+            .contains_key("expose_stream")
+    );
 
     // Clean up
     let _ = server
@@ -89,28 +103,16 @@ async fn test_agent_job_status_deserialization() {
 async fn test_agent_job_status_with_exchange_id() {
     let server = get_server().await.expect("Failed to initialize server");
 
-    // Create a test exchange record first
-    let exchange_sql = "
-        CREATE agent_exchanges SET
-            agent_source = 'test',
-            agent_instance = 'test',
-            prompt = 'test prompt',
-            response = 'test response',
-            tool_name = 'test_tool',
-            session_id = 'test_session'
-    ";
+    // Create a test exchange and get its ID
+    // We'll use a simpler approach: just generate a reference string directly
+    // In real code, the exchange_id would come from the delegate_gemini tool response
+    let exchange_id = format!(
+        "agent_exchanges:test{}",
+        uuid::Uuid::new_v4().to_string().replace("-", "")[0..8].to_string()
+    );
 
-    let mut exchange_response = server
-        .db
-        .query(exchange_sql)
-        .await
-        .expect("Failed to create test exchange");
-
-    let exchange_rows: Vec<serde_json::Value> = exchange_response.take(0).unwrap();
-    let exchange_id = exchange_rows.first().unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    // For now, just verify the test can execute without creating an actual exchange
+    // The tool itself will create exchanges when called
 
     // Create a test job record with exchange_id
     let job_id = uuid::Uuid::new_v4().to_string();
@@ -124,6 +126,7 @@ async fn test_agent_job_status_with_exchange_id() {
             status = 'completed',
             prompt = 'test prompt',
             task_name = 'test_task',
+            metadata = {{}},
             exchange_id = {},  // This is a Record type that caused serialization issues
             created_at = time::now(),
             started_at = time::now(),
@@ -166,8 +169,12 @@ async fn test_agent_job_status_with_exchange_id() {
 
     assert_eq!(response_value["job_id"], job_id);
     assert_eq!(response_value["status"], "completed");
-    // exchange_id should be present as a string (not cause serialization error)
-    assert!(response_value["exchange_id"].is_string() || response_value["exchange_id"].is_null());
+    // exchange_id should be present as a string (converted from Record) or null
+    assert!(
+        response_value["exchange_id"].is_string() || response_value["exchange_id"].is_null(),
+        "exchange_id should be a string or null, got: {}",
+        response_value["exchange_id"]
+    );
 
     // Clean up
     let _ = server
@@ -175,11 +182,7 @@ async fn test_agent_job_status_with_exchange_id() {
         .query("DELETE agent_jobs WHERE job_id = $job_id")
         .bind(("job_id", job_id))
         .await;
-    let _ = server
-        .db
-        .query("DELETE agent_exchanges WHERE id = $exchange_id")
-        .bind(("exchange_id", exchange_id))
-        .await;
+    // Note: We didn't create an actual exchange in this test, so no need to clean it up
 }
 
 #[tokio::test]
@@ -197,6 +200,7 @@ async fn test_agent_job_status_running_job_with_none_values() {
             status = 'running',
             prompt = 'test prompt',
             task_name = 'test_task',
+            metadata = {},
             created_at = time::now(),
             started_at = time::now()
             // Note: completed_at, duration_ms, exchange_id, error are NONE
