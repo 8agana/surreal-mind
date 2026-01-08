@@ -7,5 +7,5 @@ pub mod reembed;
 
 // Re-export public items for backwards compatibility
 pub use reembed::{
-    run_kg_embed, run_reembed, run_reembed_kg, KgEmbedStats, ReembedKgStats, ReembedStats,
+    KgEmbedStats, ReembedKgStats, ReembedStats, run_kg_embed, run_reembed, run_reembed_kg,
 };

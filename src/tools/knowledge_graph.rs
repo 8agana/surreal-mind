@@ -383,7 +383,7 @@ impl SurrealMindServer {
         Ok(CallToolResult::structured(result))
     }
 
-        /// Helper: ensure a KG record has an up-to-date embedding
+    /// Helper: ensure a KG record has an up-to-date embedding
     async fn ensure_kg_embedding(
         &self,
         table: &str,

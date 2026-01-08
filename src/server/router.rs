@@ -70,7 +70,6 @@ impl ServerHandler for SurrealMindServer {
 
         // Output schemas (rmcp 0.11.0+)
         // Output schemas removed as they are no longer used or needed for simple tool defs
-        
 
         let mut tools = vec![
             Tool {
@@ -130,7 +129,9 @@ impl ServerHandler for SurrealMindServer {
         tools.push(Tool {
             name: "call_gem".into(),
             title: Some("Call Gem".into()),
-            description: Some("Delegate a task to Gemini CLI with full context and tracking".into()),
+            description: Some(
+                "Delegate a task to Gemini CLI with full context and tracking".into(),
+            ),
             input_schema: call_gem_schema.clone(),
             icons: None,
             annotations: None,
@@ -152,7 +153,9 @@ impl ServerHandler for SurrealMindServer {
         tools.push(Tool {
             name: "scalpel".into(),
             title: Some("Scalpel".into()),
-            description: Some("Delegate routine operations to a fast local model (Ministral 3B)".into()),
+            description: Some(
+                "Delegate routine operations to a fast local model (Ministral 3B)".into(),
+            ),
             input_schema: scalpel_schema,
             icons: None,
             annotations: None,
@@ -160,7 +163,7 @@ impl ServerHandler for SurrealMindServer {
             meta: None,
         });
 
-tools.push(Tool {
+        tools.push(Tool {
             name: "call_status".into(),
             title: Some("Call Status".into()),
             description: Some("Check the status and results of a delegated agent job".into()),
@@ -193,9 +196,6 @@ tools.push(Tool {
             meta: None,
         });
 
-        
-
-        
         // (photography tools removed from this server)
 
         Ok(ListToolsResult {
@@ -212,24 +212,51 @@ tools.push(Tool {
         // Route to appropriate tool handler
         match request.name.as_ref() {
             // Unified thinking tool
-            "think" => self.handle_legacymind_think(request).await.map_err(|e| e.into()),
+            "think" => self
+                .handle_legacymind_think(request)
+                .await
+                .map_err(|e| e.into()),
 
             // Intelligence and utility
             "wander" => self.handle_wander(request).await.map_err(|e| e.into()),
-            "maintain" => self.handle_maintenance_ops(request).await.map_err(|e| e.into()),
+            "maintain" => self
+                .handle_maintenance_ops(request)
+                .await
+                .map_err(|e| e.into()),
             // Memory tools
-            "remember" => self.handle_knowledgegraph_create(request).await.map_err(|e| e.into()),
-            "call_gem" => self.handle_delegate_gemini(request).await.map_err(|e| e.into()),
+            "remember" => self
+                .handle_knowledgegraph_create(request)
+                .await
+                .map_err(|e| e.into()),
+            "call_gem" => self
+                .handle_delegate_gemini(request)
+                .await
+                .map_err(|e| e.into()),
 
-            "call_status" => self.handle_agent_job_status(request).await.map_err(|e| e.into()),
-            "call_jobs" => self.handle_list_agent_jobs(request).await.map_err(|e| e.into()),
-            "call_cancel" => self.handle_cancel_agent_job(request).await.map_err(|e| e.into()),
+            "call_status" => self
+                .handle_agent_job_status(request)
+                .await
+                .map_err(|e| e.into()),
+            "call_jobs" => self
+                .handle_list_agent_jobs(request)
+                .await
+                .map_err(|e| e.into()),
+            "call_cancel" => self
+                .handle_cancel_agent_job(request)
+                .await
+                .map_err(|e| e.into()),
 
             // Help
-            "howto" => self.handle_detailed_help(request).await.map_err(|e| e.into()),
-            "search" => self.handle_unified_search(request).await.map_err(|e| e.into()),
+            "howto" => self
+                .handle_detailed_help(request)
+                .await
+                .map_err(|e| e.into()),
+            "search" => self
+                .handle_unified_search(request)
+                .await
+                .map_err(|e| e.into()),
             "scalpel" => self.handle_scalpel(request).await.map_err(|e| e.into()),
-            
+
             _ => Err(McpError {
                 code: rmcp::model::ErrorCode::METHOD_NOT_FOUND,
                 message: format!("Unknown tool: {}", request.name).into(),

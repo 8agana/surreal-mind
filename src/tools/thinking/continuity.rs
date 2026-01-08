@@ -9,9 +9,9 @@
 //! - Deduplication (same ID can't appear in multiple link fields)
 //! - Graceful handling of missing thoughts (preserved as string for future resolution)
 
+use super::types::{ContinuityResult, process_continuity_query_result};
 use crate::error::Result;
 use crate::server::SurrealMindServer;
-use super::types::{ContinuityResult, process_continuity_query_result};
 use std::collections::HashSet;
 
 impl SurrealMindServer {

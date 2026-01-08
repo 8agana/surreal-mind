@@ -200,18 +200,24 @@ pub async fn unified_search_inner(
             } else {
                 ("kg_entities", entity_id.as_str())
             };
-            
+
             if table == "kg_entities" || !entity_id.contains(':') {
                 let sql = "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities WHERE meta::id(id) = $id LIMIT 1";
-                let rows: Vec<serde_json::Value> = server.db.query(sql)
+                let rows: Vec<serde_json::Value> = server
+                    .db
+                    .query(sql)
                     .bind(("id", bare_id.to_string()))
                     .await?
                     .take(0)?;
-                
+
                 items.extend(rows.into_iter().map(|mut v| {
                     if let Some(obj) = v.as_object_mut() {
                         // Add full qualified ID
-                        if let Some(id) = obj.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()) {
+                        if let Some(id) = obj
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                        {
                             obj.insert("id".to_string(), json!(format!("kg_entities:{}", id)));
                         }
                         obj.insert("kind".to_string(), json!("entity"));
@@ -219,7 +225,7 @@ pub async fn unified_search_inner(
                     }
                     v
                 }));
-                
+
                 if !items.is_empty() {
                     found_semantic = true; // Skip semantic search since we found by ID
                 }
@@ -378,17 +384,23 @@ pub async fn unified_search_inner(
             } else {
                 ("kg_observations", entity_id.as_str())
             };
-            
+
             if table == "kg_observations" {
                 let sql = "SELECT meta::id(id) as id, name, data, created_at FROM kg_observations WHERE meta::id(id) = $id LIMIT 1";
-                let rows: Vec<serde_json::Value> = server.db.query(sql)
+                let rows: Vec<serde_json::Value> = server
+                    .db
+                    .query(sql)
                     .bind(("id", bare_id.to_string()))
                     .await?
                     .take(0)?;
-                
+
                 items.extend(rows.into_iter().map(|mut v| {
                     if let Some(obj) = v.as_object_mut() {
-                        if let Some(id) = obj.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()) {
+                        if let Some(id) = obj
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                        {
                             obj.insert("id".to_string(), json!(format!("kg_observations:{}", id)));
                         }
                         obj.insert("kind".to_string(), json!("observation"));
@@ -396,7 +408,7 @@ pub async fn unified_search_inner(
                     }
                     v
                 }));
-                
+
                 if !items.is_empty() {
                     found_semantic_obs = true;
                 }

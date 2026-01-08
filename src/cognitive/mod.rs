@@ -191,7 +191,7 @@ mod tests {
         let engine = CognitiveEngine::new();
         let weights: HashMap<&'static str, u8> = HashMap::new();
         let result = engine.blend("", &weights);
-        
+
         // Should return empty channels when no weights specified
         assert!(result.insights.len() <= 8);
         assert!(result.questions.len() <= 4);
@@ -204,7 +204,7 @@ mod tests {
         let mut weights: HashMap<&'static str, u8> = HashMap::new();
         weights.insert("OODA", 0);
         weights.insert("Socratic", 0);
-        
+
         let result = engine.blend("test content", &weights);
         // Should fallback to round-robin when all weights are zero
         assert!(result.insights.len() <= 8);
@@ -216,10 +216,17 @@ mod tests {
         let mut weights: HashMap<&'static str, u8> = HashMap::new();
         weights.insert("OODA", 100);
         weights.insert("Socratic", 0);
-        
-        let result = engine.blend("What is the root cause of this bug in the system?", &weights);
+
+        let result = engine.blend(
+            "What is the root cause of this bug in the system?",
+            &weights,
+        );
         // With OODA heavily weighted, should get results
-        assert!(!result.insights.is_empty() || !result.questions.is_empty() || !result.next_steps.is_empty());
+        assert!(
+            !result.insights.is_empty()
+                || !result.questions.is_empty()
+                || !result.next_steps.is_empty()
+        );
     }
 
     #[test]
@@ -229,16 +236,24 @@ mod tests {
         weights.insert("OODA", 50);
         weights.insert("Socratic", 50);
         weights.insert("First Principles", 50);
-        
+
         let result = engine.blend("How can we improve the architecture?", &weights);
-        
+
         // Check for no duplicates in insights
         let unique_insights: std::collections::HashSet<_> = result.insights.iter().collect();
-        assert_eq!(unique_insights.len(), result.insights.len(), "Insights should be unique");
-        
+        assert_eq!(
+            unique_insights.len(),
+            result.insights.len(),
+            "Insights should be unique"
+        );
+
         // Check for no duplicates in questions
         let unique_questions: std::collections::HashSet<_> = result.questions.iter().collect();
-        assert_eq!(unique_questions.len(), result.questions.len(), "Questions should be unique");
+        assert_eq!(
+            unique_questions.len(),
+            result.questions.len(),
+            "Questions should be unique"
+        );
     }
 
     #[test]
@@ -252,13 +267,25 @@ mod tests {
         weights.insert("Lateral", 10);
         weights.insert("Systems Thinking", 10);
         weights.insert("Dialectical", 10);
-        
-        let result = engine.blend("A complex problem that requires deep analysis and multiple perspectives.", &weights);
-        
+
+        let result = engine.blend(
+            "A complex problem that requires deep analysis and multiple perspectives.",
+            &weights,
+        );
+
         // Verify channel limits are respected
-        assert!(result.insights.len() <= 8, "Insights should be limited to 8");
-        assert!(result.questions.len() <= 4, "Questions should be limited to 4");
-        assert!(result.next_steps.len() <= 4, "Next steps should be limited to 4");
+        assert!(
+            result.insights.len() <= 8,
+            "Insights should be limited to 8"
+        );
+        assert!(
+            result.questions.len() <= 4,
+            "Questions should be limited to 4"
+        );
+        assert!(
+            result.next_steps.len() <= 4,
+            "Next steps should be limited to 4"
+        );
     }
 
     #[test]
@@ -266,9 +293,12 @@ mod tests {
         let engine = CognitiveEngine::new();
         let mut weights: HashMap<&'static str, u8> = HashMap::new();
         weights.insert("OODA", 5);
-        
+
         let result = engine.blend("simple test", &weights);
-        
-        assert!(result.meta.contains_key("weights_used"), "Meta should contain weights_used");
+
+        assert!(
+            result.meta.contains_key("weights_used"),
+            "Meta should contain weights_used"
+        );
     }
 }

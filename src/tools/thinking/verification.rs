@@ -3,9 +3,9 @@
 //! This module provides functionality for verifying hypotheses by finding
 //! supporting and contradicting evidence in the knowledge graph.
 
+use super::types::{CONTRADICTION_PATTERNS, EvidenceItem, VerificationResult};
 use crate::error::Result;
 use crate::server::SurrealMindServer;
-use super::types::{EvidenceItem, VerificationResult, CONTRADICTION_PATTERNS};
 use serde_json::json;
 
 impl SurrealMindServer {

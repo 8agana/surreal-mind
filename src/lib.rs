@@ -1,4 +1,3 @@
-
 pub mod clients;
 pub mod cognitive;
 pub mod config;
@@ -15,7 +14,7 @@ pub mod utils;
 
 // Re-export maintenance types and functions for backwards compatibility
 pub use maintenance::{
-    run_kg_embed, run_reembed, run_reembed_kg, KgEmbedStats, ReembedKgStats, ReembedStats,
+    KgEmbedStats, ReembedKgStats, ReembedStats, run_kg_embed, run_reembed, run_reembed_kg,
 };
 
 // Load env from a simple, standardized location resolution.

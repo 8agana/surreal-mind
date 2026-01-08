@@ -17,8 +17,8 @@ pub mod verification;
 
 // Re-export types for external use
 pub use types::{
-    ContinuityResult, EvidenceItem, LegacymindThinkParams, ThinkMode, VerificationResult,
-    CONTRADICTION_PATTERNS, MAX_CONTENT_SIZE, process_continuity_query_result,
+    CONTRADICTION_PATTERNS, ContinuityResult, EvidenceItem, LegacymindThinkParams,
+    MAX_CONTENT_SIZE, ThinkMode, VerificationResult, process_continuity_query_result,
 };
 
 // Re-export mode detection for internal use

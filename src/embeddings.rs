@@ -246,7 +246,10 @@ pub async fn create_embedder(config: &crate::config::Config) -> Result<Arc<dyn E
         }
         _ => {
             // Unknown provider - fail explicitly
-            anyhow::bail!("Unknown or unsupported embedding provider: '{}'. Only 'openai' is supported.", provider);
+            anyhow::bail!(
+                "Unknown or unsupported embedding provider: '{}'. Only 'openai' is supported.",
+                provider
+            );
         }
     }
 }

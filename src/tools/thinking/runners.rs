@@ -7,14 +7,14 @@
 //! Both runners use `ThoughtBuilder` for consistent thought creation and
 //! `CognitiveEngine` for optional framework analysis.
 
+use super::ThoughtBuilder;
+use super::types::ContinuityResult;
 use crate::cognitive::{
     CognitiveEngine,
     profile::{Submode, profile_for},
 };
 use crate::error::Result;
 use crate::server::SurrealMindServer;
-use super::types::ContinuityResult;
-use super::ThoughtBuilder;
 use serde_json::json;
 
 impl SurrealMindServer {

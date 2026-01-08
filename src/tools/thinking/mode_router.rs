@@ -3,7 +3,9 @@
 //! This module handles the resolution of thinking mode from hints and content,
 //! along with generation of routing metadata (reason, trigger, heuristics).
 
-use super::mode_detection::{detect_mode, DEBUG_KEYWORDS, BUILD_KEYWORDS, PLAN_KEYWORDS, STUCK_KEYWORDS};
+use super::mode_detection::{
+    BUILD_KEYWORDS, DEBUG_KEYWORDS, PLAN_KEYWORDS, STUCK_KEYWORDS, detect_mode,
+};
 use super::types::ThinkMode;
 
 /// Type alias for mode metadata return value
@@ -29,7 +31,7 @@ pub struct ModeRoutingResult {
 /// Returns metadata about how the mode was selected for transparency.
 pub fn route_mode(hint: Option<&str>, content: &str) -> ModeRoutingResult {
     let content_lower = content.to_lowercase();
-    
+
     // First: determine the mode
     let mode = if let Some(h) = hint {
         match h {
@@ -56,14 +58,11 @@ pub fn route_mode(hint: Option<&str>, content: &str) -> ModeRoutingResult {
     } else {
         detect_mode(content)
     };
-    
+
     // Second: generate metadata about how the mode was selected
-    let (mode_selected, reason, trigger_matched, heuristics) = generate_metadata(
-        &mode, 
-        hint, 
-        &content_lower
-    );
-    
+    let (mode_selected, reason, trigger_matched, heuristics) =
+        generate_metadata(&mode, hint, &content_lower);
+
     ModeRoutingResult {
         mode,
         mode_selected,
@@ -74,51 +73,63 @@ pub fn route_mode(hint: Option<&str>, content: &str) -> ModeRoutingResult {
 }
 
 /// Generate metadata explaining how a mode was selected
-fn generate_metadata(
-    mode: &ThinkMode,
-    hint: Option<&str>,
-    content_lower: &str,
-) -> ModeMetadata {
+fn generate_metadata(mode: &ThinkMode, hint: Option<&str>, content_lower: &str) -> ModeMetadata {
     let mode_name = mode.as_str();
-    
+
     // Check if hint was used
     if let Some(h) = hint
         && h == mode_name
     {
-        return (mode_name.to_string(), "hint specified".to_string(), None, None);
+        return (
+            mode_name.to_string(),
+            "hint specified".to_string(),
+            None,
+            None,
+        );
     }
-    
+
     // Check trigger phrases
     let trigger = match mode {
-        ThinkMode::Debug if content_lower.contains("debug time") => 
-            Some("debug time".to_string()),
-        ThinkMode::Build if content_lower.contains("building time") => 
-            Some("building time".to_string()),
-        ThinkMode::Plan if content_lower.contains("plan time") || content_lower.contains("planning time") => 
-            Some("plan/planning time".to_string()),
-        ThinkMode::Stuck if content_lower.contains("stuck") => 
-            Some("stuck".to_string()),
-        ThinkMode::Question if content_lower.contains("question time") => 
-            Some("question time".to_string()),
-        ThinkMode::Conclude if content_lower.contains("wrap up") || content_lower.contains("conclude") => 
-            Some("wrap up/conclude".to_string()),
+        ThinkMode::Debug if content_lower.contains("debug time") => Some("debug time".to_string()),
+        ThinkMode::Build if content_lower.contains("building time") => {
+            Some("building time".to_string())
+        }
+        ThinkMode::Plan
+            if content_lower.contains("plan time") || content_lower.contains("planning time") =>
+        {
+            Some("plan/planning time".to_string())
+        }
+        ThinkMode::Stuck if content_lower.contains("stuck") => Some("stuck".to_string()),
+        ThinkMode::Question if content_lower.contains("question time") => {
+            Some("question time".to_string())
+        }
+        ThinkMode::Conclude
+            if content_lower.contains("wrap up") || content_lower.contains("conclude") =>
+        {
+            Some("wrap up/conclude".to_string())
+        }
         _ => None,
     };
-    
+
     if let Some(t) = trigger {
-        return (mode_name.to_string(), "trigger phrase".to_string(), Some(t), None);
+        return (
+            mode_name.to_string(),
+            "trigger phrase".to_string(),
+            Some(t),
+            None,
+        );
     }
-    
+
     // Check if hint caused heuristic override
     if let Some(h) = hint {
         return (
-            mode_name.to_string(), 
+            mode_name.to_string(),
             format!("heuristic override from hint {}", h),
             None,
-            None
+            None,
         );
     }
-    
+
     // Must be keyword heuristics
     let keywords = match mode {
         ThinkMode::Debug => keyword_match(DEBUG_KEYWORDS, content_lower),
@@ -128,11 +139,21 @@ fn generate_metadata(
         ThinkMode::Question => (vec![], 0),
         ThinkMode::Conclude => (vec![], 0),
     };
-    
+
     if keywords.1 > 0 {
-        (mode_name.to_string(), "heuristic keyword match".to_string(), None, Some(keywords))
+        (
+            mode_name.to_string(),
+            "heuristic keyword match".to_string(),
+            None,
+            Some(keywords),
+        )
     } else {
-        (mode_name.to_string(), "default for general content".to_string(), None, None)
+        (
+            mode_name.to_string(),
+            "default for general content".to_string(),
+            None,
+            None,
+        )
     }
 }
 

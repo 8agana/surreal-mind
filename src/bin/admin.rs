@@ -55,9 +55,9 @@ async fn main() -> Result<()> {
 async fn inspect() -> Result<()> {
     use serde_json::Value;
     use surreal_mind::embeddings::create_embedder;
+    use surrealdb::Surreal;
     use surrealdb::engine::remote::ws::Ws;
     use surrealdb::opt::auth::Root;
-    use surrealdb::Surreal;
 
     let _ = dotenvy::dotenv();
 
@@ -148,9 +148,9 @@ async fn inspect() -> Result<()> {
 /// Run sanity check comparing freshly computed vs stored embeddings
 async fn sanity_cosine() -> Result<()> {
     use surreal_mind::embeddings::create_embedder;
+    use surrealdb::Surreal;
     use surrealdb::engine::remote::ws::Ws;
     use surrealdb::opt::auth::Root;
-    use surrealdb::Surreal;
 
     fn cosine(a: &[f32], b: &[f32]) -> f32 {
         if a.len() != b.len() || a.is_empty() {
@@ -174,11 +174,9 @@ async fn sanity_cosine() -> Result<()> {
     dotenvy::dotenv().ok();
     // Load config to get embedder settings
     let config = surreal_mind::config::Config::load()?;
-    
-    let db = Surreal::new::<Ws>(
-        std::env::var("SURR_DB_URL").unwrap_or("127.0.0.1:8000".into()),
-    )
-    .await?;
+
+    let db =
+        Surreal::new::<Ws>(std::env::var("SURR_DB_URL").unwrap_or("127.0.0.1:8000".into())).await?;
     db.signin(Root {
         username: &std::env::var("SURR_DB_USER").unwrap_or("root".into()),
         password: &std::env::var("SURR_DB_PASS").unwrap_or("root".into()),
@@ -228,9 +226,9 @@ async fn sanity_cosine() -> Result<()> {
 
 /// Comprehensive database connectivity and content check
 async fn db_check() -> Result<()> {
+    use surrealdb::Surreal;
     use surrealdb::engine::remote::ws::Ws;
     use surrealdb::opt::auth::Root;
-    use surrealdb::Surreal;
 
     // Load environment variables
     dotenvy::dotenv().ok();
@@ -360,9 +358,9 @@ async fn db_check() -> Result<()> {
 
 /// Quick check of database contents and counts
 async fn check_contents() -> Result<()> {
+    use surrealdb::Surreal;
     use surrealdb::engine::remote::ws::Ws;
     use surrealdb::opt::auth::Root;
-    use surrealdb::Surreal;
 
     // Load environment
     dotenvy::dotenv().ok();
@@ -427,9 +425,9 @@ async fn check_contents() -> Result<()> {
 
 /// Simple database connectivity test
 async fn simple_test() -> Result<()> {
+    use surrealdb::Surreal;
     use surrealdb::engine::remote::ws::Ws;
     use surrealdb::opt::auth::Root;
-    use surrealdb::Surreal;
 
     // Load environment variables
     dotenvy::dotenv().ok();
@@ -534,9 +532,9 @@ async fn simple_test() -> Result<()> {
 /// Fix embedding dimension mismatches by re-embedding
 async fn fix_dims() -> Result<()> {
     use surreal_mind::embeddings::create_embedder;
+    use surrealdb::Surreal;
     use surrealdb::engine::remote::ws::Ws;
     use surrealdb::opt::auth::Root;
-    use surrealdb::Surreal;
 
     // Load environment from .env file
     if let Err(e) = dotenvy::dotenv() {
