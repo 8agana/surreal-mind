@@ -284,11 +284,7 @@ async fn is_job_cancelled(db: &Surreal<WsClient>, job_id: &str) -> Result<bool> 
         .unwrap_or(false))
 }
 
-async fn mark_job_cancelled(
-    db: &Surreal<WsClient>,
-    job_id: &str,
-    duration_ms: i64,
-) -> Result<()> {
+async fn mark_job_cancelled(db: &Surreal<WsClient>, job_id: &str, duration_ms: i64) -> Result<()> {
     let sql = "UPDATE agent_jobs SET status = 'cancelled', completed_at = time::now(), duration_ms = $duration_ms WHERE job_id = $job_id;";
     db.query(sql)
         .bind(("job_id", job_id.to_string()))
@@ -335,12 +331,11 @@ pub async fn run_delegate_gemini_worker(
             Ok(job) => job,
             Err(e) => {
                 let err_msg = e.to_string();
-                if err_msg.contains("Found NONE for field `prompt`") {
-                    if let Some(caps) = INVALID_PROMPT_RE.captures(&err_msg) {
-                        if let Some(id) = caps.name("id") {
-                            let _ = fail_invalid_prompt(db.as_ref(), id.as_str()).await;
-                        }
-                    }
+                if err_msg.contains("Found NONE for field `prompt`")
+                    && let Some(caps) = INVALID_PROMPT_RE.captures(&err_msg)
+                    && let Some(id) = caps.name("id")
+                {
+                    let _ = fail_invalid_prompt(db.as_ref(), id.as_str()).await;
                 }
                 eprintln!("[ERROR delegate_gemini worker] Claim failed: {}", err_msg);
                 tokio::time::sleep(std::time::Duration::from_millis(poll_ms)).await;
@@ -415,9 +410,8 @@ pub async fn run_delegate_gemini_worker(
             }
         });
 
-        let mut cancel_interval = tokio::time::interval(std::time::Duration::from_millis(
-            cancel_poll_ms,
-        ));
+        let mut cancel_interval =
+            tokio::time::interval(std::time::Duration::from_millis(cancel_poll_ms));
         let result = loop {
             tokio::select! {
                 res = &mut handle => {

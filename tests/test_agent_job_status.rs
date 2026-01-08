@@ -3,10 +3,10 @@
 //! These tests verify that the agent_job_status tool can properly deserialize
 //! job records from SurrealDB without encountering enum serialization errors.
 
-use serde_json::{Value, json};
-use surreal_mind::server::SurrealMindServer;
+use serde_json::Value;
 use surreal_mind::config::Config;
 use surreal_mind::error::Result;
+use surreal_mind::server::SurrealMindServer;
 use tokio::sync::OnceCell;
 
 static SERVER: OnceCell<SurrealMindServer> = OnceCell::const_new();
@@ -15,7 +15,7 @@ async fn get_server() -> Result<&'static SurrealMindServer> {
     SERVER
         .get_or_try_init(|| async {
             let config = Config::load().unwrap_or_default();
-            SurrealMindServer::new(config).await
+            SurrealMindServer::new(&config).await
         })
         .await
 }
@@ -51,9 +51,15 @@ async fn test_agent_job_status_deserialization() {
     // Test the agent_job_status functionality
     let result = server
         .handle_agent_job_status(rmcp::model::CallToolRequestParam {
-            arguments: Some(serde_json::json!({
-                "job_id": job_id
-            }).as_object().unwrap().clone()),
+            name: "agent_job_status".into(),
+            arguments: Some(
+                serde_json::json!({
+                    "job_id": job_id
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
         })
         .await;
 
@@ -61,7 +67,8 @@ async fn test_agent_job_status_deserialization() {
     let response = result.unwrap();
 
     // Verify the response contains expected fields
-    let response_value: Value = serde_json::from_str(&response.result).unwrap();
+    let response_json = serde_json::to_value(&response.structured_content).unwrap();
+    let response_value: Value = response_json;
 
     assert_eq!(response_value["job_id"], job_id);
     assert_eq!(response_value["status"], "completed");
@@ -100,7 +107,10 @@ async fn test_agent_job_status_with_exchange_id() {
         .expect("Failed to create test exchange");
 
     let exchange_rows: Vec<serde_json::Value> = exchange_response.take(0).unwrap();
-    let exchange_id = exchange_rows.first().unwrap()["id"].as_str().unwrap();
+    let exchange_id = exchange_rows.first().unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     // Create a test job record with exchange_id
     let job_id = uuid::Uuid::new_v4().to_string();
@@ -132,17 +142,27 @@ async fn test_agent_job_status_with_exchange_id() {
     // Test the agent_job_status functionality - this should NOT fail with serialization error
     let result = server
         .handle_agent_job_status(rmcp::model::CallToolRequestParam {
-            arguments: Some(serde_json::json!({
-                "job_id": job_id
-            }).as_object().unwrap().clone()),
+            name: "agent_job_status".into(),
+            arguments: Some(
+                serde_json::json!({
+                    "job_id": job_id
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
         })
         .await;
 
-    assert!(result.is_ok(), "agent_job_status should succeed even with exchange_id");
+    assert!(
+        result.is_ok(),
+        "agent_job_status should succeed even with exchange_id"
+    );
     let response = result.unwrap();
 
     // Verify the response contains expected fields
-    let response_value: Value = serde_json::from_str(&response.result).unwrap();
+    let response_json = serde_json::to_value(&response.structured_content).unwrap();
+    let response_value: Value = response_json;
 
     assert_eq!(response_value["job_id"], job_id);
     assert_eq!(response_value["status"], "completed");

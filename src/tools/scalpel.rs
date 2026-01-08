@@ -5,7 +5,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::process::Command;
 use tokio::fs;
 use uuid::Uuid;
@@ -55,7 +55,7 @@ pub const SSG_EDIT_PROMPT: &str = r#"You are SSG Scalpel, a precision code execu
 
 Available tools:
 - read_file(path): Read file contents
-- write_file(path, content): Write content to file  
+- write_file(path, content): Write content to file
 - run_command(command): Execute shell command
 - think(content, tags): Record thought to knowledge graph
 - search(query): Search knowledge graph
@@ -118,28 +118,29 @@ impl ScalpelMode {
 }
 
 impl SurrealMindServer {
-    pub async fn handle_scalpel(
-        &self,
-        request: CallToolRequestParam,
-    ) -> Result<CallToolResult> {
+    pub async fn handle_scalpel(&self, request: CallToolRequestParam) -> Result<CallToolResult> {
         let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {
             message: "Missing parameters".into(),
         })?;
 
-        let task = args["task"].as_str().ok_or_else(|| SurrealMindError::InvalidParams {
-            message: "Missing 'task' argument".into(),
-        })?;
-        
+        let task = args["task"]
+            .as_str()
+            .ok_or_else(|| SurrealMindError::InvalidParams {
+                message: "Missing 'task' argument".into(),
+            })?;
+
         let context = args.get("context").cloned();
-        let fire_and_forget = args.get("fire_and_forget")
+        let fire_and_forget = args
+            .get("fire_and_forget")
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
-        let mode = ScalpelMode::from_str(
-            args.get("mode").and_then(|v| v.as_str()).unwrap_or("edit")
-        );
+        let mode =
+            ScalpelMode::from_str(args.get("mode").and_then(|v| v.as_str()).unwrap_or("edit"));
 
         if fire_and_forget {
-            return self.spawn_scalpel_job(task.to_string(), context, mode).await;
+            return self
+                .spawn_scalpel_job(task.to_string(), context, mode)
+                .await;
         }
 
         self.run_scalpel_loop(task, context, mode).await
@@ -152,27 +153,36 @@ impl SurrealMindServer {
         mode: ScalpelMode,
     ) -> Result<CallToolResult> {
         let job_id = Uuid::new_v4().to_string();
-        let mode_str = match mode { ScalpelMode::Intel => "intel", ScalpelMode::Edit => "edit" };
+        let mode_str = match mode {
+            ScalpelMode::Intel => "intel",
+            ScalpelMode::Edit => "edit",
+        };
 
         // Create job record in DB
-        self.db.query(
-            "CREATE agent_jobs SET 
-                job_id = $job_id, 
-                tool_name = 'scalpel', 
+        self.db
+            .query(
+                "CREATE agent_jobs SET
+                job_id = $job_id,
+                tool_name = 'scalpel',
                 agent_source = 'local',
                 agent_instance = 'hermes-3-llama-3.2-3b',
-                prompt = $prompt, 
+                prompt = $prompt,
                 task_name = $task_name,
-                status = 'queued', 
+                status = 'queued',
                 created_at = time::now(),
-                mode = $mode"
-        )
-        .bind(("job_id", job_id.clone()))
-        .bind(("prompt", task.clone()))
-        .bind(("task_name", format!("scalpel:{}", &task[..task.len().min(30)])))
-        .bind(("mode", mode_str.to_string()))
-        .await
-        .map_err(|e| SurrealMindError::Database { message: e.to_string() })?;
+                mode = $mode",
+            )
+            .bind(("job_id", job_id.clone()))
+            .bind(("prompt", task.clone()))
+            .bind((
+                "task_name",
+                format!("scalpel:{}", &task[..task.len().min(30)]),
+            ))
+            .bind(("mode", mode_str.to_string()))
+            .await
+            .map_err(|e| SurrealMindError::Database {
+                message: e.to_string(),
+            })?;
 
         // Clone for background task
         let server = self.clone();
@@ -181,7 +191,9 @@ impl SurrealMindServer {
         // Spawn background task
         tokio::spawn(async move {
             // Update status to running
-            let _ = server.db.query("UPDATE agent_jobs SET status = 'running' WHERE job_id = $id")
+            let _ = server
+                .db
+                .query("UPDATE agent_jobs SET status = 'running' WHERE job_id = $id")
                 .bind(("id", job_id_clone.clone()))
                 .await;
 
@@ -189,16 +201,16 @@ impl SurrealMindServer {
             match server.run_scalpel_loop(&task, context, mode).await {
                 Ok(result) => {
                     let duration_ms = start.elapsed().as_millis() as i64;
-                    if let Some(content) = result.content.first() {
-                        if let Some(text) = content.raw.as_text() {
-                            let _ = server.db.query(
-                                "UPDATE agent_jobs SET status = 'completed', result = $result, duration_ms = $dur, completed_at = time::now() WHERE job_id = $id"
-                            )
-                            .bind(("id", job_id_clone.clone()))
-                            .bind(("result", text.text.clone()))
-                            .bind(("dur", duration_ms))
-                            .await;
-                        }
+                    if let Some(content) = result.content.first()
+                        && let Some(text) = content.raw.as_text()
+                    {
+                        let _ = server.db.query(
+                            "UPDATE agent_jobs SET status = 'completed', result = $result, duration_ms = $dur, completed_at = time::now() WHERE job_id = $id"
+                        )
+                        .bind(("id", job_id_clone.clone()))
+                        .bind(("result", text.text.clone()))
+                        .bind(("dur", duration_ms))
+                        .await;
                     }
                 }
                 Err(e) => {
@@ -228,41 +240,44 @@ impl SurrealMindServer {
         mode: ScalpelMode,
     ) -> Result<CallToolResult> {
         let client = LocalClient::new();
-        
+
         let mut user_content = format!("Task: {}\n", task);
-        if let Some(ctx) = &context {
-            if let Ok(pretty) = serde_json::to_string_pretty(ctx) {
-                user_content.push_str(&format!("\nContext:\n{}", pretty));
-            }
+        if let Some(ctx) = &context
+            && let Ok(pretty) = serde_json::to_string_pretty(ctx)
+        {
+            user_content.push_str(&format!("\nContext:\n{}", pretty));
         }
-        
+
         let mut messages: Vec<Value> = vec![
             json!({"role": "system", "content": mode.system_prompt()}),
             json!({"role": "user", "content": user_content}),
         ];
-        
+
         let mut iteration = 0;
         let mut final_response = String::new();
-        
+
         while iteration < MAX_ITERATIONS {
             iteration += 1;
-            
-            let response = client.call_with_messages(&messages).await
-                .map_err(|e| SurrealMindError::ToolExecutionFailed {
+
+            let response = client.call_with_messages(&messages).await.map_err(|e| {
+                SurrealMindError::ToolExecutionFailed {
                     tool: "scalpel".into(),
                     error: e.to_string(),
-                })?;
-            
+                }
+            })?;
+
             if let Some(tool_call) = parse_tool_call(&response) {
                 let tool_result = execute_tool(&tool_call, self, &mode).await;
                 messages.push(json!({"role": "assistant", "content": response}));
-                messages.push(json!({"role": "user", "content": format!("Tool result:\n{}", tool_result)}));
+                messages.push(
+                    json!({"role": "user", "content": format!("Tool result:\n{}", tool_result)}),
+                );
             } else {
                 final_response = response;
                 break;
             }
         }
-        
+
         if final_response.is_empty() && iteration >= MAX_ITERATIONS {
             final_response = format!("Max iterations ({}) reached.", MAX_ITERATIONS);
         }
@@ -275,16 +290,15 @@ impl SurrealMindServer {
     }
 }
 
-static TOOL_BLOCK_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(?s)```(?:tool|json)?\s*(\{.*?\})\s*```"#).unwrap()
-});
+static TOOL_BLOCK_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"(?s)```(?:tool|json)?\s*(\{.*?\})\s*```"#).unwrap());
 
 fn parse_tool_call(response: &str) -> Option<ToolCall> {
     for caps in TOOL_BLOCK_RE.captures_iter(response) {
-        if let Some(json_str) = caps.get(1).map(|m| m.as_str()) {
-            if let Some(call) = parse_tool_call_json(json_str) {
-                return Some(call);
-            }
+        if let Some(json_str) = caps.get(1).map(|m| m.as_str())
+            && let Some(call) = parse_tool_call_json(json_str)
+        {
+            return Some(call);
         }
     }
 
@@ -356,7 +370,11 @@ async fn execute_tool(tool: &ToolCall, server: &SurrealMindServer, mode: &Scalpe
             let content = tool.params["content"].as_str().unwrap_or("");
             let tags: Vec<String> = tool.params["tags"]
                 .as_array()
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
             match server.think_internal(content, tags).await {
                 Ok(id) => format!("Thought: {}", id),
@@ -388,13 +406,15 @@ mod tests {
 
     #[test]
     fn parses_fenced_tool_block_with_preamble() {
-        let response = "Sure:\n```tool\n{\"name\":\"read_file\",\"params\":{\"path\":\"/etc/hosts\"}}\n```\n";
+        let response =
+            "Sure:\n```tool\n{\"name\":\"read_file\",\"params\":{\"path\":\"/etc/hosts\"}}\n```\n";
         assert!(parse_tool_call(response).is_some());
     }
 
     #[test]
     fn parses_legacy_schema() {
-        let response = "```json\n{\"tool\":\"read_file\",\"parameters\":{\"path\":\"/etc/hosts\"}}\n```";
+        let response =
+            "```json\n{\"tool\":\"read_file\",\"parameters\":{\"path\":\"/etc/hosts\"}}\n```";
         assert!(parse_tool_call(response).is_some());
     }
 
