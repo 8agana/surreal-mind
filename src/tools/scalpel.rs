@@ -56,7 +56,7 @@ pub const SSG_EDIT_PROMPT: &str = r#"You are SSG Scalpel, a precision code execu
 Available tools:
 - read_file(path): Read file contents
 - write_file(path, content): CREATE NEW file with content (Fails if file exists)
-- append_file(path, content): APPEND content to existing file
+- append_file(path, content): APPEND content to file (creates file if it doesn't exist, like shell >>)
 - run_command(command): Execute shell command
 
 TOOL USE (READ THIS):
@@ -281,12 +281,30 @@ impl SurrealMindServer {
             })?;
 
             if let Some(tool_call) = parse_tool_call(&response) {
+                // Debug logging to track agent behavior
+                tracing::debug!(
+                    "Scalpel iteration {}: calling tool '{}' with params {:?}",
+                    iteration,
+                    tool_call.name,
+                    tool_call.params
+                );
+                
                 let tool_result = execute_tool(&tool_call, self, &mode).await;
+                
+                // Debug logging for tool results
+                tracing::debug!(
+                    "Scalpel iteration {}: tool '{}' result: {}",
+                    iteration,
+                    tool_call.name,
+                    tool_result
+                );
+                
                 messages.push(json!({"role": "assistant", "content": response}));
                 messages.push(
                     json!({"role": "user", "content": format!("Tool result:\n{}", tool_result)}),
                 );
             } else {
+                tracing::debug!("Scalpel iteration {}: final response received", iteration);
                 final_response = response;
                 break;
             }
@@ -433,6 +451,7 @@ async fn execute_tool(tool: &ToolCall, server: &SurrealMindServer, mode: &Scalpe
             match tokio::fs::OpenOptions::new()
                 .write(true)
                 .append(true)
+                .create(true)  // Create file if it doesn't exist (like shell >>)
                 .open(&path)
                 .await
             {
