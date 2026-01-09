@@ -2,6 +2,8 @@
 
 ## Status: PENDING
 
+Linked doc: `backlog/docs/doc-4 - Implementation-Steps-remove-scalpel-tool.md`
+
 ## Objective
 Remove the `scalpel` tool and all associated infrastructure from surreal-mind. The scalpel tool was a local model delegation feature using mistralrs-server that isn't performing reliably on current hardware (32GB Studio). Local delegation is being deprioritized in favor of remote delegation tools (call_gem) that provide better reliability and performance.
 
@@ -324,3 +326,131 @@ When marking this task complete, verify:
 - [ ] Task-39 marked as obsolete
 - [ ] Related tasks archived properly
 - [ ] Final grep confirms zero scalpel references
+
+## Codex Review
+
+- Schema/backward-compat: If `ToolName`/`ToolKind` enums (and any serde tags in schemas.rs) lose the `Scalpel` variant, deserialization of existing SurrealDB rows or archived JSON logs containing that tag will panic/fail. Consider keeping a `DeprecatedScalpel`/`#[serde(other)]` catch-all or run a DB migration to rewrite stored values before removing the variant.
+- Feature flags/deps: Check `Cargo.toml` for scalpel-specific features (e.g., `scalpel` feature gate, mistralrs client deps, http client config). Removing the code without pruning the feature and dependencies leaves unused crates and could keep transitive features enabled (build time/attack surface). Run `cargo tree -i mistralrs-server` after edits to confirm removal.
+- Router/registry fallthrough: When deleting routes/handlers, ensure `router.rs` doesn’t leave an empty `match` arm or unreachable branch that causes a compile error only under specific `cfg` (e.g., `feature = "server"` vs `tooling-only`). Audit `#[cfg(feature = "server")]` blocks that previously gated scalpel.
+- Tool discovery contract: If the MCP tool list is enumerated and consumed by clients, make sure clients handle the missing tool gracefully (no hard-coded ordinal indexes). If there is an OpenAPI/JSON schema export step, regenerate it so consumers don’t see stale scalpel entries.
+- Metrics/logging: Remove or redirect any `tracing` metrics keyed on `scalpel_*` to avoid orphaned Prometheus counters and to keep dashboards from breaking on missing series.
+- Tests relying on shared fixtures: Some integration/unit tests may import shared fixtures that include a scalpel entry (e.g., common tool registry fixtures). Prune those fixtures rather than only deleting the scalpel-specific test file to avoid hidden compile/test failures.
+- Port release validation: After removing `start_scalpel_server.sh`, confirm no other services still bind to 8111 in dev scripts or launchd plists; update any health-check lists that assumed that port.
+- Build scripts: If `build.rs` or generated schema files embed tool lists, rerun the generation step (or remove the generation hook) so scalpel doesn’t linger in generated code.
+
+
+## Gemini Review
+
+Suggestions and refinements for the Scalpel removal plan:
+
+### 1. Additional File Removal
+The plan should include these files which are exclusively used by Scalpel:
+- **`src/clients/local.rs`**: Contains the `LocalClient` for mistralrs-server. Dead code once Scalpel is removed.
+- **`tests/test_append_behavior.rs`**: Specifically tests Scalpel-style file append logic.
+
+### 2. Registry & Module Cleanup
+- **`src/clients/mod.rs`**: Remove `pub mod local;`.
+- **`src/registry.rs`**: Update the doc comment to remove the `call_scalpel` reference.
+- **`.env.example`**: Prune all `SURR_SCALPEL_*` variables.
+- **`src/schemas.rs`**: Remove `scalpel_schema()` (already in plan) and ensure no other schemas reference it.
+
+### 3. Database & State Consistency
+- **Stale Job Records**: Existing records in `agent_jobs` with `tool_name = 'scalpel'` might cause deserialization issues or UI noise in `call_jobs`. Recommend adding a step to clear these: `DELETE agent_jobs WHERE tool_name = 'scalpel'`.
+- **Origin Metadata**: Thoughts with `origin = 'scalpel'` will remain in the DB. This is fine for history, but should be noted if a fully "clean" state is required.
+
+### 4. Backlog Maintenance
+- **Ghost Files**: Delete/archive the percent-encoded duplicate: `backlog/tasks/task-35%20-%20Scalpel-KG-prompt-tuning.md`.
+
+### 5. Client/System Prompts
+- Ensure that any external system instructions (MCP configuration or main agent system prompts) are updated to stop advertising `scalpel`. If the model thinks the tool exists, it will trigger "Method not found" errors.
+
+### 6. Implementation Sequence
+- Pruning `src/server/router.rs` and `src/registry.rs` *before* deleting implementation files ensures the project remains compilable during each step of the removal.
+
+## Vibe Review
+
+### 1. Comprehensive Testing Strategy
+The current testing plan focuses on compilation and basic functionality. Consider adding:
+- **Integration tests**: Verify that call_gem works correctly in scenarios where scalpel was previously used
+- **Performance tests**: Measure if the removal improves overall system performance
+- **Memory usage tests**: Verify reduced memory footprint after removal
+
+### 2. Documentation Updates
+The plan mentions updating README.md, CHANGELOG.md, and AGENTS docs. Also consider:
+- **API documentation**: Update any OpenAPI/Swagger docs that might reference scalpel
+- **User guides**: Ensure user-facing documentation doesn't mention scalpel
+- **Troubleshooting guides**: Remove any scalpel-specific troubleshooting sections
+
+### 3. Monitoring and Observability
+- **Metrics cleanup**: Remove any scalpel-specific metrics from monitoring dashboards
+- **Logging**: Update logging configuration to remove scalpel-related log entries
+- **Alerts**: Remove any alerts that might be triggered by scalpel operations
+
+### 4. Security Considerations
+- **Port security**: Verify that port 8111 is no longer exposed or referenced in any security configurations
+- **Dependency removal**: Ensure all scalpel-related dependencies are removed from Cargo.toml to reduce attack surface
+- **Secret management**: Verify that no scalpel-related secrets remain in configuration files
+
+### 5. User Communication
+- **Deprecation notice**: Consider adding a deprecation notice period before complete removal
+- **Migration guide**: Provide guidance for users who were using scalpel on how to transition to call_gem
+- **Release notes**: Clearly document the removal in release notes with rationale
+
+### 6. Continuous Integration
+- **CI pipeline updates**: Update any CI/CD pipelines that might reference scalpel
+- **Test coverage**: Ensure test coverage remains adequate after removal
+- **Build validation**: Add validation steps to prevent scalpel references from being reintroduced
+
+### 7. Performance Optimization
+- **Code size reduction**: Measure and document the reduction in code size
+- **Build time improvement**: Measure if build times improve after removal
+- **Runtime performance**: Verify if runtime performance improves with reduced complexity
+
+### 8. Future-Proofing
+- **Modular design**: Consider if the removal provides an opportunity to improve the overall modularity of the codebase
+- **Documentation of lessons learned**: Document why scalpel was removed and what was learned for future tool development
+- **Architecture review**: Use this as an opportunity to review the overall architecture and identify other potential simplifications
+
+## Vibe Review
+
+### 1. Comprehensive Testing Strategy
+The current testing plan focuses on compilation and basic functionality. Consider adding:
+- **Integration tests**: Verify that call_gem works correctly in scenarios where scalpel was previously used
+- **Performance tests**: Measure if the removal improves overall system performance
+- **Memory usage tests**: Verify reduced memory footprint after removal
+
+### 2. Documentation Updates
+The plan mentions updating README.md, CHANGELOG.md, and AGENTS docs. Also consider:
+- **API documentation**: Update any OpenAPI/Swagger docs that might reference scalpel
+- **User guides**: Ensure user-facing documentation doesn't mention scalpel
+- **Troubleshooting guides**: Remove any scalpel-specific troubleshooting sections
+
+### 3. Monitoring and Observability
+- **Metrics cleanup**: Remove any scalpel-specific metrics from monitoring dashboards
+- **Logging**: Update logging configuration to remove scalpel-related log entries
+- **Alerts**: Remove any alerts that might be triggered by scalpel operations
+
+### 4. Security Considerations
+- **Port security**: Verify that port 8111 is no longer exposed or referenced in any security configurations
+- **Dependency removal**: Ensure all scalpel-related dependencies are removed from Cargo.toml to reduce attack surface
+- **Secret management**: Verify that no scalpel-related secrets remain in configuration files
+
+### 5. User Communication
+- **Deprecation notice**: Consider adding a deprecation notice period before complete removal
+- **Migration guide**: Provide guidance for users who were using scalpel on how to transition to call_gem
+- **Release notes**: Clearly document the removal in release notes with rationale
+
+### 6. Continuous Integration
+- **CI pipeline updates**: Update any CI/CD pipelines that might reference scalpel
+- **Test coverage**: Ensure test coverage remains adequate after removal
+- **Build validation**: Add validation steps to prevent scalpel references from being reintroduced
+
+### 7. Performance Optimization
+- **Code size reduction**: Measure and document the reduction in code size
+- **Build time improvement**: Measure if build times improve after removal
+- **Runtime performance**: Verify if runtime performance improves with reduced complexity
+
+### 8. Future-Proofing
+- **Modular design**: Consider if the removal provides an opportunity to improve the overall modularity of the codebase
+- **Documentation of lessons learned**: Document why scalpel was removed and what was learned for future tool development
+- **Architecture review**: Use this as an opportunity to review the overall architecture and identify other potential simplifications

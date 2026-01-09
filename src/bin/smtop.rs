@@ -1021,10 +1021,10 @@ fn trigger_ops(
             status.ops_batch_size.to_string(),
         ));
     }
-    if matches!(action, OpsAction::KgEmbed | OpsAction::ReembedKg) {
-        if let Some(limit) = status.ops_limit {
-            env_vars_clone.push(("LIMIT".to_string(), limit.to_string()));
-        }
+    if matches!(action, OpsAction::KgEmbed | OpsAction::ReembedKg)
+        && let Some(limit) = status.ops_limit
+    {
+        env_vars_clone.push(("LIMIT".to_string(), limit.to_string()));
     }
 
     run_command_async(cmd, args, cwd, env_vars_clone, tx);

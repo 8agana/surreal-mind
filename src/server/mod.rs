@@ -11,7 +11,6 @@ use tokio::sync::{RwLock, Semaphore};
 // Submodules
 pub mod db;
 pub mod router;
-pub mod scalpel_helpers;
 pub mod schema;
 
 /// Custom deserializer for SurrealDB Thing to String

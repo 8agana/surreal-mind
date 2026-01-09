@@ -4,7 +4,7 @@
 //! external tools (call_cancel, etc.) to abort running jobs immediately without
 //! waiting for polling intervals.
 //!
-//! Designed to be generic across delegate_gemini, call_scalpel, call_cc, and future workers.
+//! Designed to be generic across delegate_gemini, call_cc, and future workers.
 
 use dashmap::DashMap;
 use once_cell::sync::Lazy;

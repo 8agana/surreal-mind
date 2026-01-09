@@ -108,7 +108,7 @@ async fn test_agent_job_status_with_exchange_id() {
     // In real code, the exchange_id would come from the delegate_gemini tool response
     let exchange_id = format!(
         "agent_exchanges:test{}",
-        uuid::Uuid::new_v4().to_string().replace("-", "")[0..8].to_string()
+        &uuid::Uuid::new_v4().to_string().replace("-", "")[0..8]
     );
 
     // For now, just verify the test can execute without creating an actual exchange

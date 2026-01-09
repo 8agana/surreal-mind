@@ -98,7 +98,7 @@ UPDATE thoughts:⟨{}⟩ SET ...
 
 ## Test: 2025-12-24 16:50 CST (CC Session 4)
 
-**Binary**: Rebuilt via scalpel
+**Binary**: Rebuilt via cargo build
 **Service**: Restarted
 
 **Result**: PROGRESS - Gemini CLI actually called!
@@ -130,7 +130,7 @@ Next step: Investigate what Gemini CLI is actually returning. "expected value at
 
 ## Test: 2025-12-24 16:55 CST (CC Session 4)
 
-**Binary**: Rebuilt via scalpel
+**Binary**: Rebuilt via cargo build
 **Service**: Restarted
 
 **Result**: ROOT CAUSE FOUND!
@@ -158,7 +158,7 @@ Next step: Investigate what Gemini CLI is actually returning. "expected value at
 
 ## Test: 2025-12-24 17:00 CST (CC Session 4)
 
-**Binary**: Rebuilt via scalpel
+**Binary**: Rebuilt via cargo build
 **Service**: Restarted
 
 **Result**: SUCCESS! 🎉
@@ -215,7 +215,7 @@ The tool returns `extraction_batch_id` and `gemini_session_id` but not which tho
 
 ## Test: 2025-12-24 17:18 CST (CC Session 4)
 
-**Binary**: Rebuilt via scalpel
+**Binary**: Rebuilt via cargo build
 **Service**: Restarted
 
 **Result**: Bug 2 FIXED!

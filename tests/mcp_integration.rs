@@ -107,7 +107,7 @@ async fn test_think_handler() {
     };
 
     // Call the internal handler directly
-    let result = server.handle_think(request).await;
+    let result = server.handle_legacymind_think(request).await;
     assert!(result.is_ok(), "think handler should succeed");
 
     let result = result.unwrap();
@@ -139,7 +139,7 @@ async fn test_think_with_continuity() {
     };
 
     // Call the internal handler directly
-    let result = server.handle_think(request).await;
+    let result = server.handle_legacymind_think(request).await;
 
     // Should succeed despite non-existent ID
     assert!(
@@ -194,7 +194,7 @@ async fn test_think_invalid_params() {
     };
 
     // Call the internal handler directly
-    let result = server.handle_think(request).await;
+    let result = server.handle_legacymind_think(request).await;
 
     // Should return an error for missing required field
     assert!(result.is_err(), "Should fail with invalid parameters");

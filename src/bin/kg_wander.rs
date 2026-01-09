@@ -44,7 +44,7 @@ fn default_action() -> String {
 #[tokio::main]
 async fn main() -> Result<()> {
     // Load .env
-    if let Err(_) = dotenvy::dotenv() {
+    if dotenvy::dotenv().is_err() {
         // Ignore error, env might be set manually
     }
 
@@ -310,13 +310,12 @@ fn update_state(
     current_id: &mut Option<String>,
     visited: &mut Vec<String>,
 ) {
-    if let Some(node) = res["current_node"].as_object() {
-        if let Some(id_val) = node.get("id") {
-            if let Some(id_str) = id_val.as_str() {
-                *current_id = Some(id_str.to_string());
-                visited.push(id_str.to_string());
-            }
-        }
+    if let Some(node) = res["current_node"].as_object()
+        && let Some(id_val) = node.get("id")
+        && let Some(id_str) = id_val.as_str()
+    {
+        *current_id = Some(id_str.to_string());
+        visited.push(id_str.to_string());
     }
 }
 
