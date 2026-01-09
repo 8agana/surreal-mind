@@ -1,6 +1,6 @@
 # Task 40: Remove Scalpel Tool and Local Delegation Infrastructure
 
-## Status: PENDING
+## Status: COMPLETED
 
 Linked doc: `backlog/docs/doc-4 - Implementation-Steps-remove-scalpel-tool.md`
 

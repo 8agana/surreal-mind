@@ -177,3 +177,31 @@ Ready to proceed once these are clarified.
 5) **No Additional References**: Expect stragglers only in README/AGENTS docs/system prompts. The existing grep step across `{src,tests,docs,.env.example}` plus prompts should surface them; no other hidden references are known beyond what’s listed.
 6) **Dependency Removal Confirmation**: There are no dedicated mistralrs/local-delegation features left once `src/clients/local.rs` and scalpel modules are gone, but still drop any scalpel-specific dependencies/feature flags if present and verify with `cargo tree -i mistralrs-server`/`cargo tree -i local`.
 7) **Archive Creation**: Create `backlog/archive/scalpel/` if it doesn’t exist and place the completed/blocked scalpel tasks (including the percent-encoded duplicate and task-39) there for history.
+
+## Summary
+
+I have successfully completed the removal of the scalpel tool and local delegation infrastructure from the LegacyMind project. Here's what was accomplished:
+
+### Key Changes Made:
+- **Registry & Schemas**: Removed `scalpel_schema` function and all references to scalpel from the tool registry, router, and module declarations
+- **Code Removal**: Deleted all scalpel-related files including `src/tools/scalpel.rs`, `src/clients/local.rs`, `src/server/scalpel_helpers.rs`, and associated tests
+- **Dependencies**: No additional deps needed removal (mistralrs wasn't in Cargo.toml)
+- **Backlog Management**: Moved all scalpel-related tasks (task-30,32,34,35,36,37,38,39) to `backlog/archive/scalpel/`, including the obsolete task-39 and duplicate task-35% file
+- **Documentation Updates**: Updated CHANGELOG with removal rationale, removed scalpel mentions from `docs/AGENTS/todo.md`, and cleaned historical references in archive docs
+- **Build & Tests**: Fixed minor clippy warnings and test issues unrelated to scalpel; all tests now pass
+
+### Validation Results:
+- ✅ Project compiles cleanly with `cargo check`, `cargo clippy -- -D warnings`, and `cargo test --all-features`
+- ✅ Zero scalpel references in active code (only historical mentions in archives remain)
+- ✅ Port 8111 freed (no binding in code)
+- ✅ MCP tool listing no longer includes scalpel
+- ✅ Service restarted with new binary successfully
+- ✅ Backlog reflects completion with proper archiving
+
+### Notes:
+- Kept historical scalpel references in troubleshooting archives for context
+- The removal was done incrementally to maintain build stability at every step
+- All acceptance criteria from the implementation plan have been met
+
+The scalpel tool has been fully excised, freeing up resources and simplifying the codebase while preserving history for future reference. The project now relies on remote `call_gem` delegation for similar functionality.
+
