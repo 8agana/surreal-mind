@@ -109,3 +109,30 @@ Execute decisively. Stay in scope. Verify completion."#;
 ### 4. Update System Prompt
 - Add `append_file` to tool list.
 - Explicitly warn about `write_file` safety check.
+
+## Test Findings (2026-01-08 Round 2 - Model Mismatch)
+- **Status:** FAILED.
+- **Issue:** The tool crashed with a 500 error because the code defaulted to requesting `Qwen` while the server hosted `Hermes`.
+- **Resolution:**
+    - Updated `src/clients/local.rs` to remove hardcoded defaults and REQUIRE `SURR_SCALPEL_MODEL` from .env.
+    - Updated `src/tools/scalpel.rs` to log the correct agent instance.
+    - Added config to `.env.example`.
+- **Current State:** Config mismatch resolved. Ready for functional testing.
+
+## Test Findings (2026-01-08 Round 3 - Functional Test via CC)
+- **Test 1 (Echo):** `scalpel test ok` → **PASSED**. Model is reachable and responding.
+- **Test 2 (Create File):** `Create ... scalpel-test.txt` → **PARTIAL FAIL**.
+    - Model claimed success: "The file ... has been successfully created with the content..."
+    - Reality: File created but **EMPTY (0 bytes)**.
+- **Test 3 (Append File):** `Append ...` → **FAILED**.
+    - Model hit max iterations (10).
+    - Likely kept trying to append, failing (or confusing itself), and retrying.
+    - Underlying cause: working with an empty file might have confused the "append" logic or the model's verification step.
+
+## Diagnosis (Zero-Byte Write)
+The model claimed it wrote content, but the file was empty. This strongly suggests a bug in `src/tools/scalpel.rs` where the `content` parameter is being dropped or misparsed from the tool call arguments before being passed to `fs::write`.
+
+**Next Steps:**
+1. Investigate `execute_tool` in `scalpel.rs`.
+2. Verify how `tool.params["content"]` is extracted.
+3. Check `normalize_tool_call` logic to ensure parameters aren't lost during parsing.

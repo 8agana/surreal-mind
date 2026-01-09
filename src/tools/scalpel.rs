@@ -104,9 +104,9 @@ When done, respond with your final answer (NO tool block).
 Execute decisively. Stay in scope. Verify completion."#;
 
 #[derive(Debug, Serialize, Deserialize)]
-struct ToolCall {
-    name: String,
-    params: Value,
+pub struct ToolCall {
+    pub name: String,
+    pub params: Value,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -319,7 +319,7 @@ fn parse_tool_call(response: &str) -> Option<ToolCall> {
     parse_tool_call_json(response.trim())
 }
 
-fn parse_tool_call_json(json_str: &str) -> Option<ToolCall> {
+pub fn parse_tool_call_json(json_str: &str) -> Option<ToolCall> {
     if json_str.is_empty() {
         return None;
     }
@@ -334,13 +334,28 @@ fn parse_tool_call_json(json_str: &str) -> Option<ToolCall> {
 
 fn normalize_tool_call(value: Value) -> Option<ToolCall> {
     let obj = value.as_object()?;
-    let name = obj.get("tool")?.as_str()?.to_string();
-    let params = obj.get("parameters")?.clone();
+
+    // Try different possible field names for tool name
+    let name = obj
+        .get("tool")
+        .or_else(|| obj.get("name"))
+        .or_else(|| obj.get("tool_name"))
+        .and_then(|v| v.as_str())
+        .map(String::from)?;
+
+    // Try different possible field names for parameters
+    let params = obj
+        .get("parameters")
+        .or_else(|| obj.get("params"))
+        .or_else(|| obj.get("arguments"))
+        .cloned()
+        .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+
     Some(ToolCall { name, params })
 }
 
 /// Resolves relative paths to absolute paths based on CWD
-fn resolve_path(path: &str) -> std::path::PathBuf {
+pub fn resolve_path(path: &str) -> std::path::PathBuf {
     let p = std::path::Path::new(path);
     if p.is_absolute() {
         p.to_path_buf()
@@ -362,6 +377,9 @@ async fn execute_tool(tool: &ToolCall, server: &SurrealMindServer, mode: &Scalpe
     match tool.name.as_str() {
         "read_file" => {
             let path_str = tool.params["path"].as_str().unwrap_or("");
+            if path_str.is_empty() {
+                return "Error: Missing 'path' parameter".to_string();
+            }
             let path = resolve_path(path_str);
             match fs::read_to_string(&path).await {
                 Ok(content) => content,
@@ -370,7 +388,16 @@ async fn execute_tool(tool: &ToolCall, server: &SurrealMindServer, mode: &Scalpe
         }
         "write_file" => {
             let path_str = tool.params["path"].as_str().unwrap_or("");
-            let content = tool.params["content"].as_str().unwrap_or("");
+            if path_str.is_empty() {
+                return "Error: Missing 'path' parameter".to_string();
+            }
+
+            let content = tool.params["content"].as_str();
+            let content = match content {
+                Some(c) if !c.is_empty() => c,
+                _ => return "Error: Missing or empty 'content' parameter".to_string(),
+            };
+
             let path = resolve_path(path_str);
 
             if path.exists() {
@@ -391,7 +418,16 @@ async fn execute_tool(tool: &ToolCall, server: &SurrealMindServer, mode: &Scalpe
         }
         "append_file" => {
             let path_str = tool.params["path"].as_str().unwrap_or("");
-            let content = tool.params["content"].as_str().unwrap_or("");
+            if path_str.is_empty() {
+                return "Error: Missing 'path' parameter".to_string();
+            }
+
+            let content = tool.params["content"].as_str();
+            let content = match content {
+                Some(c) if !c.is_empty() => c,
+                _ => return "Error: Missing or empty 'content' parameter".to_string(),
+            };
+
             let path = resolve_path(path_str);
 
             match tokio::fs::OpenOptions::new()
@@ -412,6 +448,9 @@ async fn execute_tool(tool: &ToolCall, server: &SurrealMindServer, mode: &Scalpe
         }
         "run_command" => {
             let cmd = tool.params["command"].as_str().unwrap_or("");
+            if cmd.is_empty() {
+                return "Error: Missing 'command' parameter".to_string();
+            }
             match Command::new("sh").arg("-c").arg(cmd).output() {
                 Ok(output) => {
                     let stdout = String::from_utf8_lossy(&output.stdout);
