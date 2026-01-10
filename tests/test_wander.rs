@@ -58,7 +58,7 @@ async fn test_wander_visited_exclusion() {
         name: "legacymind_wander".into(),
         arguments: Some(json!({"mode": "random"}).as_object().unwrap().clone()),
     };
-    let res1 = server.handle_wander(request1).await.unwrap();
+    let _res1 = server.handle_wander(request1).await.unwrap();
 
     // Extract ID (complex parsing, or just mock it by passing a known ID from manual query?)
     // Actually, wander response structure is defined in handle_wander as json!({...})
