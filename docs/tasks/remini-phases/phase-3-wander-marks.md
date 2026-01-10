@@ -66,9 +66,3 @@ SELECT * FROM observation WHERE marked_for = $target ORDER BY marked_at ASC;
 ## Implementation Notes
 
 *To be filled during implementation*
-
----
-
-## Testing
-
-*To be defined*

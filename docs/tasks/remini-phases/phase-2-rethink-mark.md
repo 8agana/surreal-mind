@@ -86,6 +86,6 @@ pub enum FederationMember {
 
 ---
 
-## Testing
+## Implementation Notes
 
-*To be defined*
+*To be filled during implementation*

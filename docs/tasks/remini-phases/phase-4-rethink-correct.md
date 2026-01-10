@@ -95,9 +95,3 @@ Correction chain preserves full history
 ## Implementation Notes
 
 *To be filled during implementation*
-
----
-
-## Testing
-
-*To be defined*
