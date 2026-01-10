@@ -86,3 +86,4 @@ DEFINE TABLE correction_events SCHEMAFULL; DEFINE FIELD id ON TABLE correction_e
 INFO FOR TABLE thoughts;
 INFO FOR TABLE correction_events;
 CREATE correction_events SET target_id = 'test', target_table = 'thoughts', previous_state = {}, new_state = {}, initiated_by = 'test', reasoning = 'test', sources = ['test'], verification_status = 'test';
+INFO FOR TABLE correction_events;

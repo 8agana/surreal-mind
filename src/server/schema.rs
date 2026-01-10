@@ -122,7 +122,7 @@ impl SurrealMindServer {
             DEFINE FIELD initiated_by ON TABLE correction_events TYPE string;
             DEFINE FIELD reasoning ON TABLE correction_events TYPE string;
             DEFINE FIELD sources ON TABLE correction_events TYPE array<string>;
-            DEFINE FIELD verification_status ON TABLE correction_events TYPE string;
+            DEFINE FIELD verification_status ON TABLE correction_events TYPE string DEFAULT "auto_applied";
             DEFINE FIELD corrects_previous ON TABLE correction_events TYPE option<record<correction_events>>;
             DEFINE FIELD spawned_by ON TABLE correction_events TYPE option<record<correction_events>>;
             DEFINE INDEX idx_correction_events_target ON TABLE correction_events FIELDS target_id, target_table;
