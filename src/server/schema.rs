@@ -42,6 +42,12 @@ impl SurrealMindServer {
             DEFINE FIELD extracted_to_kg ON TABLE thoughts TYPE bool DEFAULT false;
             DEFINE FIELD extraction_batch_id ON TABLE thoughts TYPE option<string>;
             DEFINE FIELD extracted_at ON TABLE thoughts TYPE option<datetime>;
+            -- Mark fields for REMini correction system
+            DEFINE FIELD marked_for ON TABLE thoughts TYPE option<string>;
+            DEFINE FIELD mark_type ON TABLE thoughts TYPE option<string>;
+            DEFINE FIELD mark_note ON TABLE thoughts TYPE option<string>;
+            DEFINE FIELD marked_at ON TABLE thoughts TYPE option<datetime>;
+            DEFINE FIELD marked_by ON TABLE thoughts TYPE option<string>;
             -- Continuity fields for thought chaining
             DEFINE FIELD session_id ON TABLE thoughts TYPE option<string>;
             DEFINE FIELD chain_id ON TABLE thoughts TYPE option<string>;
@@ -71,6 +77,12 @@ impl SurrealMindServer {
             DEFINE INDEX idx_kge_name ON TABLE kg_entities FIELDS name;
             DEFINE INDEX idx_kge_name_type ON TABLE kg_entities FIELDS name, data.entity_type;
             DEFINE INDEX idx_kge_extraction_batch ON TABLE kg_entities FIELDS extraction_batch_id;
+            -- Mark fields for REMini correction system
+            DEFINE FIELD marked_for ON TABLE kg_entities TYPE option<string>;
+            DEFINE FIELD mark_type ON TABLE kg_entities TYPE option<string>;
+            DEFINE FIELD mark_note ON TABLE kg_entities TYPE option<string>;
+            DEFINE FIELD marked_at ON TABLE kg_entities TYPE option<datetime>;
+            DEFINE FIELD marked_by ON TABLE kg_entities TYPE option<string>;
 
             DEFINE TABLE kg_edges SCHEMALESS;
             DEFINE FIELD source_thought_ids ON TABLE kg_edges TYPE option<array<string>>;
@@ -92,6 +104,29 @@ impl SurrealMindServer {
             DEFINE INDEX idx_kgo_name ON TABLE kg_observations FIELDS name;
             DEFINE INDEX idx_kgo_name_src ON TABLE kg_observations FIELDS name, source_thought_id;
             DEFINE INDEX idx_kgo_extraction_batch ON TABLE kg_observations FIELDS extraction_batch_id;
+            -- Mark fields for REMini correction system
+            DEFINE FIELD marked_for ON TABLE kg_observations TYPE option<string>;
+            DEFINE FIELD mark_type ON TABLE kg_observations TYPE option<string>;
+            DEFINE FIELD mark_note ON TABLE kg_observations TYPE option<string>;
+            DEFINE FIELD marked_at ON TABLE kg_observations TYPE option<datetime>;
+            DEFINE FIELD marked_by ON TABLE kg_observations TYPE option<string>;
+
+            -- CorrectionEvent table for REMini correction system
+            DEFINE TABLE correction_events SCHEMAFULL;
+            DEFINE FIELD id ON TABLE correction_events TYPE record<correction_events>;
+            DEFINE FIELD timestamp ON TABLE correction_events TYPE datetime DEFAULT time::now();
+            DEFINE FIELD target_id ON TABLE correction_events TYPE string;
+            DEFINE FIELD target_table ON TABLE correction_events TYPE string;
+            DEFINE FIELD previous_state ON TABLE correction_events TYPE object;
+            DEFINE FIELD new_state ON TABLE correction_events TYPE object;
+            DEFINE FIELD initiated_by ON TABLE correction_events TYPE string;
+            DEFINE FIELD reasoning ON TABLE correction_events TYPE string;
+            DEFINE FIELD sources ON TABLE correction_events TYPE array<string>;
+            DEFINE FIELD verification_status ON TABLE correction_events TYPE string;
+            DEFINE FIELD corrects_previous ON TABLE correction_events TYPE option<record<correction_events>>;
+            DEFINE FIELD spawned_by ON TABLE correction_events TYPE option<record<correction_events>>;
+            DEFINE INDEX idx_correction_events_target ON TABLE correction_events FIELDS target_id, target_table;
+            DEFINE INDEX idx_correction_events_timestamp ON TABLE correction_events FIELDS timestamp;
 
             -- Agent exchange logging
             DEFINE TABLE agent_exchanges SCHEMAFULL;

@@ -1,0 +1,12 @@
+{"timestamp":"2026-01-10T22:55:49.739072Z","level":"DEBUG","fields":{"message":"Connecting to the database engine with authentication"},"target":"surreal::cli::sql"}
+{"timestamp":"2026-01-10T22:55:49.742284Z","level":"DEBUG","fields":{"message":"Signing in to the database engine at 'Root' level"},"target":"surreal::cli::sql"}
+{"timestamp":"2026-01-10T22:55:58.401015Z","level":"DEBUG","fields":{"message":"Connecting to the database engine with authentication"},"target":"surreal::cli::sql"}
+{"timestamp":"2026-01-10T22:55:58.404393Z","level":"DEBUG","fields":{"message":"Signing in to the database engine at 'Root' level"},"target":"surreal::cli::sql"}
+{"timestamp":"2026-01-10T22:56:13.693398Z","level":"DEBUG","fields":{"message":"Connecting to the database engine with authentication"},"target":"surreal::cli::sql"}
+{"timestamp":"2026-01-10T22:56:13.696053Z","level":"DEBUG","fields":{"message":"Signing in to the database engine at 'Root' level"},"target":"surreal::cli::sql"}
+{"timestamp":"2026-01-10T22:56:26.492451Z","level":"DEBUG","fields":{"message":"Connecting to the database engine with authentication"},"target":"surreal::cli::sql"}
+{"timestamp":"2026-01-10T22:56:26.494716Z","level":"DEBUG","fields":{"message":"Signing in to the database engine at 'Root' level"},"target":"surreal::cli::sql"}
+{"timestamp":"2026-01-10T22:56:52.472690Z","level":"DEBUG","fields":{"message":"Connecting to the database engine with authentication"},"target":"surreal::cli::sql"}
+{"timestamp":"2026-01-10T22:56:52.475805Z","level":"DEBUG","fields":{"message":"Signing in to the database engine at 'Root' level"},"target":"surreal::cli::sql"}
+{"timestamp":"2026-01-10T22:57:17.864719Z","level":"DEBUG","fields":{"message":"Connecting to the database engine with authentication"},"target":"surreal::cli::sql"}
+{"timestamp":"2026-01-10T22:57:17.866852Z","level":"DEBUG","fields":{"message":"Signing in to the database engine at 'Root' level"},"target":"surreal::cli::sql"}

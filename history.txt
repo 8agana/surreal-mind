@@ -71,3 +71,18 @@ SELECT id, job_id, status, task_name, created_at FROM agent_jobs WHERE status = 
 DELETE agent_jobs:32hl9pqsjqbx689d9m4z; DELETE agent_jobs:e4g29x6mshsreq50hlvs; DELETE agent_jobs:otvi281th9c7mqe9neww; DELETE agent_jobs:rlrurrbm3cm13e421jid; DELETE agent_jobs:ulhnkobril7q6cdruo8f;
 SELECT status, count() AS count FROM agent_jobs GROUP BY status;
 SELECT * FROM curiosity;
+-- Migration script for Phase 1: Schema & Data Model
+-- Adds Mark fields to thoughts, kg_entities, and kg_observations tables
+-- Creates CorrectionEvent table for REMini correction system
+-- Add Mark fields to thoughts table
+ALTER TABLE thoughts
+DEFINE FIELD marked_for ON TABLE thoughts TYPE option<string>; DEFINE FIELD mark_type ON TABLE thoughts TYPE option<string>; DEFINE FIELD mark_note ON TABLE thoughts TYPE option<string>; DEFINE FIELD marked_at ON TABLE thoughts TYPE option<datetime>; DEFINE FIELD marked_by ON TABLE thoughts TYPE option<string>;
+DEFINE FIELD marked_for ON TABLE thoughts TYPE option<string>;
+DEFINE FIELD marked_for ON TABLE thoughts TYPE option<string>; DEFINE FIELD mark_type ON TABLE thoughts TYPE option<string>; DEFINE FIELD mark_note ON TABLE thoughts TYPE option<string>; DEFINE FIELD marked_at ON TABLE thoughts TYPE option<datetime>; DEFINE FIELD marked_by ON TABLE thoughts TYPE option<string>;
+SELECT * FROM thoughts LIMIT 1;
+DEFINE FIELD marked_for ON TABLE kg_entities TYPE option<string>; DEFINE FIELD mark_type ON TABLE kg_entities TYPE option<string>; DEFINE FIELD mark_note ON TABLE kg_entities TYPE option<string>; DEFINE FIELD marked_at ON TABLE kg_entities TYPE option<datetime>; DEFINE FIELD marked_by ON TABLE kg_entities TYPE option<string>;
+DEFINE FIELD marked_for ON TABLE kg_observations TYPE option<string>; DEFINE FIELD mark_type ON TABLE kg_observations TYPE option<string>; DEFINE FIELD mark_note ON TABLE kg_observations TYPE option<string>; DEFINE FIELD marked_at ON TABLE kg_observations TYPE option<datetime>; DEFINE FIELD marked_by ON TABLE kg_observations TYPE option<string>;
+DEFINE TABLE correction_events SCHEMAFULL; DEFINE FIELD id ON TABLE correction_events TYPE record<correction_events>; DEFINE FIELD timestamp ON TABLE correction_events TYPE datetime DEFAULT time::now(); DEFINE FIELD target_id ON TABLE correction_events TYPE string; DEFINE FIELD target_table ON TABLE correction_events TYPE string; DEFINE FIELD previous_state ON TABLE correction_events TYPE object; DEFINE FIELD new_state ON TABLE correction_events TYPE object; DEFINE FIELD initiated_by ON TABLE correction_events TYPE string; DEFINE FIELD reasoning ON TABLE correction_events TYPE string; DEFINE FIELD sources ON TABLE correction_events TYPE array<string>; DEFINE FIELD verification_status ON TABLE correction_events TYPE string; DEFINE FIELD corrects_previous ON TABLE correction_events TYPE option<record<correction_events>>; DEFINE FIELD spawned_by ON TABLE correction_events TYPE option<record<correction_events>>; DEFINE INDEX idx_correction_events_target ON TABLE correction_events FIELDS target_id, target_table; DEFINE INDEX idx_correction_events_timestamp ON TABLE correction_events FIELDS timestamp;
+INFO FOR TABLE thoughts;
+INFO FOR TABLE correction_events;
+CREATE correction_events SET target_id = 'test', target_table = 'thoughts', previous_state = {}, new_state = {}, initiated_by = 'test', reasoning = 'test', sources = ['test'], verification_status = 'test';
