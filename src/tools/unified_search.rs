@@ -51,6 +51,8 @@ pub struct UnifiedSearchParams {
     pub date_to: Option<String>,
     #[serde(default)]
     pub order: Option<String>,
+    #[serde(default)]
+    pub forensic: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -91,6 +93,7 @@ pub async fn unified_search_inner(
     }
 
     let target = params.target.unwrap_or_else(|| "mixed".to_string());
+    let forensic = params.forensic.unwrap_or(false);
     let include_thoughts = params.include_thoughts.unwrap_or(false);
     let top_k_mem = params.top_k_memories.unwrap_or(10).clamp(1, 50);
     let top_k_th = params.top_k_thoughts.unwrap_or(5).clamp(1, 50);
@@ -527,9 +530,15 @@ pub async fn unified_search_inner(
         }
     }
 
+    let mut augmented_items = items;
+    if forensic {
+        augment_with_forensics(server, &mut augmented_items).await?;
+    }
+
     let mut out = serde_json::Map::new();
-    out.insert("memories".into(), json!({"items": items}));
-    tracing::debug!("🔍 Unified search found {} memory items", items.len());
+    let count = augmented_items.len();
+    out.insert("memories".into(), json!({"items": augmented_items}));
+    tracing::debug!("🔍 Unified search found {} memory items", count);
 
     // 2) Thoughts search (optional)
     if include_thoughts {
@@ -722,6 +731,91 @@ fn sort_by_similarity(entities: &mut [serde_json::Value]) {
             .partial_cmp(&sim_a)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
+}
+
+// --- Forensic helpers ---
+async fn augment_with_forensics(
+    server: &SurrealMindServer,
+    items: &mut Vec<serde_json::Value>,
+) -> Result<()> {
+    for item in items.iter_mut() {
+        if let Some(obj) = item.as_object_mut() {
+            let id_val = obj.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let kind = obj.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+            let (table, full_id) = if id_val.contains(':') {
+                let mut parts = id_val.splitn(2, ':');
+                let t = parts.next().unwrap_or("").to_string();
+                (t.clone(), id_val.to_string())
+            } else {
+                let t = match kind {
+                    "entity" => "kg_entities",
+                    "observation" => "kg_observations",
+                    "thought" => "thoughts",
+                    _ => "",
+                };
+                if t.is_empty() {
+                    ("".to_string(), id_val.to_string())
+                } else {
+                    (t.to_string(), format!("{}:{}", t, id_val))
+                }
+            };
+
+            if table.is_empty() {
+                continue;
+            }
+
+            let chain = fetch_correction_chain(server, &full_id).await?;
+            let derivatives = fetch_derivatives(server, &full_id, &table).await?;
+            obj.insert("correction_chain".into(), json!(chain));
+            obj.insert("derivatives".into(), json!(derivatives));
+        }
+    }
+    Ok(())
+}
+
+async fn fetch_correction_chain(
+    server: &SurrealMindServer,
+    target_id: &str,
+) -> Result<Vec<serde_json::Value>> {
+    let sql = "SELECT meta::id(id) as id, target_id, target_table, timestamp, reasoning, sources, initiated_by, verification_status, corrects_previous, spawned_by, previous_state, new_state FROM correction_events WHERE target_id = $tid ORDER BY timestamp ASC";
+    let rows: Vec<serde_json::Value> = server
+        .db
+        .query(sql)
+        .bind(("tid", target_id.to_string()))
+        .await?
+        .take(0)?;
+    Ok(rows)
+}
+
+async fn fetch_derivatives(
+    server: &SurrealMindServer,
+    target_id: &str,
+    table: &str,
+) -> Result<Vec<serde_json::Value>> {
+    match table {
+        "thoughts" => {
+            let sql = "SELECT meta::id(id) as id, meta::tb(id) as table, name, data, source_thought_ids FROM kg_entities WHERE array::contains(source_thought_ids, $tid) \
+                        UNION SELECT meta::id(id) as id, meta::tb(id) as table, name, data, source_thought_ids FROM kg_observations WHERE array::contains(source_thought_ids, $tid)";
+            let rows: Vec<serde_json::Value> = server
+                .db
+                .query(sql)
+                .bind(("tid", target_id.to_string()))
+                .await?
+                .take(0)?;
+            Ok(rows)
+        }
+        "kg_entities" => {
+            let sql = "SELECT meta::id(id) as id, rel_type, meta::id(source) as source, meta::id(target) as target FROM kg_edges WHERE meta::id(source) = $tid OR meta::id(target) = $tid";
+            let rows: Vec<serde_json::Value> = server
+                .db
+                .query(sql)
+                .bind(("tid", target_id.to_string()))
+                .await?
+                .take(0)?;
+            Ok(rows)
+        }
+        _ => Ok(vec![]),
+    }
 }
 
 #[cfg(test)]

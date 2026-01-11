@@ -154,7 +154,8 @@ pub fn search_schema() -> Arc<Map<String, Value>> {
             "confidence_lte": {"type": "number", "minimum": 0.0, "maximum": 1.0},
             "date_from": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
             "date_to": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
-            "order": {"type": "string", "enum": ["created_at_asc", "created_at_desc"]}
+            "order": {"type": "string", "enum": ["created_at_asc", "created_at_desc"]},
+            "forensic": {"type": "boolean", "description": "Return provenance: correction chain, derivatives, sources"}
         }
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))

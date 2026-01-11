@@ -107,11 +107,28 @@ async fn main() -> Result<()> {
 }
 
 async fn fetch_marks(db: Arc<Surreal<WsClient>>, limit: i64) -> Result<Vec<MarkItem>> {
-    let query = "SELECT meta::id(id) as rid, meta::tb(id) as table, mark_type, mark_note, marked_at, marked_by, content, name, data.name as data_name \
-                 FROM thoughts, kg_entities, kg_observations \
-                 WHERE marked_for = 'gemini' \
-                 ORDER BY marked_at ASC, rid ASC \
-                 LIMIT $limit";
+    let mut query = "SELECT meta::id(id) as rid, meta::tb(id) as table, mark_type, mark_note, marked_at, marked_by, content, name, data.name as data_name \
+                     FROM thoughts, kg_entities, kg_observations \
+                     WHERE marked_for = 'gemini' "
+        .to_string();
+
+    if let Ok(types) = std::env::var("RETHINK_TYPES") {
+        let list: Vec<String> = types
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if !list.is_empty() {
+            let in_clause = list
+                .iter()
+                .map(|s| format!("'{}'", s.replace('\'', "")))
+                .collect::<Vec<String>>()
+                .join(",");
+            query.push_str(&format!(" AND mark_type IN [{}]", in_clause));
+        }
+    }
+
+    query.push_str(" ORDER BY marked_at ASC, rid ASC LIMIT $limit");
 
     let rows: Vec<serde_json::Value> = db.query(query).bind(("limit", limit)).await?.take(0)?;
 

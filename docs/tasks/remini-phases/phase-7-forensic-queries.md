@@ -1,6 +1,6 @@
 # Phase 7: Forensic Queries
 
-**Status:** Not Started
+**Status:** In Progress (forensic flag added to search; provenance augment in place)
 **Parent:** [remini-correction-system.md](../remini-correction-system.md)
 **Depends On:** Phase 4 (CorrectionEvent records exist)
 **Assignee:** TBD
@@ -117,7 +117,12 @@ Token efficiency: forensic layer exists but isn't the default.
 
 ## Implementation Notes
 
-*To be filled during implementation*
+- Added `forensic` flag to `search` tool input schema.
+- Unified search now augments results (entities/observations/thoughts) with:
+  - `correction_chain`: correction_events ordered by timestamp.
+  - `derivatives`: for thoughts → entities/observations referencing source_thought_ids; for entities → edges where source/target matches.
+- Natural language triggers TBD; current activation is explicit `forensic: true`.
+- Uses JSON-safe projections to avoid enum/datetime serialization issues.
 
 ---
 
