@@ -4,7 +4,6 @@ use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde_json::json;
-use surrealdb::sql::Datetime;
 
 /// Parameters for the rethink tool
 #[derive(Debug, serde::Deserialize)]
@@ -98,38 +97,36 @@ impl SurrealMindServer {
         // Extract ID part from "table:id" format and clone it for binding
         let id_part = parts[1].to_string();
 
-        // Check if the record exists using type::thing()
-        let exists: Option<serde_json::Value> = self
+        // Check if the record exists using type::thing(), but avoid deserializing record IDs.
+        // Use a scalar RETURN count(...) so the SDK deserializes directly into i64 instead of an object.
+        let count: Option<i64> = self
             .db
             .query(format!(
-                "SELECT id FROM {} WHERE id = type::thing('{}', $id)",
+                "RETURN count((SELECT * FROM {} WHERE id = type::thing('{}', $id)))",
                 table_name, table_name
             ))
             .bind(("id", id_part.clone()))
             .await?
             .take(0)?;
 
-        if exists.is_none() {
+        if count.unwrap_or(0) == 0 {
             return Err(SurrealMindError::Validation {
                 message: format!("Record not found: {}", params.target_id),
             });
         }
 
         // Update the record with mark fields
-        let marked_at = Datetime::default(); // current time
-        let marked_by = "cc"; // hardcoded for now
-
+        // Use RETURN NONE to avoid SurrealDB SDK datetime serialization issues
         self.db
             .query(format!(
-                "UPDATE {} SET marked_for = $marked_for, mark_type = $mark_type, mark_note = $note, marked_at = $marked_at, marked_by = $marked_by WHERE id = type::thing('{}', $id)",
+                "UPDATE {} SET marked_for = $marked_for, mark_type = $mark_type, mark_note = $note, marked_at = time::now(), marked_by = $marked_by WHERE id = type::thing('{}', $id) RETURN NONE",
                 table_name, table_name
             ))
             .bind(("id", id_part))
             .bind(("marked_for", params.marked_for.clone()))
             .bind(("mark_type", params.mark_type.clone()))
             .bind(("note", params.note.clone()))
-            .bind(("marked_at", marked_at.clone()))
-            .bind(("marked_by", marked_by))
+            .bind(("marked_by", "cc"))
             .await?;
 
         let response = json!({
@@ -139,8 +136,7 @@ impl SurrealMindServer {
                 "type": params.mark_type,
                 "for": params.marked_for,
                 "note": params.note,
-                "marked_at": marked_at,
-                "marked_by": marked_by
+                "marked_by": "cc"
             }
         });
 

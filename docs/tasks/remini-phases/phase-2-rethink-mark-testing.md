@@ -1,6 +1,6 @@
 # Phase 2: rethink Tool - Mark Mode - Testing
 
-**Status:** FAIL - Needs Fixes
+**Status:** PENDING RETEST - RETURN NONE + count() existence fix applied
 **Parent:** [phase-2-rethink-mark.md](phase-2-rethink-mark.md)
 **Depends On:** Phase 2 Implementation Complete
 
@@ -413,8 +413,17 @@ The implementation is complete and ready for testing. The next steps are:
 
 ## Updated Status
 
-**Status:** ✅ FIXED - Ready for Run 2 Testing
-**Ready for Phase 3:** [ ] Yes  [ ] No - awaiting test results
+**Status:** PENDING RETEST - Datetime serialization avoided
+**Ready for Phase 3:** [ ] Yes  [x] No - Awaiting MCP retest by CC
 
-**Blockers:** None - code changes complete and validated
-**Next Action:** Run comprehensive tests with real database records
+**What changed (2026-01-11):**
+- UPDATE now uses `RETURN NONE`, eliminating the SurrealDB Rust SDK datetime deserialization error.
+- `marked_at` is set via `time::now()` but not returned to the client; response omits the datetime field.
+- Existence check now uses `count()` with `type::thing()` (returns a plain number) to avoid record-ID enum deserialization issues seen in MCP.
+
+**Manual verification:**
+- Direct SurrealQL update on `thoughts:001db6f2-8a92-41f3-a03f-0cb36d42d238` succeeded; `marked_for/mark_type/mark_note/marked_by/marked_at` persisted as expected.
+
+**Remaining work:**
+- Run MCP happy-path tests (HP-1..HP-4) through the `rethink` tool to confirm end-to-end behavior.
+- If all pass, flip status to PASS and proceed to Phase 3.

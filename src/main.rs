@@ -86,7 +86,7 @@ async fn main() -> Result<()> {
     if !config.runtime.mcp_no_log {
         info!("✅ Server initialized successfully");
         info!(
-            "🛠️  Loaded 10 MCP tools: think, search, remember, wander, maintain, howto, call_gem, call_status, call_jobs, call_cancel"
+            "🛠️  Loaded 11 MCP tools: think, wander, maintain, rethink, remember, howto, call_gem, search, call_status, call_jobs, call_cancel"
         );
     }
 
