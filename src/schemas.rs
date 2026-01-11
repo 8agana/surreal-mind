@@ -195,3 +195,18 @@ pub fn wander_schema() -> Arc<Map<String, Value>> {
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
+
+pub fn rethink_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "target_id": {"type": "string", "description": "ID of the record to mark (thoughts:xxx, entity:xxx, observation:xxx)"},
+            "mode": {"type": "string", "enum": ["mark"], "description": "Operation mode"},
+            "mark_type": {"type": "string", "enum": ["correction", "research", "enrich", "expand"], "description": "Type of mark"},
+            "marked_for": {"type": "string", "enum": ["cc", "sam", "gemini", "dt", "gem"], "description": "Target federation member"},
+            "note": {"type": "string", "description": "Contextual explanation for the mark"}
+        },
+        "required": ["target_id", "mode", "mark_type", "marked_for", "note"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}

@@ -61,6 +61,7 @@ impl ServerHandler for SurrealMindServer {
         let howto_schema_map = crate::schemas::howto_schema();
         let search_schema_map = crate::schemas::search_schema();
         let wander_schema_map = crate::schemas::wander_schema();
+        let rethink_schema_map = crate::schemas::rethink_schema();
 
         let call_gem_schema = crate::schemas::call_gem_schema();
         let call_status_schema = crate::schemas::call_status_schema();
@@ -96,6 +97,16 @@ impl ServerHandler for SurrealMindServer {
                 title: Some("Maintain".into()),
                 description: Some("Maintenance operations for archival, cleanup, and health checks".into()),
                 input_schema: maintain_schema_map,
+                icons: None,
+                annotations: None,
+                output_schema: None,
+                meta: None,
+            },
+            Tool {
+                name: "rethink".into(),
+                title: Some("Rethink".into()),
+                description: Some("Mark records for revision or correction by federation members".into()),
+                input_schema: rethink_schema_map,
                 icons: None,
                 annotations: None,
                 output_schema: None,
@@ -209,6 +220,7 @@ impl ServerHandler for SurrealMindServer {
                 .handle_maintenance_ops(request)
                 .await
                 .map_err(|e| e.into()),
+            "rethink" => self.handle_rethink(request).await.map_err(|e| e.into()),
             // Memory tools
             "remember" => self
                 .handle_knowledgegraph_create(request)
