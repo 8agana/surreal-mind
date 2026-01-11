@@ -1,6 +1,6 @@
 # Phase 4: rethink Tool - Correct Mode
 
-**Status:** Not Started
+**Status:** In Progress (correct mode scaffold implemented; cascade basic)
 **Parent:** [remini-correction-system.md](../remini-correction-system.md)
 **Depends On:** Phase 1 (Schema), Phase 2 (rethink tool exists)
 **Assignee:** TBD
@@ -94,4 +94,10 @@ Correction chain preserves full history
 
 ## Implementation Notes
 
-*To be filled during implementation*
+- Added `correct` mode to rethink tool:
+  - Requires `reasoning` (string) and `sources` (array of strings).
+  - Captures `previous_state`, logs `CorrectionEvent` with provenance, clears mark fields on target.
+  - `new_state` currently mirrors existing record (no content mutation yet).
+  - Optional `cascade` (thought targets only): flags related `kg_entities` and `kg_observations` via `source_thought_ids`.
+- Schema updated: rethink input supports `mode` enum [`mark`,`correct`], optional `cascade`.
+- Still needed: payload-driven field updates to produce a real `new_state`, richer cascade rules, provenance chaining (`corrects_previous`).

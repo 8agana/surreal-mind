@@ -187,9 +187,10 @@ pub fn wander_schema() -> Arc<Map<String, Value>> {
         "type": "object",
         "properties": {
             "current_thought_id": {"type": "string", "description": "Optional starting point thought/entity ID"},
-            "mode": {"type": "string", "enum": ["random", "semantic", "meta"], "description": "Traversal mode"},
+            "mode": {"type": "string", "enum": ["random", "semantic", "meta", "marks"], "description": "Traversal mode"},
             "visited_ids": {"type": "array", "items": {"type": "string"}, "description": "IDs to avoid preventing loops"},
-            "recency_bias": {"type": "boolean", "default": false, "description": "Whether to prioritize recent memories"}
+            "recency_bias": {"type": "boolean", "default": false, "description": "Whether to prioritize recent memories"},
+            "for": {"type": "string", "enum": ["cc", "sam", "gemini", "dt", "gem"], "description": "Filter marks assigned to a specific federation member (marks mode only)"}
         },
         "required": ["mode"]
     });
@@ -201,12 +202,15 @@ pub fn rethink_schema() -> Arc<Map<String, Value>> {
         "type": "object",
         "properties": {
             "target_id": {"type": "string", "description": "ID of the record to mark (thoughts:xxx, entity:xxx, observation:xxx)"},
-            "mode": {"type": "string", "enum": ["mark"], "description": "Operation mode"},
-            "mark_type": {"type": "string", "enum": ["correction", "research", "enrich", "expand"], "description": "Type of mark"},
-            "marked_for": {"type": "string", "enum": ["cc", "sam", "gemini", "dt", "gem"], "description": "Target federation member"},
-            "note": {"type": "string", "description": "Contextual explanation for the mark"}
+            "mode": {"type": "string", "enum": ["mark", "correct"], "description": "Operation mode"},
+            "mark_type": {"type": "string", "enum": ["correction", "research", "enrich", "expand"], "description": "Type of mark (mark mode)"},
+            "marked_for": {"type": "string", "enum": ["cc", "sam", "gemini", "dt", "gem"], "description": "Target federation member (mark mode)"},
+            "note": {"type": "string", "description": "Contextual explanation for the mark (mark mode)"},
+            "reasoning": {"type": "string", "description": "Why the record is being corrected (correct mode)"},
+            "sources": {"type": "array", "items": {"type": "string"}, "description": "Verification sources (correct mode)"},
+            "cascade": {"type": "boolean", "description": "If true, flag derivatives for review", "default": false}
         },
-        "required": ["target_id", "mode", "mark_type", "marked_for", "note"]
+        "required": ["target_id", "mode"]
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }

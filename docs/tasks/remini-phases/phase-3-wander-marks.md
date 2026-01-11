@@ -1,10 +1,10 @@
 # Phase 3: wander --mode marks
 
-**Status:** Not Started
+**Status:** COMPLETE (tested 2026-01-10)
 **Parent:** [remini-correction-system.md](../remini-correction-system.md)
 **Depends On:** Phase 1 (Schema)
 **Can Parallel With:** Phase 2
-**Assignee:** TBD
+**Assignee:** Codex
 
 ---
 
@@ -65,4 +65,7 @@ SELECT * FROM observation WHERE marked_for = $target ORDER BY marked_at ASC;
 
 ## Implementation Notes
 
-*To be filled during implementation*
+- Added `marks` mode to wander (Surfaced via MCP). Input: `mode=marks`, optional `for` filter (enum cc/sam/gemini/dt/gem), reuses `visited_ids`.
+- Query: pulls oldest marks across thoughts, kg_entities, kg_observations with `marked_for != NONE`, filtered by `for` when provided; excludes visited; orders by `marked_at ASC`.
+- Queue depth: uses scalar `RETURN count((SELECT ...))` to avoid SurrealDB enum deserialization issues.
+- Response includes `queue_depth`, `guidance` string, and affordances `["correct","dismiss","reassign","next"]`; current_node includes table/id/mark fields plus name/content when present.

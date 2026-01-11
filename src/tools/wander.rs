@@ -9,7 +9,7 @@ pub struct WanderParams {
     /// Optional starting point thought/entity ID. If None, starts random.
     pub current_thought_id: Option<String>,
 
-    /// Traversal mode: "random", "semantic", "meta"
+    /// Traversal mode: "random", "semantic", "meta", "marks"
     pub mode: String,
 
     /// IDs to avoid (breadcrumbs/history) to prevent loops
@@ -19,6 +19,10 @@ pub struct WanderParams {
     /// Whether to prioritize recent memories
     #[serde(default)]
     pub recency_bias: bool,
+
+    /// Filter marks for a specific federation member (marks mode)
+    #[serde(rename = "for")]
+    pub for_member: Option<String>,
 }
 
 impl SurrealMindServer {
@@ -39,9 +43,9 @@ impl SurrealMindServer {
             let q = if id.contains(':') {
                 "SELECT meta::id(id) as id, * FROM $id"
             } else {
-                "SELECT meta::id(id) as id, * FROM thoughts, kg_entities, kg_observations 
-                  WHERE id = type::thing('thoughts', $id) 
-                     OR id = type::thing('kg_entities', $id) 
+                "SELECT meta::id(id) as id, * FROM thoughts, kg_entities, kg_observations
+                  WHERE id = type::thing('thoughts', $id)
+                     OR id = type::thing('kg_entities', $id)
                      OR id = type::thing('kg_observations', $id)
                   LIMIT 1"
             };
@@ -72,14 +76,93 @@ impl SurrealMindServer {
             }
         };
 
-        // 2. Traversal Logic
-        let (next_node, affordances) = match params.mode.as_str() {
-            "random" => self.wander_random(&params.visited_ids).await?,
-            "semantic" => {
-                self.wander_semantic(&current_node, &params.visited_ids)
-                    .await?
+        // Optional: validate for_member when marks mode
+        if params.mode == "marks" {
+            if let Some(f) = &params.for_member {
+                let valid_targets = ["cc", "sam", "gemini", "dt", "gem"];
+                if !valid_targets.contains(&f.as_str()) {
+                    return Err(SurrealMindError::Validation {
+                        message: format!(
+                            "Invalid 'for' value: {}. Must be one of {:?}",
+                            f, valid_targets
+                        ),
+                    });
+                }
             }
-            "meta" => self.wander_meta(&current_node, &params.visited_ids).await?,
+        }
+
+        // 2. Traversal Logic
+        let (next_node, affordances, queue_depth, guidance, message) = match params.mode.as_str() {
+            "random" => {
+                let (node, aff) = self.wander_random(&params.visited_ids).await?;
+                let node_is_none = node.is_none();
+                (
+                    node,
+                    aff,
+                    None,
+                    "DISCOVERY GUIDANCE: You are in 'Curiosity Mode'. Use this discovery to better the Knowledge Graph. Ask yourself: Is this information accurate? What context is missing? Are there related entities or observations you can link? Use the 'remember' tool to commit improvements or 'think' to reason about the connection.",
+                    if node_is_none {
+                        "Dead end or invalid start."
+                    } else {
+                        "Wander step complete."
+                    },
+                )
+            }
+            "semantic" => {
+                let (node, aff) = self
+                    .wander_semantic(&current_node, &params.visited_ids)
+                    .await?;
+                let node_is_none = node.is_none();
+                (
+                    node,
+                    aff,
+                    None,
+                    "DISCOVERY GUIDANCE: You are in 'Curiosity Mode'. Use this discovery to better the Knowledge Graph. Ask yourself: Is this information accurate? What context is missing? Are there related entities or observations you can link? Use the 'remember' tool to commit improvements or 'think' to reason about the connection.",
+                    if node_is_none {
+                        "Dead end or invalid start."
+                    } else {
+                        "Wander step complete."
+                    },
+                )
+            }
+            "meta" => {
+                let (node, aff) = self.wander_meta(&current_node, &params.visited_ids).await?;
+                let node_is_none = node.is_none();
+                (
+                    node,
+                    aff,
+                    None,
+                    "DISCOVERY GUIDANCE: You are in 'Curiosity Mode'. Use this discovery to better the Knowledge Graph. Ask yourself: Is this information accurate? What context is missing? Are there related entities or observations you can link? Use the 'remember' tool to commit improvements or 'think' to reason about the connection.",
+                    if node_is_none {
+                        "Dead end or invalid start."
+                    } else {
+                        "Wander step complete."
+                    },
+                )
+            }
+            "marks" => {
+                let (node, depth) = self
+                    .wander_marks(params.for_member.clone(), &params.visited_ids)
+                    .await?;
+                let aff = vec![
+                    "correct".to_string(),
+                    "dismiss".to_string(),
+                    "reassign".to_string(),
+                    "next".to_string(),
+                ];
+                let node_is_none = node.is_none();
+                (
+                    node.clone(),
+                    aff,
+                    Some(depth),
+                    "MARK REVIEW: This item was flagged for your attention. Decide whether to correct, dismiss, or reassign. Use 'correct' to apply fixes via rethink, or 'dismiss' if no action needed.",
+                    if node_is_none {
+                        "No marks found for the requested filter."
+                    } else {
+                        "Mark surfaced for review."
+                    },
+                )
+            }
             _ => {
                 return Err(SurrealMindError::Validation {
                     message: format!("Unknown mode: {}", params.mode),
@@ -88,14 +171,14 @@ impl SurrealMindServer {
         };
 
         // 3. Construct Response
-        let guidance = "DISCOVERY GUIDANCE: You are in 'Curiosity Mode'. Use this discovery to better the Knowledge Graph. Ask yourself: Is this information accurate? What context is missing? Are there related entities or observations you can link? Use the 'remember' tool to commit improvements or 'think' to reason about the connection.";
         let response = json!({
             "previous_id": params.current_thought_id,
             "current_node": next_node,
             "mode_used": params.mode,
             "affordances": affordances,
             "guidance": guidance,
-            "message": if next_node.is_none() { "Dead end or invalid start." } else { "Wander step complete." }
+            "queue_depth": queue_depth,
+            "message": message
         });
 
         Ok(CallToolResult::structured(response))
@@ -159,11 +242,11 @@ impl SurrealMindServer {
         // Use a threshold to ensure relevance, but loose enough for wandering
         // Note: Casting id to string for comparison safety
         // Note: Must filter for valid embeddings to avoid vector function errors
-        let q = "SELECT meta::id(id) as id, *, vector::similarity::cosine(embedding, $emb) as sim 
-                 FROM thoughts, kg_entities, kg_observations 
-                 WHERE meta::id(id) NOT IN $visited 
+        let q = "SELECT meta::id(id) as id, *, vector::similarity::cosine(embedding, $emb) as sim
+                 FROM thoughts, kg_entities, kg_observations
+                 WHERE meta::id(id) NOT IN $visited
                  AND <string>meta::id(id) != $current_id
-                 AND embedding != NONE 
+                 AND embedding != NONE
                  AND type::is::array(embedding)
                  ORDER BY sim DESC LIMIT 1";
 
@@ -215,8 +298,8 @@ impl SurrealMindServer {
 
         // Query: Overlap in tags
         // "SELECT * FROM ... WHERE tags CONTAINSANY $tags ..."
-        let q = "SELECT meta::id(id) as id, * FROM thoughts, kg_entities, kg_observations 
-                 WHERE meta::id(id) NOT IN $visited 
+        let q = "SELECT meta::id(id) as id, * FROM thoughts, kg_entities, kg_observations
+                 WHERE meta::id(id) NOT IN $visited
                  AND <string>meta::id(id) != $current_id
                  AND (tags CONTAINSANY $tags OR data.tags CONTAINSANY $tags)
                  ORDER BY rand() LIMIT 1";
@@ -238,5 +321,51 @@ impl SurrealMindServer {
 
         let affordances = vec!["semantic".to_string(), "random".to_string()];
         Ok((node, affordances))
+    }
+
+    /// Mode: Marks - surface items that were marked for review/correction
+    async fn wander_marks(
+        &self,
+        target_for: Option<String>,
+        visited: &[String],
+    ) -> Result<(Option<serde_json::Value>, i64)> {
+        let filter_clause = if target_for.is_some() {
+            "AND marked_for = $target_for"
+        } else {
+            ""
+        };
+
+        // Fetch next mark (oldest first)
+        let query = format!(
+            "SELECT meta::id(id) as id, meta::tb(id) as table, mark_type, marked_for, mark_note, marked_by, marked_at, name, content, data.name as data_name \
+             FROM thoughts, kg_entities, kg_observations \
+             WHERE marked_for != NONE {filter} \
+             AND meta::id(id) NOT IN $visited \
+             ORDER BY marked_at ASC LIMIT 1",
+            filter = filter_clause
+        );
+
+        let mut q = self.db.query(query);
+        if let Some(f) = &target_for {
+            q = q.bind(("target_for", f.clone()));
+        }
+        let nodes: Vec<serde_json::Value> = q.bind(("visited", visited.to_vec())).await?.take(0)?;
+
+        let node = nodes.first().cloned();
+
+        // Compute queue depth remaining (including this one if present)
+        let count_query = format!(
+            "RETURN count((SELECT id FROM thoughts, kg_entities, kg_observations \
+             WHERE marked_for != NONE {filter} AND meta::id(id) NOT IN $visited))",
+            filter = filter_clause
+        );
+
+        let mut cq = self.db.query(count_query);
+        if let Some(f) = &target_for {
+            cq = cq.bind(("target_for", f.clone()));
+        }
+        let queue_depth: Option<i64> = cq.bind(("visited", visited.to_vec())).await?.take(0)?;
+
+        Ok((node, queue_depth.unwrap_or(0)))
     }
 }
