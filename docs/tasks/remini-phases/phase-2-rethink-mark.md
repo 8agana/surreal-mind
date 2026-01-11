@@ -1,6 +1,6 @@
 # Phase 2: rethink Tool - Mark Mode
 
-**Status:** Implementation Complete
+**Status:** Needs Fixes (Testing Failed)
 **Parent:** [remini-correction-system.md](../remini-correction-system.md)
 **Depends On:** Phase 1 (Schema)
 **Assignee:** TBD
