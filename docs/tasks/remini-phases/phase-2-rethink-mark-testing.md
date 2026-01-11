@@ -130,3 +130,171 @@ The query uses `WHERE id = $id` but should use `WHERE id = type::thing($table, $
 1. Fix Issue #1 in `src/tools/rethink.rs` (use type::thing() pattern)
 2. Rebuild and restart service
 3. Re-run all tests
+
+---
+
+## Remediation Plan
+
+**Owner:** CC
+**Priority:** CRITICAL (blocks Phase 3)
+**Estimated Effort:** 30 minutes (code fix + rebuild + retest)
+
+### Root Cause Analysis
+
+The `rethink.rs` implementation fails all happy path tests because it uses direct string comparison for record IDs instead of SurrealDB's `type::thing()` function. In SurrealDB, record references are a special type - comparing a raw string to a record type always returns false.
+
+**Evidence chain:**
+1. **Working code (wander.rs:43-45)**: Uses `WHERE id = type::thing('thoughts', $id)` → queries succeed
+2. **Broken code (rethink.rs:101)**: Uses `WHERE id = $id` → all queries return empty
+3. **Pattern consistency**: Both `wander.rs` and `thinking.rs` use the `type::thing()` pattern successfully
+
+### Remediation Steps
+
+#### Step 1: Update Record Existence Check (rethink.rs, lines 98-108)
+
+**Current code:**
+```rust
+let exists: Option<serde_json::Value> = self
+    .db
+    .query(format!("SELECT id FROM {} WHERE id = $id", table_name))
+    .bind(("id", params.target_id.clone()))
+    .await?
+    .take(0)?;
+
+if exists.is_none() {
+    return Err(SurrealMindError::Validation {
+        message: format!("Record not found: {}", params.target_id),
+    });
+}
+```
+
+**Fix approach:**
+- Parse `params.target_id` to extract the ID portion (after the colon)
+- Use `type::thing(table_name, id_part)` in the WHERE clause
+- Keep the full `target_id` for the UPDATE query (SurrealDB accepts both formats there)
+
+**Implementation:**
+```rust
+// Extract ID part from "table:id" format
+let id_part = parts[1];
+
+// Check if record exists using type::thing()
+let exists: Option<serde_json::Value> = self
+    .db
+    .query(format!("SELECT id FROM {} WHERE id = type::thing('{}', $id)", table_name, table_name))
+    .bind(("id", id_part))
+    .await?
+    .take(0)?;
+
+if exists.is_none() {
+    return Err(SurrealMindError::Validation {
+        message: format!("Record not found: {}", params.target_id),
+    });
+}
+```
+
+#### Step 2: Update Record Update Query (rethink.rs, lines 115-128)
+
+**Current code:**
+```rust
+self.db
+    .query(format!(
+        "UPDATE {} SET marked_for = $marked_for, mark_type = $mark_type, mark_note = $note, marked_at = $marked_at, marked_by = $marked_by WHERE id = $id",
+        table_name
+    ))
+    .bind(("id", params.target_id.clone()))
+    .bind(("marked_for", params.marked_for.clone()))
+    .bind(("mark_type", params.mark_type.clone()))
+    .bind(("note", params.note.clone()))
+    .bind(("marked_at", marked_at.clone()))
+    .bind(("marked_by", marked_by))
+    .await?;
+```
+
+**Fix approach:**
+- The UPDATE can use the full record ID format (SurrealDB handles it), but for consistency with the SELECT check, use `type::thing()` here too
+- This ensures if there's any ambiguity, both queries use the same resolution method
+
+**Implementation:**
+```rust
+self.db
+    .query(format!(
+        "UPDATE {} SET marked_for = $marked_for, mark_type = $mark_type, mark_note = $note, marked_at = $marked_at, marked_by = $marked_by WHERE id = type::thing('{}', $id)",
+        table_name, table_name
+    ))
+    .bind(("id", id_part))  // Use just the ID part, not the full "table:id"
+    .bind(("marked_for", params.marked_for.clone()))
+    .bind(("mark_type", params.mark_type.clone()))
+    .bind(("note", params.note.clone()))
+    .bind(("marked_at", marked_at.clone()))
+    .bind(("marked_by", marked_by))
+    .await?;
+```
+
+### Validation Checklist
+
+After implementing fixes:
+
+- [ ] Code compiles: `cargo check`
+- [ ] No clippy warnings: `cargo clippy`
+- [ ] Formatted correctly: `cargo fmt`
+- [ ] Release build succeeds: `cargo build --release`
+- [ ] Service restarts: `launchctl kickstart -k gui/$(id -u)/dev.legacymind.surreal-mind`
+- [ ] Health check passes: `curl http://127.0.0.1:8787/health`
+- [ ] Run HP-1 test with real thought ID from database
+- [ ] Run HP-2 test with real entity ID from database
+- [ ] Run HP-3 test with real observation ID from database
+- [ ] Run HP-4 test to verify database fields populated
+- [ ] All error cases still behave correctly
+
+### Post-Fix Testing Plan
+
+#### Test Data Acquisition
+Before re-running tests, get valid IDs from the database:
+```bash
+# Get a thought ID
+curl http://localhost:8787/api/query -H "Content-Type: application/json" \
+  -d '{"query": "SELECT id FROM thoughts LIMIT 1"}'
+
+# Get an entity ID  
+curl http://localhost:8787/api/query -H "Content-Type: application/json" \
+  -d '{"query": "SELECT id FROM kg_entities LIMIT 1"}'
+
+# Get an observation ID
+curl http://localhost:8787/api/query -H "Content-Type: application/json" \
+  -d '{"query": "SELECT id FROM kg_observations LIMIT 1"}'
+```
+
+#### Re-Test Happy Path (Run 2)
+Execute all 4 happy path tests with real IDs from the database. Expected result: **ALL PASS**
+
+#### Re-Test Error Cases (Run 2)
+Error cases should still pass since they test validation before the query executes.
+
+#### Database Verification (Run 2)
+After HP-1 succeeds, query the database to verify mark fields were actually written:
+```bash
+# Verify thought was marked
+curl http://localhost:8787/api/query -H "Content-Type: application/json" \
+  -d '{"query": "SELECT marked_for, mark_type, mark_note, marked_at, marked_by FROM thoughts WHERE marked_for = '\''gemini'\''"}'
+```
+
+### Effort Estimate
+
+| Task | Time |
+|------|------|
+| Code fix (2 locations) | 5 min |
+| Compile & validate | 5 min |
+| Service restart | 2 min |
+| Re-run all tests | 10 min |
+| Document results | 5 min |
+| **Total** | **27 min** |
+
+### Success Criteria
+
+Phase 2 testing is **COMPLETE** when:
+1. All happy path tests (HP-1 through HP-4) pass with real data
+2. All error case tests (ERR-1 through ERR-4) still pass
+3. Database verification confirms mark fields are correctly populated
+4. This document updated with "Run 2" results showing all tests PASS
+5. Status changed to "PASS - Ready for Phase 3"
