@@ -83,6 +83,11 @@ impl SurrealMindServer {
             DEFINE FIELD mark_note ON TABLE kg_entities TYPE option<string>;
             DEFINE FIELD marked_at ON TABLE kg_entities TYPE option<datetime>;
             DEFINE FIELD marked_by ON TABLE kg_entities TYPE option<string>;
+            -- Confidence decay fields
+            DEFINE FIELD volatility ON TABLE kg_entities TYPE option<string> DEFAULT "medium";
+            DEFINE FIELD last_refreshed ON TABLE kg_entities TYPE option<datetime>;
+            DEFINE FIELD refresh_count ON TABLE kg_entities TYPE option<int> DEFAULT 0;
+            DEFINE FIELD decay_confidence ON TABLE kg_entities TYPE option<float>;
 
             DEFINE TABLE kg_edges SCHEMALESS;
             DEFINE FIELD source_thought_ids ON TABLE kg_edges TYPE option<array<string>>;
@@ -110,6 +115,11 @@ impl SurrealMindServer {
             DEFINE FIELD mark_note ON TABLE kg_observations TYPE option<string>;
             DEFINE FIELD marked_at ON TABLE kg_observations TYPE option<datetime>;
             DEFINE FIELD marked_by ON TABLE kg_observations TYPE option<string>;
+            -- Confidence decay fields
+            DEFINE FIELD volatility ON TABLE kg_observations TYPE option<string> DEFAULT "medium";
+            DEFINE FIELD last_refreshed ON TABLE kg_observations TYPE option<datetime>;
+            DEFINE FIELD refresh_count ON TABLE kg_observations TYPE option<int> DEFAULT 0;
+            DEFINE FIELD decay_confidence ON TABLE kg_observations TYPE option<float>;
 
             -- CorrectionEvent table for REMini correction system
             DEFINE TABLE correction_events SCHEMAFULL;

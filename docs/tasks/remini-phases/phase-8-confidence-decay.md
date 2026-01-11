@@ -1,6 +1,6 @@
 # Phase 8: Confidence Decay & Learning
 
-**Status:** Future
+**Status:** In Progress (implementation plan aligned with current schema)
 **Parent:** [remini-correction-system.md](../remini-correction-system.md)
 **Depends On:** Phases 1-7 (full correction system operational)
 **Assignee:** TBD
@@ -28,10 +28,10 @@ Knowledge freshness management and meta-learning from correction patterns.
 
 | Entity Type | Volatility | Half-Life | Example |
 |-------------|------------|-----------|---------|
-| SDK/API docs | High | ~3 months | "SurrealDB syntax" |
-| Tool versions | High | ~2 months | "rmcp 0.9 features" |
-| Architecture decisions | Medium | ~1 year | "use Rust for MCPs" |
-| Workflow patterns | Medium | ~6 months | "delegation to Gemini" |
+| SDK/API docs | High | ~90 days | "SurrealDB syntax" |
+| Tool versions | High | ~60 days | "rmcp 0.9 features" |
+| Architecture decisions | Medium | ~365 days | "use Rust for MCPs" |
+| Workflow patterns | Medium | ~180 days | "delegation to Gemini" |
 | Personal history | Zero | Permanent | "Sam's Iraq service" |
 | Relationship facts | Zero | Permanent | "Crystal is fiancée" |
 
@@ -55,16 +55,23 @@ where:
 2. **Verification**: Sources checked, confirmed still valid
 3. **Correction**: Explicitly updated via rethink
 4. **Cross-reference**: Other entities link to it
+5. **Embed/Populate touch**: Extraction/embedding updates the record
 
 ---
 
 ## Freshness Fields
 
 ```sql
-DEFINE FIELD volatility ON TABLE entity TYPE string DEFAULT "medium";
-DEFINE FIELD last_refreshed ON TABLE entity TYPE datetime;
-DEFINE FIELD refresh_count ON TABLE entity TYPE int DEFAULT 0;
-DEFINE FIELD decay_confidence ON TABLE entity TYPE float;  -- computed field
+-- Apply to kg_entities and kg_observations (and optionally thoughts)
+DEFINE FIELD volatility ON TABLE kg_entities TYPE string DEFAULT "medium";
+DEFINE FIELD last_refreshed ON TABLE kg_entities TYPE datetime;
+DEFINE FIELD refresh_count ON TABLE kg_entities TYPE int DEFAULT 0;
+DEFINE FIELD decay_confidence ON TABLE kg_entities TYPE float;
+
+DEFINE FIELD volatility ON TABLE kg_observations TYPE string DEFAULT "medium";
+DEFINE FIELD last_refreshed ON TABLE kg_observations TYPE datetime;
+DEFINE FIELD refresh_count ON TABLE kg_observations TYPE int DEFAULT 0;
+DEFINE FIELD decay_confidence ON TABLE kg_observations TYPE float;
 ```
 
 ---
@@ -75,17 +82,16 @@ REMini health check includes:
 
 ```sql
 -- Find high-volatility items past half-life without refresh
-SELECT * FROM entity
+LET $stale = SELECT id FROM kg_entities
 WHERE volatility = "high"
 AND time::since(last_refreshed) > duration("90d")
 AND marked_for IS NULL;
 
--- Mark them for re-verification
-UPDATE entity SET
+UPDATE $stale SET
   marked_for = "gemini",
   mark_type = "research",
-  mark_note = "Auto-flagged: high volatility, not refreshed in 90+ days"
-WHERE id IN $stale_ids;
+  mark_note = "Auto-flagged: high volatility, stale"
+RETURN NONE;
 ```
 
 ---
@@ -98,18 +104,18 @@ WHERE id IN $stale_ids;
 -- Which source types hold up vs need re-correction?
 SELECT sources, count() as total,
        count(IF corrects_previous IS NOT NULL THEN 1 END) as re_corrected
-FROM correction_event
+FROM correction_events
 GROUP BY sources;
 
 -- What's the error rate by entity_type?
 SELECT target_table, count() as corrections
-FROM correction_event
+FROM correction_events
 GROUP BY target_table;
 
 -- Sam-verified corrections re-correction rate
 SELECT count() as total,
        count(IF corrects_previous IS NOT NULL THEN 1 END) as re_corrected
-FROM correction_event
+FROM correction_events
 WHERE verification_status = "sam_verified";
 ```
 
@@ -119,19 +125,24 @@ WHERE verification_status = "sam_verified";
 - Entity types with high correction rate → higher volatility classification
 - Sam-verified items → near-zero re-correction → trust anchors
 
+Additional notes:
+- Schema fields (volatility, last_refreshed, refresh_count, decay_confidence) added to kg_entities/kg_observations.
+- Health script (`scripts/sm_health.sh`) marks stale high-vol entities (beyond half-life, default 90d) for gemini research, capped by STALENESS_LIMIT.
+
 ---
 
 ## Implementation Notes
 
-This phase is explicitly future work. Prerequisites:
-1. Correction system operational (Phases 1-6)
-2. Enough correction history to analyze patterns
-3. Clear volatility classification rules established
-
-*To be filled during implementation*
+Planned steps:
+1) Schema: add volatility/last_refreshed/refresh_count/decay_confidence to kg_entities/kg_observations (and thoughts if desired).
+2) Config: map volatility → half-life (config file), decay_factor=0.5.
+3) Instrumentation: on search/wander/remini (populate/embed/rethink), update last_refreshed + refresh_count; on correction, also reset decay_confidence to confidence_initial.
+4) Health task (remini): compute decay_confidence nightly; mark stale high-vol items (respect DRY_RUN); configurable limit to avoid large blasts.
+5) Training queries: add saved queries or scripts to surface correction quality metrics.
+6) Testing: fixtures with high/medium/zero volatility; ensure only high-vol stale items auto-mark; verify decay_confidence decreases over time.
 
 ---
 
 ## Testing
 
-*To be defined*
+*To be defined (post schema + instrumentation)*

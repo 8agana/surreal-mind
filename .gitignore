@@ -13,7 +13,8 @@ mcp.log
 /symlinks
 history.txt
 CLAUDE.md
-
+/.claude/
+/.claude-cache/
 # SurrealDB backups
 /backups
 *.sql

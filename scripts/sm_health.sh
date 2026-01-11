@@ -1,24 +1,21 @@
-#!/usr/bin/env bash
+#!/bin/bash
+# Minimal health/decay check for REMini
+# Marks stale high-volatility entities for research (gemini)
+
 set -euo pipefail
 
-BASE="${SURR_HTTP_BASE:-http://127.0.0.1:8787}"
-TOKEN="${SURR_BEARER_TOKEN:-${SURR_TOKEN:-}}"
-AUTH=()
-if [[ -n "${TOKEN}" ]]; then
-  AUTH+=(-H "Authorization: Bearer ${TOKEN}")
-fi
+NS=${SURR_DB_NS:-surreal_mind}
+DB=${SURR_DB_DB:-consciousness}
+USER=${SURR_DB_USER:-root}
+PASS=${SURR_DB_PASS:-root}
+ENDPOINT=${SURR_DB_URL:-}
+LIMIT=${STALENESS_LIMIT:-100}
+HALF_LIFE_DAYS=${VOL_HIGH_HALF_LIFE_DAYS:-90}
 
-echo ">> Health (${BASE}/health)"
-curl -fsSL ${AUTH[@]+"${AUTH[@]}"} "${BASE}/health" || { echo "health check failed"; exit 1; }
+SQL="LET \$stale = (SELECT id FROM kg_entities WHERE volatility = 'high' AND last_refreshed != NONE AND time::now() - last_refreshed > duration::days(${HALF_LIFE_DAYS}) AND marked_for = NONE LIMIT ${LIMIT}); UPDATE \$stale SET marked_for = 'gemini', mark_type = 'research', mark_note = 'Auto-flagged: high volatility, stale', marked_at = time::now(), marked_by = 'health' RETURN NONE;"
 
-if curl -fsSL ${AUTH[@]+"${AUTH[@]}"} "${BASE}/db_health" >/dev/null 2>&1; then
-  echo ">> DB health ok (${BASE}/db_health)"
+if [ -n "$ENDPOINT" ]; then
+  printf "%s" "$SQL" | surreal sql --endpoint "$ENDPOINT" --username "$USER" --password "$PASS" --namespace "$NS" --database "$DB" --pretty
 else
-  echo ">> DB health endpoint not available or unauthorized"
-fi
-
-if curl -fsSL ${AUTH[@]+"${AUTH[@]}"} "${BASE}/mcp" >/dev/null 2>&1; then
-  echo ">> Tools endpoint ok (${BASE}/mcp)"
-else
-  echo ">> Tools endpoint protected or unavailable"
+  printf "%s" "$SQL" | surreal sql --username "$USER" --password "$PASS" --namespace "$NS" --database "$DB" --pretty
 fi

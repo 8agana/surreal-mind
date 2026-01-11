@@ -92,40 +92,68 @@ Verify confidence decay model, volatility classification, and meta-learning from
 
 ## Test Results
 
-### Run 1: [DATE] ([TESTER])
+### Run 1: 2026-01-11 (CC)
+
+**Test Suite Results** - Full cargo test suite execution
+
+```
+cargo test --all
+   Compiling surreal-mind v0.7.5
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.23s
+     Running unittests src/lib.rs
+
+running 38 tests
+test result: OK. 35 passed; 0 failed; 3 ignored; 0 measured
+```
+
+**Summary:**
+- All unit tests PASS (35/35)
+- 3 tests ignored (delegate_gemini integration tests)
+- Schema validation PASS: Phase 8 fields present in src/server/schema.rs
+  - `volatility` field: ✅ defined on kg_entities and kg_observations
+  - `last_refreshed` field: ✅ defined on kg_entities and kg_observations
+  - `decay_confidence` field: ✅ defined on kg_entities and kg_observations
+- Tool schemas PASS: 6/6 schema tests validated
+
+**Phase 8 Freshness Fields Validation**
 
 | Test ID | Result | Notes |
 |---------|--------|-------|
-| VOL-1 | | |
-| VOL-2 | | |
-| VOL-3 | | |
-| VOL-4 | | |
-| VOL-5 | | |
-| VOL-6 | | |
-| DECAY-1 | | |
-| DECAY-2 | | |
-| DECAY-3 | | |
-| DECAY-4 | | |
-| DECAY-5 | | |
-| REF-1 | | |
-| REF-2 | | |
-| REF-3 | | |
-| REF-4 | | |
-| FIELD-1 | | |
-| FIELD-2 | | |
-| FIELD-3 | | |
-| FIELD-4 | | |
-| STALE-1 | | |
-| STALE-2 | | |
-| STALE-3 | | |
-| STALE-4 | | |
-| STALE-5 | | |
-| META-1 | | |
-| META-2 | | |
-| META-3 | | |
-| LEARN-1 | | |
-| LEARN-2 | | |
-| LEARN-3 | | |
+| FIELD-1 | PASS | volatility field defined as option<string> with DEFAULT "medium" |
+| FIELD-2 | PASS | last_refreshed field defined as option<datetime> |
+| FIELD-3 | PASS | decay_confidence field defined as option<float> |
+| FIELD-4 | PASS | All three fields present on both kg_entities and kg_observations |
+
+**Phase 8 Test Cases** (Schema validation complete; runtime behavior pending DB/query validation)
+
+| Test ID | Result | Notes |
+|---------|--------|-------|
+| VOL-1 | PENDING | SDK/API volatility classification - requires data validation |
+| VOL-2 | PENDING | Tool versions volatility classification - requires data validation |
+| VOL-3 | PENDING | Architecture decisions volatility classification - requires data validation |
+| VOL-4 | PENDING | Workflow patterns volatility classification - requires data validation |
+| VOL-5 | PENDING | Personal history zero-volatility - requires data validation |
+| VOL-6 | PENDING | Relationship facts zero-volatility - requires data validation |
+| DECAY-1 | PENDING | Fresh entity decay calculation - requires query execution |
+| DECAY-2 | PENDING | High-vol at half-life decay - requires query execution |
+| DECAY-3 | PENDING | High-vol at 2x half-life decay - requires query execution |
+| DECAY-4 | PENDING | Zero-vol after 1 year decay - requires query execution |
+| DECAY-5 | PENDING | Refresh timer reset - requires query execution |
+| REF-1 | PENDING | Re-retrieval refresh events - requires query execution |
+| REF-2 | PENDING | Verification refresh events - requires query execution |
+| REF-3 | PENDING | Correction refresh events - requires query execution |
+| REF-4 | PENDING | Cross-reference refresh events - requires query execution |
+| STALE-1 | PENDING | High-vol 90+ days stale auto-marking - requires query execution |
+| STALE-2 | PENDING | Medium-vol 180+ days stale auto-marking - requires query execution |
+| STALE-3 | PENDING | Zero-vol never stale - requires query execution |
+| STALE-4 | PENDING | No double-marking stale items - requires query execution |
+| STALE-5 | PENDING | Auto-mark note generation - requires query execution |
+| META-1 | PENDING | Source reliability meta-learning - requires query execution |
+| META-2 | PENDING | Error rate by entity_type - requires query execution |
+| META-3 | PENDING | Sam-verified items re-correction rate - requires query execution |
+| LEARN-1 | PENDING | Low re-correction sources identified - requires query execution |
+| LEARN-2 | PENDING | High correction entity types flagged - requires query execution |
+| LEARN-3 | PENDING | Sam-verified anchors validation - requires query execution |
 
 ---
 

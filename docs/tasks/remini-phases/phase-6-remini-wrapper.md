@@ -130,7 +130,7 @@ remini --report                     # show last sleep report
   - Executes child binaries: `kg_populate`, `kg_embed`, `gem_rethink`, `kg_wander` (now included in default/all), and `scripts/sm_health.sh` when present; collects stdout/stderr + timings into JSON report (`logs/remini_report.json`).
   - Dry-run propagates via `DRY_RUN=1` to children.
 - Rethink type filter: pass env `RETHINK_TYPES` (comma-separated) via `--rethink-types` flag; forwarded to gem_rethink.
-- Health task: runs `scripts/sm_health.sh` if present; otherwise skipped with note.
+- Health task: runs `scripts/sm_health.sh` if present; otherwise skipped with note. Script now auto-marks stale high-vol entities (volatility='high', last_refreshed older than half-life) for `gemini` research, capped by STALENESS_LIMIT env.
 - Wander task: runs `kg_wander` binary (if built); included in default/all task lists.
 - Report: prints and persists JSON summary (tasks_run, per-task status, duration).
 - Remaining TODOs: richer task selection flags (e.g., --for), better health implementation, retries, and launchd plist wiring.
