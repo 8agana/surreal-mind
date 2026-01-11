@@ -223,7 +223,7 @@ impl SurrealMindServer {
                  verification_status = 'auto_applied', \
                  corrects_previous = NONE, \
                  spawned_by = NONE \
-                 RETURN AFTER",
+                 RETURN { id: meta::id(id) }",
             )
             .bind(("target_id", params.target_id.clone()))
             .bind(("target_table", table_name.to_string()))

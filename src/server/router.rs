@@ -62,6 +62,7 @@ impl ServerHandler for SurrealMindServer {
         let search_schema_map = crate::schemas::search_schema();
         let wander_schema_map = crate::schemas::wander_schema();
         let rethink_schema_map = crate::schemas::rethink_schema();
+        let corrections_schema_map = crate::schemas::corrections_schema();
 
         let call_gem_schema = crate::schemas::call_gem_schema();
         let call_status_schema = crate::schemas::call_status_schema();
@@ -107,6 +108,16 @@ impl ServerHandler for SurrealMindServer {
                 title: Some("Rethink".into()),
                 description: Some("Mark records for revision or correction by federation members".into()),
                 input_schema: rethink_schema_map,
+                icons: None,
+                annotations: None,
+                output_schema: None,
+                meta: None,
+            },
+            Tool {
+                name: "corrections".into(),
+                title: Some("Corrections".into()),
+                description: Some("List correction events with optional target filter".into()),
+                input_schema: corrections_schema_map,
                 icons: None,
                 annotations: None,
                 output_schema: None,
@@ -216,6 +227,7 @@ impl ServerHandler for SurrealMindServer {
 
             // Intelligence and utility
             "wander" => self.handle_wander(request).await.map_err(|e| e.into()),
+            "corrections" => self.handle_corrections(request).await.map_err(|e| e.into()),
             "maintain" => self
                 .handle_maintenance_ops(request)
                 .await

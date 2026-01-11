@@ -100,4 +100,5 @@ Correction chain preserves full history
   - `new_state` currently mirrors existing record (no content mutation yet).
   - Optional `cascade` (thought targets only): flags related `kg_entities` and `kg_observations` via `source_thought_ids`.
 - Schema updated: rethink input supports `mode` enum [`mark`,`correct`], optional `cascade`.
+- Added `corrections` MCP tool (temporary) to list `correction_events` with optional `target_id` and `limit` for test visibility.
 - Still needed: payload-driven field updates to produce a real `new_state`, richer cascade rules, provenance chaining (`corrects_previous`).

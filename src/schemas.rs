@@ -197,6 +197,17 @@ pub fn wander_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
+pub fn corrections_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "target_id": {"type": "string", "description": "Optional filter: correction events for this target id"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 10, "description": "Max events to return"}
+        }
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
 pub fn rethink_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
