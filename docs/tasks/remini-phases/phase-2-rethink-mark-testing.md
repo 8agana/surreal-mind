@@ -298,3 +298,123 @@ Phase 2 testing is **COMPLETE** when:
 3. Database verification confirms mark fields are correctly populated
 4. This document updated with "Run 2" results showing all tests PASS
 5. Status changed to "PASS - Ready for Phase 3"
+
+---
+
+## Implementation Summary
+
+**Date:** 2026-01-11
+**Implemented by:** Vibe (Mistral Vibe)
+**Status:** ✅ COMPLETE - Code changes applied and validated
+
+### Changes Made
+
+The fix for Issue #1 has been successfully implemented in `src/tools/rethink.rs`:
+
+#### 1. Record Existence Check (Lines 98-111)
+**Before:**
+```rust
+let exists: Option<serde_json::Value> = self
+    .db
+    .query(format!("SELECT id FROM {} WHERE id = $id", table_name))
+    .bind(("id", params.target_id.clone()))
+    .await?
+    .take(0)?;
+```
+
+**After:**
+```rust
+// Extract ID part from "table:id" format and clone it for binding
+let id_part = parts[1].to_string();
+
+// Check if the record exists using type::thing()
+let exists: Option<serde_json::Value> = self
+    .db
+    .query(format!("SELECT id FROM {} WHERE id = type::thing('{}', $id)", table_name, table_name))
+    .bind(("id", id_part.clone()))
+    .await?
+    .take(0)?;
+```
+
+#### 2. Record Update Query (Lines 115-128)
+**Before:**
+```rust
+self.db
+    .query(format!(
+        "UPDATE {} SET marked_for = $marked_for, mark_type = $mark_type, mark_note = $note, marked_at = $marked_at, marked_by = $marked_by WHERE id = $id",
+        table_name
+    ))
+    .bind(("id", params.target_id.clone()))
+    .bind(("marked_for", params.marked_for.clone()))
+    .bind(("mark_type", params.mark_type.clone()))
+    .bind(("note", params.note.clone()))
+    .bind(("marked_at", marked_at.clone()))
+    .bind(("marked_by", marked_by))
+    .await?;
+```
+
+**After:**
+```rust
+self.db
+    .query(format!(
+        "UPDATE {} SET marked_for = $marked_for, mark_type = $mark_type, mark_note = $note, marked_at = $marked_at, marked_by = $marked_by WHERE id = type::thing('{}', $id)",
+        table_name, table_name
+    ))
+    .bind(("id", id_part))
+    .bind(("marked_for", params.marked_for.clone()))
+    .bind(("mark_type", params.mark_type.clone()))
+    .bind(("note", params.note.clone()))
+    .bind(("marked_at", marked_at.clone()))
+    .bind(("marked_by", marked_by))
+    .await?;
+```
+
+### Key Changes
+
+1. **ID Parsing:** Extract the ID portion from the `target_id` string (e.g., extract `d087dc2b-3819-4112-9c00-1e4530f9fc17` from `thoughts:d087dc2b-3819-4112-9c00-1e4530f9fc17`)
+
+2. **type::thing() Usage:** Replace direct string comparison with SurrealDB's `type::thing(table_name, id)` function to properly convert string parameters to record references
+
+3. **Consistency:** Both SELECT and UPDATE queries now use the same pattern for record identification
+
+### Validation Results
+
+✅ **Code compiles:** `cargo check` - PASSED
+✅ **No clippy warnings:** `cargo clippy --no-deps` - PASSED
+✅ **Formatted correctly:** `cargo fmt` - PASSED
+✅ **Release build succeeds:** `cargo build --release` - PASSED
+✅ **Service restarted:** `launchctl kickstart -k gui/$(id -u)/dev.legacymind.surreal-mind` - PASSED
+✅ **Health check passes:** `curl http://127.0.0.1:8787/health` - PASSED (returns "ok")
+
+### Technical Details
+
+**Root Cause:** In SurrealDB, record IDs are a special type, not plain strings. Comparing a string directly to a record ID always returns false. The `type::thing()` function properly converts a string ID into a record reference type.
+
+**Pattern Consistency:** This fix aligns with existing working code in:
+- `src/tools/wander.rs` (line 43): Uses `type::thing('thoughts', $id)`
+- `src/tools/thinking.rs`: Uses similar pattern
+- `src/bin/admin.rs` (line 212): Uses `type::thing('thoughts', $id)`
+
+**Lifetime Handling:** The ID part is cloned to `String` to ensure it lives long enough for the database binding, which requires `'static` lifetime.
+
+### Next Steps
+
+The implementation is complete and ready for testing. The next steps are:
+
+1. **Acquire test data:** Get valid IDs from the database for thoughts, entities, and observations
+2. **Run happy path tests:** Execute HP-1 through HP-4 with real data
+3. **Verify database updates:** Confirm mark fields are written correctly
+4. **Re-test error cases:** Ensure ERR-1 through ERR-4 still pass
+5. **Update this document:** Add Run 2 results and change status to "PASS - Ready for Phase 3"
+
+**Estimated time for remaining work:** 15-20 minutes (depending on test data availability)
+
+---
+
+## Updated Status
+
+**Status:** ✅ FIXED - Ready for Run 2 Testing
+**Ready for Phase 3:** [ ] Yes  [ ] No - awaiting test results
+
+**Blockers:** None - code changes complete and validated
+**Next Action:** Run comprehensive tests with real database records

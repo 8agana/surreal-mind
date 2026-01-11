@@ -95,11 +95,17 @@ impl SurrealMindServer {
             }
         };
 
-        // Check if the record exists
+        // Extract ID part from "table:id" format and clone it for binding
+        let id_part = parts[1].to_string();
+
+        // Check if the record exists using type::thing()
         let exists: Option<serde_json::Value> = self
             .db
-            .query(format!("SELECT id FROM {} WHERE id = $id", table_name))
-            .bind(("id", params.target_id.clone()))
+            .query(format!(
+                "SELECT id FROM {} WHERE id = type::thing('{}', $id)",
+                table_name, table_name
+            ))
+            .bind(("id", id_part.clone()))
             .await?
             .take(0)?;
 
@@ -115,10 +121,10 @@ impl SurrealMindServer {
 
         self.db
             .query(format!(
-                "UPDATE {} SET marked_for = $marked_for, mark_type = $mark_type, mark_note = $note, marked_at = $marked_at, marked_by = $marked_by WHERE id = $id",
-                table_name
+                "UPDATE {} SET marked_for = $marked_for, mark_type = $mark_type, mark_note = $note, marked_at = $marked_at, marked_by = $marked_by WHERE id = type::thing('{}', $id)",
+                table_name, table_name
             ))
-            .bind(("id", params.target_id.clone()))
+            .bind(("id", id_part))
             .bind(("marked_for", params.marked_for.clone()))
             .bind(("mark_type", params.mark_type.clone()))
             .bind(("note", params.note.clone()))
