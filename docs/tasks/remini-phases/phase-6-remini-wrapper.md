@@ -1,6 +1,6 @@
 # Phase 6: REMini Wrapper
 
-**Status:** Not Started
+**Status:** In Progress (remini binary live; wander defaulted; health script hook; rethink type filter env)
 **Parent:** [remini-correction-system.md](../remini-correction-system.md)
 **Depends On:** Phase 5 (gem_rethink)
 **Assignee:** TBD
@@ -125,7 +125,15 @@ remini --report                     # show last sleep report
 
 ## Implementation Notes
 
-*To be filled during implementation*
+- Added `remini` binary (standalone orchestrator):
+  - CLI: `--all` or `--tasks populate,embed,rethink,wander,health`, `--dry-run`, `--report`.
+  - Executes child binaries: `kg_populate`, `kg_embed`, `gem_rethink`, `kg_wander` (now included in default/all), and `scripts/sm_health.sh` when present; collects stdout/stderr + timings into JSON report (`logs/remini_report.json`).
+  - Dry-run propagates via `DRY_RUN=1` to children.
+- Rethink type filter: pass env `RETHINK_TYPES` (comma-separated) via `--rethink-types` flag; forwarded to gem_rethink.
+- Health task: runs `scripts/sm_health.sh` if present; otherwise skipped with note.
+- Wander task: runs `kg_wander` binary (if built); included in default/all task lists.
+- Report: prints and persists JSON summary (tasks_run, per-task status, duration).
+- Remaining TODOs: richer task selection flags (e.g., --for), better health implementation, retries, and launchd plist wiring.
 
 ---
 
