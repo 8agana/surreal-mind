@@ -33,7 +33,9 @@ impl SurrealMindServer {
                     json!({"name": "call_jobs", "one_liner": "List async agent jobs", "key_params": ["limit", "status_filter", "tool_name"]}),
                     json!({"name": "call_cancel", "one_liner": "Cancel a running or queued job", "key_params": ["job_id"]}),
                     json!({"name": "howto", "one_liner": "Get help for a specific tool or list all tools", "key_params": ["tool", "format"]}),
-                    json!({"name": "wander", "one_liner": "Explore the knowledge graph for curiosity-driven discovery", "key_params": ["mode", "current_thought_id", "visited_ids", "recency_bias"]}),
+                    json!({"name": "wander", "one_liner": "Explore the knowledge graph for curiosity-driven discovery", "key_params": ["mode", "current_thought_id", "visited_ids", "recency_bias", "for"]}),
+                    json!({"name": "rethink", "one_liner": "Revise or mark knowledge graph items for correction", "key_params": ["target_id", "mode", "mark_type", "marked_for"]}),
+                    json!({"name": "corrections", "one_liner": "List recent correction events to inspect the learning journey", "key_params": ["target_id", "limit"]}),
                 ];
                 return Ok(CallToolResult::structured(json!({ "tools": tools })));
             }
@@ -99,9 +101,9 @@ impl SurrealMindServer {
             }),
             "search" => json!({
                 "name": "search",
-                "description": "Unified search in LegacyMind: searches memories by default and, when include_thoughts=true, also searches thoughts. Supports continuity field filters for thoughts.",
+                "description": "Unified search in LegacyMind: searches memories by default and, when include_thoughts=true, also searches thoughts. Supports continuity field filters for thoughts and forensic mode for provenance tracking.",
                 "arguments": {
-                    "query": "object — {name?, text?} query parameters",
+                    "query": "object — {name?, text?, id?} query parameters",
                     "target": "'entity'|'relationship'|'observation'|'mixed' (default 'mixed')",
                     "include_thoughts": "boolean (default false) — also search thoughts",
                     "thoughts_content": "string — optional explicit query text for thoughts",
@@ -118,39 +120,69 @@ impl SurrealMindServer {
                     "confidence_lte": "number? (0.0-1.0) — filter thoughts with confidence <= value",
                     "date_from": "string? (YYYY-MM-DD) — filter thoughts created_at >= date",
                     "date_to": "string? (YYYY-MM-DD) — filter thoughts created_at <= date",
-                    "order": "string? ('created_at_asc'|'created_at_desc') — order thoughts by created_at"
+                    "order": "string? ('created_at_asc'|'created_at_desc') — order thoughts by created_at",
+                    "forensic": "boolean — include correction chain and derivatives in results"
                 },
                 "returns": {"memories": {"items": "array"}, "thoughts": {"total": "number", "results": "array"}},
                 "examples": [
-                    {"description": "Search thoughts in a specific session, ordered by creation time", "call": {"include_thoughts": true, "session_id": "session_123"}},
-                    {"description": "Search thoughts in a chain with similarity ordering", "call": {"include_thoughts": true, "chain_id": "chain_456", "thoughts_content": "debug issue"}},
-                    {"description": "Find thoughts that revise a specific thought", "call": {"include_thoughts": true, "revises_thought": "thoughts:789"}},
-                    {"description": "Search thoughts with confidence >= 0.8 in a date range", "call": {"include_thoughts": true, "confidence_gte": 0.8, "date_from": "2024-01-01", "date_to": "2024-12-31"}}
+                    {"description": "Search entities with forensic provenance", "call": {"query": {"name": "REMini"}, "target": "entity", "forensic": true}},
+                    {"description": "Search thoughts in a specific session", "call": {"include_thoughts": true, "session_id": "session_123"}}
                 ]
             }),
             "wander" => json!({
                 "name": "wander",
-                "description": "Interactively explore the knowledge graph via traversals. Can wander randomly or semantically from a given thought.",
+                "description": "Interactively explore the knowledge graph via traversals. Can wander randomly, semantically, or via metadata and attention marks.",
                 "arguments": {
-                    "mode": "string (required) — 'random' or 'semantic'",
-                    "current_thought_id": "string — required for 'semantic' mode, the starting thought ID",
-                    "max_steps": "integer (1-100; default 5) — maximum number of traversal steps",
-                    "include_memories": "boolean (default true) — include related memories in the output",
-                    "include_thoughts": "boolean (default false) — include related thoughts in the output",
-                    "semantic_threshold": "number (0.0-1.0; default 0.7) — similarity threshold for semantic wandering",
-                    "return_format": "string ('summary'|'full'; default 'summary') — level of detail in returned nodes"
+                    "mode": "string (required) — 'random', 'semantic', 'meta', 'marks'",
+                    "current_thought_id": "string — optional starting thought ID",
+                    "visited_ids": "array — IDs to avoid preventing loops",
+                    "recency_bias": "boolean (default false) — prioritize recent memories",
+                    "for": "string — filter marks assigned to a specific member ('cc', 'sam', 'gemini', 'dt', 'gem')"
                 },
                 "returns": {
-                    "path": "array — ordered list of traversed nodes (thoughts/memories)",
-                    "summary": "string — a textual summary of the wander path",
-                    "nodes_visited": "integer — total number of unique nodes visited",
-                    "edges_traversed": "integer — total number of edges traversed"
+                    "current_node": "object — the node reached in the step",
+                    "mode_used": "string — the mode used for the step",
+                    "affordances": "array — suggested next modes",
+                    "guidance": "string — actionable architectural guidance",
+                    "queue_depth": "integer? — remaining items in queue (marks mode only)"
                 },
                 "examples": [
-                    {"description": "Wander randomly for 3 steps", "call": {"mode": "random", "max_steps": 3}},
-                    {"description": "Wander semantically from a specific thought, including thoughts", "call": {"mode": "semantic", "current_thought_id": "thoughts:abc", "include_thoughts": true, "max_steps": 7}},
-                    {"description": "Semantic wander with a higher similarity threshold", "call": {"mode": "semantic", "current_thought_id": "thoughts:xyz", "semantic_threshold": 0.85}}
+                    {"description": "Surface marks for CC", "call": {"mode": "marks", "for": "cc"}},
+                    {"description": "Wander semantically from a specific thought", "call": {"mode": "semantic", "current_thought_id": "thoughts:abc"}}
                 ]
+            }),
+            "rethink" => json!({
+                "name": "rethink",
+                "description": "Revise or mark knowledge graph items for correction. Supports provenance-tracked corrections and attention routing.",
+                "arguments": {
+                    "target_id": "string (required) — ID of the record (thoughts:xxx, entity:xxx, observation:xxx)",
+                    "mode": "string (required) — 'mark' (flag for review) or 'correct' (apply fix)",
+                    "mark_type": "string — 'correction', 'research', 'enrich', 'expand' (mark mode)",
+                    "marked_for": "string — 'cc', 'sam', 'gemini', 'dt', 'gem' (mark mode)",
+                    "note": "string — contextual explanation for the mark (mark mode)",
+                    "reasoning": "string — why the record is being corrected (correct mode)",
+                    "sources": "string[] — verification sources (correct mode)",
+                    "cascade": "boolean (default false) — flag derivatives for review (correct mode)"
+                },
+                "returns": {
+                    "success": "boolean",
+                    "marked": "object? — details of the created mark",
+                    "correction": "object? — details of the applied correction event",
+                    "derivatives_flagged": "integer? — count of cascaded marks"
+                }
+            }),
+            "corrections" => json!({
+                "name": "corrections",
+                "description": "List recent correction events to inspect the learning journey of the KG.",
+                "arguments": {
+                    "target_id": "string — optional filter for a specific target ID",
+                    "limit": "integer (default 10) — max events to return"
+                },
+                "returns": {
+                    "success": "boolean",
+                    "count": "integer",
+                    "events": "array of correction_event objects"
+                }
             }),
             "remember" => json!({
                 "name": "remember",

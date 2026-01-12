@@ -84,10 +84,12 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
 | Tool | Description |
 |------|-------------|
 | `think` | Unified thinking with continuity links, hypothesis verification, KG injection. Required: `content`. Optional: `hint`, `injection_scale` 0–3, `tags[]`, `significance`, continuity fields. |
-| `search` | Unified KG + thoughts search. Optional: `query`, `target`, `include_thoughts`, `top_k_memories/thoughts`, similarity/confidence filters. |
+| `search` | Unified KG + thoughts search. Optional: `query`, `target`, `include_thoughts`, `top_k_memories/thoughts`, similarity/confidence filters, and `forensic` mode for provenance. |
 | `remember` | Create KG `entity\|relationship\|observation`. Supports `upsert`, `source_thought_id`, `confidence`, `data`. |
-| `wander` | Explore the knowledge graph. Modes: `random`, `semantic`, `meta`. Returns actionable guidance for KG improvement. |
-| `maintain` | System maintenance: `health_check_embeddings`, `reembed`, `reembed_kg`, `list_removal_candidates`, `export_removals`, `finalize_removal`, `echo_config`. |
+| `wander` | Explore the knowledge graph. Modes: `random`, `semantic`, `meta`, `marks`. Returns actionable guidance for KG improvement. |
+| `rethink` | Revise or mark knowledge graph items for correction. Modes: `mark` (flag for review), `correct` (apply fix with provenance). |
+| `corrections`| List recent `correction_events` to inspect the learning journey of the KG. |
+| `maintain` | System maintenance: `health_check_embeddings`, `reembed`, `reembed_kg`, `list_removal_candidates`, `export_removals`, `finalize_removal`, `echo_config`, `rethink`, `populate`, `embed`, `wander`, `health`, `report`, `tasks`. |
 | `howto` | Get help for any tool. Optional: `tool`, `format` (`compact\|full`). |
 | `call_gem` | Delegate prompts to Gemini CLI. Required: `prompt`. Optional: `task_name`, `model`, `cwd`, `timeout_ms`. |
 | `call_status` | Check status of a background agent job. Required: `job_id`. |
