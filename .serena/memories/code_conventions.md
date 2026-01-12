@@ -15,7 +15,7 @@ Rust 2024 edition (cutting edge)
 - Use `Result<T>` alias from `src/error.rs`
 
 ### Async
-- Tokio runtime
+- Tokio runtime (full features)
 - `async fn` for all I/O operations
 - `#[async_trait]` for trait async methods
 
@@ -58,4 +58,11 @@ impl CognitiveAgent for MyClient {
 - Tool handlers: `handle_<tool_name>`
 - Schema functions: `<tool_name>_schema`
 - Params structs: `<ToolName>Params`
-- Files match tool names: `delegate_gemini.rs` for `delegate_gemini` tool
+- Files match tool names: `delegate_gemini.rs` for `call_gem` tool
+
+## Testing
+
+- Unit tests in source files (`#[cfg(test)]` modules)
+- Integration tests in `tests/`
+- Key test file: `tests/tool_schemas.rs` validates all tool schemas
+- Run `cargo test --all` before committing

@@ -3,10 +3,12 @@
 use crate::error::{Result, SurrealMindError};
 use crate::indexes::{IndexHealth, TableInfo, get_expected_indexes};
 use crate::server::SurrealMindServer;
+// corrections tool handler is in scope via SurrealMindServer impl; no direct import needed
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde_json::json;
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 
 /// Parameters for the maintenance_ops tool
 #[derive(Debug, serde::Deserialize)]
@@ -23,6 +25,12 @@ pub struct MaintenanceParams {
     pub format: Option<String>,
     #[serde(default)]
     pub output_dir: Option<String>,
+    #[serde(default)]
+    pub tasks: Option<String>,
+    #[serde(default)]
+    pub target_id: Option<String>,
+    #[serde(default)]
+    pub rethink_types: Option<String>,
 }
 
 impl SurrealMindServer {
@@ -131,10 +139,183 @@ impl SurrealMindServer {
             "reembed_kg" => self.handle_reembed_kg(limit, dry_run).await,
             "ensure_continuity_fields" => self.handle_ensure_continuity_fields(dry_run).await,
             "echo_config" => self.handle_echo_config().await,
+            "corrections" => {
+                self.handle_corrections_bridge(limit, params.target_id.clone())
+                    .await
+            }
+            "rethink" => {
+                let mut envs: Vec<(String, String)> = vec![];
+                if let Some(rt) = params.rethink_types.clone() {
+                    envs.push(("RETHINK_TYPES".into(), rt));
+                }
+                self.handle_spawn_binary("gem_rethink", dry_run, &envs)
+                    .await
+            }
+            "populate" => {
+                self.handle_spawn_binary("kg_populate", dry_run, &Vec::new())
+                    .await
+            }
+            "embed" => {
+                self.handle_spawn_binary("kg_embed", dry_run, &Vec::new())
+                    .await
+            }
+            "wander" => {
+                self.handle_spawn_binary("kg_wander", dry_run, &Vec::new())
+                    .await
+            }
+            "health" => {
+                self.handle_spawn_script("scripts/sm_health.sh", dry_run)
+                    .await
+            }
+            "report" => self.handle_report().await,
+            "tasks" => self.handle_tasks(params.tasks.clone(), dry_run).await,
             _ => Err(SurrealMindError::Validation {
                 message: format!("Unknown subcommand: {}", params.subcommand),
             }),
         }
+    }
+
+    async fn handle_tasks(&self, tasks: Option<String>, dry_run: bool) -> Result<CallToolResult> {
+        let default_tasks: Vec<String> = vec![
+            "populate".into(),
+            "embed".into(),
+            "rethink".into(),
+            "wander".into(),
+            "health".into(),
+            "report".into(),
+            "corrections".into(),
+        ];
+        let list = tasks.unwrap_or_else(|| default_tasks.join(","));
+        let mut tasks_vec: Vec<String> = list
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if tasks_vec.iter().any(|t| t == "all") {
+            tasks_vec = default_tasks.clone();
+        }
+        if tasks_vec.is_empty() {
+            tasks_vec = default_tasks;
+        }
+        let mut results: Vec<serde_json::Value> = Vec::new();
+        for t in tasks_vec {
+            let res = match t.as_str() {
+                "corrections" => self.handle_corrections_bridge(100, None).await,
+                "rethink" => {
+                    let envs: Vec<(String, String)> = Vec::new();
+                    self.handle_spawn_binary("gem_rethink", dry_run, &envs)
+                        .await
+                }
+                "populate" => {
+                    let envs: Vec<(String, String)> = Vec::new();
+                    self.handle_spawn_binary("kg_populate", dry_run, &envs)
+                        .await
+                }
+                "embed" => {
+                    let envs: Vec<(String, String)> = Vec::new();
+                    self.handle_spawn_binary("kg_embed", dry_run, &envs).await
+                }
+                "wander" => {
+                    let envs: Vec<(String, String)> = Vec::new();
+                    self.handle_spawn_binary("kg_wander", dry_run, &envs).await
+                }
+                "health" => {
+                    self.handle_spawn_script("scripts/sm_health.sh", dry_run)
+                        .await
+                }
+                "report" => self.handle_report().await,
+                other => Err(SurrealMindError::Validation {
+                    message: format!("Unknown task in list: {}", other),
+                }),
+            };
+            match res {
+                Ok(r) => {
+                    let payload = r
+                        .structured_content
+                        .clone()
+                        .unwrap_or_else(|| json!(r.content));
+                    results.push(payload);
+                }
+                Err(e) => results.push(json!({ "error": e.to_string(), "task": t })),
+            }
+        }
+        Ok(CallToolResult::structured(json!({ "results": results })))
+    }
+
+    async fn handle_corrections_bridge(
+        &self,
+        limit: usize,
+        target_id: Option<String>,
+    ) -> Result<CallToolResult> {
+        let mut map = serde_json::Map::new();
+        map.insert("limit".into(), json!(limit as i64));
+        if let Some(tid) = target_id {
+            map.insert("target_id".into(), json!(tid));
+        }
+        let req = CallToolRequestParam {
+            name: "corrections".into(),
+            arguments: Some(map),
+        };
+        self.handle_corrections(req).await
+    }
+
+    async fn handle_spawn_binary(
+        &self,
+        bin: &str,
+        dry_run: bool,
+        extra_env: &[(String, String)],
+    ) -> Result<CallToolResult> {
+        let bin_path = format!("{}/target/release/{}", env!("CARGO_MANIFEST_DIR"), bin);
+        let mut cmd = Command::new(bin_path);
+        if dry_run {
+            cmd.env("DRY_RUN", "1");
+        }
+        for (k, v) in extra_env {
+            cmd.env(k, v);
+        }
+        let output = cmd.output().map_err(|e| SurrealMindError::Internal {
+            message: format!("failed to run {}: {}", bin, e),
+        })?;
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let success = output.status.success();
+        let report = json!({
+            "task": bin,
+            "success": success,
+            "stdout": stdout,
+            "stderr": stderr
+        });
+        Ok(CallToolResult::structured(report))
+    }
+
+    async fn handle_spawn_script(&self, script: &str, dry_run: bool) -> Result<CallToolResult> {
+        let script_path = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), script);
+        let mut cmd = Command::new("bash");
+        cmd.arg(script_path);
+        if dry_run {
+            cmd.env("DRY_RUN", "1");
+        }
+        let output = cmd.output().map_err(|e| SurrealMindError::Internal {
+            message: format!("failed to run script {}: {}", script, e),
+        })?;
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let success = output.status.success();
+        let report = json!({
+            "task": script,
+            "success": success,
+            "stdout": stdout,
+            "stderr": stderr
+        });
+        Ok(CallToolResult::structured(report))
+    }
+
+    async fn handle_report(&self) -> Result<CallToolResult> {
+        let path = format!("{}/logs/remini_report.json", env!("CARGO_MANIFEST_DIR"));
+        let contents = fs::read_to_string(&path).unwrap_or_else(|_| "{}".to_string());
+        let json_val: serde_json::Value =
+            serde_json::from_str(&contents).unwrap_or(json!({"warning": "report not found"}));
+        Ok(CallToolResult::structured(json_val))
     }
 
     /// Return effective runtime configuration (safe subset) for debugging client/DB mismatch

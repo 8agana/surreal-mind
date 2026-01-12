@@ -122,11 +122,14 @@ pub fn maintain_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
         "properties": {
-            "subcommand": {"type": "string", "enum": ["list_removal_candidates", "export_removals", "finalize_removal", "health_check_embeddings", "health_check_indexes", "reembed", "reembed_kg", "ensure_continuity_fields", "echo_config"], "description": "Maintenance operation to perform"},
+            "subcommand": {"type": "string", "enum": ["list_removal_candidates", "export_removals", "finalize_removal", "health_check_embeddings", "health_check_indexes", "reembed", "reembed_kg", "ensure_continuity_fields", "echo_config", "corrections", "rethink", "populate", "embed", "wander", "health", "report", "tasks"], "description": "Maintenance operation to perform"},
             "dry_run": {"type": "boolean", "default": false, "description": "Simulate operation without making changes"},
             "limit": {"type": ["integer", "number", "string"], "default": 100, "description": "Maximum number of thoughts to process"},
             "format": {"type": "string", "enum": ["json", "parquet"], "default": "json", "description": "Export format"},
-            "output_dir": {"type": "string", "default": "./archive", "description": "Directory for export files"}
+            "output_dir": {"type": "string", "default": "./archive", "description": "Directory for export files"},
+            "tasks": {"type": "string", "description": "Comma-separated tasks for subcommand 'tasks'"},
+            "target_id": {"type": "string", "description": "Optional target filter (corrections subcommand)"},
+            "rethink_types": {"type": "string", "description": "Comma-separated mark types (rethink subcommand)"}
         },
         "required": ["subcommand"]
     });

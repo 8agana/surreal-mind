@@ -51,7 +51,8 @@ impl SurrealMindServer {
         let response = json!({
             "success": true,
             "count": rows.len(),
-            "events": rows
+            "events": rows,
+            "deprecation": "Use maintain corrections (this tool will be removed in a future release)"
         });
 
         Ok(CallToolResult::structured(response))

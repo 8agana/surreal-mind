@@ -165,16 +165,23 @@ impl SurrealMindServer {
             }),
             "maintain" => json!({
                 "name": "maintain",
-                "description": "Maintenance operations including archival, cleanup, and deep health checks (now covering thoughts, entities, observations, and edges).",
+                "description": "Maintenance operations including archival, cleanup, embedding refresh, rethink queue processing, and health checks (thoughts/entities/observations/edges).",
                 "arguments": {
-                    "subcommand": "string (required) — 'list_removal_candidates'|'export_removals'|'finalize_removal'|'health_check_embeddings'|'health_check_indexes'|'reembed'|'reembed_kg'|'ensure_continuity_fields'|'echo_config'",
+                    "subcommand": "string (required) — 'list_removal_candidates'|'export_removals'|'finalize_removal'|'health_check_embeddings'|'health_check_indexes'|'reembed'|'reembed_kg'|'ensure_continuity_fields'|'echo_config'|'corrections'|'rethink'|'populate'|'embed'|'wander'|'health'|'report'|'tasks'",
                     "dry_run": "boolean (default: false) — simulate operation without changes",
                     "limit": "integer|string (default: 100) — max items to process",
                     "format": "string (default: 'json') — export format",
-                    "output_dir": "string (default: './archive') — export directory"
+                    "output_dir": "string (default: './archive') — export directory",
+                    "tasks": "string — comma separated list for subcommand 'tasks' (default populate,embed,rethink,wander,health,report,corrections)",
+                    "target_id": "string — optional filter for 'corrections' subcommand",
+                    "rethink_types": "string — comma-separated mark types for 'rethink' subcommand (e.g., correction,research)"
                 },
                 "returns": {
                     "health_check_embeddings": "object — detailed breakdown per table (total, ok, missing, mismatched) with sample IDs",
+                    "corrections": "object — {success, count, events[]} result from corrections bridge",
+                    "rethink/populate/embed/wander/health": "object — {task, success, stdout, stderr}",
+                    "tasks": "object — {results: [...]} aggregated per task",
+                    "report": "object — contents of logs/remini_report.json",
                     "other_subcommands": "object — counts, paths, or messages depending on operation"
                 }
             }),
