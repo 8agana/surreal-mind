@@ -148,6 +148,19 @@ fn run_task(
         "wander" => {
             cmd_path.push("kg_wander");
         }
+        "report" => {
+            let start = Instant::now();
+            let res = show_report();
+            let dur = start.elapsed().as_millis();
+            match res {
+                Ok(()) => {
+                    return Ok((true, dur, String::new(), String::new()));
+                }
+                Err(e) => {
+                    return Ok((false, dur, String::new(), e.to_string()));
+                }
+            }
+        }
         "health" => {
             let script = PathBuf::from("scripts/sm_health.sh");
             if !script.exists() {

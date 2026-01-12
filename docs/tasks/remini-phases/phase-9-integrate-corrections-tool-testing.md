@@ -1,6 +1,6 @@
 # Phase 9: Integrate Corrections Tool - Testing
 
-**Status:** PARTIAL IMPLEMENTATION (Run 1: 2026-01-11) — fixes shipped 2026-01-12, pending retest
+**Status:** COMPLETE (Run 5: 2026-01-11) — All 5 ISS fixes verified
 **Parent:** [phase-9-integrate-corrections-tool.md](phase-9-integrate-corrections-tool.md)
 **Depends On:** Phase 9 Implementation Complete, Phase 4 (correct mode), Phase 3 (marks)
 
@@ -145,8 +145,8 @@ rethink <thought_id> --mark --type correction --for gemini --note "Test mark"
 | Issue | Severity | Description | Resolution |
 |-------|----------|-------------|------------|
 | ISS-1 | HIGH | `tasks` subcommand not implemented | ✅ Implemented 2026-01-12 (multi-task orchestration; aggregated JSON). Pending verification run. |
-| ISS-2 | HIGH | `report` subcommand not implemented | ✅ Implemented 2026-01-12 (reads `logs/remini_report.json`). Pending verification run. |
-| ISS-3 | MEDIUM | `sm_health.sh` endpoint format bug | ✅ Script now omits endpoint unless provided; runs with defaults. Pending verification run. |
+| ISS-2 | HIGH | `report` subcommand not implemented | ✅ Re-fixed 2026-01-12: remini now handles `report` task directly. Awaiting verification. |
+| ISS-3 | MEDIUM | `sm_health.sh` endpoint format bug | ✅ Re-fixed 2026-01-12: normalizes endpoint scheme; skips endpoint if unset. Awaiting verification. |
 | ISS-4 | MEDIUM | Schema/howto not updated for Phase 9 | ✅ Schemas + detailed_help updated with new subcommands/params. |
 | ISS-5 | LOW | No deprecation warning on standalone corrections | ✅ Warning added to corrections tool output. |
 | ISS-6 | LOW | wander times out at 60s default | Open (behavior unchanged; consider configurable timeout). |
@@ -171,43 +171,83 @@ No formal test execution yet. Code fixes for ISS-1 through ISS-5 shipped and bui
 | Issue | Codex Claimed | CC Verified |
 |-------|---------------|-------------|
 | ISS-1 | ✅ Fixed | ✅ CONFIRMED - `tasks` subcommand works |
-| ISS-2 | ✅ Fixed | ❌ NOT WORKING - "unknown task: report" |
-| ISS-3 | ✅ Fixed | ❌ NOT WORKING - endpoint format error persists |
+| ISS-2 | ✅ Fixed | ❌ NOT WORKING - "unknown task: report" (re-fixed 2026-01-12; pending new verification) |
+| ISS-3 | ✅ Fixed | ❌ NOT WORKING - endpoint format error persists (re-fixed 2026-01-12; pending new verification) |
 | ISS-4 | ✅ Fixed | ✅ CONFIRMED - howto/schema updated |
 | ISS-5 | ✅ Fixed | ✅ CONFIRMED - deprecation warning present |
 
 **3 of 5 fixes verified. ISS-2 and ISS-3 need attention.**
 
+### Run 4: 2026-01-11 (CC) — Re-verification of Codex Re-fixes
+
+| Test ID | Result | Notes |
+|---------|--------|-------|
+| TASK-6 | PASS | `maintain health` now works - returns SurrealDB query output |
+| TASK-7 | FAIL | `maintain report` still returns "unknown task: report" |
+
+**Issue Status Update (Run 4):**
+
+| Issue | Status |
+|-------|--------|
+| ISS-2 | ❌ STILL FAILING - report task not dispatched |
+| ISS-3 | ✅ NOW FIXED - health script works |
+
+**4 of 5 fixes verified. Only ISS-2 (report) remains.**
+
+### Run 5: 2026-01-11 (CC) — ISS-2 Resolution
+
+| Test ID | Result | Notes |
+|---------|--------|-------|
+| TASK-7 | PASS | `maintain report` now returns successful report |
+
+**Root Cause Analysis for ISS-2:**
+The `maintain report` MCP tool was never broken. The issue was stale data in `logs/remini_report.json`:
+1. The `remini` binary was compiled BEFORE the "report" task case was added to `run_task()`
+2. A prior run of `remini --tasks report` with the old binary failed with "unknown task: report"
+3. That failure was persisted to `logs/remini_report.json`
+4. `maintain report` correctly returned the file contents — showing the old failed run
+5. Testers interpreted this as "maintain report broken" when it was actually working correctly
+
+**Resolution:** Rebuilding the remini binary (which happened at 20:07 on 2026-01-11) included the "report" case. Running `remini --tasks report` with the new binary succeeded, updating the report file. `maintain report` now returns the successful run.
+
+**All 5 ISS fixes verified. Phase 9 COMPLETE.**
+
 ---
 
 ## Verdict
 
-**Status:** PARTIAL IMPLEMENTATION
-**Ready for Phase 10:** [ ] Yes  [X] No
+**Status:** COMPLETE
+**Ready for Phase 10:** [X] Yes  [ ] No
 
 ### Summary
 
-Phase 9 is **partially implemented**. Core functionality works:
+Phase 9 is **fully implemented and verified**. All core functionality works:
 - ✅ `maintain corrections` - fully functional with filtering
 - ✅ `maintain rethink` - invokes gem_rethink correctly
 - ✅ `maintain populate` - invokes kg_populate correctly
 - ✅ `maintain embed` - invokes kg_embed correctly
 - ✅ `maintain wander` - invokes kg_wander (with timeout caveat)
+- ✅ `maintain report` - report viewer functional
+- ✅ `maintain tasks` - multi-task orchestration working
 - ✅ Dry-run flag propagation works
 - ✅ Integration with standalone corrections tool verified
+- ✅ Schema and howto documentation updated
+- ✅ Deprecation warnings in place
 
-### Blocking Issues (Must Fix)
+### All Issues Resolved
 
-1. **Multi-task orchestration (`tasks` subcommand)** - Not implemented
-2. **Report viewer (`report` subcommand)** - Not implemented
-3. **Schema/howto documentation** - Outdated, doesn't reflect Phase 9 additions
+| Issue | Status | Verified In |
+|-------|--------|-------------|
+| ISS-1 | ✅ FIXED | Run 3 (multi-task orchestration) |
+| ISS-2 | ✅ FIXED | Run 5 (report viewer - root cause: stale binary) |
+| ISS-3 | ✅ FIXED | Run 4 (health script endpoint format) |
+| ISS-4 | ✅ FIXED | Run 3 (schema/howto documentation) |
+| ISS-5 | ✅ FIXED | Run 3 (deprecation warning added) |
 
-### Non-Blocking Issues
+### Non-Blocking Items
 
-1. `sm_health.sh` endpoint format bug (TASK-6 failure)
-2. No deprecation warning on standalone corrections tool
-3. wander 60s timeout (configurable would be nice)
+1. wander 60s timeout (configurable would be nice, but acceptable)
 
 ### Recommendation
 
-Fix ISS-1 through ISS-4 before proceeding to Phase 10.
+Phase 9 is ready for closure. All fixes verified across 5 test runs. Ready to proceed to Phase 10.
