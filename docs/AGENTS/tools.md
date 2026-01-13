@@ -15,7 +15,7 @@
 
 | Tool | Description |
 |------|-------------|
-| `maintain` | System maintenance subcommands: `health_check_embeddings`, `health_check_indexes`, `reembed`, `reembed_kg`, `list_removal_candidates`, `export_removals`, `finalize_removal`, `ensure_continuity_fields`, `echo_config`, `rethink`, `populate`, `embed`, `wander`, `health`, `report`, `tasks`. |
+| `maintain` | System maintenance subcommands: `health_check_embeddings`, `health_check_indexes`, `reembed`, `reembed_kg`, `embed_pending`, `list_removal_candidates`, `export_removals`, `finalize_removal`, `ensure_continuity_fields`, `echo_config`, `rethink`, `populate`, `embed`, `wander`, `health`, `report`, `tasks`. |
 | `howto` | Deterministic help for any tool. Params: `tool` (optional), `format` (`compact\|full`). Without `tool`, returns full roster. |
 
 ## Agent Delegation
