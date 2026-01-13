@@ -199,7 +199,7 @@ impl SurrealMindServer {
                 "name": "maintain",
                 "description": "Maintenance operations including archival, cleanup, embedding refresh, rethink queue processing, and health checks (thoughts/entities/observations/edges).",
                 "arguments": {
-                    "subcommand": "string (required) — 'list_removal_candidates'|'export_removals'|'finalize_removal'|'health_check_embeddings'|'health_check_indexes'|'reembed'|'reembed_kg'|'ensure_continuity_fields'|'echo_config'|'corrections'|'rethink'|'populate'|'embed'|'wander'|'health'|'report'|'tasks'",
+                    "subcommand": "string (required) — 'list_removal_candidates'|'export_removals'|'finalize_removal'|'health_check_embeddings'|'health_check_indexes'|'reembed'|'reembed_kg'|'embed_pending'|'ensure_continuity_fields'|'echo_config'|'corrections'|'rethink'|'populate'|'embed'|'wander'|'health'|'report'|'tasks'",
                     "dry_run": "boolean (default: false) — simulate operation without changes",
                     "limit": "integer|string (default: 100) — max items to process",
                     "format": "string (default: 'json') — export format",
@@ -214,6 +214,7 @@ impl SurrealMindServer {
                     "rethink/populate/embed/wander/health": "object — {task, success, stdout, stderr}",
                     "tasks": "object — {results: [...]} aggregated per task",
                     "report": "object — contents of logs/remini_report.json",
+                    "embed_pending": "object — {message, processed, succeeded, failed, remaining, dry_run} — retry embedding for thoughts with pending/failed status",
                     "other_subcommands": "object — counts, paths, or messages depending on operation"
                 }
             }),

@@ -39,6 +39,8 @@ impl SurrealMindServer {
             DEFINE FIELD embedding_provider ON TABLE thoughts TYPE option<string>;
             DEFINE FIELD embedding_dim ON TABLE thoughts TYPE option<int>;
             DEFINE FIELD embedded_at ON TABLE thoughts TYPE option<datetime>;
+            -- Embedding status for graceful degradation (pending/complete/failed)
+            DEFINE FIELD embedding_status ON TABLE thoughts TYPE option<string> DEFAULT "complete";
             DEFINE FIELD extracted_to_kg ON TABLE thoughts TYPE bool DEFAULT false;
             DEFINE FIELD extraction_batch_id ON TABLE thoughts TYPE option<string>;
             DEFINE FIELD extracted_at ON TABLE thoughts TYPE option<datetime>;
@@ -60,6 +62,7 @@ impl SurrealMindServer {
             DEFINE INDEX idx_thoughts_created ON TABLE thoughts FIELDS created_at;
             DEFINE INDEX idx_thoughts_embedding_model ON TABLE thoughts FIELDS embedding_model;
             DEFINE INDEX idx_thoughts_embedding_dim ON TABLE thoughts FIELDS embedding_dim;
+            DEFINE INDEX idx_thoughts_embedding_status ON TABLE thoughts FIELDS embedding_status;
             -- Continuity indexes
             DEFINE INDEX idx_thoughts_session ON TABLE thoughts FIELDS session_id, created_at;
             DEFINE INDEX idx_thoughts_chain ON TABLE thoughts FIELDS chain_id, created_at;

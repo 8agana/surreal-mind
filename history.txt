@@ -1,5 +1,4 @@
 #V2
-UPDATE thoughts SET chain_id = "20251104-Session2-Handoff" WHERE chain_id IS NULL AND created_at >= "2025-11-05T02:01:00Z" AND created_at <= "2025-11-05T02:04:00Z";
 SELECT meta::id(id) as id, chain_id FROM thoughts WHERE id = "5849aa6a-e146-4e35-8d99-9aa88cf77856";
 SELECT * FROM thoughts:`5849aa6a-e146-4e35-8d99-9aa88cf77856`;
 UPDATE thoughts:`5849aa6a-e146-4e35-8d99-9aa88cf77856`, thoughts:`586307a0-32bd-4e22-8360-9158795a50a5`, thoughts:`7f7a6458-e8ac-419a-bfc0-f65638939af0`, thoughts:`a65462c2-852a-49f4-b408-e3d46eef68a8`, thoughts:`20c3349c-0e3e-4ee4-b1db-5a3d4a6ff658`, thoughts:`00769c65-60ad-4d37-bf95-db6aee82f5ad`, thoughts:`5c3cc68b-2b8a-4ac5-a302-0d8d1cd532ba`, thoughts:`d6ae892b-cac4-4724-8660-2939fe5ad5fb`, thoughts:`5c04092b-8a86-47ae-af71-24c305e5cc18`, thoughts:`fbfdbf18-fe78-4362-b81e-ac2af9fbd1be` SET chain_id = "20251104-Session2-Handoff";
@@ -99,3 +98,4 @@ USE NS surreal_mind DB consciousness; UPDATE thoughts SET marked_for = "gemini",
 USE NS surreal_mind DB consciousness;
 LET $stale = SELECT id FROM kg_entities
 LET $stale = (SELECT id FROM kg_entities WHERE volatility = 'high' AND last_refreshed != NONE AND time::now() - last_refreshed > duration::days(90) AND marked_for = NONE LIMIT 5); UPDATE $stale SET marked_for = 'gemini', mark_type = 'research', mark_note = 'Auto-flagged: high volatility, stale', marked_at = time::now(), marked_by = 'health' RETURN NONE;
+LET $stale = (SELECT id FROM kg_entities WHERE volatility = 'high' AND last_refreshed != NONE AND time::now() - last_refreshed > duration::days(90) AND marked_for = NONE LIMIT 100); UPDATE $stale SET marked_for = 'gemini', mark_type = 'research', mark_note = 'Auto-flagged: high volatility, stale', marked_at = time::now(), marked_by = 'health' RETURN NONE;

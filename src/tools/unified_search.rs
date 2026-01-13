@@ -736,7 +736,7 @@ fn sort_by_similarity(entities: &mut [serde_json::Value]) {
 // --- Forensic helpers ---
 async fn augment_with_forensics(
     server: &SurrealMindServer,
-    items: &mut Vec<serde_json::Value>,
+    items: &mut [serde_json::Value],
 ) -> Result<()> {
     for item in items.iter_mut() {
         if let Some(obj) = item.as_object_mut() {

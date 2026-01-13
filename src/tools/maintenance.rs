@@ -137,6 +137,7 @@ impl SurrealMindServer {
             "health_check_indexes" => self.handle_health_check_indexes(dry_run).await,
             "reembed" => self.handle_reembed(limit, dry_run).await,
             "reembed_kg" => self.handle_reembed_kg(limit, dry_run).await,
+            "embed_pending" => self.handle_embed_pending(limit, dry_run).await,
             "ensure_continuity_fields" => self.handle_ensure_continuity_fields(dry_run).await,
             "echo_config" => self.handle_echo_config().await,
             "corrections" => {
@@ -563,6 +564,27 @@ impl SurrealMindServer {
             report.insert(table.to_string(), table_stats);
         }
 
+        // Add pending embeddings count (graceful degradation feature)
+        let pending_query = r#"
+            SELECT count() AS c FROM thoughts 
+            WHERE embedding_status IN ['pending', 'failed'] 
+            GROUP ALL
+        "#;
+        let pending_res: Vec<serde_json::Value> = self.db.query(pending_query).await?.take(0)?;
+        let pending_count = pending_res
+            .first()
+            .and_then(|v| v.get("c"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+
+        report.insert(
+            "pending_embeddings".to_string(),
+            json!({
+                "count": pending_count,
+                "note": "Use 'maintain embed_pending' to retry these"
+            }),
+        );
+
         Ok(CallToolResult::structured(serde_json::Value::Object(
             report,
         )))
@@ -776,5 +798,126 @@ impl SurrealMindServer {
             "dry_run": dry_run
         });
         Ok(CallToolResult::structured(result))
+    }
+
+    /// Handle embed_pending: retry embedding for thoughts with pending/failed status
+    async fn handle_embed_pending(&self, limit: usize, dry_run: bool) -> Result<CallToolResult> {
+        let limit_val = if limit == 0 { 100 } else { limit };
+
+        // Query thoughts with pending or failed embedding status
+        // Note: SurrealDB 2.4+ requires ORDER BY fields in SELECT clause
+        let query = r#"
+            SELECT meta::id(id) AS id, content, created_at 
+            FROM thoughts 
+            WHERE embedding_status IN ['pending', 'failed'] 
+            ORDER BY created_at ASC 
+            LIMIT $limit;
+        "#;
+
+        let mut response = self
+            .db
+            .query(query)
+            .bind(("limit", limit_val as i64))
+            .await?;
+
+        let rows: Vec<serde_json::Value> = response.take(0)?;
+
+        if rows.is_empty() {
+            return Ok(CallToolResult::structured(json!({
+                "message": "No pending embeddings found",
+                "processed": 0,
+                "succeeded": 0,
+                "failed": 0,
+                "remaining": 0
+            })));
+        }
+
+        let mut processed = 0;
+        let mut succeeded = 0;
+        let mut failed = 0;
+
+        for row in &rows {
+            let id = row
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let content = row
+                .get("content")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+
+            if id.is_empty() || content.is_empty() {
+                continue;
+            }
+
+            processed += 1;
+
+            if dry_run {
+                tracing::info!(thought_id = %id, "Would embed (dry run)");
+                succeeded += 1;
+                continue;
+            }
+
+            // Attempt embedding
+            match self.embedder.embed(&content).await {
+                Ok(embedding) if !embedding.is_empty() => {
+                    // Update thought with embedding
+                    let update_query = r#"
+                        UPDATE type::thing('thoughts', $id) SET 
+                        embedding = $embedding,
+                        embedded_at = time::now(),
+                        embedding_status = 'complete'
+                        RETURN NONE;
+                    "#;
+
+                    if let Err(e) = self
+                        .db
+                        .query(update_query)
+                        .bind(("id", id.clone()))
+                        .bind(("embedding", embedding))
+                        .await
+                    {
+                        tracing::warn!(thought_id = %id, error = %e, "Failed to update thought with embedding");
+                        failed += 1;
+                    } else {
+                        tracing::info!(thought_id = %id, "Successfully embedded pending thought");
+                        succeeded += 1;
+                    }
+                }
+                Ok(_) => {
+                    tracing::warn!(thought_id = %id, "Embedding returned empty vector");
+                    failed += 1;
+                }
+                Err(e) => {
+                    tracing::warn!(thought_id = %id, error = %e, "Embedding failed");
+                    failed += 1;
+                }
+            }
+        }
+
+        // Count remaining pending
+        let count_query = r#"
+            SELECT count() AS cnt 
+            FROM thoughts 
+            WHERE embedding_status IN ['pending', 'failed'];
+        "#;
+        let mut count_response = self.db.query(count_query).await?;
+        let count_rows: Vec<serde_json::Value> = count_response.take(0)?;
+        let remaining = count_rows
+            .first()
+            .and_then(|r| r.get("cnt"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as usize;
+
+        Ok(CallToolResult::structured(json!({
+            "message": if dry_run { "Dry run complete" } else { "Embedding retry complete" },
+            "processed": processed,
+            "succeeded": succeeded,
+            "failed": failed,
+            "remaining": remaining.saturating_sub(succeeded),
+            "dry_run": dry_run
+        })))
     }
 }

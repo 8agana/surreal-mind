@@ -50,8 +50,8 @@ impl SurrealMindServer {
         let injection_scale_val = injection_scale.unwrap_or(1) as i64;
         let tags = tags.unwrap_or_default();
 
-        // Use ThoughtBuilder to create the thought
-        let (thought_id, embedding, resolved_continuity) =
+        // Use ThoughtBuilder to create the thought (graceful degradation)
+        let (thought_id, embedding, resolved_continuity, embedding_status) =
             ThoughtBuilder::new(self, content, "human")
                 .scale(Some(injection_scale_val as u8))
                 .tags(Some(tags.clone()))
@@ -107,9 +107,9 @@ impl SurrealMindServer {
                 .await?;
         }
 
-        // Memory injection (simple cosine similarity over recent thoughts)
-        let (mem_count, enriched) = self
-            .inject_memories(
+        // Memory injection - only if we have an embedding
+        let (mem_count, enriched) = if !embedding.is_empty() {
+            self.inject_memories(
                 &thought_id,
                 &embedding,
                 injection_scale_val,
@@ -117,9 +117,12 @@ impl SurrealMindServer {
                 Some("think_convo"),
             )
             .await
-            .unwrap_or((0, None));
+            .unwrap_or((0, None))
+        } else {
+            (0, None)
+        };
 
-        let original_result = json!({
+        let mut original_result = json!({
             "thought_id": thought_id.clone(),
             "embedding_model": self.get_embedding_metadata().1,
             "embedding_dim": self.embedder.dimensions(),
@@ -127,6 +130,14 @@ impl SurrealMindServer {
             "enriched_content": enriched,
             "framework_enhanced": framework_enhanced
         });
+
+        // Add embedding status warning if not complete
+        if embedding_status != "complete" {
+            original_result["embedding_status"] = json!(embedding_status);
+            original_result["embedding_warning"] = json!(
+                "Thought saved but embedding failed. Use 'maintain embed_pending' to retry later."
+            );
+        }
 
         Ok((original_result, resolved_continuity))
     }
@@ -167,8 +178,8 @@ impl SurrealMindServer {
         let injection_scale_val = injection_scale.unwrap_or(default_injection_scale) as i64;
         let tags = tags.unwrap_or_default();
 
-        // Use ThoughtBuilder
-        let (thought_id, embedding, resolved_continuity) =
+        // Use ThoughtBuilder (graceful degradation)
+        let (thought_id, embedding, resolved_continuity, embedding_status) =
             ThoughtBuilder::new(self, content, "tool")
                 .scale(Some(injection_scale_val as u8))
                 .tags(Some(tags.clone()))
@@ -219,9 +230,10 @@ impl SurrealMindServer {
                 .await?;
         }
 
+        // Memory injection - only if we have an embedding
         let tool_name = format!("think_{}", mode);
-        let (mem_count, enriched) = self
-            .inject_memories(
+        let (mem_count, enriched) = if !embedding.is_empty() {
+            self.inject_memories(
                 &thought_id,
                 &embedding,
                 injection_scale_val,
@@ -229,9 +241,12 @@ impl SurrealMindServer {
                 Some(&tool_name),
             )
             .await
-            .unwrap_or((0, None));
+            .unwrap_or((0, None))
+        } else {
+            (0, None)
+        };
 
-        let original_result = json!({
+        let mut original_result = json!({
             "thought_id": thought_id,
             "embedding_model": self.get_embedding_metadata().1,
             "embedding_dim": self.embedder.dimensions(),
@@ -239,6 +254,14 @@ impl SurrealMindServer {
             "enriched_content": enriched,
             "framework_enhanced": framework_enhanced
         });
+
+        // Add embedding status warning if not complete
+        if embedding_status != "complete" {
+            original_result["embedding_status"] = json!(embedding_status);
+            original_result["embedding_warning"] = json!(
+                "Thought saved but embedding failed. Use 'maintain embed_pending' to retry later."
+            );
+        }
 
         Ok((original_result, resolved_continuity))
     }

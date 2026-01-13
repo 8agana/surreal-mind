@@ -101,28 +101,14 @@ impl<'a> ThoughtBuilder<'a> {
         self
     }
 
-    /// Execute the build process: embed, resolve links, and create record
-    pub async fn execute(self) -> Result<(String, Vec<f32>, ContinuityResult)> {
+    /// Execute the build process: save first (graceful degradation), then embed
+    /// Returns (thought_id, embedding, continuity, embedding_status)
+    /// embedding_status is "complete", "pending", or "failed"
+    pub async fn execute(self) -> Result<(String, Vec<f32>, ContinuityResult, String)> {
         let thought_id = uuid::Uuid::new_v4().to_string();
         let (provider, model, dim) = self.server.get_embedding_metadata();
 
-        // Compute embedding
-        let embedding = self
-            .server
-            .embedder
-            .embed(&self.content)
-            .await
-            .map_err(|e| SurrealMindError::Embedding {
-                message: e.to_string(),
-            })?;
-
-        if embedding.is_empty() {
-            return Err(SurrealMindError::Embedding {
-                message: "Generated embedding is empty".into(),
-            });
-        }
-
-        // Resolve continuity links
+        // Resolve continuity links first (doesn't depend on embedding)
         let mut resolved_continuity = self
             .server
             .resolve_continuity_links(
@@ -136,14 +122,14 @@ impl<'a> ThoughtBuilder<'a> {
         resolved_continuity.chain_id = self.chain_id;
         resolved_continuity.confidence = self.confidence;
 
-        // Create thought with all fields
+        // SAVE FIRST with pending status - thought is never lost
         self.server
             .db
             .query(
                 "CREATE type::thing('thoughts', $id) CONTENT {
             content: $content,
             created_at: time::now(),
-            embedding: $embedding,
+            embedding: [],
             injected_memories: [],
             enriched_content: NONE,
             injection_scale: $injection_scale,
@@ -159,7 +145,8 @@ impl<'a> ThoughtBuilder<'a> {
             embedding_provider: $provider,
             embedding_model: $model,
             embedding_dim: $dim,
-            embedded_at: time::now(),
+            embedded_at: NONE,
+            embedding_status: 'pending',
             session_id: $session_id,
             chain_id: $chain_id,
             previous_thought_id: $previous_thought_id,
@@ -169,8 +156,7 @@ impl<'a> ThoughtBuilder<'a> {
         } RETURN NONE;",
             )
             .bind(("id", thought_id.clone()))
-            .bind(("content", self.content))
-            .bind(("embedding", embedding.clone()))
+            .bind(("content", self.content.clone()))
             .bind(("injection_scale", self.injection_scale))
             .bind(("significance", self.significance))
             .bind(("origin", self.origin))
@@ -192,7 +178,71 @@ impl<'a> ThoughtBuilder<'a> {
             .bind(("confidence", resolved_continuity.confidence))
             .await?;
 
-        Ok((thought_id, embedding, resolved_continuity))
+        // NOW attempt embedding - failure won't lose the thought
+        let embed_result = self.server.embedder.embed(&self.content).await;
+
+        match embed_result {
+            Ok(embedding) if !embedding.is_empty() => {
+                // Success - update with embedding and mark complete
+                self.server
+                    .db
+                    .query(
+                        "UPDATE type::thing('thoughts', $id) SET 
+                        embedding = $embedding,
+                        embedded_at = time::now(),
+                        embedding_status = 'complete'
+                        RETURN NONE;",
+                    )
+                    .bind(("id", thought_id.clone()))
+                    .bind(("embedding", embedding.clone()))
+                    .await?;
+
+                Ok((
+                    thought_id,
+                    embedding,
+                    resolved_continuity,
+                    "complete".to_string(),
+                ))
+            }
+            Ok(_) => {
+                // Empty embedding - mark as failed
+                tracing::warn!(
+                    thought_id = %thought_id,
+                    "Embedding returned empty vector, thought saved with pending status"
+                );
+                self.server
+                    .db
+                    .query(
+                        "UPDATE type::thing('thoughts', $id) SET 
+                        embedding_status = 'failed'
+                        RETURN NONE;",
+                    )
+                    .bind(("id", thought_id.clone()))
+                    .await?;
+
+                Ok((
+                    thought_id,
+                    vec![],
+                    resolved_continuity,
+                    "failed".to_string(),
+                ))
+            }
+            Err(e) => {
+                // Embedding failed - log warning but don't fail the operation
+                tracing::warn!(
+                    thought_id = %thought_id,
+                    error = %e,
+                    "Embedding failed, thought saved with pending status for later retry"
+                );
+
+                Ok((
+                    thought_id,
+                    vec![],
+                    resolved_continuity,
+                    "pending".to_string(),
+                ))
+            }
+        }
     }
 }
 

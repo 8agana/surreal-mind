@@ -77,17 +77,17 @@ impl SurrealMindServer {
         };
 
         // Optional: validate for_member when marks mode
-        if params.mode == "marks" {
-            if let Some(f) = &params.for_member {
-                let valid_targets = ["cc", "sam", "gemini", "dt", "gem"];
-                if !valid_targets.contains(&f.as_str()) {
-                    return Err(SurrealMindError::Validation {
-                        message: format!(
-                            "Invalid 'for' value: {}. Must be one of {:?}",
-                            f, valid_targets
-                        ),
-                    });
-                }
+        if params.mode == "marks"
+            && let Some(f) = &params.for_member
+        {
+            let valid_targets = ["cc", "sam", "gemini", "dt", "gem"];
+            if !valid_targets.contains(&f.as_str()) {
+                return Err(SurrealMindError::Validation {
+                    message: format!(
+                        "Invalid 'for' value: {}. Must be one of {:?}",
+                        f, valid_targets
+                    ),
+                });
             }
         }
 
