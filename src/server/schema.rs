@@ -16,7 +16,7 @@ impl SurrealMindServer {
             DEFINE TABLE thoughts SCHEMAFULL;
             DEFINE FIELD content ON TABLE thoughts TYPE string;
             DEFINE FIELD created_at ON TABLE thoughts TYPE datetime;
-            DEFINE FIELD embedding ON TABLE thoughts TYPE array<float>;
+            DEFINE FIELD OVERWRITE embedding ON TABLE thoughts TYPE option<array<float>>;
             DEFINE FIELD injected_memories ON TABLE thoughts TYPE array<string>;
             DEFINE FIELD enriched_content ON TABLE thoughts TYPE option<string>;
             DEFINE FIELD injection_scale ON TABLE thoughts TYPE int;

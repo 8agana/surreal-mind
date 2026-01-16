@@ -123,13 +123,13 @@ impl<'a> ThoughtBuilder<'a> {
         resolved_continuity.confidence = self.confidence;
 
         // SAVE FIRST with pending status - thought is never lost
-        self.server
+        let mut create_resp = self.server
             .db
             .query(
                 "CREATE type::thing('thoughts', $id) CONTENT {
             content: $content,
             created_at: time::now(),
-            embedding: [],
+            embedding: NONE,
             injected_memories: [],
             enriched_content: NONE,
             injection_scale: $injection_scale,
@@ -153,7 +153,7 @@ impl<'a> ThoughtBuilder<'a> {
             revises_thought: $revises_thought,
             branch_from: $branch_from,
             confidence: $confidence
-        } RETURN NONE;",
+        } RETURN meta::id(id) as id;",
             )
             .bind(("id", thought_id.clone()))
             .bind(("content", self.content.clone()))
@@ -177,6 +177,13 @@ impl<'a> ThoughtBuilder<'a> {
             .bind(("branch_from", resolved_continuity.branch_from.clone()))
             .bind(("confidence", resolved_continuity.confidence))
             .await?;
+
+        let created: Vec<serde_json::Value> = create_resp.take(0)?;
+        if created.is_empty() {
+            return Err(SurrealMindError::Internal {
+                message: "Thought create returned empty result".to_string(),
+            });
+        }
 
         // NOW attempt embedding - failure won't lose the thought
         let embed_result = self.server.embedder.embed(&self.content).await;

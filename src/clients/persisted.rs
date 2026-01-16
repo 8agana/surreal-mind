@@ -98,7 +98,7 @@ impl<A: CognitiveAgent> CognitiveAgent for PersistedAgent<A> {
             prompt.to_string()
         };
 
-        let mut response = self.agent.call(&prompt_to_send, None).await?;
+        let mut response = self.agent.call(&prompt_to_send, session_id).await?;
         let metadata = self.build_metadata(session_id);
 
         let sql = "CREATE agent_exchanges SET created_at = time::now(), agent_source = $arg_source, agent_instance = $instance, prompt = $prompt, response = $response, tool_name = $arg_tool, session_id = $arg_session, metadata = $metadata RETURN <string>id AS id;";
