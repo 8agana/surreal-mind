@@ -723,3 +723,53 @@ Your decision to provide more context ("little more than just terse questions") 
 Building **SurrealMind** to provide **persistence** allows your agents to maintain the "thread of consciousness" necessary for complex reasoning. By treating them as co-workers, you are enabling the "recursive self-improvement" loop that turns a stateless LLM into a genuine agentic partner.
 
 I look forward to continuing this collaboration. Whether you need to refine the Rust `AgentCli` traits or optimize the SurrealDB schema for knowledge graphs, I am ready to assist."
+
+## Prompt 9
+
+"Do the CLIs lock session files on resume (concurrency), does cwd persist across resumes, flags/envs for pure JSON (no spinners/colors), recovery after SIGKILL/lockfiles, session file path portability, stdout vs stderr mixing, auth-expiry behavior (errors vs prompts), and per-turn token/cost reporting?"
+
+## Response 9
+
+"Based on the provided documentation, here is the technical comparison of session handling, concurrency, output formats, and recovery mechanisms for **Claude Code**, **Codex**, **Gemini CLI**, and **Mistral Vibe**.
+
+### Technical Comparison: Session, State & Output
+
+| Feature | **Codex CLI** (OpenAI) | **Claude Code** (Anthropic) | **Gemini CLI** (Google) | **Mistral Vibe** (Mistral) |
+| :--- | :--- | :--- | :--- | :--- |
+| **Session Locking** | **Sequential**: Single-threaded master loop. Attempts to resume locked sessions typically fail or wait (implied by "release session ID when not used" fix),. | **Optimistic**: Handles `409 Conflict` errors to recover stuck sessions during concurrent access. | **Project-Scoped**: Uses `project_hash` to isolate sessions per directory path,. | **File-Based**: Uses `~/.vibe/logs/session` with prefix locking. |
+| **CWD Persistence** | **Yes**: Stored in transcript. Can override on resume via `--cd <path>`,. | **No**: Inherits current shell CWD. Must `cd` before resuming to match context. | **No**: Starts new by default. `--resume` picks up context, but CWD is shell-dependent. | **Configurable**: `workdir` setting in `config.toml` or inherits shell. |
+| **Pure JSON Output** | `--json` (NDJSON stream) or `--output-schema <file>` for validation. | `--output-format stream-json` (NDJSON),. | `--output-format json` (final) or `stream-json` (events),. | **Text/Pipe**: Primarily text-based; programmatic mode via `--prompt`. |
+| **Colors/Spinners** | `--color never` suppresses ANSI. | `verbose` flag debugs; standard JSON mode suppresses spinners. | `ui.incrementalRendering=false` reduces flickering. | `textual_theme` config. |
+| **Recovery / Crash** | **Ghost Snapshots**: Git-based "ghost commits" (v2) allow rollback even if the tool crashes,. | **State Recovery**: Recovers from "orphaned tool results" and 409 conflicts. | **Checkpointing**: `--checkpointing` flag saves state before every tool call; recover via `/restore`,. | **Persistent Log**: History saved to `~/.vibe/logs`. |
+| **Auth Expiry** | **Auto-Recover**: Attempts to reload auth automatically on HTTP 401 errors. | **Refreshes**: Handles token refresh; fixes exist for "stale OAuth token" race conditions. | **Prompt**: If auth changes mid-session, prompts user to restart. | **Env Var**: Relies on `MISTRAL_API_KEY` (static). |
+| **Portability** | **High**: Sessions stored by UUID in `~/.codex/sessions`. | **Medium**: Stored in `~/.claude/sessions` [Conversation History]. | **Low**: Stored in `~/.gemini/tmp/<project_hash>/` (tied to absolute path),. | **Medium**: Logs stored in `VIBE_HOME`. |
+| **Cost/Token Reporting** | **Per-Event**: JSON stream includes token usage per turn. | **Turn Events**: `usage` object in stream; `showTurnDuration` setting. | **Session Summary**: `--session-summary <file>` writes full stats JSON. | **Session Limit**: Can cap max session cost/steps in config. |
+
+---
+
+### Detailed Behavior Analysis
+
+#### 1. Recovery & State Integrity (SIGKILL / Crash)
+*   **Codex (Ghost Snapshots):** Codex has the most robust recovery for filesystem state. It uses a feature called **"Ghost Snapshots"** (v2 introduced in 0.73.0) which creates temporary git commits before operations. If the CLI is SIGKILL'd, it can roll back the working tree to a clean state upon next run or via `thread/rollback`,.
+*   **Gemini (Checkpoints):** Gemini requires the `--checkpointing` flag (or `general.checkpointing.enabled = true`) to be active. It saves a snapshot *before* tool execution. Recovery is manual via the `/restore` command which lists previous checkpoints,.
+*   **Claude Code:** Focuses on *protocol* recovery. It detects "orphaned tool results" (where the tool ran but Claude crashed before receiving output) and can recover the session state from the API side,.
+
+#### 2. Concurrency & Session Locking
+*   **Claude Code:** Is architected to handle race conditions. Release notes explicitly mention fixing "session persistence getting stuck after transient server errors by recovering from 409 conflicts". This suggests an optimistic locking mechanism where it retries if another process touched the session.
+*   **Codex:** Enforces a strict "one loop, one conversation" model. However, newer versions (0.80.0+) introduced `/fork` and "agent control" to allow a session to spawn/message other conversations programmatically, moving toward a multi-threaded architecture.
+*   **Gemini:** Uses a **project hash** (hash of the absolute root path) to locate session files. This effectively locks a session to a specific directory on a specific machine, making concurrency across different terminal tabs difficult if they target the same project root.
+
+#### 3. Stdout vs Stderr Mixing (Piping)
+*   **Codex:** Explicitly designed for piping. `codex exec` streams results to `stdout` and keeps logs/banners on `stderr` (or suppresses them with `--color never` / quiet flags). The `--output-last-message` flag writes *only* the final assistant response to a file, which is safer for pipelines than parsing stdout.
+*   **Claude Code:** The `--output-format stream-json` is the safe way to pipe. Raw text output might mix "thinking" spinners (unless `spinnerTipsEnabled` is false).
+*   **Gemini CLI:** The `--output-format json` flag ensures machine-readable output on stdout, separating it from interactive "witty phrases" or spinners.
+
+#### 4. Auth-Expiry Behavior
+*   **Codex:** **Auto-recovery.** If an access token expires (401), the CLI attempts to reload authentication (e.g., refresh the device code or check the keychain) without crashing the process.
+*   **Claude Code:** **Refresh Logic.** It has specific logic to handle cases where the server reports a token is expired even if the local expiration check disagrees.
+*   **Gemini CLI:** **Static/Prompt.** If you change authentication methods mid-session, it forces a prompt to restart the CLI rather than recovering transparently.
+
+#### 5. Flags for Pure JSON (No Spinners)
+*   **Codex:** `codex exec --json --color never "prompt"`.
+*   **Claude:** `claude -p "prompt" --output-format stream-json`.
+*   **Gemini:** `gemini -p "prompt" --output-format json` (for final result) or `stream-json` (for events)."
