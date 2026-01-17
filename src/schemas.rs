@@ -30,44 +30,46 @@ pub fn think_schema() -> Arc<Map<String, Value>> {
 }
 
 pub fn call_gem_schema() -> Arc<Map<String, Value>> {
+    // Read available models from env var (comma-separated) - REQUIRED
+    let models: Vec<Value> = std::env::var("GEMINI_MODELS")
+        .expect("GEMINI_MODELS env var required")
+        .split(',')
+        .map(|m| Value::String(m.trim().to_string()))
+        .collect();
+
+    let default_model = std::env::var("GEMINI_MODEL").expect("GEMINI_MODEL env var required");
+
     let schema = json!({
         "type": "object",
         "properties": {
             "prompt": {"type": "string"},
-            "task_name": {"type": "string"},
-            "model": {"type": "string"},
+            "task_name": {"type": "string", "default": "call_gem"},
+            "model": {
+                "type": "string",
+                "enum": models,
+                "default": default_model
+            },
             "cwd": {"type": "string"},
             "resume_session_id": {"type": "string"},
             "continue_latest": {"type": "boolean", "default": false},
-            "timeout_ms": {"type": "number"},
-            "tool_timeout_ms": {"type": "number"},
-            "expose_stream": {"type": "boolean"},
-            "fire_and_forget": {"type": "boolean", "default": false}
+            "timeout_ms": {"type": "number", "default": 60000},
+            "tool_timeout_ms": {"type": "number", "default": 300000},
+            "expose_stream": {"type": "boolean", "default": false}
         },
-        "required": ["prompt"]
+        "required": ["prompt", "cwd"]
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
 pub fn call_codex_schema() -> Arc<Map<String, Value>> {
-    // Read available models from env var (comma-separated) or use fallback
+    // Read available models from env var (comma-separated) - REQUIRED
     let models: Vec<Value> = std::env::var("CODEX_MODELS")
-        .map(|s| {
-            s.split(',')
-                .map(|m| Value::String(m.trim().to_string()))
-                .collect()
-        })
-        .unwrap_or_else(|_| {
-            vec![
-                Value::String("gpt-5.2-codex".to_string()),
-                Value::String("gpt-5.1-codex-max".to_string()),
-                Value::String("gpt-5.1-codex-mini".to_string()),
-                Value::String("gpt-5.2".to_string()),
-            ]
-        });
+        .expect("CODEX_MODELS env var required")
+        .split(',')
+        .map(|m| Value::String(m.trim().to_string()))
+        .collect();
 
-    let default_model =
-        std::env::var("CODEX_MODEL").unwrap_or_else(|_| "gpt-5.2-codex".to_string());
+    let default_model = std::env::var("CODEX_MODEL").expect("CODEX_MODEL env var required");
 
     let schema = json!({
         "type": "object",
@@ -86,6 +88,38 @@ pub fn call_codex_schema() -> Arc<Map<String, Value>> {
             "tool_timeout_ms": {"type": "number", "default": 300000},
             "expose_stream": {"type": "boolean", "default": false},
             "fire_and_forget": {"type": "boolean", "default": false}
+        },
+        "required": ["prompt", "cwd"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn call_cc_schema() -> Arc<Map<String, Value>> {
+    // Read available models from env var (comma-separated) - REQUIRED
+    let models: Vec<Value> = std::env::var("ANTHROPIC_MODELS")
+        .expect("ANTHROPIC_MODELS env var required")
+        .split(',')
+        .map(|m| Value::String(m.trim().to_string()))
+        .collect();
+
+    let default_model = std::env::var("ANTHROPIC_MODEL").expect("ANTHROPIC_MODEL env var required");
+
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "prompt": {"type": "string"},
+            "task_name": {"type": "string", "default": "call_cc"},
+            "model": {
+                "type": "string",
+                "enum": models,
+                "default": default_model
+            },
+            "cwd": {"type": "string"},
+            "resume_session_id": {"type": "string"},
+            "continue_latest": {"type": "boolean", "default": false},
+            "timeout_ms": {"type": "number", "default": 60000},
+            "tool_timeout_ms": {"type": "number", "default": 300000},
+            "expose_stream": {"type": "boolean", "default": false}
         },
         "required": ["prompt", "cwd"]
     });

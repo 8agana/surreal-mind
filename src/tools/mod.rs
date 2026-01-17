@@ -1,6 +1,7 @@
 //! Tool handlers for the surreal-mind MCP server
 
 pub mod agent_job_status;
+pub mod call_cc;
 pub mod call_codex;
 pub mod cancel_agent_job;
 pub mod corrections;

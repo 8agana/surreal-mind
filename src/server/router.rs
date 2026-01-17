@@ -66,6 +66,7 @@ impl ServerHandler for SurrealMindServer {
 
         let call_gem_schema = crate::schemas::call_gem_schema();
         let call_codex_schema = crate::schemas::call_codex_schema();
+        let call_cc_schema = crate::schemas::call_cc_schema();
         let call_status_schema = crate::schemas::call_status_schema();
         let call_jobs_schema = crate::schemas::call_jobs_schema();
         let call_cancel_schema = crate::schemas::call_cancel_schema();
@@ -173,6 +174,19 @@ impl ServerHandler for SurrealMindServer {
         });
 
         tools.push(Tool {
+            name: "call_cc".into(),
+            title: Some("Call Claude Code".into()),
+            description: Some(
+                "Delegate a task to Claude Code CLI with full context and tracking".into(),
+            ),
+            input_schema: call_cc_schema.clone(),
+            icons: None,
+            annotations: None,
+            output_schema: None,
+            meta: None,
+        });
+
+        tools.push(Tool {
             name: "search".into(),
             title: Some("Search".into()),
             description: Some("Unified search for entities, observations, and thoughts".into()),
@@ -255,6 +269,7 @@ impl ServerHandler for SurrealMindServer {
                 .await
                 .map_err(|e| e.into()),
             "call_codex" => self.handle_call_codex(request).await.map_err(|e| e.into()),
+            "call_cc" => self.handle_call_cc(request).await.map_err(|e| e.into()),
 
             "call_status" => self
                 .handle_agent_job_status(request)

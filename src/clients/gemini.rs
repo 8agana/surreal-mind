@@ -18,7 +18,7 @@ use crate::clients::traits::{AgentError, AgentResponse, CognitiveAgent};
 const STDERR_CAP_BYTES: usize = 10 * 1024;
 const DEFAULT_TIMEOUT_MS: u64 = 120_000; // 120s inactivity threshold
 const DEFAULT_TOOL_TIMEOUT_MS: u64 = 300_000; // 300s per-tool timeout
-const DEFAULT_MODEL: &str = "auto";
+const DEFAULT_MODEL: &str = "gemini-3-flash-preview";
 const ACTIVITY_CHECK_INTERVAL_MS: u64 = 1000; // Check activity every second
 
 /// Streaming JSON event types from Gemini CLI
