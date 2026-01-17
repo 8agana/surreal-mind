@@ -862,6 +862,7 @@ Test Results Summary:
 **Tester**: CC (Claude Code)
 **Date**: 2026-01-17
 **Environment**: Mac Studio, macOS Darwin 25.2.0
+**Status**: All core functionality tests are now passing
 
 **Pre-Flight Checks**:
 - [x] Codex CLI installed: `/opt/homebrew/bin/codex` v0.87.0
@@ -873,7 +874,7 @@ Test Results Summary:
 | 1 | Simple Prompt Execution | ✅ | FIXED: Now correctly routes to Codex CLI, returns file list + session_id |
 | 2 | Working Directory Flag | ✅ | Output shows correct directory `/Users/samuelatagana/Projects/LegacyMind/surreal-mind` |
 | 3 | Model Selection | ✅ | Model parameter correctly passed to CLI |
-| 4 | Session Persistence | ❌ | resume_session_id has bug; --skip-git-repo-check flag positioned incorrectly for resume subcommand |
+| 4 | Session Persistence | ✅ | Session persistence works - resumed session correctly recalls context |
 | 5 | Reset Session | ✅ | Each new call starts fresh session (implicit reset works) |
 | 6 | call_status | N/A | Async job tracking removed from implementation |
 | 7 | call_jobs Listing | N/A | Async job tracking removed from implementation |
@@ -896,7 +897,7 @@ Test Results Summary:
 1. ~~**BLOCKER: Wrong CLI invoked**~~ - **RESOLVED 2026-01-17** - Routing bug fixed, now correctly invokes Codex CLI
    - Original Job ID: a94d1c8a-feaf-4b95-a228-768be26db5ac (failed)
    - Fixed Job ID: 75a1bc6c-e412-459e-8711-8971066cac63 (completed successfully)
-2. **resume_session_id bug** - --skip-git-repo-check flag passed incorrectly when using resume subcommand
+2. ~~**resume_session_id bug**~~ - **RESOLVED 2026-01-17** - Flag ordering issue (exec-level flags like --color, --json, --skip-git-repo-check must come after `exec` but before `resume`)
 
 **Non-Critical Issues Found**:
 1. **Response not surfaced in call_status** - call_status returns `response: null` even for completed jobs

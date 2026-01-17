@@ -137,14 +137,7 @@ impl SurrealMindServer {
                 message: e.message.to_string(),
             })?;
 
-        if server.config.runtime.transport == "http" {
-            let db = server.db.clone();
-            let semaphore = server.job_semaphore.clone();
-            tokio::spawn(async move {
-                crate::tools::delegate_gemini::run_delegate_gemini_worker(db, semaphore).await;
-            });
-            // Note: call_codex is now synchronous - no background worker needed
-        }
+        // Note: Both call_codex and call_gem are now synchronous - no background workers needed
 
         Ok(server)
     }

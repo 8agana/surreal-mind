@@ -82,40 +82,45 @@ impl CodexClient {
             cmd.env("TOOL_TIMEOUT_SEC", timeout_sec.to_string());
         }
 
-        // Correct CLI ordering (v0.79.0+):
-        // New session:   codex exec --skip-git-repo-check "PROMPT" [FLAGS]
-        // Resume by ID:  codex exec resume <SESSION_ID> "PROMPT" [FLAGS]
-        // Resume latest: codex exec resume --last "PROMPT" [FLAGS]
+        // CLI Command Structure (NBLM recommendation):
+        // Global flags (like --skip-git-repo-check, --json) go BEFORE the subcommand
+        // Resume-specific handling after that
+        //
+        // New session:   codex exec --skip-git-repo-check --json --color never --model X --full-auto [--cd DIR] "PROMPT"
+        // Resume:        codex exec --skip-git-repo-check --json --dangerously-bypass-approvals-and-sandbox resume <SESSION_ID|--last> "PROMPT"
 
         cmd.arg("exec");
 
+        // Global flags that apply to all modes
+        cmd.arg("--skip-git-repo-check").arg("--json");
+
         let is_resume = self.resume_session_id.is_some() || self.continue_latest;
 
-        if let Some(ref session) = self.resume_session_id {
-            cmd.arg("resume").arg(session);
-        } else if self.continue_latest {
-            cmd.arg("resume").arg("--last");
+        if is_resume {
+            // Resume mode: add safety bypass BEFORE resume subcommand
+            cmd.arg("--dangerously-bypass-approvals-and-sandbox")
+                .arg("resume");
+
+            if let Some(ref session) = self.resume_session_id {
+                cmd.arg(session);
+            } else if self.continue_latest {
+                cmd.arg("--last");
+            }
+
+            cmd.arg(prompt);
         } else {
-            // Only for new sessions, not resume
-            cmd.arg("--skip-git-repo-check");
-        }
+            // New session mode: additional flags
+            cmd.arg("--color")
+                .arg("never")
+                .arg("--model")
+                .arg(&self.model)
+                .arg("--full-auto");
 
-        // Prompt comes before flags
-        cmd.arg(prompt);
-
-        // Flags at the end (supported since v0.79.0 for resume)
-        cmd.arg("--json")
-            .arg("--color")
-            .arg("never")
-            .arg("--model")
-            .arg(&self.model);
-
-        // --full-auto and --cd only for new sessions
-        if !is_resume {
-            cmd.arg("--full-auto");
             if let Some(ref cwd) = self.cwd {
                 cmd.arg("--cd").arg(cwd);
             }
+
+            cmd.arg(prompt);
         }
 
         let output = cmd.output().await.map_err(map_spawn_err)?;

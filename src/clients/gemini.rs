@@ -310,7 +310,13 @@ impl CognitiveAgent for GeminiClient {
             .arg("--output-format")
             .arg("stream-json");
         if let Some(sid) = session_id {
-            cmd.arg("--resume").arg(sid);
+            if sid.is_empty() {
+                // Empty string = continue latest: just use --resume without ID
+                cmd.arg("--resume");
+            } else {
+                // Specific session ID
+                cmd.arg("--resume").arg(sid);
+            }
         }
         cmd.arg(prompt);
         if let Some(ref dir) = self.cwd {

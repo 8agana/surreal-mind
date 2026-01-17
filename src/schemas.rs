@@ -37,6 +37,8 @@ pub fn call_gem_schema() -> Arc<Map<String, Value>> {
             "task_name": {"type": "string"},
             "model": {"type": "string"},
             "cwd": {"type": "string"},
+            "resume_session_id": {"type": "string"},
+            "continue_latest": {"type": "boolean", "default": false},
             "timeout_ms": {"type": "number"},
             "tool_timeout_ms": {"type": "number"},
             "expose_stream": {"type": "boolean"},
