@@ -121,3 +121,11 @@ We have successfully separated the *Business Logic* (Photography, Skaters, Order
 - [ ] **Review Integration:** (Deferred) Consider creating a "Review Mode" for `wander` only if manual oversight becomes necessary again.
 - [ ] **Maintenance:** Continue to monitor `kg_wander` logs for semantic drift.
 - [ ] **Backlog Absorption:** Migrate backlog functionality into surreal-mind to eliminate external dependency.
+
+
+# Universal Vibe System Integration
+# Auto-added by vibe-cli
+
+**CRITICAL**: Before starting any task, you MUST read ALL markdown files in the `vibe/` directory and enforce them according to their frontmatter configuration.
+
+[Rest of proven configuration...]
