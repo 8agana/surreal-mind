@@ -872,23 +872,23 @@ Test Results Summary:
 |---------|-----------|--------|-------|
 | 1 | Simple Prompt Execution | ✅ | FIXED: Now correctly routes to Codex CLI, returns file list + session_id |
 | 2 | Working Directory Flag | ✅ | Output shows correct directory `/Users/samuelatagana/Projects/LegacyMind/surreal-mind` |
-| 3 | Model Selection | ⏳ | Not tested yet |
-| 4 | Session Persistence | ⏳ | Not tested yet |
-| 5 | Reset Session | ⏳ | Not tested yet |
-| 6 | call_status | ✅ | Returns job details with timestamps, metadata |
-| 7 | call_jobs Listing | ✅ | Returns list with all required fields (job_id, status, tool_name, timestamps) |
-| 8 | call_jobs Filtering | ✅ | Respects status_filter and limit params |
-| 9 | call_cancel | ⏳ | Not tested yet |
-| 10 | Sandbox Mode | ⏳ | Not tested yet |
-| 11 | Full Auto Mode | ⏳ | Not tested yet |
-| 12 | Reasoning Effort | ⏳ | Not tested yet |
+| 3 | Model Selection | ✅ | Model parameter correctly passed to CLI |
+| 4 | Session Persistence | ❌ | resume_session_id has bug; --skip-git-repo-check flag positioned incorrectly for resume subcommand |
+| 5 | Reset Session | ✅ | Each new call starts fresh session (implicit reset works) |
+| 6 | call_status | N/A | Async job tracking removed from implementation |
+| 7 | call_jobs Listing | N/A | Async job tracking removed from implementation |
+| 8 | call_jobs Filtering | N/A | Async job tracking removed from implementation |
+| 9 | call_cancel | N/A | Async job tracking removed from implementation |
+| 10 | Sandbox Mode | N/A | Sandbox/fullAuto/reasoningEffort parameters not yet implemented |
+| 11 | Full Auto Mode | N/A | Sandbox/fullAuto/reasoningEffort parameters not yet implemented |
+| 12 | Reasoning Effort | N/A | Sandbox/fullAuto/reasoningEffort parameters not yet implemented |
 | 13 | Missing Required Parameter | ✅ | Schema validation works: "Invalid parameters: missing field `prompt`" |
-| 14 | Invalid Enum Value | ⏳ | |
+| 14 | Invalid Enum Value | N/A | Sandbox parameter not yet implemented |
 | 15 | Codex CLI Not Found | ⏳ | |
 | 16 | Authentication Failure | ⏳ | |
-| 17 | JSON Output | ⏳ | Not tested yet |
-| 18 | Multiline Output | ⏳ | Not tested yet |
-| 19 | Large Output Handling | ⏳ | Not tested yet |
+| 17 | JSON Output | ✅ | JSON structure preserved correctly |
+| 18 | Multiline Output | ✅ | Newlines preserved correctly |
+| 19 | Large Output Handling | ✅ | 100 lines captured without truncation |
 
 **Legend**: ✅ Pass | ❌ Fail | ⏳ Pending | ⚠️ Partial
 
@@ -896,6 +896,7 @@ Test Results Summary:
 1. ~~**BLOCKER: Wrong CLI invoked**~~ - **RESOLVED 2026-01-17** - Routing bug fixed, now correctly invokes Codex CLI
    - Original Job ID: a94d1c8a-feaf-4b95-a228-768be26db5ac (failed)
    - Fixed Job ID: 75a1bc6c-e412-459e-8711-8971066cac63 (completed successfully)
+2. **resume_session_id bug** - --skip-git-repo-check flag passed incorrectly when using resume subcommand
 
 **Non-Critical Issues Found**:
 1. **Response not surfaced in call_status** - call_status returns `response: null` even for completed jobs
@@ -1008,5 +1009,5 @@ export CODEX_DEFAULT_MODEL="gpt-4o"
 
 ---
 
-**Document Status**: Draft - Ready for Implementation Phase
+**Document Status**: Testing In Progress (2026-01-17)
 **Approval Status**: Awaiting Review by CC/Sam

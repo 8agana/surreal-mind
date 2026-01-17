@@ -48,12 +48,35 @@ pub fn call_gem_schema() -> Arc<Map<String, Value>> {
 }
 
 pub fn call_codex_schema() -> Arc<Map<String, Value>> {
+    // Read available models from env var (comma-separated) or use fallback
+    let models: Vec<Value> = std::env::var("CODEX_MODELS")
+        .map(|s| {
+            s.split(',')
+                .map(|m| Value::String(m.trim().to_string()))
+                .collect()
+        })
+        .unwrap_or_else(|_| {
+            vec![
+                Value::String("gpt-5.2-codex".to_string()),
+                Value::String("gpt-5.1-codex-max".to_string()),
+                Value::String("gpt-5.1-codex-mini".to_string()),
+                Value::String("gpt-5.2".to_string()),
+            ]
+        });
+
+    let default_model =
+        std::env::var("CODEX_MODEL").unwrap_or_else(|_| "gpt-5.2-codex".to_string());
+
     let schema = json!({
         "type": "object",
         "properties": {
             "prompt": {"type": "string"},
             "task_name": {"type": "string", "default": "call_codex"},
-            "model": {"type": "string", "default": "gpt-5.2-codex"},
+            "model": {
+                "type": "string",
+                "enum": models,
+                "default": default_model
+            },
             "cwd": {"type": "string"},
             "resume_session_id": {"type": "string"},
             "continue_latest": {"type": "boolean", "default": false},

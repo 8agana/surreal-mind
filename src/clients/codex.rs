@@ -7,7 +7,12 @@ use tokio::process::Command;
 
 use crate::clients::traits::{AgentError, AgentResponse, CognitiveAgent};
 
-const DEFAULT_MODEL: &str = "gpt-5.2-codex";
+const FALLBACK_MODEL: &str = "gpt-5.2-codex";
+
+/// Get default Codex model from CODEX_MODEL env var, fallback to gpt-5.2-codex
+fn get_default_model() -> String {
+    std::env::var("CODEX_MODEL").unwrap_or_else(|_| FALLBACK_MODEL.to_string())
+}
 
 #[derive(Debug, Clone)]
 pub struct CodexClient {
@@ -31,7 +36,7 @@ pub struct CodexExecution {
 impl CodexClient {
     pub fn new(model: Option<String>) -> Self {
         Self {
-            model: model.unwrap_or_else(|| DEFAULT_MODEL.to_string()),
+            model: model.unwrap_or_else(get_default_model),
             cwd: None,
             resume_session_id: None,
             continue_latest: false,
@@ -77,26 +82,41 @@ impl CodexClient {
             cmd.env("TOOL_TIMEOUT_SEC", timeout_sec.to_string());
         }
 
-        if let Some(ref resume) = self.resume_session_id {
-            cmd.arg("resume").arg(resume);
+        // Correct CLI ordering (v0.79.0+):
+        // New session:   codex exec --skip-git-repo-check "PROMPT" [FLAGS]
+        // Resume by ID:  codex exec resume <SESSION_ID> "PROMPT" [FLAGS]
+        // Resume latest: codex exec resume --last "PROMPT" [FLAGS]
+
+        cmd.arg("exec");
+
+        let is_resume = self.resume_session_id.is_some() || self.continue_latest;
+
+        if let Some(ref session) = self.resume_session_id {
+            cmd.arg("resume").arg(session);
         } else if self.continue_latest {
             cmd.arg("resume").arg("--last");
+        } else {
+            // Only for new sessions, not resume
+            cmd.arg("--skip-git-repo-check");
         }
 
-        cmd.arg("exec")
-            .arg("--skip-git-repo-check")
-            .arg("--json")
+        // Prompt comes before flags
+        cmd.arg(prompt);
+
+        // Flags at the end (supported since v0.79.0 for resume)
+        cmd.arg("--json")
             .arg("--color")
             .arg("never")
             .arg("--model")
-            .arg(&self.model)
-            .arg("--full-auto");
+            .arg(&self.model);
 
-        if let Some(ref cwd) = self.cwd {
-            cmd.arg("--cd").arg(cwd);
+        // --full-auto and --cd only for new sessions
+        if !is_resume {
+            cmd.arg("--full-auto");
+            if let Some(ref cwd) = self.cwd {
+                cmd.arg("--cd").arg(cwd);
+            }
         }
-
-        cmd.arg(prompt);
 
         let output = cmd.output().await.map_err(map_spawn_err)?;
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();

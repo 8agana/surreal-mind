@@ -7,9 +7,14 @@ use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-const DEFAULT_MODEL: &str = "gpt-5.2-codex";
+const FALLBACK_MODEL: &str = "gpt-5.2-codex";
 const DEFAULT_TIMEOUT_MS: u64 = 60_000;
 const DEFAULT_TOOL_TIMEOUT_MS: u64 = 300_000;
+
+/// Get default Codex model from CODEX_MODEL env var, fallback to gpt-5.2-codex
+fn get_default_model() -> String {
+    std::env::var("CODEX_MODEL").unwrap_or_else(|_| FALLBACK_MODEL.to_string())
+}
 
 /// Parameters for the call_codex tool
 #[derive(Debug, Deserialize)]
@@ -75,8 +80,7 @@ impl SurrealMindServer {
 
         let _task_name =
             normalize_optional_string(params.task_name).unwrap_or_else(|| "call_codex".to_string());
-        let model =
-            normalize_optional_string(params.model).unwrap_or_else(|| DEFAULT_MODEL.to_string());
+        let model = normalize_optional_string(params.model).unwrap_or_else(get_default_model);
         let timeout_ms = params.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
         let tool_timeout_ms = params.tool_timeout_ms.unwrap_or(DEFAULT_TOOL_TIMEOUT_MS);
 
@@ -148,7 +152,7 @@ mod tests {
 
     #[test]
     fn test_codex_defaults() {
-        assert_eq!(DEFAULT_MODEL, "gpt-5.2-codex");
+        assert_eq!(FALLBACK_MODEL, "gpt-5.2-codex");
         assert_eq!(DEFAULT_TIMEOUT_MS, 60_000);
         assert_eq!(DEFAULT_TOOL_TIMEOUT_MS, 300_000);
     }
