@@ -496,3 +496,19 @@ vibe --prompt "Refactor utils.py" --auto-approve
 2.  **JSON Output:** **Claude** and **Gemini** distinguish between "stream" (NDJSON events) and "json" (final block). **Codex** uses `--json` for an event stream.
 3.  **Resume Behavior:** **Gemini** and **Claude** default to *new* sessions. **Codex** has a specific `--resume --last` shortcut for immediate continuation.
 4.  **Timeouts:** **Gemini** offers the most granular timeout control (per tool/MCP server) via its `settings.json`."
+
+## Prompt 6
+
+"What environment variables must be set or inherited for each CLI (Claude Code, Codex, Gemini, Vibe) to function in a subprocess? Include API keys, config directories, auth tokens, and any variables that affect headless behavior."
+
+## Response 6
+
+*Pending*
+
+## Prompt 7
+
+"How do the existing MCP wrapper implementations handle different execution 'modes' for the same CLI - for example, a standard query mode vs a brainstorm/creative mode vs a code review mode? What patterns exist for exposing mode selection to the LLM?"
+
+## Response 7
+
+*Pending*
