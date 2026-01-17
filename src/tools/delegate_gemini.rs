@@ -1,7 +1,7 @@
 //! delegate_gemini tool handler to call Gemini CLI with persistence
 
 use crate::clients::traits::CognitiveAgent;
-use crate::clients::{AgentError, GeminiClient, PersistedAgent};
+use crate::clients::{AgentError, GeminiClient};
 use crate::error::{Result, SurrealMindError};
 use crate::registry;
 use crate::server::SurrealMindServer;
@@ -553,15 +553,7 @@ async fn execute_gemini_call(
         gemini = gemini.with_expose_stream(true);
     }
 
-    let agent = PersistedAgent::new(
-        gemini,
-        db.clone(),
-        "gemini",
-        model,
-        params.task_name.to_string(),
-    );
-
-    agent.call(params.prompt, resume_session.as_deref()).await
+    gemini.call(params.prompt, resume_session.as_deref()).await
 }
 
 #[cfg(test)]

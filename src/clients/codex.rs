@@ -84,6 +84,7 @@ impl CodexClient {
         }
 
         cmd.arg("exec")
+            .arg("--skip-git-repo-check")
             .arg("--json")
             .arg("--color")
             .arg("never")
@@ -205,6 +206,7 @@ fn parse_codex_ndjson(stdout: &str) -> (Option<String>, String, Vec<Value>) {
                     session_id = event
                         .get("session_id")
                         .and_then(|v| v.as_str())
+                        .or_else(|| event.get("thread_id").and_then(|v| v.as_str()))
                         .map(|s| s.to_string());
                 }
                 if let Some(text) = extract_response_text(&event) {
@@ -222,6 +224,20 @@ fn parse_codex_ndjson(stdout: &str) -> (Option<String>, String, Vec<Value>) {
 }
 
 fn extract_response_text(event: &Value) -> Option<&str> {
+    // Codex-specific: item.aggregated_output for command results
+    if let Some(item) = event.get("item") {
+        if let Some(output) = item.get("aggregated_output").and_then(|v| v.as_str()) {
+            if !output.is_empty() {
+                return Some(output);
+            }
+        }
+        // Also check for reasoning text in item
+        if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
+            return Some(text);
+        }
+    }
+
+    // Generic fallbacks
     event
         .get("content")
         .and_then(|v| v.as_str())

@@ -870,38 +870,37 @@ Test Results Summary:
 
 | Test ID | Test Name | Status | Notes |
 |---------|-----------|--------|-------|
-| 1 | Simple Prompt Execution | ❌ | CRITICAL: Routing to Gemini CLI instead of Codex CLI |
-| 2 | Working Directory Flag | ⏳ | Blocked by Test 1 failure |
-| 3 | Model Selection | ⏳ | Blocked by Test 1 failure |
-| 4 | Session Persistence | ⏳ | Blocked by Test 1 failure |
-| 5 | Reset Session | ⏳ | Blocked by Test 1 failure |
-| 6 | call_status | ✅ | Returns job details correctly |
-| 7 | call_jobs Listing | ✅ | Returns list with all required fields |
+| 1 | Simple Prompt Execution | ✅ | FIXED: Now correctly routes to Codex CLI, returns file list + session_id |
+| 2 | Working Directory Flag | ✅ | Output shows correct directory `/Users/samuelatagana/Projects/LegacyMind/surreal-mind` |
+| 3 | Model Selection | ⏳ | Not tested yet |
+| 4 | Session Persistence | ⏳ | Not tested yet |
+| 5 | Reset Session | ⏳ | Not tested yet |
+| 6 | call_status | ✅ | Returns job details with timestamps, metadata |
+| 7 | call_jobs Listing | ✅ | Returns list with all required fields (job_id, status, tool_name, timestamps) |
 | 8 | call_jobs Filtering | ✅ | Respects status_filter and limit params |
-| 9 | call_cancel | ⏳ | Blocked by Test 1 failure |
-| 10 | Sandbox Mode | ⏳ | Blocked by Test 1 failure |
-| 11 | Full Auto Mode | ⏳ | Blocked by Test 1 failure |
-| 12 | Reasoning Effort | ⏳ | Blocked by Test 1 failure |
-| 13 | Missing Required Parameter | ✅ | Schema validation works, clear error message |
+| 9 | call_cancel | ⏳ | Not tested yet |
+| 10 | Sandbox Mode | ⏳ | Not tested yet |
+| 11 | Full Auto Mode | ⏳ | Not tested yet |
+| 12 | Reasoning Effort | ⏳ | Not tested yet |
+| 13 | Missing Required Parameter | ✅ | Schema validation works: "Invalid parameters: missing field `prompt`" |
 | 14 | Invalid Enum Value | ⏳ | |
 | 15 | Codex CLI Not Found | ⏳ | |
 | 16 | Authentication Failure | ⏳ | |
-| 17 | JSON Output | ⏳ | Blocked by Test 1 failure |
-| 18 | Multiline Output | ⏳ | Blocked by Test 1 failure |
-| 19 | Large Output Handling | ⏳ | Blocked by Test 1 failure |
+| 17 | JSON Output | ⏳ | Not tested yet |
+| 18 | Multiline Output | ⏳ | Not tested yet |
+| 19 | Large Output Handling | ⏳ | Not tested yet |
 
 **Legend**: ✅ Pass | ❌ Fail | ⏳ Pending | ⚠️ Partial
 
 **Critical Issues Found**:
-1. **BLOCKER: Wrong CLI invoked** - call_codex is calling Gemini CLI instead of Codex CLI
-   - Job ID: a94d1c8a-feaf-4b95-a228-768be26db5ac
-   - Error: `gemini exit exit status: 1`
-   - Root cause: Implementation appears to use GeminiClient instead of CodexClient
+1. ~~**BLOCKER: Wrong CLI invoked**~~ - **RESOLVED 2026-01-17** - Routing bug fixed, now correctly invokes Codex CLI
+   - Original Job ID: a94d1c8a-feaf-4b95-a228-768be26db5ac (failed)
+   - Fixed Job ID: 75a1bc6c-e412-459e-8711-8971066cac63 (completed successfully)
 
 **Non-Critical Issues Found**:
-1. **Response not surfaced in call_status** - Earlier test (job 5873571d) completed but metadata:{} empty
-   - Response content not visible via call_status
-   - May need to query agent_exchanges table directly
+1. **Response not surfaced in call_status** - call_status returns `response: null` even for completed jobs
+   - Response content stored in session but not in job record
+   - Workaround: Use response from initial call_codex return value
 
 ---
 
