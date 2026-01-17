@@ -491,7 +491,7 @@ pub async fn run_delegate_gemini_worker(
 async fn claim_next_job(db: &Surreal<WsClient>) -> Result<Option<QueuedJobRow>> {
     let mut response = db
         .query(
-            "SELECT job_id, created_at FROM agent_jobs WHERE status = 'queued' AND type::is::string(prompt) AND prompt != '' ORDER BY created_at ASC LIMIT 1;",
+            "SELECT job_id, created_at FROM agent_jobs WHERE status = 'queued' AND tool_name = 'delegate_gemini' AND type::is::string(prompt) AND prompt != '' ORDER BY created_at ASC LIMIT 1;",
         )
         .await?;
     let rows: Vec<QueuedJobIdRow> = response.take(0)?;
@@ -501,7 +501,7 @@ async fn claim_next_job(db: &Surreal<WsClient>) -> Result<Option<QueuedJobRow>> 
 
     let mut response = db
         .query(
-            "UPDATE agent_jobs SET status = 'running', started_at = time::now() WHERE job_id = $job_id AND status = 'queued' AND type::is::string(prompt) AND prompt != '' RETURN job_id, prompt, task_name, model_override, cwd, timeout_ms, tool_timeout_ms, expose_stream;",
+            "UPDATE agent_jobs SET status = 'running', started_at = time::now() WHERE job_id = $job_id AND status = 'queued' AND tool_name = 'delegate_gemini' AND type::is::string(prompt) AND prompt != '' RETURN job_id, prompt, task_name, model_override, cwd, timeout_ms, tool_timeout_ms, expose_stream;",
         )
         .bind(("job_id", row.job_id.clone()))
         .await?;
