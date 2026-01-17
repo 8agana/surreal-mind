@@ -503,7 +503,77 @@ vibe --prompt "Refactor utils.py" --auto-approve
 
 ## Response 6
 
-*Pending*
+"Based on the provided sources, here are the environment variables required for **Claude Code**, **Codex**, **Gemini CLI**, and **Mistral Vibe** to function correctly in a subprocess, covering authentication, configuration, and headless behavior.
+
+### 1. Claude Code (Anthropic)
+To run Claude Code non-interactively or in a constrained environment (like a container), you must set credentials and potentially override configuration paths to avoid conflicts with global user settings.
+
+| Category | Variable | Description |
+| :--- | :--- | :--- |
+| **Authentication** | `ANTHROPIC_API_KEY` | The primary API key sent as `X-Api-Key`. Required for the SDK or headless login. |
+| | `ANTHROPIC_AUTH_TOKEN` | Custom bearer token (prefixed with `Bearer`). Useful for 3rd-party gateways,. |
+| | `CLAUDE_CODE_USE_BEDROCK=1` | Enables Amazon Bedrock authentication (requires AWS credentials),. |
+| | `CLAUDE_CODE_USE_VERTEX=1` | Enables Google Vertex AI authentication (requires Google Cloud credentials),. |
+| **Configuration** | `CLAUDE_CONFIG_DIR` | Overrides the location where Claude Code stores data and configuration (defaults to `~/.claude`). Essential for isolating subprocess state. |
+| **Headless/Behavior** | `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` | Disables auto-backgrounding and the `Ctrl+B` shortcut, which can interfere with subprocess piping. |
+| | `CLAUDE_CODE_SHELL_PREFIX` | Wraps all bash commands (e.g., set to `/usr/bin/auditor` to log every command executed by the agent). |
+| | `CLAUDE_ENV_FILE` | Path to a shell script sourced before every bash command. Use this to persist environment variables (like `venv` activation) across the agent's stateless shell execution. |
+| | `DISABLE_TELEMETRY=1` | Opts out of Statsig telemetry data collection. |
+| | `DISABLE_AUTOUPDATER=1` | Prevents the tool from attempting to update itself during a subprocess run. |
+| **Network** | `NO_PROXY`, `HTTP_PROXY`, `HTTPS_PROXY` | Standard proxy configuration. Critical for enterprise networks,. |
+| | `CLAUDE_CODE_CLIENT_CERT` | Path to client certificate for mTLS authentication. |
+
+---
+
+### 2. Codex CLI (OpenAI)
+Codex relies on standard OpenAI credentials but introduces specific variables for SDK path resolution and telemetry.
+
+| Category | Variable | Description |
+| :--- | :--- | :--- |
+| **Authentication** | `OPENAI_API_KEY` | The standard API key. If set, the CLI uses this instead of browser-based login,. |
+| | `CODEX_API_KEY` | Preferred by the Codex SDK; forwarded to the CLI subprocess as `OPENAI_API_KEY`. |
+| **Configuration** | `CODEX_HOME` | Overrides the user's personal folder (defaults to `~/.codex`) where `config.toml` and sessions are stored,. |
+| | `VISUAL` or `EDITOR` | Determines the external editor opened by `Ctrl+G`. Less relevant for headless, but good for interactive subprocesses. |
+| **Headless/Behavior** | `CODEX_PATH` | Explicitly points the SDK to a specific `codex` binary executable. |
+| | `CODEX_OTLP_ENABLE=1` | Enables OpenTelemetry exporting for observability. |
+| | `CODEX_OTLP_ENDPOINT` | Sets the destination URL for OTLP traces. |
+
+---
+
+### 3. Gemini CLI (Google)
+Gemini CLI has the most extensive set of environment variables, allowing for granular control over authentication (Google vs. Vertex AI) and system-wide settings enforcement.
+
+| Category | Variable | Description |
+| :--- | :--- | :--- |
+| **Authentication** | `GEMINI_API_KEY` | The simplest auth method. Required for non-interactive mode if not using cached credentials,. |
+| | `GOOGLE_API_KEY` | Required for Vertex AI "Express Mode". |
+| | `GOOGLE_APPLICATION_CREDENTIALS` | Path to a Service Account JSON key. Essential for CI/CD or headless Vertex AI usage,. |
+| **Configuration** | `GEMINI_CLI_SYSTEM_SETTINGS_PATH` | Overrides the system-wide settings file location (e.g., `/etc/gemini-cli/settings.json`). Useful for enforcing enterprise policy via wrapper scripts,. |
+| | `GOOGLE_CLOUD_PROJECT` | Required for Vertex AI or enterprise usage to define the billing project,. |
+| | `GOOGLE_CLOUD_LOCATION` | Required for Vertex AI (non-express) to define the region (e.g., `us-central1`),. |
+| **Headless/Behavior** | `GEMINI_MODEL` | Sets the default model (e.g., `gemini-2.5-flash`), overriding hardcoded defaults. |
+| | `GEMINI_SANDBOX` | Enables/configures sandboxing (accepts `true`, `docker`, `podman`). Critical for safe subprocess execution. |
+| | `GEMINI_SYSTEM_MD` | Path to a Markdown file to replace the built-in system prompt. Use `1` to load from `~/.gemini/system.md`,. |
+| | `GEMINI_TELEMETRY_ENABLED=1` | Force-enables telemetry collection. |
+| | `BUILD_SANDBOX=1` | Instructs the CLI to automatically build a custom sandbox image if a `sandbox.Dockerfile` exists. |
+
+---
+
+### 4. Mistral Vibe (Mistral AI)
+Vibe uses a centralized home directory variable to manage all configuration, logs, and agent definitions.
+
+| Category | Variable | Description |
+| :--- | :--- | :--- |
+| **Authentication** | `MISTRAL_API_KEY` | The primary API key for Mistral services. Overrides keys stored in `.env`,. |
+| | `OPENROUTER_API_KEY` | Required if you configure the CLI to use OpenRouter as a provider. |
+| **Configuration** | `VIBE_HOME` | Defines the root directory for configuration (`config.toml`), logs, and custom agents. Defaults to `~/.vibe`,,. |
+| **Headless/Behavior** | `GEMINI_API_KEY` | Interestingly, some Vibe/MCP integrations (like `gemini-cli-mcp-server`) may require this if bridging services. |
+
+### Summary for Subprocess Orchestration
+If you are spawning these tools from a parent process (like a Python script or Rust server):
+1.  **Isolation:** Set `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and `VIBE_HOME` to temporary or isolated directories to prevent the agent from reading/writing to the user's main configuration.
+2.  **Auth:** Pass the relevant API key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`) explicitly in the `env` map of your subprocess call.
+3.  **Safety:** For Gemini, set `GEMINI_SANDBOX=true`. For Claude, ensure `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` to prevent it from spawning orphaned processes."
 
 ## Prompt 7
 
@@ -511,4 +581,115 @@ vibe --prompt "Refactor utils.py" --auto-approve
 
 ## Response 7
 
-*Pending*
+"Based on the source code and documentation for Codex, Gemini, Claude Code, and Mistral Vibe, existing MCP wrappers handle different execution "modes" primarily through **parameterization of the tool schema** or by **exposing distinct specialist tools**.
+
+Here are the specific patterns and how to implement them in your Rust `SurrealMind` MCP server.
+
+### 1. The "Profile/Agent" Parameter Pattern
+The most robust pattern is to expose a `mode` or `profile` parameter in your MCP tool's JSON schema. This parameter maps directly to CLI flags that alter the underlying agent's persona, permissions, and context depth.
+
+*   **Codex CLI Approach:** Codex supports a `--profile` flag that loads specific TOML configurations (e.g., `profiles.readonly_quiet` or `profiles.full_auto`). It also accepts a `reasoning_effort` parameter (low, medium, high).
+*   **Mistral Vibe Approach:** Vibe uses an `--agent` flag (e.g., `vibe --agent red_team`) which loads a specific TOML configuration defining restricted tools and custom system prompts.
+*   **Gemini CLI Approach:** Gemini 3 introduced a `thinking_level` parameter (minimal, low, medium, high) to toggle between fast responses and deep reasoning.
+
+**Rust Implementation Strategy:**
+Extend your `AgentRequest` struct to include a `mode` enum. This allows the calling LLM to explicitly select the "mindset" of the subprocess.
+
+```rust
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct AgentRequest {
+    pub prompt: String,
+    
+    #[schemars(description = "Execution mode: 'standard' for tasks, 'review' for read-only analysis, 'plan' for architecture.")]
+    pub mode: Option<ExecutionMode>, 
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionMode {
+    Standard, // Default execution
+    Review,   // Read-only / analysis
+    Plan,     // Architecture / brainstorming
+    HighReasoning // Max compute (e.g., "ultrathink")
+}
+```
+
+### 2. The "Keyword Trigger" Pattern (Context Injection)
+Some CLIs change modes based on specific keywords injected into the prompt, rather than explicit flags.
+
+*   **Claude Code:** To trigger "Extended Thinking" (a high-compute brainstorming mode), the wrapper must inject keywords like "think", "think hard", or "ultrathink" into the prompt.
+*   **Gemini CLI:** To trigger specific behaviors, Gemini supports loading custom system instructions via environment variables like `GEMINI_SYSTEM_MD`. A wrapper can swap this file path based on the requested mode.
+
+**Rust Implementation Strategy:**
+In your `AgentCli` trait implementation, prepend these keywords to the prompt based on the selected mode.
+
+```rust
+// Inside your ClaudeAgent implementation of AgentCli
+fn build_command(&self, request: &AgentRequest) -> Command {
+    let mut cmd = Command::new("claude");
+    
+    // Mode-specific prompt injection
+    let final_prompt = match request.mode {
+        Some(ExecutionMode::HighReasoning) => format!("ultrathink: {}", request.prompt),
+        Some(ExecutionMode::Plan) => format!("Create a detailed plan for: {}", request.prompt),
+        _ => request.prompt.clone(),
+    };
+
+    cmd.arg("-p").arg(final_prompt);
+    // ...
+}
+```
+
+### 3. The "Distinct Specialist" Pattern
+Instead of one monolithic `call_codex` tool with many flags, some implementations expose separate tools for distinct high-level operations. This helps the LLM distinguish between "doing" and "checking."
+
+*   **Gemini Dispatcher Model:** Gemini's architecture explicitly defines "Specialist Agents" like `CodebaseInvestigator` (read-only, search-heavy) vs. `CodeGenerator` (write-enabled). The wrapper exposes these as separate capabilities.
+*   **Codex Review:** Codex exposes a specific `/review` slash command behavior which is effectively a distinct mode for analyzing uncommitted changes or specific branches.
+
+**Rust Implementation Strategy:**
+Register multiple tools in your `tool_router` that wrap the same binary but with hardcoded "safe" flags.
+
+```rust
+#[tool(description = "Safe Code Review: Analyzes code without making changes.")]
+async fn review_with_codex(&self, req: ReviewRequest) -> Result<CallToolResult, McpError> {
+    // Hardcodes sandbox to read-only for safety
+    let mut cmd = Command::new("codex");
+    cmd.arg("exec")
+       .arg("--sandbox").arg("read-only") 
+       .arg("--ask-for-approval").arg("never") // Safe because it's read-only
+       .arg(&req.prompt);
+    // ...
+}
+```
+
+### 4. The "Approval/Safety" Toggle Pattern
+Modes are often used to define the "autonomy level" or "risk profile" of the agent.
+
+*   **YOLO / Full Auto:** All CLIs have a flag for this (`--yolo`, `--full-auto`, `--dangerously-skip-permissions`). This should be exposed as a `force_execution` or `autonomous` boolean in your MCP tool to let the calling LLM know it can request high autonomy.
+*   **Sandbox Elevation:** Codex supports a `sandbox` parameter (`read-only`, `workspace-write`, `danger-full-access`). Exposing this allows the LLM to request necessary permissions (e.g., "I need to install a package, please call me with `sandbox='danger-full-access'`").
+
+### Comparative Table for Implementation
+
+| Mode Concept | **Codex Implementation** | **Claude Code Implementation** | **Gemini CLI Implementation** | **Mistral Vibe Implementation** |
+| :--- | :--- | :--- | :--- | :--- |
+| **Brainstorm / Think** | `reasoning_effort="high"` | Prepend `"think"` or `"ultrathink"` to prompt | `thinking_level="HIGH"` (Gemini 3) | Use specialized agent profile via `--agent` |
+| **Code Review** | `/review` command or `--sandbox read-only` | No explicit flag; rely on prompt + read-only permissions | Custom command extension (e.g., `/review`) | Use restricted agent config |
+| **Plan / Spec** | Use `PLANS.md` workflow or `--model o3` | Plan mode (built-in logic) | `/conductor` extension | N/A (Prompt driven) |
+| **High Autonomy** | `--full-auto` | `--dangerously-skip-permissions` | `--yolo` | `--auto-approve` |
+
+### Recommendation for SurrealMind
+
+For your unified `call_*` tools, **Pattern 1 (Parameter Enum)** is the most ergonomic for the calling LLM. It reduces the number of tools in the context window while retaining flexibility.
+
+**Proposed Schema:**
+```rust
+pub struct AgentOptions {
+    /// Controls the "reasoning depth" or "creativity"
+    pub effort: Option<ReasoningEffort>, // Low, Medium, High
+    
+    /// Controls the safety/autonomy level
+    pub autonomy: Option<AutonomyLevel>, // ReadOnly, SafeWrite, Yolo
+}
+```
+
+This abstracts away the vendor-specific flags (e.g., mapping `ReasoningEffort::High` to `ultrathink` for Claude and `--reasoning-effort high` for Codex) inside your Rust `AgentCli` trait implementations."
