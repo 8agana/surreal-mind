@@ -47,6 +47,26 @@ pub fn call_gem_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
+pub fn call_codex_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "prompt": {"type": "string"},
+            "task_name": {"type": "string", "default": "call_codex"},
+            "model": {"type": "string", "default": "gpt-5.2-codex"},
+            "cwd": {"type": "string"},
+            "resume_session_id": {"type": "string"},
+            "continue_latest": {"type": "boolean", "default": false},
+            "timeout_ms": {"type": "number", "default": 60000},
+            "tool_timeout_ms": {"type": "number", "default": 300000},
+            "expose_stream": {"type": "boolean", "default": false},
+            "fire_and_forget": {"type": "boolean", "default": false}
+        },
+        "required": ["prompt", "cwd"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
 pub fn call_status_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
@@ -106,6 +126,7 @@ pub fn howto_schema() -> Arc<Map<String, Value>> {
                 "search",
                 "maintain",
                 "call_gem",
+                "call_codex",
                 "call_status",
                 "call_jobs",
                 "call_cancel",

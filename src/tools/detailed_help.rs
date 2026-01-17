@@ -29,6 +29,7 @@ impl SurrealMindServer {
                     json!({"name": "search", "one_liner": "Unified LM search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]}),
                     json!({"name": "maintain", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]}),
                     json!({"name": "call_gem", "one_liner": "Delegate a prompt to the Gemini CLI agent", "key_params": ["prompt", "task_name", "model", "cwd"]}),
+                    json!({"name": "call_codex", "one_liner": "Delegate a prompt to the Codex CLI agent", "key_params": ["prompt", "task_name", "model", "cwd"]}),
                     json!({"name": "call_status", "one_liner": "Get status of an async agent job", "key_params": ["job_id"]}),
                     json!({"name": "call_jobs", "one_liner": "List async agent jobs", "key_params": ["limit", "status_filter", "tool_name"]}),
                     json!({"name": "call_cancel", "one_liner": "Cancel a running or queued job", "key_params": ["job_id"]}),
@@ -229,6 +230,22 @@ impl SurrealMindServer {
                     "timeout_ms": "integer — override global timeout",
                     "tool_timeout_ms": "integer — per-tool execution timeout",
                     "expose_stream": "boolean — whether to stream output (if supported)"
+                },
+                "returns": {"status": "queued", "job_id": "string", "message": "string"}
+            }),
+            "call_codex" => json!({
+                "name": "call_codex",
+                "description": "Delegate a prompt to the Codex CLI agent as an async background job.",
+                "arguments": {
+                    "prompt": "string (required) — the prompt text",
+                    "task_name": "string (default 'call_codex') — groups related operations",
+                    "model": "string (default 'gpt-5.2-codex') — override model selection",
+                    "cwd": "string (required) — working directory for the agent",
+                    "resume_session_id": "string — resume a specific Codex session",
+                    "continue_latest": "boolean (default false) — resume last Codex session",
+                    "timeout_ms": "integer — outer timeout for the CLI call",
+                    "tool_timeout_ms": "integer — per-tool execution timeout (TOOL_TIMEOUT_SEC)",
+                    "expose_stream": "boolean — include stream events in metadata"
                 },
                 "returns": {"status": "queued", "job_id": "string", "message": "string"}
             }),

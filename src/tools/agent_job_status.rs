@@ -113,6 +113,22 @@ async fn fetch_job_status(db: &Surreal<WsClient>, job_id: String) -> Result<Valu
         });
     }
 
+    let mut metadata = row.metadata.clone();
+    let mut response = extract_response_from_metadata(&metadata);
+
+    if response.is_none() {
+        if let Some(exchange_id) = row.exchange_id.as_deref() {
+            if let Some((exchange_response, exchange_metadata)) =
+                fetch_exchange_response(db, exchange_id).await?
+            {
+                response = exchange_response;
+                if metadata_is_empty(&metadata) {
+                    metadata = exchange_metadata;
+                }
+            }
+        }
+    }
+
     Ok(json!({
         "job_id": row.job_id,
         "status": row.status.clone().unwrap_or_default(),
@@ -123,11 +139,49 @@ async fn fetch_job_status(db: &Surreal<WsClient>, job_id: String) -> Result<Valu
         "error": row.error,
         "session_id": row.session_id,
         "exchange_id": row.exchange_id,
-        "metadata": row.metadata,
+        "metadata": metadata,
+        "response": response,
         "prompt": row.prompt,
         "task_name": row.task_name,
         "model_override": row.model_override,
         "cwd": row.cwd,
         "timeout_ms": row.timeout_ms
     }))
+}
+
+fn extract_response_from_metadata(metadata: &Option<Value>) -> Option<String> {
+    match metadata {
+        Some(Value::Object(map)) => map
+            .get("response")
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string()),
+        Some(Value::Null) => None,
+        _ => None,
+    }
+}
+
+fn metadata_is_empty(metadata: &Option<Value>) -> bool {
+    match metadata {
+        None => true,
+        Some(Value::Null) => true,
+        Some(Value::Object(map)) => map.is_empty(),
+        _ => false,
+    }
+}
+
+async fn fetch_exchange_response(
+    db: &Surreal<WsClient>,
+    exchange_id: &str,
+) -> Result<Option<(Option<String>, Option<Value>)>> {
+    let sql = "SELECT response, metadata FROM agent_exchanges WHERE id = type::thing($exchange_id) LIMIT 1;";
+    let mut response = db.query(sql).bind(("exchange_id", exchange_id.to_string())).await?;
+    #[derive(Deserialize)]
+    struct ExchangeRow {
+        response: Option<String>,
+        metadata: Option<Value>,
+    }
+    let rows: Vec<ExchangeRow> = response.take(0)?;
+    Ok(rows
+        .first()
+        .map(|row| (row.response.clone(), row.metadata.clone())))
 }

@@ -143,6 +143,11 @@ impl SurrealMindServer {
             tokio::spawn(async move {
                 crate::tools::delegate_gemini::run_delegate_gemini_worker(db, semaphore).await;
             });
+            let db = server.db.clone();
+            let semaphore = server.job_semaphore.clone();
+            tokio::spawn(async move {
+                crate::tools::call_codex::run_call_codex_worker(db, semaphore).await;
+            });
         }
 
         Ok(server)

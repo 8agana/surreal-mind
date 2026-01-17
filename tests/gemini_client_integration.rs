@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use anyhow::Result;
+use surreal_mind::clients::{CognitiveAgent, GeminiClient};
 
 #[tokio::test]
 #[cfg(feature = "db_integration")]

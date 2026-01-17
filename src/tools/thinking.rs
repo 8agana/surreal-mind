@@ -123,7 +123,8 @@ impl<'a> ThoughtBuilder<'a> {
         resolved_continuity.confidence = self.confidence;
 
         // SAVE FIRST with pending status - thought is never lost
-        let mut create_resp = self.server
+        let mut create_resp = self
+            .server
             .db
             .query(
                 "CREATE type::thing('thoughts', $id) CONTENT {

@@ -1,6 +1,6 @@
 # SurrealMind – Consciousness Persistence MCP Server
 
-SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server that stores thoughts and knowledge in SurrealDB, injects relevant memories with orbital mechanics, and exposes 10 curated tools for continuity.
+SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server that stores thoughts and knowledge in SurrealDB, injects relevant memories with orbital mechanics, and exposes 13 curated tools for continuity.
 
 ## What It Does
 
@@ -9,7 +9,7 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
 - **Knowledge graph authoring** (`remember`).
 - **Curiosity-driven exploration** (`wander`) for discovering connections.
 - **Operations and introspection** (`maintain`, `howto`).
-- **Agent delegation** (`call_gem`, `call_status`, `call_jobs`, `call_cancel`).
+- **Agent delegation** (`call_gem`, `call_codex`, `call_status`, `call_jobs`, `call_cancel`).
 - Transports: stdio by default or streamable HTTP with SSE and bearer auth.
 
 ## Transports
@@ -79,7 +79,7 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
    ./tests/test_mcp_comprehensive.sh
    ```
 
-## Tool Surface (10)
+## Tool Surface (13)
 
 | Tool | Description |
 |------|-------------|
@@ -92,6 +92,7 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
 | `maintain` | System maintenance: `health_check_embeddings`, `reembed`, `reembed_kg`, `embed_pending`, `list_removal_candidates`, `export_removals`, `finalize_removal`, `echo_config`, `rethink`, `populate`, `embed`, `wander`, `health`, `report`, `tasks`. |
 | `howto` | Get help for any tool. Optional: `tool`, `format` (`compact\|full`). |
 | `call_gem` | Delegate prompts to Gemini CLI. Required: `prompt`. Optional: `task_name`, `model`, `cwd`, `timeout_ms`. |
+| `call_codex` | Delegate prompts to Codex CLI. Required: `prompt`, `cwd`. Optional: `task_name`, `model`, `resume_session_id`, `continue_latest`, `timeout_ms`, `tool_timeout_ms`. |
 | `call_status` | Check status of a background agent job. Required: `job_id`. |
 | `call_jobs` | List active/recent agent jobs. Optional: `limit`, `status_filter`, `tool_name`. |
 | `call_cancel` | Cancel a running agent job. Required: `job_id`. |

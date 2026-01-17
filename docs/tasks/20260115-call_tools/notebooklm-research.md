@@ -773,3 +773,56 @@ I look forward to continuing this collaboration. Whether you need to refine the 
 *   **Codex:** `codex exec --json --color never "prompt"`.
 *   **Claude:** `claude -p "prompt" --output-format stream-json`.
 *   **Gemini:** `gemini -p "prompt" --output-format json` (for final result) or `stream-json` (for events)."
+
+## Prompt 10
+
+"Exit codes for auth/rate-limit vs generic errors; does concurrency across dirs cause global locks or is state isolated; env vars to fully suppress spinners/ANSI; do SIGKILLs leave stale locks; when JSON requested is stdout clean and logs on stderr; does Gemini CLI fast-fail on auth expiry or hang; any max_cost/max_tokens flags?"
+
+## Answer 10
+
+"Here are the technical specifics regarding error handling, concurrency, output hygiene, and resource limits for the major AI CLIs, answering your query directly.
+
+### 1. Exit Codes & Error Handling
+*   **Codex CLI:** Exits with **non-zero** status for failures in non-interactive mode (`exec`). It distinguishes between auth/network issues (which trigger auto-retry logic for 401s and 503s) and execution errors.
+    *   *Auth/Rate Limit:* It attempts to **auto-recover** from 401 errors by reloading auth or refreshing tokens before failing.
+*   **Gemini CLI:** Returns exit code **1** for general failures. It has specific error handling for auth; in non-interactive mode, if the configured authentication method is invalid or enforced incorrectly, it **exits with an error** immediately rather than hanging.
+*   **Claude Code:** Returns exit code **1** for protocol/execution errors. It specifically handles "orphaned tool results" (caused by crashes/SIGKILLs) by treating them as recoverable state errors rather than hard crashes.
+
+### 2. Concurrency & State Isolation
+*   **Gemini CLI:** **High Isolation.** It uses a `project_hash` (generated from the project's root path) to create isolated temporary directories (`~/.gemini/tmp/<project_hash>/`). This means concurrent runs in *different* directories are fully isolated. Concurrent runs in the *same* directory may contend for the `shell_history` or session locks.
+*   **Codex CLI:** **Session-Based Isolation.** It stores sessions as JSONL files in `~/.codex/sessions`. While it historically used a single-threaded master loop, recent updates (v0.80.0+) introduced thread forking and "agent control," allowing a session to spawn and message other conversations programmatically, enabling managed concurrency.
+*   **Claude Code:** **Optimistic Locking.** It implements logic to recover from `409 Conflict` errors, allowing it to handle race conditions if multiple processes attempt to write to the session state simultaneously.
+
+### 3. Spinners, ANSI, and JSON Hygiene
+| CLI | Suppress Spinners/ANSI | JSON Output Hygiene | Source |
+| :--- | :--- | :--- | :--- |
+| **Codex** | `--color never` or `NO_COLOR=1` | `--json` emits NDJSON events. Stdout is strictly for JSON data; logs/banners go to `stderr` (or suppressed via `-q` in some distributions). | |
+| **Gemini** | `NO_COLOR=1` | `--output-format json` (structured final) or `stream-json` (NDJSON). Stdout is clean; debug logs go to stderr if `-d` is set. | |
+| **Claude** | `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` | `--output-format stream-json`. Use `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` to suppress telemetry/updater noise. | |
+| **Vibe** | `NO_COLOR=1` | Primarily text piping; cleaner output requires `--quiet` or equivalent if available. | |
+
+### 4. SIGKILL Recovery & Stale Locks
+*   **Codex (Best in Class):** Uses **"Ghost Snapshots"** (Git-based recovery). If the CLI is SIGKILL'd, it can roll back the working tree to a clean state upon the next run or via `thread/rollback`. It does not generally leave blocking stale locks that prevent restart.
+*   **Gemini:** Relies on **Checkpointing** (`--checkpointing`). If killed, the file state remains as-is (potentially messy), but you can run `/restore` to revert to the pre-execution snapshot. It cleans up connection resources automatically on exit.
+*   **Claude Code:** Has specific logic to fix "session resume failures caused by orphaned tool results," meaning it detects if it died mid-tool-execution and attempts to reconcile the state on the next run.
+
+### 5. Auth Expiry Behavior
+*   **Gemini CLI:** **Fast-Fail (Non-Interactive).** If running headlessly (`-p`), it checks credentials on startup. If invalid, it exits with an error immediately. In interactive mode, it prompts the user.
+*   **Codex CLI:** **Hang/Retry.** It has aggressive retry logic. It attempts to reload auth on 401s. In headless mode (v0.81.0+), it automatically switches to device-code login flows if browser auth fails, which might "hang" waiting for a device code input if not properly piped, though it is designed to be robust.
+*   **Claude Code:** **Refresh Loop.** It has fixed race conditions where it disagreed with the server about token expiry. It actively refreshes tokens and should not hang, though "stale OAuth token" races were a known (and patched) issue.
+
+### 6. Max Cost / Max Tokens Flags
+*   **Claude Code:**
+    *   `MAX_THINKING_TOKENS`: Limits "Extended Thinking" budget (default ~32k).
+    *   `CLAUDE_CODE_MAX_OUTPUT_TOKENS`: Caps response size (default 32k, max 64k).
+    *   `DISABLE_COST_WARNINGS`: Toggles the interactive cost alerts.
+*   **Gemini CLI:**
+    *   `model.maxSessionTurns`: Limits conversation length.
+    *   `tokenBudget` (in `summarizeToolOutput`): Limits tokens used for tool outputs.
+    *   *Thinking Level:* Replaces raw token budgets with `low`/`high` levels in Gemini 3, though `thinking_budget` is supported for backward compatibility.
+*   **Codex CLI:**
+    *   `model_auto_compact_token_limit`: Triggers compaction when context hits this threshold.
+    *   `tool_output_token_limit`: Caps tokens for tool outputs to prevent context flooding.
+    *   *Reasoning Effort:* `model_reasoning_effort` (low/medium/high) controls compute cost indirectly.
+*   **Mistral Vibe:**
+    *   Supports capping **number of steps** or **maximum session cost** explicitly in configuration."
