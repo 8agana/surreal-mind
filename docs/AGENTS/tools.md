@@ -20,10 +20,13 @@
 
 ## Agent Delegation
 
+All delegation tools include federation context and support `mode: "observe"` for read-only analysis.
+
 | Tool | Description |
 |------|-------------|
-| `call_gem` | Delegate prompts to Gemini CLI with persisted exchange tracking. Required: `prompt`. Optional: `task_name`, `model`, `cwd`, `timeout_ms`, `fire_and_forget`. |
-| `call_codex` | Delegate prompts to Codex CLI with persisted exchange tracking. Required: `prompt`, `cwd`. Optional: `task_name`, `model`, `resume_session_id`, `continue_latest`, `timeout_ms`, `tool_timeout_ms`, `expose_stream`, `fire_and_forget`. |
+| `call_gem` | Delegate to Gemini CLI. Required: `prompt`, `cwd`. Optional: `model`, `resume_session_id`, `continue_latest`, `timeout_ms`, `tool_timeout_ms`, `expose_stream`, `mode` (`execute`\|`observe`), `max_response_chars` (default 100KB). |
+| `call_cc` | Delegate to Claude Code CLI. Required: `prompt`, `cwd`. Optional: `model`, `resume_session_id`, `continue_latest`, `timeout_ms`, `tool_timeout_ms`, `expose_stream`, `mode`, `max_response_chars`. |
+| `call_codex` | Delegate to Codex CLI. Required: `prompt`, `cwd`. Optional: `model`, `resume_session_id`, `continue_latest`, `timeout_ms`, `tool_timeout_ms`, `expose_stream`, `fire_and_forget`, `mode`, `max_response_chars`. |
 | `call_status` | Check status of a background agent job. Required: `job_id`. |
 | `call_jobs` | List active/recent agent jobs. Optional: `limit`, `status_filter`, `tool_name`. |
 | `call_cancel` | Cancel a running agent job. Required: `job_id`. |

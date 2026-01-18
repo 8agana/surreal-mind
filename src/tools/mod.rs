@@ -11,6 +11,7 @@ pub mod knowledge_graph;
 pub mod list_agent_jobs;
 pub mod maintenance;
 pub mod rethink;
+pub mod test_notification;
 pub mod thinking;
 pub mod unified_search;
 pub mod wander;

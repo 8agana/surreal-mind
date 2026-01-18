@@ -9,7 +9,7 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
 - **Knowledge graph authoring** (`remember`).
 - **Curiosity-driven exploration** (`wander`) for discovering connections.
 - **Operations and introspection** (`maintain`, `howto`).
-- **Agent delegation** (`call_gem`, `call_codex`, `call_status`, `call_jobs`, `call_cancel`).
+- **Agent delegation** (`call_gem`, `call_cc`, `call_codex`, `call_status`, `call_jobs`, `call_cancel`).
 - Transports: stdio by default or streamable HTTP with SSE and bearer auth.
 
 ## Transports

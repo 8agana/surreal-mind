@@ -9,7 +9,11 @@
 
 ### Added
 
+- **test_notification Tool**: New tool for testing MCP notification capabilities (`peer.notify_logging_message`). Sends a logging message with a specified level to the client.
 - **call_cc Tool**: New tool for delegating tasks to Claude Code CLI. Synchronous execution with `--output-format stream-json`. Model selection via `ANTHROPIC_MODEL`/`ANTHROPIC_MODELS` env vars. Supports `--resume <id>` and `-c` (continue latest) for session management.
+- **Observe Mode**: All three `call_*` tools (`call_gem`, `call_cc`, `call_codex`) now support a `mode` parameter with values `"execute"` (default) or `"observe"`. In observe mode, the delegated agent is instructed to analyze and report only—no file modifications.
+- **Response Truncation**: Added `max_response_chars` parameter to all `call_*` tools (default 100KB). Prevents oversized responses from overwhelming clients. Set to `0` for no limit.
+- **Federation Context**: All `call_*` tools now prepend a `[FEDERATION CONTEXT]` header to prompts, informing the delegated agent it's being invoked as a subagent by surreal-mind MCP.
 
 ### Fixed
 

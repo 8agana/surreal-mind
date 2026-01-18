@@ -45,6 +45,12 @@ pub struct CallCodexParams {
     /// If true, job is enqueued and not awaited (async-only for now)
     #[serde(default)]
     pub fire_and_forget: bool,
+    /// Mode: "execute" (normal) or "observe" (read-only analysis)
+    #[serde(default)]
+    pub mode: Option<String>,
+    /// Max characters for response (default: no limit, -1 = default from config)
+    #[serde(default)]
+    pub max_response_chars: Option<i64>,
 }
 
 impl SurrealMindServer {
@@ -65,6 +71,17 @@ impl SurrealMindServer {
                 message: "prompt cannot be empty".into(),
             });
         }
+
+        // Apply federation context and observe mode prefix
+        let observe_prefix = if params.mode.as_deref() == Some("observe") {
+            "You are in OBSERVE mode. Analyze and report only. Do NOT make any file changes.\n\n"
+        } else {
+            ""
+        };
+        let prompt = format!(
+            "[FEDERATION CONTEXT: You are being invoked as a subagent by surreal-mind MCP. Your output will be returned to the calling agent.]\n\n{}{}",
+            observe_prefix, prompt
+        );
 
         let cwd = normalize_optional_string(params.cwd);
         let cwd = cwd.ok_or_else(|| SurrealMindError::InvalidParams {
@@ -128,10 +145,29 @@ impl SurrealMindServer {
 
         Ok(CallToolResult::structured(json!({
             "status": "completed",
-            "response": execution.response,
+            "response": truncate_response(execution.response, params.max_response_chars),
             "session_id": session_id,
             "metadata": if metadata.is_empty() { Value::Null } else { Value::Object(metadata) }
         })))
+    }
+}
+
+/// Default max response chars (100KB)
+const DEFAULT_MAX_RESPONSE_CHARS: usize = 100_000;
+
+/// Truncate response if over limit
+fn truncate_response(response: String, max_chars: Option<i64>) -> String {
+    let limit = match max_chars {
+        Some(n) if n > 0 => n as usize,
+        Some(n) if n == 0 => return response, // 0 = no limit
+        _ => DEFAULT_MAX_RESPONSE_CHARS,
+    };
+    
+    if response.len() <= limit {
+        response
+    } else {
+        let truncated = &response[..limit];
+        format!("{}...\n\n[TRUNCATED: Response was {} chars, limit is {}]", truncated, response.len(), limit)
     }
 }
 

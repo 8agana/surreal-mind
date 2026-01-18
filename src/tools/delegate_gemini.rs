@@ -7,8 +7,6 @@ use crate::server::SurrealMindServer;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use surrealdb::Surreal;
-use surrealdb::engine::remote::ws::Client as WsClient;
 
 const DEFAULT_TIMEOUT_MS: u64 = 60_000;
 
@@ -38,12 +36,12 @@ pub struct DelegateGeminiParams {
     /// Expose streaming events in response
     #[serde(default)]
     pub expose_stream: bool,
-}
-
-#[derive(Debug, Deserialize)]
-struct SessionResult {
+    /// Mode: "execute" (normal) or "observe" (read-only analysis)
     #[serde(default)]
-    last_agent_session_id: Option<String>,
+    pub mode: Option<String>,
+    /// Max characters for response (default: no limit)
+    #[serde(default)]
+    pub max_response_chars: Option<i64>,
 }
 
 impl SurrealMindServer {
@@ -69,8 +67,17 @@ impl SurrealMindServer {
             });
         }
 
-        let task_name = normalize_optional_string(params.task_name)
-            .unwrap_or_else(|| "delegate_gemini".to_string());
+        // Apply federation context and observe mode prefix
+        let observe_prefix = if params.mode.as_deref() == Some("observe") {
+            "You are in OBSERVE mode. Analyze and report only. Do NOT make any file changes.\n\n"
+        } else {
+            ""
+        };
+        let prompt = format!(
+            "[FEDERATION CONTEXT: You are being invoked as a subagent by surreal-mind MCP. Your output will be returned to the calling agent.]\n\n{}{}",
+            observe_prefix, prompt
+        );
+
         let model_override = normalize_optional_string(params.model);
         let cwd = normalize_optional_string(params.cwd);
         let timeout = params.timeout_ms.unwrap_or_else(gemini_timeout_ms);
@@ -82,28 +89,25 @@ impl SurrealMindServer {
         });
 
         // Execute synchronously - call GeminiClient directly
-        let result = execute_gemini_call(
-            self.db.clone(),
-            GeminiCallParams {
-                prompt: &prompt,
-                task_name: &task_name,
-                model_override: model_override.as_deref(),
-                cwd: cwd.as_deref(),
-                resume_session_id: params.resume_session_id.as_deref(),
-                continue_latest: params.continue_latest,
-                timeout,
-                tool_timeout,
-                expose_stream: params.expose_stream,
-            },
-        )
+        let result = execute_gemini_call(GeminiCallParams {
+            prompt: &prompt,
+            model_override: model_override.as_deref(),
+            cwd: cwd.as_deref(),
+            resume_session_id: params.resume_session_id.as_deref(),
+            continue_latest: params.continue_latest,
+            timeout,
+            tool_timeout,
+            expose_stream: params.expose_stream,
+        })
         .await;
 
         match result {
             Ok(response) => {
+                let truncated_response = truncate_response(response.response, params.max_response_chars);
                 let mut result_json = json!({
                     "status": "completed",
                     "session_id": response.session_id,
-                    "response": response.response,
+                    "response": truncated_response,
                 });
                 if let Some(events) = response.stream_events {
                     result_json["stream_events"] = serde_json::to_value(events).unwrap_or_default();
@@ -125,6 +129,25 @@ impl SurrealMindServer {
                 })
             }
         }
+    }
+}
+
+/// Default max response chars (100KB)
+const DEFAULT_MAX_RESPONSE_CHARS: usize = 100_000;
+
+/// Truncate response if over limit
+fn truncate_response(response: String, max_chars: Option<i64>) -> String {
+    let limit = match max_chars {
+        Some(n) if n > 0 => n as usize,
+        Some(n) if n == 0 => return response, // 0 = no limit
+        _ => DEFAULT_MAX_RESPONSE_CHARS,
+    };
+    
+    if response.len() <= limit {
+        response
+    } else {
+        let truncated = &response[..limit];
+        format!("{}...\n\n[TRUNCATED: Response was {} chars, limit is {}]", truncated, response.len(), limit)
     }
 }
 
@@ -153,25 +176,9 @@ fn gemini_timeout_ms() -> u64 {
         .unwrap_or(DEFAULT_TIMEOUT_MS)
 }
 
-async fn fetch_last_session_id(
-    db: &Surreal<WsClient>,
-    tool_name: String,
-) -> Result<Option<String>> {
-    let sql = "SELECT last_agent_session_id FROM tool_sessions WHERE tool_name = $tool LIMIT 1;";
-    let rows: Vec<SessionResult> = db
-        .query(sql)
-        .bind(("tool", tool_name))
-        .await?
-        .take::<Vec<SessionResult>>(0)?;
-    Ok(rows
-        .first()
-        .and_then(|row| row.last_agent_session_id.clone()))
-}
-
 #[derive(Debug)]
 struct GeminiCallParams<'a> {
     prompt: &'a str,
-    task_name: &'a str,
     model_override: Option<&'a str>,
     cwd: Option<&'a str>,
     resume_session_id: Option<&'a str>,
@@ -182,23 +189,20 @@ struct GeminiCallParams<'a> {
 }
 
 async fn execute_gemini_call(
-    db: std::sync::Arc<Surreal<WsClient>>,
     params: GeminiCallParams<'_>,
 ) -> std::result::Result<crate::clients::traits::AgentResponse, AgentError> {
     // Determine session to resume:
     // 1. Explicit resume_session_id takes priority
     // 2. continue_latest means use --resume without ID (CLI auto-selects latest)
-    // 3. Fall back to task-based DB lookup for backwards compatibility
+    // 3. Otherwise start fresh (no resume)
     let resume_session: Option<String> = if let Some(sid) = params.resume_session_id {
         Some(sid.to_string())
     } else if params.continue_latest {
         // Empty string signals "use --resume without ID" to GeminiClient
         Some(String::new())
     } else {
-        // Legacy: try DB lookup by task_name
-        fetch_last_session_id(db.as_ref(), params.task_name.to_string())
-            .await
-            .map_err(|e| AgentError::CliError(format!("Failed to fetch session: {}", e)))?
+        // Fresh session - no resume
+        None
     };
 
     let config = crate::config::Config::load().ok();

@@ -54,7 +54,14 @@ pub fn call_gem_schema() -> Arc<Map<String, Value>> {
             "continue_latest": {"type": "boolean", "default": false},
             "timeout_ms": {"type": "number", "default": 60000},
             "tool_timeout_ms": {"type": "number", "default": 300000},
-            "expose_stream": {"type": "boolean", "default": false}
+            "expose_stream": {"type": "boolean", "default": false},
+            "mode": {
+                "type": "string",
+                "enum": ["execute", "observe"],
+                "default": "execute",
+                "description": "execute: normal operation with file changes. observe: analyze and report only, no file modifications."
+            },
+            "max_response_chars": {"type": "integer", "default": 100000, "description": "Max chars for response (0 = no limit, default 100000)"}
         },
         "required": ["prompt", "cwd"]
     });
@@ -87,7 +94,14 @@ pub fn call_codex_schema() -> Arc<Map<String, Value>> {
             "timeout_ms": {"type": "number", "default": 60000},
             "tool_timeout_ms": {"type": "number", "default": 300000},
             "expose_stream": {"type": "boolean", "default": false},
-            "fire_and_forget": {"type": "boolean", "default": false}
+            "fire_and_forget": {"type": "boolean", "default": false},
+            "mode": {
+                "type": "string",
+                "enum": ["execute", "observe"],
+                "default": "execute",
+                "description": "execute: normal operation with file changes. observe: analyze and report only, no file modifications."
+            },
+            "max_response_chars": {"type": "integer", "default": 100000, "description": "Max chars for response (0 = no limit, default 100000)"}
         },
         "required": ["prompt", "cwd"]
     });
@@ -119,7 +133,14 @@ pub fn call_cc_schema() -> Arc<Map<String, Value>> {
             "continue_latest": {"type": "boolean", "default": false},
             "timeout_ms": {"type": "number", "default": 60000},
             "tool_timeout_ms": {"type": "number", "default": 300000},
-            "expose_stream": {"type": "boolean", "default": false}
+            "expose_stream": {"type": "boolean", "default": false},
+            "mode": {
+                "type": "string",
+                "enum": ["execute", "observe"],
+                "default": "execute",
+                "description": "execute: normal operation with file changes. observe: analyze and report only, no file modifications."
+            },
+            "max_response_chars": {"type": "integer", "default": 100000, "description": "Max chars for response (0 = no limit, default 100000)"}
         },
         "required": ["prompt", "cwd"]
     });
@@ -240,6 +261,18 @@ pub fn search_schema() -> Arc<Map<String, Value>> {
             "order": {"type": "string", "enum": ["created_at_asc", "created_at_desc"]},
             "forensic": {"type": "boolean", "description": "Return provenance: correction chain, derivatives, sources"}
         }
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn test_notification_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "message": {"type": "string", "description": "The message to send in the notification"},
+            "level": {"type": "string", "enum": ["debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"], "default": "info", "description": "The log level"}
+        },
+        "required": ["message"]
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }

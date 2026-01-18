@@ -28,8 +28,9 @@ impl SurrealMindServer {
                     json!({"name": "remember", "one_liner": "Create entities/relationships/observations in the KG", "key_params": ["kind", "data", "confidence", "source_thought_id"]}),
                     json!({"name": "search", "one_liner": "Unified LM search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]}),
                     json!({"name": "maintain", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]}),
-                    json!({"name": "call_gem", "one_liner": "Delegate a prompt to the Gemini CLI agent", "key_params": ["prompt", "task_name", "model", "cwd"]}),
-                    json!({"name": "call_codex", "one_liner": "Delegate a prompt to the Codex CLI agent", "key_params": ["prompt", "task_name", "model", "cwd"]}),
+                    json!({"name": "call_gem", "one_liner": "Delegate a prompt to the Gemini CLI agent", "key_params": ["prompt", "model", "cwd", "mode"]}),
+                    json!({"name": "call_cc", "one_liner": "Delegate a prompt to the Claude Code CLI agent", "key_params": ["prompt", "model", "cwd", "mode"]}),
+                    json!({"name": "call_codex", "one_liner": "Delegate a prompt to the Codex CLI agent", "key_params": ["prompt", "model", "cwd", "mode"]}),
                     json!({"name": "call_status", "one_liner": "Get status of an async agent job", "key_params": ["job_id"]}),
                     json!({"name": "call_jobs", "one_liner": "List async agent jobs", "key_params": ["limit", "status_filter", "tool_name"]}),
                     json!({"name": "call_cancel", "one_liner": "Cancel a running or queued job", "key_params": ["job_id"]}),
@@ -221,33 +222,55 @@ impl SurrealMindServer {
             }),
             "call_gem" => json!({
                 "name": "call_gem",
-                "description": "Delegate a prompt to the Gemini CLI agent as an async background job.",
+                "description": "Delegate a prompt to the Gemini CLI agent. Supports session resume and observe mode.",
                 "arguments": {
                     "prompt": "string (required) — the prompt text",
-                    "task_name": "string (default 'delegate_gemini') — groups related operations",
-                    "model": "string (default 'auto') — override model selection",
-                    "cwd": "string — working directory for the agent",
-                    "timeout_ms": "integer — override global timeout",
-                    "tool_timeout_ms": "integer — per-tool execution timeout",
-                    "expose_stream": "boolean — whether to stream output (if supported)"
+                    "model": "string — override model (env: GEMINI_MODEL/GEMINI_MODELS)",
+                    "cwd": "string (required) — working directory for the agent",
+                    "resume_session_id": "string — resume a specific Gemini session",
+                    "continue_latest": "boolean (default false) — resume last Gemini session",
+                    "timeout_ms": "integer (default 60000) — outer timeout",
+                    "tool_timeout_ms": "integer (default 300000) — per-tool timeout",
+                    "expose_stream": "boolean — include stream events in response",
+                    "mode": "string — 'execute' (default) or 'observe' (read-only analysis)",
+                    "max_response_chars": "integer (default 100000) — max chars for response (0 = no limit)"
                 },
-                "returns": {"status": "queued", "job_id": "string", "message": "string"}
+                "returns": {"status": "completed", "session_id": "string", "response": "string"}
+            }),
+            "call_cc" => json!({
+                "name": "call_cc",
+                "description": "Delegate a prompt to the Claude Code CLI agent. Supports session resume and observe mode.",
+                "arguments": {
+                    "prompt": "string (required) — the prompt text",
+                    "model": "string — override model (env: ANTHROPIC_MODEL/ANTHROPIC_MODELS)",
+                    "cwd": "string (required) — working directory for the agent",
+                    "resume_session_id": "string — resume a specific Claude session",
+                    "continue_latest": "boolean (default false) — resume last Claude session",
+                    "timeout_ms": "integer (default 60000) — outer timeout",
+                    "tool_timeout_ms": "integer (default 300000) — per-tool timeout",
+                    "expose_stream": "boolean — include stream events in metadata",
+                    "mode": "string — 'execute' (default) or 'observe' (read-only analysis)",
+                    "max_response_chars": "integer (default 100000) — max chars for response (0 = no limit)"
+                },
+                "returns": {"status": "completed", "session_id": "string", "response": "string"}
             }),
             "call_codex" => json!({
                 "name": "call_codex",
-                "description": "Delegate a prompt to the Codex CLI agent as an async background job.",
+                "description": "Delegate a prompt to the Codex CLI agent. Supports session resume and observe mode.",
                 "arguments": {
                     "prompt": "string (required) — the prompt text",
-                    "task_name": "string (default 'call_codex') — groups related operations",
-                    "model": "string (default 'gpt-5.2-codex') — override model selection",
+                    "model": "string — override model (env: CODEX_MODEL/CODEX_MODELS)",
                     "cwd": "string (required) — working directory for the agent",
                     "resume_session_id": "string — resume a specific Codex session",
                     "continue_latest": "boolean (default false) — resume last Codex session",
-                    "timeout_ms": "integer — outer timeout for the CLI call",
-                    "tool_timeout_ms": "integer — per-tool execution timeout (TOOL_TIMEOUT_SEC)",
-                    "expose_stream": "boolean — include stream events in metadata"
+                    "timeout_ms": "integer (default 60000) — outer timeout",
+                    "tool_timeout_ms": "integer (default 300000) — per-tool timeout",
+                    "expose_stream": "boolean — include stream events in metadata",
+                    "fire_and_forget": "boolean (default false) — enqueue without waiting",
+                    "mode": "string — 'execute' (default) or 'observe' (read-only analysis)",
+                    "max_response_chars": "integer (default 100000) — max chars for response (0 = no limit)"
                 },
-                "returns": {"status": "queued", "job_id": "string", "message": "string"}
+                "returns": {"status": "completed", "session_id": "string", "response": "string"}
             }),
 
             "call_status" => json!({

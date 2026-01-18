@@ -63,6 +63,7 @@ impl ServerHandler for SurrealMindServer {
         let wander_schema_map = crate::schemas::wander_schema();
         let rethink_schema_map = crate::schemas::rethink_schema();
         let corrections_schema_map = crate::schemas::corrections_schema();
+        let test_notification_schema_map = crate::schemas::test_notification_schema();
 
         let call_gem_schema = crate::schemas::call_gem_schema();
         let call_codex_schema = crate::schemas::call_codex_schema();
@@ -120,6 +121,16 @@ impl ServerHandler for SurrealMindServer {
                 title: Some("Corrections".into()),
                 description: Some("List correction events with optional target filter".into()),
                 input_schema: corrections_schema_map,
+                icons: None,
+                annotations: None,
+                output_schema: None,
+                meta: None,
+            },
+            Tool {
+                name: "test_notification".into(),
+                title: Some("Test Notification".into()),
+                description: Some("Send a test logging notification to the client".into()),
+                input_schema: test_notification_schema_map,
                 icons: None,
                 annotations: None,
                 output_schema: None,
@@ -241,13 +252,19 @@ impl ServerHandler for SurrealMindServer {
     async fn call_tool(
         &self,
         request: CallToolRequestParam,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> std::result::Result<CallToolResult, McpError> {
         // Route to appropriate tool handler
         match request.name.as_ref() {
             // Unified thinking tool
             "think" => self
                 .handle_legacymind_think(request)
+                .await
+                .map_err(|e| e.into()),
+
+            // Test tool
+            "test_notification" => self
+                .handle_test_notification(request, context)
                 .await
                 .map_err(|e| e.into()),
 
