@@ -10,7 +10,7 @@ src/
 ├── error.rs             # Error types (SurrealMindError)
 ├── schemas.rs           # JSON schemas for tools
 ├── embeddings.rs        # OpenAI embedding client
-├── bge_embedder.rs      # Candle/BGE local embeddings (unused)
+
 ├── indexes.rs           # Vector index management
 ├── registry.rs          # Agent job registry
 ├── serializers.rs       # Custom serialization
@@ -36,8 +36,8 @@ src/
 │   ├── maintenance.rs   # maintain tool
 │   ├── rethink.rs       # rethink tool (mark for correction)
 │   ├── corrections.rs   # corrections tool (list events)
-│   ├── detailed_help.rs # howto tool
-│   ├── delegate_gemini.rs # call_gem tool
+│   ├── howto.rs         # howto tool
+│   ├── call_gem.rs      # call_gem tool
 │   ├── agent_job_status.rs # call_status tool
 │   ├── list_agent_jobs.rs # call_jobs tool
 │   └── cancel_agent_job.rs # call_cancel tool
