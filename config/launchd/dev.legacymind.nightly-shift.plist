@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+        <key>EnvironmentVariables</key>
+        <dict>
+                <key>SURR_ENV_FILE</key>
+                <string>/Users/samuelatagana/Projects/LegacyMind/surreal-mind/.env</string>
+                <key>PATH</key>
+                <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        </dict>
+        <key>Label</key>
+        <string>dev.legacymind.nightly-shift</string>
+        <key>ProgramArguments</key>
+        <array>
+                <string>/bin/bash</string>
+                <string>/Users/samuelatagana/Projects/LegacyMind/surreal-mind/scripts/nightly_shift.sh</string>
+        </array>
+        <key>StartCalendarInterval</key>
+        <dict>
+                <key>Hour</key>
+                <integer>1</integer>
+                <key>Minute</key>
+                <integer>0</integer>
+        </dict>
+        <key>StandardErrorPath</key>
+        <string>/Users/samuelatagana/Projects/LegacyMind/surreal-mind/logs/nightly_shift.log</string>
+        <key>StandardOutPath</key>
+        <string>/Users/samuelatagana/Projects/LegacyMind/surreal-mind/logs/nightly_shift.log</string>
+        <key>WorkingDirectory</key>
+        <string>/Users/samuelatagana/Projects/LegacyMind/surreal-mind</string>
+</dict>
+</plist>

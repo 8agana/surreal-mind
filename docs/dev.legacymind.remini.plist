@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>SURR_ENV_FILE</key>
+		<string>/Users/samuelatagana/Projects/LegacyMind/surreal-mind/.env</string>
+	</dict>
+	<key>Label</key>
+	<string>dev.legacymind.remini</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/samuelatagana/Projects/LegacyMind/surreal-mind/target/release/remini</string>
+		<string>--all</string>
+	</array>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>1</integer>
+		<key>Minute</key>
+		<integer>0</integer>
+	</dict>
+	<key>StandardErrorPath</key>
+	<string>/Users/samuelatagana/Projects/LegacyMind/surreal-mind/logs/remini_launchd.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/samuelatagana/Projects/LegacyMind/surreal-mind/logs/remini_launchd.log</string>
+	<key>WorkingDirectory</key>
+	<string>/Users/samuelatagana/Projects/LegacyMind/surreal-mind</string>
+</dict>
+</plist>

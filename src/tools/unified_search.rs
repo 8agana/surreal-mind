@@ -240,7 +240,7 @@ pub async fn unified_search_inner(
             let q_dim = q_emb_val.len() as i64;
             // UPDATED: Order by similarity DESC (not created_at) for semantic search
             let mut sql = "SELECT meta::id(id) as id, name, data, created_at, vector::similarity::cosine(embedding, $q) AS similarity
-                 FROM kg_entities WHERE embedding_dim = $dim AND embedding IS NOT NULL".to_string();
+                 FROM kg_entities WHERE embedding_dim = $dim AND embedding IS NOT NONE".to_string();
 
             if params.chain_id.is_some() {
                 sql.push_str(" AND ");
@@ -422,7 +422,7 @@ pub async fn unified_search_inner(
             // Semantic search using embeddings
             let q_dim = q_emb_val.len() as i64;
             let mut sql = "SELECT meta::id(id) as id, name, data, created_at, vector::similarity::cosine(embedding, $q) AS similarity
-                 FROM kg_observations WHERE embedding_dim = $dim AND embedding IS NOT NULL".to_string();
+                 FROM kg_observations WHERE embedding_dim = $dim AND embedding IS NOT NONE".to_string();
 
             if params.chain_id.is_some() {
                 sql.push_str(" AND ");
@@ -576,7 +576,7 @@ pub async fn unified_search_inner(
         // Build WHERE clauses - only require embeddings if doing semantic search
         let mut where_clauses = vec![];
         if q_emb.is_some() {
-            where_clauses.push("embedding_dim = $dim AND embedding IS NOT NULL".to_string());
+            where_clauses.push("embedding_dim = $dim AND embedding IS NOT NONE".to_string());
         }
         let mut binds = serde_json::Map::new();
 

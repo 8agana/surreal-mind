@@ -1,7 +1,8 @@
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::time::Instant;
+use std::time::{Duration, Instant};
+use std::thread;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -29,6 +30,10 @@ struct Args {
     /// Show last report and exit
     #[arg(long)]
     report: bool,
+
+    /// Timeout per task in seconds (default: 3600 = 1 hour)
+    #[arg(long, default_value = "3600")]
+    timeout: u64,
 }
 
 #[derive(Serialize, Debug)]
@@ -73,7 +78,7 @@ fn main() -> Result<()> {
     let mut summary = Summary::default();
 
     for task in tasks.iter() {
-        let (ok, dur, out, err) = run_task(task, args.dry_run, args.rethink_types.as_deref())?;
+        let (ok, dur, out, err) = run_task(task, args.dry_run, args.rethink_types.as_deref(), args.timeout)?;
         if ok {
             summary.tasks_succeeded += 1;
         } else {
@@ -132,6 +137,7 @@ fn run_task(
     task: &str,
     dry_run: bool,
     rethink_types: Option<&str>,
+    timeout_secs: u64,
 ) -> Result<(bool, u128, String, String)> {
     let mut cmd_path = PathBuf::from(BIN_DIR);
     let mut envs = vec![];
@@ -189,24 +195,61 @@ fn run_task(
     }
 
     let start = Instant::now();
-    let mut command = Command::new(cmd_path);
+    let mut command = Command::new(&cmd_path);
     if dry_run {
         envs.push(("DRY_RUN", "1"));
     }
     for (k, v) in envs.iter() {
         command.env(k, v);
     }
-    let output = command
+    
+    let mut child = command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .output()
+        .spawn()
         .with_context(|| format!("failed to start task {}", task))?;
 
-    let dur = start.elapsed().as_millis();
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let success = output.status.success();
-    Ok((success, dur, stdout, stderr))
+    let timeout = Duration::from_secs(timeout_secs);
+    let poll_interval = Duration::from_millis(500);
+    
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                // Process finished
+                let dur = start.elapsed().as_millis();
+                let stdout = child.stdout.take()
+                    .map(|mut s| {
+                        let mut buf = String::new();
+                        use std::io::Read;
+                        let _ = s.read_to_string(&mut buf);
+                        buf
+                    })
+                    .unwrap_or_default();
+                let stderr = child.stderr.take()
+                    .map(|mut s| {
+                        let mut buf = String::new();
+                        use std::io::Read;
+                        let _ = s.read_to_string(&mut buf);
+                        buf
+                    })
+                    .unwrap_or_default();
+                return Ok((status.success(), dur, stdout, stderr));
+            }
+            Ok(None) => {
+                // Still running, check timeout
+                if start.elapsed() > timeout {
+                    let _ = child.kill();
+                    let dur = start.elapsed().as_millis();
+                    return Ok((false, dur, String::new(), format!("TIMEOUT: {} exceeded {}s limit", task, timeout_secs)));
+                }
+                thread::sleep(poll_interval);
+            }
+            Err(e) => {
+                let dur = start.elapsed().as_millis();
+                return Ok((false, dur, String::new(), format!("wait error: {}", e)));
+            }
+        }
+    }
 }
 
 fn persist_report(report: &SleepReport) -> Result<()> {
