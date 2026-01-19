@@ -1,7 +1,0 @@
-- [x] Verify Rusty's diagnosis
-- [x] Check embedding strategy
-- [x] Context injection audit
-- [x] start-agent impact assessment
-- [x] Formulate architecture recommendation
-- [x] Recommended fix: code change
-- [ ] Verification plan (skipped, unable to mock DB)
