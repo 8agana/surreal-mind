@@ -7,7 +7,7 @@ use serde_json::json;
 
 impl SurrealMindServer {
     /// Handle the detailed_help tool call
-    pub async fn handle_detailed_help(
+    pub async fn handle_howto(
         &self,
         request: CallToolRequestParam,
     ) -> Result<CallToolResult> {

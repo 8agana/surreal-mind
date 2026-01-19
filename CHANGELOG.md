@@ -1,7 +1,13 @@
-## [Unreleased] - 2026-01-17
+## [Unreleased] - 2026-01-19
+
+### Removed
+
+- **Photography Scripts**: Deleted `scripts/import_skater_requests.py` and `scripts/validate_contacts.py` - these belong in photography-mind, not surreal-mind.
+- **Deprecated Shell Tests**: Removed 8 shell test scripts that referenced deprecated tools (`think_search`, `think_convo`): `simple_test.sh`, `test_with_data.sh`, `debug_search_low_thresh.sh`, `debug_search.sh`, `test_search.sh`, `test_mcp_comprehensive.sh`, `test_detailed_mcp.sh`, `test_simplified_output.sh`. Kept 4 valid scripts: `test_simple.sh`, `test_mcp.sh`, `test_stdio_persistence.sh`, `check_version.sh`.
 
 ### Changed
 
+- **Tool File Naming**: Renamed `delegate_gemini.rs` → `call_gem.rs` and `detailed_help.rs` → `howto.rs` for consistency with tool names. Handler methods also renamed (`handle_delegate_gemini` → `handle_call_gem`, `handle_detailed_help` → `handle_howto`).
 - **call_codex Tool**: Refactored to synchronous execution - returns response directly in MCP call instead of async job queue. Removed worker polling pattern for simpler, more reliable operation.
 - **CodexClient**: Added `--skip-git-repo-check` flag for execution in any directory. Fixed NDJSON parser to handle Codex's `item.aggregated_output` format and `thread_id` extraction.
 - **Codex Model Configuration**: Default model and available models dropdown now read from environment variables (`CODEX_MODEL` and `CODEX_MODELS`) instead of hardcoded - no rebuild required to change model list.

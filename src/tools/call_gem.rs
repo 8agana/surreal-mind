@@ -46,7 +46,7 @@ pub struct DelegateGeminiParams {
 
 impl SurrealMindServer {
     /// Handle the delegate_gemini tool call - now synchronous
-    pub async fn handle_delegate_gemini(
+    pub async fn handle_call_gem(
         &self,
         request: CallToolRequestParam,
     ) -> Result<CallToolResult> {

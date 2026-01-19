@@ -282,7 +282,7 @@ impl ServerHandler for SurrealMindServer {
                 .await
                 .map_err(|e| e.into()),
             "call_gem" => self
-                .handle_delegate_gemini(request)
+                .handle_call_gem(request)
                 .await
                 .map_err(|e| e.into()),
             "call_codex" => self.handle_call_codex(request).await.map_err(|e| e.into()),
@@ -303,7 +303,7 @@ impl ServerHandler for SurrealMindServer {
 
             // Help
             "howto" => self
-                .handle_detailed_help(request)
+                .handle_howto(request)
                 .await
                 .map_err(|e| e.into()),
             "search" => self
