@@ -34,6 +34,7 @@
 - **Search NULL vs NONE**: Fixed `unified_search.rs` to use `IS NOT NONE` instead of `IS NOT NULL` for SurrealDB 2.x compatibility. Thoughts with uninitialized embeddings were causing `vector::similarity::cosine()` errors.
 - **REMini Timeout**: Added `--timeout` flag (default 3600s = 1 hour per task). Uses spawn + polling instead of blocking `.output()` to prevent runaway tasks from hanging indefinitely.
 - **wander ID normalization**: `wander` now accepts `entity:` / `observation:` / `thought:` aliases and validates record existence before querying, preventing `meta::id()` type errors when starting from entity IDs.
+- **wander meta::id() serialization**: Fixed critical bug where `wander` tool failed with "invalid type: enum" serialization error. Updated all SQL queries to properly use `meta::id(id) as id` to convert Thing objects to strings, ensuring JSON serialization compatibility. This affects 12 query statements across all wander modes (random, semantic, meta, marks).
 
 ### Removed
 

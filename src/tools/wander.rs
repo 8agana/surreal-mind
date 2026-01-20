@@ -81,7 +81,7 @@ impl SurrealMindServer {
                 let res: Vec<serde_json::Value> = self
                     .db
                     .query(format!(
-                        "SELECT * FROM type::thing('{}', $id) LIMIT 1",
+                        "SELECT meta::id(id) as id, * FROM type::thing('{}', $id) LIMIT 1",
                         table
                     ))
                     .bind(("id", short_id))
@@ -99,7 +99,7 @@ impl SurrealMindServer {
                 let res: Vec<serde_json::Value> = self
                     .db
                     .query(
-                        "SELECT * FROM thoughts, kg_entities, kg_observations
+                        "SELECT meta::id(id) as id, * FROM thoughts, kg_entities, kg_observations
                          WHERE id = type::thing('thoughts', $id)
                             OR id = type::thing('kg_entities', $id)
                             OR id = type::thing('kg_observations', $id)
@@ -116,9 +116,9 @@ impl SurrealMindServer {
             // This enables "Start Wandering" without needing a specific ID
             if params.mode == "semantic" || params.mode == "meta" {
                 let q = if params.recency_bias {
-                    "SELECT * FROM thoughts ORDER BY created_at DESC LIMIT 1"
+                    "SELECT meta::id(id) as id, * FROM thoughts ORDER BY created_at DESC LIMIT 1"
                 } else {
-                    "SELECT * FROM thoughts, kg_entities, kg_observations ORDER BY rand() LIMIT 1"
+                    "SELECT meta::id(id) as id, * FROM thoughts, kg_entities, kg_observations ORDER BY rand() LIMIT 1"
                 };
 
                 let res: Vec<serde_json::Value> = self.db.query(q).await?.take(0)?;
@@ -254,7 +254,7 @@ impl SurrealMindServer {
         // Actually, let's use a UNION-like approach or just simple fallback order.
         // "SELECT * FROM thoughts, kg_entities, kg_observations ORDER BY rand() LIMIT 1" (SurrealDB might support comma separated targets? Yes.)
 
-        let q = "SELECT * FROM thoughts, kg_entities, kg_observations WHERE id NOT IN $visited ORDER BY rand() LIMIT 1";
+        let q = "SELECT meta::id(id) as id, * FROM thoughts, kg_entities, kg_observations WHERE meta::id(id) NOT IN $visited ORDER BY rand() LIMIT 1";
         let res: Vec<serde_json::Value> = self
             .db
             .query(q)
@@ -294,10 +294,10 @@ impl SurrealMindServer {
         // Use a threshold to ensure relevance, but loose enough for wandering
         // Note: Casting id to string for comparison safety
         // Note: Must filter for valid embeddings to avoid vector function errors
-        let q = "SELECT *, vector::similarity::cosine(embedding, $emb) as sim
+        let q = "SELECT meta::id(id) as id, *, vector::similarity::cosine(embedding, $emb) as sim
                  FROM thoughts, kg_entities, kg_observations
-                 WHERE id NOT IN $visited
-                 AND <string>id != $current_id
+                 WHERE meta::id(id) NOT IN $visited
+                 AND <string>meta::id(id) != $current_id
                  AND embedding != NONE
                  AND type::is::array(embedding)
                  ORDER BY sim DESC LIMIT 1";
@@ -350,9 +350,9 @@ impl SurrealMindServer {
 
         // Query: Overlap in tags
         // "SELECT * FROM ... WHERE tags CONTAINSANY $tags ..."
-        let q = "SELECT * FROM thoughts, kg_entities, kg_observations
-                 WHERE id NOT IN $visited
-                 AND <string>id != $current_id
+        let q = "SELECT meta::id(id) as id, * FROM thoughts, kg_entities, kg_observations
+                 WHERE meta::id(id) NOT IN $visited
+                 AND <string>meta::id(id) != $current_id
                  AND (tags CONTAINSANY $tags OR data.tags CONTAINSANY $tags)
                  ORDER BY rand() LIMIT 1";
 
@@ -389,10 +389,10 @@ impl SurrealMindServer {
 
         // Fetch next mark (oldest first)
         let query = format!(
-            "SELECT meta::tb(id) as table, mark_type, marked_for, mark_note, marked_by, marked_at, name, content, data.name as data_name \
+            "SELECT meta::id(id) as id, meta::tb(id) as table, mark_type, marked_for, mark_note, marked_by, marked_at, name, content, data.name as data_name \
              FROM thoughts, kg_entities, kg_observations \
              WHERE marked_for != NONE {filter} \
-             AND id NOT IN $visited \
+             AND meta::id(id) NOT IN $visited \
              ORDER BY marked_at ASC LIMIT 1",
             filter = filter_clause
         );
@@ -408,7 +408,7 @@ impl SurrealMindServer {
         // Compute queue depth remaining (including this one if present)
         let count_query = format!(
             "RETURN count((SELECT id FROM thoughts, kg_entities, kg_observations \
-             WHERE marked_for != NONE {filter} AND id NOT IN $visited))",
+             WHERE marked_for != NONE {filter} AND meta::id(id) NOT IN $visited))",
             filter = filter_clause
         );
 
