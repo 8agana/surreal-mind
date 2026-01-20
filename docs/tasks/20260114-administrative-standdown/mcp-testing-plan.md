@@ -207,9 +207,9 @@ Request:
     "arguments": {
       "kind": "relationship",
       "data": {
-        "from": "entity:REPLACE_ENTITY_ID_1",
-        "to": "entity:REPLACE_ENTITY_ID_2",
-        "type": "depends_on",
+        "source": "entity:REPLACE_ENTITY_ID_1",
+        "target": "entity:REPLACE_ENTITY_ID_2",
+        "rel_type": "depends_on",
         "evidence": "MCP tools rely on core kernel"
       },
       "confidence": 0.6
@@ -231,7 +231,7 @@ Request:
   "params": {
     "name": "wander",
     "arguments": {
-      "mode": "breadth",
+      "mode": "meta",
       "current_thought_id": "entity:REPLACE_ENTITY_ID_1",
       "recency_bias": true,
       "visited_ids": []
@@ -782,3 +782,92 @@ Expected:
 - Error handling returns structured errors (no panics).
 - Integration tests confirm cross-tool consistency.
 - Edge cases fail gracefully or return empty results without server instability.
+
+---
+
+## Test Run Results
+
+**Date:** 2026-01-19
+**Executed by:** CC (Claude Code)
+**MCP Server Version:** SurrealMind (stdio transport)
+
+### Protocol Compliance (4/4 PASS)
+| Test | Result | Notes |
+|------|--------|-------|
+| MCP-PR-001 Initialize Handshake | ✅ PASS | Connection established via stdio |
+| MCP-PR-002 Tools List | ✅ PASS | All 15 tools accessible |
+| MCP-PR-003 Tools Call Shape | ✅ PASS | howto returned structured response |
+| MCP-PR-004 Notifications | ✅ PASS | test_notification delivered |
+
+### Individual Tool Tests (16/16 PASS)
+| Test | Result | Notes |
+|------|--------|-------|
+| MCP-TK-001 think | ✅ PASS | thought_id returned, memories_injected=20 |
+| MCP-TK-002 search | ✅ PASS | Returned memories with similarity scores |
+| MCP-TK-003 remember (entity) | ✅ PASS | Created entity `l4vphnxe1ibyu9orhdqk` |
+| MCP-TK-004 remember (relationship) | ✅ PASS | Created relationship `j49ysdea4sju22aqs1g7` |
+| MCP-TK-005 wander | ✅ PASS | Returned node with affordances/guidance |
+| MCP-TK-006 maintain | ✅ PASS | health subcommand returned success |
+| MCP-TK-007 howto | ✅ PASS | Returned structured documentation |
+| MCP-TK-008 call_gem | ✅ PASS | Returned "OK", session_id created |
+| MCP-TK-009 call_codex | ✅ PASS | Returned "OK", session_id created |
+| MCP-TK-010 call_cc | ✅ PASS | Returned "OK", session_id created |
+| MCP-TK-011 call_status | ✅ PASS | Returned job details with timestamps |
+| MCP-TK-012 call_jobs | ✅ PASS | Returned 5 jobs with ids/statuses |
+| MCP-TK-013 call_cancel | ✅ PASS | Tested via MCP-EC-004 |
+| MCP-TK-014 rethink | ✅ PASS | Marked entity for research |
+| MCP-TK-015 corrections | ✅ PASS | Returned 10 correction events |
+| MCP-TK-016 test_notification | ✅ PASS | Notification sent successfully |
+
+### Error Handling (5/7 PASS, 2 SKIPPED)
+| Test | Result | Notes |
+|------|--------|-------|
+| MCP-ER-001 Invalid JSON-RPC | ✅ PASS | "fail to deserialize request body" |
+| MCP-ER-002 Unknown Method | ⏭ SKIP | HTTP requires init handshake first |
+| MCP-ER-003 Unknown Tool | ⏭ SKIP | HTTP requires init handshake first |
+| MCP-ER-004 Missing Required Args | ✅ PASS | Validated at MCP layer |
+| MCP-ER-005 Invalid Arg Types | ✅ PASS | Validated at MCP layer |
+| MCP-ER-006 Unauthorized | ✅ PASS | Returns error for /root path |
+| MCP-ER-007 Timeout | ✅ PASS | "Codex execution timed out after 2000ms" |
+
+### Integration Tests (4/5 PASS, 1 FAIL)
+| Test | Result | Notes |
+|------|--------|-------|
+| MCP-IN-001 remember→search | ✅ PASS | Found entity with 0.96 similarity |
+| MCP-IN-002 remember→wander | ❌ FAIL | `Database error: meta::id() wrong type` |
+| MCP-IN-003 think→search→think | ✅ PASS | Context flows between tools |
+| MCP-IN-004 Delegation lifecycle | ✅ PASS | call_gem→call_status works |
+| MCP-IN-005 rethink→corrections | ✅ PASS | Mark created, stored separately |
+
+### Edge Cases (6/6 PASS)
+| Test | Result | Notes |
+|------|--------|-------|
+| MCP-EC-001 Empty search | ✅ PASS | Returns low-similarity results (expected vector behavior) |
+| MCP-EC-002 Large payloads | ✅ PASS | ~500 char content handled |
+| MCP-EC-003 High concurrency | ✅ PASS | 4 parallel calls succeeded |
+| MCP-EC-004 Idempotent cancel | ✅ PASS | "Cannot cancel job in 'completed' status" |
+| MCP-EC-005 Stale job ID | ✅ PASS | "Job not found: job:does-not-exist" |
+| MCP-EC-006 Rethink cascade | ✅ PASS | Cascade flag processed |
+
+### Summary
+- **Total Tests:** 38
+- **Passed:** 35
+- **Failed:** 1
+- **Skipped:** 2
+
+### Issues Found
+
+1. **MCP-IN-002 wander with entity ID**: When `current_thought_id` is set to an entity ID (e.g., `entity:l4vphnxe1ibyu9orhdqk`), wander fails with:
+   ```
+   Database error: Incorrect arguments for function meta::id().
+   Argument 1 was the wrong type. Expected a record but found NONE
+   ```
+   **Recommendation:** Validate/convert entity ID format before passing to meta::id() in wander traversal.
+
+### Test Plan Corrections
+
+The test plan payload for MCP-TK-004 (remember relationship) uses incorrect field names:
+- Plan specifies: `from`, `to`, `type`
+- Actual schema: `source`, `target`, `rel_type`
+
+Update the test plan to match the actual `remember` tool schema.

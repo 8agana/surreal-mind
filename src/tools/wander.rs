@@ -2,6 +2,8 @@ use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde_json::json;
+use std::str::FromStr;
+use surrealdb::sql::Thing;
 
 /// Parameters for the wander tool
 #[derive(Debug, serde::Deserialize)]
@@ -26,6 +28,41 @@ pub struct WanderParams {
 }
 
 impl SurrealMindServer {
+    /// Normalize an incoming record reference into (table, id) pairs.
+    /// Accepts full Thing strings (e.g., "kg_entities:xyz"), aliases like
+    /// "entity:xyz" / "observation:xyz", and returns None if unrecognized.
+    fn normalize_record_ref(raw: &str) -> Option<(String, String)> {
+        fn map_table_alias(tb: &str) -> Option<&'static str> {
+            match tb {
+                "thoughts" | "thought" => Some("thoughts"),
+                "kg_entities" | "entity" => Some("kg_entities"),
+                "kg_observations" | "observation" => Some("kg_observations"),
+                _ => None,
+            }
+        }
+
+        // Try full Thing parsing first (handles table:id format)
+        if let Ok(thing) = Thing::from_str(raw) {
+            if let Some(tb) = map_table_alias(&thing.tb) {
+                return Some((tb.to_string(), thing.id.to_string()));
+            }
+            return None;
+        }
+
+        // Fallback: simple split if Thing parsing fails
+        if raw.contains(':') {
+            let mut parts = raw.splitn(2, ':');
+            let table = parts.next().unwrap_or("");
+            let id = parts.next().unwrap_or("");
+            if let Some(tb) = map_table_alias(table) {
+                return Some((tb.to_string(), id.to_string()));
+            }
+            return None;
+        }
+
+        None
+    }
+
     /// Handle the wander tool call
     pub async fn handle_wander(&self, request: CallToolRequestParam) -> Result<CallToolResult> {
         let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {
@@ -38,26 +75,39 @@ impl SurrealMindServer {
 
         // 1. Determine current context
         let current_node = if let Some(id) = &params.current_thought_id {
-            // Validate existence
-            // If ID doesn't look like a record ID (no colon), try to find it in known tables
-            let q = if id.contains(':') {
-                "SELECT meta::id(id) as id, * FROM $id"
-            } else {
-                "SELECT meta::id(id) as id, * FROM thoughts, kg_entities, kg_observations
-                  WHERE id = type::thing('thoughts', $id)
-                     OR id = type::thing('kg_entities', $id)
-                     OR id = type::thing('kg_observations', $id)
-                  LIMIT 1"
-            };
+            // Normalize the id into a specific table:id reference
+            if let Some((table, short_id)) = Self::normalize_record_ref(id) {
+                let res: Vec<serde_json::Value> = self
+                    .db
+                    .query(format!(
+                        "SELECT meta::id(id) as id, * FROM type::thing('{}', $id) LIMIT 1",
+                        table
+                    ))
+                    .bind(("id", short_id))
+                    .await?
+                    .take(0)?;
 
-            let res: Vec<serde_json::Value> =
-                self.db.query(q).bind(("id", id.clone())).await?.take(0)?;
-
-            if res.is_empty() {
-                // If ID invalid, fall back to random start
-                None
+                if res.is_empty() {
+                    None
+                } else {
+                    Some(res[0].clone())
+                }
             } else {
-                Some(res[0].clone())
+                // If ID doesn't look like a record id, attempt best-effort lookup across tables
+                let res: Vec<serde_json::Value> = self
+                    .db
+                    .query(
+                        "SELECT meta::id(id) as id, * FROM thoughts, kg_entities, kg_observations
+                         WHERE id = type::thing('thoughts', $id)
+                            OR id = type::thing('kg_entities', $id)
+                            OR id = type::thing('kg_observations', $id)
+                         LIMIT 1",
+                    )
+                    .bind(("id", id.clone()))
+                    .await?
+                    .take(0)?;
+
+                res.first().cloned()
             }
         } else {
             // Auto-seed context if mode requires it (Semantic/Meta)
@@ -367,5 +417,47 @@ impl SurrealMindServer {
         let queue_depth: Option<i64> = cq.bind(("visited", visited.to_vec())).await?.take(0)?;
 
         Ok((node, queue_depth.unwrap_or(0)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SurrealMindServer;
+
+    #[test]
+    fn normalize_accepts_aliases_and_things() {
+        let cases = vec![
+            (
+                "entity:abc123",
+                Some(("kg_entities".to_string(), "abc123".to_string())),
+            ),
+            (
+                "kg_entities:xyz",
+                Some(("kg_entities".to_string(), "xyz".to_string())),
+            ),
+            (
+                "observation:foo",
+                Some(("kg_observations".to_string(), "foo".to_string())),
+            ),
+            (
+                "kg_observations:bar",
+                Some(("kg_observations".to_string(), "bar".to_string())),
+            ),
+            (
+                "thoughts:baz",
+                Some(("thoughts".to_string(), "baz".to_string())),
+            ),
+            (
+                "thought:baz",
+                Some(("thoughts".to_string(), "baz".to_string())),
+            ),
+            ("nonsense", None),
+            ("bad:table:id", None),
+        ];
+
+        for (input, expected) in cases {
+            let got = SurrealMindServer::normalize_record_ref(input);
+            assert_eq!(got, expected, "input={}", input);
+        }
     }
 }
