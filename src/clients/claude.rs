@@ -233,14 +233,13 @@ fn parse_claude_stream_json(stdout: &str) -> (Option<String>, String, Vec<Value>
                     is_error = true;
                 }
                 // Also check for result.isError pattern
-                if let Some(result) = event.get("result") {
-                    if result
+                if let Some(result) = event.get("result")
+                    && result
                         .get("isError")
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false)
-                    {
-                        is_error = true;
-                    }
+                {
+                    is_error = true;
                 }
 
                 // Extract session_id from various possible fields
@@ -272,39 +271,38 @@ fn parse_claude_stream_json(stdout: &str) -> (Option<String>, String, Vec<Value>
 
 fn extract_response_text(event: &Value) -> Option<&str> {
     // Check for MCP result content
-    if let Some(result) = event.get("result") {
-        if let Some(content) = result.get("content") {
-            if let Some(arr) = content.as_array() {
-                for item in arr {
-                    if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
-                        return Some(text);
-                    }
-                }
-            }
-        }
-    }
-
-    // Check for message content (Claude API format)
-    if let Some(message) = event.get("message") {
-        if let Some(content) = message.get("content") {
-            if let Some(arr) = content.as_array() {
-                for item in arr {
-                    if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
-                        return Some(text);
-                    }
-                }
-            }
-            if let Some(text) = content.as_str() {
+    if let Some(result) = event.get("result")
+        && let Some(content) = result.get("content")
+        && let Some(arr) = content.as_array()
+    {
+        for item in arr {
+            if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
                 return Some(text);
             }
         }
     }
 
-    // Check for delta content (streaming)
-    if let Some(delta) = event.get("delta") {
-        if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {
+    // Check for message content (Claude API format)
+    if let Some(message) = event.get("message")
+        && let Some(content) = message.get("content")
+    {
+        if let Some(arr) = content.as_array() {
+            for item in arr {
+                if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
+                    return Some(text);
+                }
+            }
+        }
+        if let Some(text) = content.as_str() {
             return Some(text);
         }
+    }
+
+    // Check for delta content (streaming)
+    if let Some(delta) = event.get("delta")
+        && let Some(text) = delta.get("text").and_then(|v| v.as_str())
+    {
+        return Some(text);
     }
 
     // Generic fallbacks

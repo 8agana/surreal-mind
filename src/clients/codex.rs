@@ -251,10 +251,10 @@ fn parse_codex_ndjson(stdout: &str) -> (Option<String>, String, Vec<Value>) {
 fn extract_response_text(event: &Value) -> Option<&str> {
     // Codex-specific: item.aggregated_output for command results
     if let Some(item) = event.get("item") {
-        if let Some(output) = item.get("aggregated_output").and_then(|v| v.as_str()) {
-            if !output.is_empty() {
-                return Some(output);
-            }
+        if let Some(output) = item.get("aggregated_output").and_then(|v| v.as_str())
+            && !output.is_empty()
+        {
+            return Some(output);
         }
         // Also check for reasoning text in item
         if let Some(text) = item.get("text").and_then(|v| v.as_str()) {

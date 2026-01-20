@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -78,7 +78,12 @@ fn main() -> Result<()> {
     let mut summary = Summary::default();
 
     for task in tasks.iter() {
-        let (ok, dur, out, err) = run_task(task, args.dry_run, args.rethink_types.as_deref(), args.timeout)?;
+        let (ok, dur, out, err) = run_task(
+            task,
+            args.dry_run,
+            args.rethink_types.as_deref(),
+            args.timeout,
+        )?;
         if ok {
             summary.tasks_succeeded += 1;
         } else {
@@ -202,7 +207,7 @@ fn run_task(
     for (k, v) in envs.iter() {
         command.env(k, v);
     }
-    
+
     let mut child = command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -211,13 +216,15 @@ fn run_task(
 
     let timeout = Duration::from_secs(timeout_secs);
     let poll_interval = Duration::from_millis(500);
-    
+
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
                 // Process finished
                 let dur = start.elapsed().as_millis();
-                let stdout = child.stdout.take()
+                let stdout = child
+                    .stdout
+                    .take()
                     .map(|mut s| {
                         let mut buf = String::new();
                         use std::io::Read;
@@ -225,7 +232,9 @@ fn run_task(
                         buf
                     })
                     .unwrap_or_default();
-                let stderr = child.stderr.take()
+                let stderr = child
+                    .stderr
+                    .take()
                     .map(|mut s| {
                         let mut buf = String::new();
                         use std::io::Read;
@@ -240,7 +249,12 @@ fn run_task(
                 if start.elapsed() > timeout {
                     let _ = child.kill();
                     let dur = start.elapsed().as_millis();
-                    return Ok((false, dur, String::new(), format!("TIMEOUT: {} exceeded {}s limit", task, timeout_secs)));
+                    return Ok((
+                        false,
+                        dur,
+                        String::new(),
+                        format!("TIMEOUT: {} exceeded {}s limit", task, timeout_secs),
+                    ));
                 }
                 thread::sleep(poll_interval);
             }

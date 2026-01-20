@@ -46,10 +46,7 @@ pub struct DelegateGeminiParams {
 
 impl SurrealMindServer {
     /// Handle the delegate_gemini tool call - now synchronous
-    pub async fn handle_call_gem(
-        &self,
-        request: CallToolRequestParam,
-    ) -> Result<CallToolResult> {
+    pub async fn handle_call_gem(&self, request: CallToolRequestParam) -> Result<CallToolResult> {
         let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {
             message: "Missing parameters".into(),
         })?;
@@ -103,7 +100,8 @@ impl SurrealMindServer {
 
         match result {
             Ok(response) => {
-                let truncated_response = truncate_response(response.response, params.max_response_chars);
+                let truncated_response =
+                    truncate_response(response.response, params.max_response_chars);
                 let mut result_json = json!({
                     "status": "completed",
                     "session_id": response.session_id,
@@ -139,15 +137,20 @@ const DEFAULT_MAX_RESPONSE_CHARS: usize = 100_000;
 fn truncate_response(response: String, max_chars: Option<i64>) -> String {
     let limit = match max_chars {
         Some(n) if n > 0 => n as usize,
-        Some(n) if n == 0 => return response, // 0 = no limit
+        Some(0) => return response, // 0 = no limit
         _ => DEFAULT_MAX_RESPONSE_CHARS,
     };
-    
+
     if response.len() <= limit {
         response
     } else {
         let truncated = &response[..limit];
-        format!("{}...\n\n[TRUNCATED: Response was {} chars, limit is {}]", truncated, response.len(), limit)
+        format!(
+            "{}...\n\n[TRUNCATED: Response was {} chars, limit is {}]",
+            truncated,
+            response.len(),
+            limit
+        )
     }
 }
 

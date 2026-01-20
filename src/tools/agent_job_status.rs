@@ -116,16 +116,14 @@ async fn fetch_job_status(db: &Surreal<WsClient>, job_id: String) -> Result<Valu
     let mut metadata = row.metadata.clone();
     let mut response = extract_response_from_metadata(&metadata);
 
-    if response.is_none() {
-        if let Some(exchange_id) = row.exchange_id.as_deref() {
-            if let Some((exchange_response, exchange_metadata)) =
-                fetch_exchange_response(db, exchange_id).await?
-            {
-                response = exchange_response;
-                if metadata_is_empty(&metadata) {
-                    metadata = exchange_metadata;
-                }
-            }
+    if response.is_none()
+        && let Some(exchange_id) = row.exchange_id.as_deref()
+        && let Some((exchange_response, exchange_metadata)) =
+            fetch_exchange_response(db, exchange_id).await?
+    {
+        response = exchange_response;
+        if metadata_is_empty(&metadata) {
+            metadata = exchange_metadata;
         }
     }
 
@@ -174,7 +172,10 @@ async fn fetch_exchange_response(
     exchange_id: &str,
 ) -> Result<Option<(Option<String>, Option<Value>)>> {
     let sql = "SELECT response, metadata FROM agent_exchanges WHERE id = type::thing($exchange_id) LIMIT 1;";
-    let mut response = db.query(sql).bind(("exchange_id", exchange_id.to_string())).await?;
+    let mut response = db
+        .query(sql)
+        .bind(("exchange_id", exchange_id.to_string()))
+        .await?;
     #[derive(Deserialize)]
     struct ExchangeRow {
         response: Option<String>,

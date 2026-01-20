@@ -281,10 +281,7 @@ impl ServerHandler for SurrealMindServer {
                 .handle_knowledgegraph_create(request)
                 .await
                 .map_err(|e| e.into()),
-            "call_gem" => self
-                .handle_call_gem(request)
-                .await
-                .map_err(|e| e.into()),
+            "call_gem" => self.handle_call_gem(request).await.map_err(|e| e.into()),
             "call_codex" => self.handle_call_codex(request).await.map_err(|e| e.into()),
             "call_cc" => self.handle_call_cc(request).await.map_err(|e| e.into()),
 
@@ -302,10 +299,7 @@ impl ServerHandler for SurrealMindServer {
                 .map_err(|e| e.into()),
 
             // Help
-            "howto" => self
-                .handle_howto(request)
-                .await
-                .map_err(|e| e.into()),
+            "howto" => self.handle_howto(request).await.map_err(|e| e.into()),
             "search" => self
                 .handle_unified_search(request)
                 .await

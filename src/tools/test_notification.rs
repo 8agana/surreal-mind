@@ -61,7 +61,7 @@ impl SurrealMindServer {
                 "message": format!("Notification sent: {}", params.message)
             }))),
             Err(e) => Err(SurrealMindError::Mcp {
-                message: format!("Failed to send notification: {}", e).into(),
+                message: format!("Failed to send notification: {}", e),
             }),
         }
     }

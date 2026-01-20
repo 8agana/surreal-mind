@@ -159,15 +159,20 @@ const DEFAULT_MAX_RESPONSE_CHARS: usize = 100_000;
 fn truncate_response(response: String, max_chars: Option<i64>) -> String {
     let limit = match max_chars {
         Some(n) if n > 0 => n as usize,
-        Some(n) if n == 0 => return response, // 0 = no limit
+        Some(0) => return response, // 0 = no limit
         _ => DEFAULT_MAX_RESPONSE_CHARS,
     };
-    
+
     if response.len() <= limit {
         response
     } else {
         let truncated = &response[..limit];
-        format!("{}...\n\n[TRUNCATED: Response was {} chars, limit is {}]", truncated, response.len(), limit)
+        format!(
+            "{}...\n\n[TRUNCATED: Response was {} chars, limit is {}]",
+            truncated,
+            response.len(),
+            limit
+        )
     }
 }
 
