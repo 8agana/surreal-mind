@@ -100,7 +100,7 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
 ## Configuration Quick Reference
 
 - Database: `SURR_DB_URL` (ws/wss/http/https), `SURR_DB_NS`, `SURR_DB_DB`, `SURR_DB_USER`, `SURR_DB_PASS`, `SURR_DB_TIMEOUT_MS`, `SURR_DB_SERIAL` (serialize queries), `SURR_DB_RECONNECT`.
-- Embeddings: `SURR_EMBED_PROVIDER=openai|candle`, `SURR_EMBED_MODEL`, `SURR_EMBED_STRICT`, `SURR_SKIP_DIM_CHECK`, `SURR_EMBED_RETRIES`, `SURR_EMBED_DIM` (inferred), `OPENAI_API_KEY`. Primary: text-embedding-3-small (1536); Candle dev: bge-small-en-v1.5 (384). Never mix dims—reembed when switching.
+- Embeddings: `SURR_EMBED_PROVIDER=openai`, `SURR_EMBED_MODEL`, `SURR_EMBED_STRICT`, `SURR_SKIP_DIM_CHECK`, `SURR_EMBED_RETRIES`, `SURR_EMBED_DIM` (inferred), `OPENAI_API_KEY`. Primary: text-embedding-3-small (1536). Never mix dims—reembed when switching. (Note: Local Candle support has been removed).
 - Retrieval/injection: `SURR_INJECT_T1/T2/T3` (defaults 0.6/0.4/0.25), `SURR_INJECT_FLOOR` (0.15), `SURR_KG_CANDIDATES` (default 200), `SURR_RETRIEVE_CANDIDATES` (default 500), `SURR_CACHE_MAX` (5000), `SURR_CACHE_WARM` (64), `SURR_INJECT_DEBOUNCE`, `SURR_KG_GRAPH_BOOST`, `SURR_KG_MAX_NEIGHBORS`, `SURR_KG_TIMEOUT_MS`.
 - Runtime/logging: `SURR_TOOL_TIMEOUT_MS` (default 15000), `MCP_NO_LOG`, `RUST_LOG`, `SURR_WRITE_STATE=1` to emit state.json.
 - Hypothesis verification defaults: `SURR_VERIFY_TOPK` (100), `SURR_VERIFY_MIN_SIM` (0.70), `SURR_VERIFY_EVIDENCE_LIMIT` (10), `SURR_PERSIST_VERIFICATION`.

@@ -36,18 +36,11 @@ jobs:
       - name: Check compilation
         run: cargo check --workspace --locked --all-targets
 
-  test-matrix:
-    name: Test Matrix
+  test:
+    name: Test
     runs-on: macos-latest
     env:
       PROTOC: /opt/homebrew/bin/protoc
-    strategy:
-      matrix:
-        include:
-          - embedder: candle
-            env:
-              SURR_EMBED_PROVIDER: candle
-
     steps:
       - uses: actions/checkout@v4
       - name: Install protoc
@@ -59,7 +52,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run tests
-        env: ${{ matrix.env }}
         run: cargo test --workspace --all-features
 
   verify-rmcp:

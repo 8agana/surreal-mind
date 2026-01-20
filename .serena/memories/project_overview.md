@@ -6,7 +6,7 @@ MCP (Model Context Protocol) server providing cognitive tools for the LegacyMind
 ## Tech Stack
 - **Language**: Rust (edition 2024)
 - **Database**: SurrealDB (WebSocket client)
-- **Embeddings**: OpenAI text-embedding-3-small (1536 dim) or Candle BGE (local, 384 dim)
+- **Embeddings**: OpenAI text-embedding-3-small (1536 dim) or OpenAI text-embedding-3-small (1536 dim) (Local Candle support removed)
 - **MCP Framework**: rmcp crate
 - **HTTP**: Axum for HTTP transport
 - **TUI**: Ratatui for dashboard (smtop)
@@ -14,7 +14,6 @@ MCP (Model Context Protocol) server providing cognitive tools for the LegacyMind
 ## Key Dependencies
 - `surrealdb` - Database client
 - `rmcp` - MCP protocol implementation
-- `candle-*` - Local ML inference (Metal-accelerated on macOS)
 - `reqwest` - HTTP client for OpenAI API
 - `tokio` - Async runtime
 - `axum` - HTTP server
