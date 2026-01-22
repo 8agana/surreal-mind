@@ -81,8 +81,8 @@ impl SurrealMindServer {
                 let res: Vec<serde_json::Value> = self
                     .db
                     .query(format!(
-                        "SELECT meta::id(id) as id, * FROM type::thing('{}', $id) LIMIT 1",
-                        table
+                        "SELECT meta::id(id) as id, * FROM {} WHERE id = type::thing('{}', $id) LIMIT 1",
+                        table, table
                     ))
                     .bind(("id", short_id))
                     .await?
