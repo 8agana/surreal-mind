@@ -147,6 +147,50 @@ pub fn call_cc_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
+pub fn call_warp_schema() -> Arc<Map<String, Value>> {
+    // Warp models (no env var - hardcoded list)
+    let models: Vec<Value> = vec![
+        "claude-4-5-haiku",
+        "claude-4-5-sonnet",
+        "claude-4-5-opus",
+        "gpt-5-2-codex-low",
+        "gpt-5-2-codex-medium",
+        "gpt-5-2-codex-high",
+        "gpt-5-2-codex-xhigh",
+        "gpt-5-2-codex-max",
+        "auto",
+        "auto-efficient",
+        "auto-genius",
+    ]
+    .into_iter()
+    .map(|s| Value::String(s.to_string()))
+    .collect();
+
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "prompt": {"type": "string"},
+            "task_name": {"type": "string", "default": "call_warp"},
+            "model": {
+                "type": "string",
+                "enum": models,
+                "description": "Model to use (omit for Warp default)"
+            },
+            "cwd": {"type": "string"},
+            "timeout_ms": {"type": "number", "default": 60000},
+            "mode": {
+                "type": "string",
+                "enum": ["execute", "observe"],
+                "default": "execute",
+                "description": "execute: normal operation with file changes. observe: analyze and report only, no file modifications."
+            },
+            "max_response_chars": {"type": "integer", "default": 100000, "description": "Max chars for response (0 = no limit, default 100000)"}
+        },
+        "required": ["prompt", "cwd"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
 pub fn call_status_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
