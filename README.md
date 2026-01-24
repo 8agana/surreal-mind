@@ -119,7 +119,7 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
 - `reembed`, `reembed_kg` (dimension hygiene)
 - `kg_apply_from_plan`, `kg_dedupe_plan`, `kg_populate`, `kg_embed` (KG ops)
 - `kg_debug_tool`, `kg_wander` (exploration/debugging)
-- `migration`, `smtop`, `admin` (consolidated admin utilities)
+- `migration`, `admin` (consolidated admin utilities)
 
 Run with `cargo build --release` to produce all.
 
