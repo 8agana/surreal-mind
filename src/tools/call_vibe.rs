@@ -1,5 +1,5 @@
 //! call_vibe tool handler - synchronous Vibe CLI execution
-//! Vibe is a one-shot executor - no session persistence or resume support
+//! Vibe is a one-shot executor with optional session continuation
 
 use crate::clients::vibe::VibeClient;
 use crate::error::{Result, SurrealMindError};
@@ -22,6 +22,9 @@ pub struct CallVibeParams {
     /// Mode: "execute" (normal) or "observe" (read-only analysis)
     #[serde(default)]
     pub mode: Option<String>,
+    /// Continue from last Vibe session
+    #[serde(default)]
+    pub continue_latest: Option<bool>,
     /// Timeout in milliseconds (default: 60000)
     #[serde(default)]
     pub timeout_ms: Option<u64>,
@@ -69,11 +72,13 @@ impl SurrealMindServer {
 
         let agent = normalize_optional_string(params.agent);
         let timeout_ms = params.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
+        let continue_latest = params.continue_latest.unwrap_or(false);
 
         // Build and execute VibeClient synchronously
         let vibe = VibeClient::new(agent)
             .with_cwd(&cwd)
-            .with_timeout_ms(timeout_ms);
+            .with_timeout_ms(timeout_ms)
+            .with_continue_latest(continue_latest);
 
         // Execute (client has its own timeout)
         let execution = vibe

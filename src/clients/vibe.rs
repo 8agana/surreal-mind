@@ -1,5 +1,5 @@
 //! Vibe CLI client for call_vibe tool
-//! Mistral Vibe - one-shot executor, no session persistence
+//! Mistral Vibe - one-shot executor with optional session continuation
 
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -14,6 +14,7 @@ pub struct VibeClient {
     agent: Option<String>, // --agent flag (profile name)
     cwd: Option<PathBuf>,
     timeout_ms: u64,
+    continue_latest: bool, // --continue flag
 }
 
 #[derive(Debug)]
@@ -30,6 +31,7 @@ impl VibeClient {
             agent,
             cwd: None,
             timeout_ms: 60_000,
+            continue_latest: false,
         }
     }
 
@@ -40,6 +42,11 @@ impl VibeClient {
 
     pub fn with_timeout_ms(mut self, timeout_ms: u64) -> Self {
         self.timeout_ms = timeout_ms;
+        self
+    }
+
+    pub fn with_continue_latest(mut self, continue_latest: bool) -> Self {
+        self.continue_latest = continue_latest;
         self
     }
 
@@ -54,12 +61,16 @@ impl VibeClient {
             cmd.current_dir(cwd);
         }
 
-        // vibe --auto-approve -p "<prompt>" [--agent <name>]
+        // vibe --auto-approve -p "<prompt>" [--agent <name>] [--continue]
         cmd.arg("--auto-approve");
         cmd.arg("-p").arg(prompt);
 
         if let Some(ref agent) = self.agent {
             cmd.arg("--agent").arg(agent);
+        }
+
+        if self.continue_latest {
+            cmd.arg("--continue");
         }
 
         // Execute with timeout

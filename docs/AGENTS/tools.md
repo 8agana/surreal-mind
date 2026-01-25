@@ -27,6 +27,7 @@ All delegation tools include federation context and support `mode: "observe"` fo
 | `call_gem` | Delegate to Gemini CLI. Required: `prompt`, `cwd`. Optional: `model`, `resume_session_id`, `continue_latest`, `timeout_ms`, `tool_timeout_ms`, `expose_stream`, `mode` (`execute`\|`observe`), `max_response_chars` (default 100KB). |
 | `call_cc` | Delegate to Claude Code CLI. Required: `prompt`, `cwd`. Optional: `model`, `resume_session_id`, `continue_latest`, `timeout_ms`, `tool_timeout_ms`, `expose_stream`, `mode`, `max_response_chars`. |
 | `call_warp` | Delegate to Warp CLI (multi-model). Required: `prompt`, `cwd`. Optional: `model` (claude-4-5-haiku/sonnet/opus, gpt-5-2-codex-low/medium/high/xhigh/max, auto/auto-efficient/auto-genius), `timeout_ms`, `max_response_chars`, `task_name`, `mode`. One-shot executor, no resume. |
+| `call_vibe` | Delegate to Vibe CLI. Required: `prompt`, `cwd`. Optional: `agent` (profile name), `mode`, `continue_latest`, `timeout_ms`, `max_response_chars`. Supports session continuation. |
 | `call_status` | Check status of a background agent job. Required: `job_id`. |
 | `call_jobs` | List active/recent agent jobs. Optional: `limit`, `status_filter`, `tool_name`. |
 | `call_cancel` | Cancel a running agent job. Required: `job_id`. |

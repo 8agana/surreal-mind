@@ -298,12 +298,13 @@ impl SurrealMindServer {
             }),
             "call_vibe" => json!({
                 "name": "call_vibe",
-                "description": "Delegate a prompt to the Vibe CLI agent. Supports agent profiles and observe mode.",
+                "description": "Delegate a prompt to the Vibe CLI agent. Supports agent profiles, session continuation, and observe mode.",
                 "arguments": {
                     "prompt": "string (required) — the prompt text",
                     "cwd": "string (required) — working directory for the agent",
                     "agent": "string — agent profile name from ~/.vibe/agents/*.toml",
                     "mode": "string — 'execute' (default) or 'observe' (read-only analysis)",
+                    "continue_latest": "boolean (default false) — continue from last Vibe session",
                     "timeout_ms": "integer (default 60000) — execution timeout",
                     "max_response_chars": "integer (default 100000) — max chars for response (0 = no limit)"
                 },

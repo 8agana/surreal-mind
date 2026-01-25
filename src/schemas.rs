@@ -167,6 +167,7 @@ pub fn call_vibe_schema() -> Arc<Map<String, Value>> {
                 "default": "execute",
                 "description": "execute: normal operation with file changes. observe: analyze and report only, no file modifications."
             },
+            "continue_latest": {"type": "boolean", "default": false},
             "timeout_ms": {"type": "number", "default": 60000},
             "max_response_chars": {
                 "type": "integer",

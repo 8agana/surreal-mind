@@ -10,4 +10,4 @@ This folder holds the modular agent docs for SurrealMind. Start here and jump to
 - TODO and roadmap: `docs/AGENTS/todo.md`, `docs/AGENTS/roadmap.md`
 
 Tool roster includes: `think`, `search`, `remember`, `wander`, `rethink`, `corrections`, `maintain`, `howto`,
-and delegation tools `call_gem`, `call_cc`, `call_warp`, `call_status`, `call_jobs`, `call_cancel`.
+and delegation tools `call_gem`, `call_cc`, `call_warp`, `call_vibe`, `call_status`, `call_jobs`, `call_cancel`.

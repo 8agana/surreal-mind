@@ -1,6 +1,6 @@
 # SurrealMind – Consciousness Persistence MCP Server
 
-SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server that stores thoughts and knowledge in SurrealDB, injects relevant memories with orbital mechanics, and exposes 15 curated tools for continuity.
+SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server that stores thoughts and knowledge in SurrealDB, injects relevant memories with orbital mechanics, and exposes 16 curated tools for continuity.
 
 ## What It Does
 
@@ -9,7 +9,7 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
 - **Knowledge graph authoring** (`remember`).
 - **Curiosity-driven exploration** (`wander`) for discovering connections.
 - **Operations and introspection** (`maintain`, `howto`).
-- **Agent delegation** (`call_gem`, `call_cc`, `call_warp`, `call_status`, `call_jobs`, `call_cancel`).
+- **Agent delegation** (`call_gem`, `call_cc`, `call_warp`, `call_vibe`, `call_status`, `call_jobs`, `call_cancel`).
 - Transports: stdio by default or streamable HTTP with SSE and bearer auth.
 
 ## Transports
@@ -80,7 +80,7 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
    ./tests/test_mcp_comprehensive.sh
    ```
 
-## Tool Surface (15)
+## Tool Surface (16)
 
 | Tool | Description |
 |------|-------------|
@@ -93,7 +93,9 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
 | `maintain` | System maintenance: `health_check_embeddings`, `reembed`, `reembed_kg`, `embed_pending`, `list_removal_candidates`, `export_removals`, `finalize_removal`, `echo_config`, `rethink`, `populate`, `embed`, `wander`, `health`, `report`, `tasks`. |
 | `howto` | Get help for any tool. Optional: `tool`, `format` (`compact\|full`). |
 | `call_gem` | Delegate prompts to Gemini CLI. Required: `prompt`. Optional: `task_name`, `model`, `cwd`, `timeout_ms`. |
+| `call_cc` | Delegate prompts to Claude Code CLI. Required: `prompt`, `cwd`. Optional: `model`, `mode`, `resume_session_id`, `continue_latest`, `timeout_ms`. |
 | `call_warp` | Delegate prompts to Warp CLI (multi-model). Required: `prompt`, `cwd`. Optional: `model` (claude-4-5-haiku/sonnet/opus, gpt-5-2-codex-low/medium/high/xhigh/max, auto/auto-efficient/auto-genius), `timeout_ms`, `max_response_chars`, `task_name`, `mode`. One-shot executor, no resume. |
+| `call_vibe` | Delegate prompts to Vibe CLI. Required: `prompt`, `cwd`. Optional: `agent` (profile name), `mode`, `continue_latest`, `timeout_ms`. Supports session continuation. |
 | `call_status` | Check status of a background agent job. Required: `job_id`. |
 | `call_jobs` | List active/recent agent jobs. Optional: `limit`, `status_filter`, `tool_name`. |
 | `call_cancel` | Cancel a running agent job. Required: `job_id`. |
