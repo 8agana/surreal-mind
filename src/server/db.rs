@@ -137,7 +137,7 @@ impl SurrealMindServer {
                 message: e.message.to_string(),
             })?;
 
-        // Note: Both call_codex and call_gem are now synchronous - no background workers needed
+        // Note: Delegation tools (call_gem, call_cc, call_warp) are synchronous - no background workers needed
 
         Ok(server)
     }

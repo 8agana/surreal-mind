@@ -2,8 +2,8 @@
 
 pub mod agent_job_status;
 pub mod call_cc;
-pub mod call_codex;
 pub mod call_gem;
+pub mod call_vibe;
 pub mod call_warp;
 pub mod cancel_agent_job;
 pub mod corrections;

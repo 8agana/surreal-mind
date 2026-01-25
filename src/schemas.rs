@@ -68,46 +68,6 @@ pub fn call_gem_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
-pub fn call_codex_schema() -> Arc<Map<String, Value>> {
-    // Read available models from env var (comma-separated) - REQUIRED
-    let models: Vec<Value> = std::env::var("CODEX_MODELS")
-        .expect("CODEX_MODELS env var required")
-        .split(',')
-        .map(|m| Value::String(m.trim().to_string()))
-        .collect();
-
-    let default_model = std::env::var("CODEX_MODEL").expect("CODEX_MODEL env var required");
-
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "prompt": {"type": "string"},
-            "task_name": {"type": "string", "default": "call_codex"},
-            "model": {
-                "type": "string",
-                "enum": models,
-                "default": default_model
-            },
-            "cwd": {"type": "string"},
-            "resume_session_id": {"type": "string"},
-            "continue_latest": {"type": "boolean", "default": false},
-            "timeout_ms": {"type": "number", "default": 60000},
-            "tool_timeout_ms": {"type": "number", "default": 300000},
-            "expose_stream": {"type": "boolean", "default": false},
-            "fire_and_forget": {"type": "boolean", "default": false},
-            "mode": {
-                "type": "string",
-                "enum": ["execute", "observe"],
-                "default": "execute",
-                "description": "execute: normal operation with file changes. observe: analyze and report only, no file modifications."
-            },
-            "max_response_chars": {"type": "integer", "default": 100000, "description": "Max chars for response (0 = no limit, default 100000)"}
-        },
-        "required": ["prompt", "cwd"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
 pub fn call_cc_schema() -> Arc<Map<String, Value>> {
     // Read available models from env var (comma-separated) - REQUIRED
     let models: Vec<Value> = std::env::var("ANTHROPIC_MODELS")
@@ -191,6 +151,34 @@ pub fn call_warp_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
+pub fn call_vibe_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "prompt": {"type": "string"},
+            "cwd": {"type": "string"},
+            "agent": {
+                "type": "string",
+                "description": "Agent profile name from ~/.vibe/agents/*.toml"
+            },
+            "mode": {
+                "type": "string",
+                "enum": ["execute", "observe"],
+                "default": "execute",
+                "description": "execute: normal operation with file changes. observe: analyze and report only, no file modifications."
+            },
+            "timeout_ms": {"type": "number", "default": 60000},
+            "max_response_chars": {
+                "type": "integer",
+                "default": 100000,
+                "description": "Max chars for response (0 = no limit, default 100000)"
+            }
+        },
+        "required": ["prompt", "cwd"]
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
 pub fn call_status_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
@@ -250,12 +238,16 @@ pub fn howto_schema() -> Arc<Map<String, Value>> {
                 "search",
                 "maintain",
                 "call_gem",
-                "call_codex",
+                "call_cc",
+                "call_warp",
+                "call_vibe",
                 "call_status",
                 "call_jobs",
                 "call_cancel",
                 "wander",
-                "howto"
+                "howto",
+                "rethink",
+                "corrections"
             ]},
             "format": {"type": "string", "enum": ["compact", "full"], "default": "full"}
         }

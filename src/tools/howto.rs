@@ -27,7 +27,7 @@ impl SurrealMindServer {
                     json!({"name": "maintain", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]}),
                     json!({"name": "call_gem", "one_liner": "Delegate a prompt to the Gemini CLI agent", "key_params": ["prompt", "model", "cwd", "mode"]}),
                     json!({"name": "call_cc", "one_liner": "Delegate a prompt to the Claude Code CLI agent", "key_params": ["prompt", "model", "cwd", "mode"]}),
-                    json!({"name": "call_codex", "one_liner": "Delegate a prompt to the Codex CLI agent", "key_params": ["prompt", "model", "cwd", "mode"]}),
+                    json!({"name": "call_vibe", "one_liner": "Delegate a prompt to the Vibe CLI agent", "key_params": ["prompt", "cwd", "agent", "mode"]}),
                     json!({"name": "call_status", "one_liner": "Get status of an async agent job", "key_params": ["job_id"]}),
                     json!({"name": "call_jobs", "one_liner": "List async agent jobs", "key_params": ["limit", "status_filter", "tool_name"]}),
                     json!({"name": "call_cancel", "one_liner": "Cancel a running or queued job", "key_params": ["job_id"]}),
@@ -251,25 +251,6 @@ impl SurrealMindServer {
                 },
                 "returns": {"status": "completed", "session_id": "string", "response": "string"}
             }),
-            "call_codex" => json!({
-                "name": "call_codex",
-                "description": "Delegate a prompt to the Codex CLI agent. Supports session resume and observe mode.",
-                "arguments": {
-                    "prompt": "string (required) — the prompt text",
-                    "model": "string — override model (env: CODEX_MODEL/CODEX_MODELS)",
-                    "cwd": "string (required) — working directory for the agent",
-                    "resume_session_id": "string — resume a specific Codex session",
-                    "continue_latest": "boolean (default false) — resume last Codex session",
-                    "timeout_ms": "integer (default 60000) — outer timeout",
-                    "tool_timeout_ms": "integer (default 300000) — per-tool timeout",
-                    "expose_stream": "boolean — include stream events in metadata",
-                    "fire_and_forget": "boolean (default false) — enqueue without waiting",
-                    "mode": "string — 'execute' (default) or 'observe' (read-only analysis)",
-                    "max_response_chars": "integer (default 100000) — max chars for response (0 = no limit)"
-                },
-                "returns": {"status": "completed", "session_id": "string", "response": "string"}
-            }),
-
             "call_status" => json!({
                 "name": "call_status",
                 "description": "Get status of an async agent job",
@@ -314,6 +295,19 @@ impl SurrealMindServer {
                     "new_status": "string",
                     "message": "string"
                 }
+            }),
+            "call_vibe" => json!({
+                "name": "call_vibe",
+                "description": "Delegate a prompt to the Vibe CLI agent. Supports agent profiles and observe mode.",
+                "arguments": {
+                    "prompt": "string (required) — the prompt text",
+                    "cwd": "string (required) — working directory for the agent",
+                    "agent": "string — agent profile name from ~/.vibe/agents/*.toml",
+                    "mode": "string — 'execute' (default) or 'observe' (read-only analysis)",
+                    "timeout_ms": "integer (default 60000) — execution timeout",
+                    "max_response_chars": "integer (default 100000) — max chars for response (0 = no limit)"
+                },
+                "returns": {"status": "completed", "response": "string"}
             }),
             _ => {
                 return Err(SurrealMindError::Validation {

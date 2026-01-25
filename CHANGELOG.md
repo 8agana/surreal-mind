@@ -2,6 +2,7 @@
 
 ### Removed
 
+- **call_codex Tool**: Removed `call_codex` delegation tool from MCP surface. The `CodexClient` remains available in the codebase for potential future use. Federation now uses three delegation paths: `call_gem`, `call_cc`, and `call_warp`.
 - **Dead Directories**: Removed `models/` (260MB BGE model weights - Candle/local embedding support was removed), `.idea/` (JetBrains), `.aiassistant/` (JetBrains AI), `.agent/` (Gemini rules), `.venv-convert/` (46MB one-off Python venv).
 - **Stale Files**: Removed `.rc-prep` (September 2024 RC marker), `docs/QUICKSTART.md` (referenced old tool names).
 - **One-off Scripts**: Cleaned `scripts/` - removed `check_chain_id_usage.py`, `diagnose_entity_data.py`, `test_chain_id.py`, `test_kg.py`, `test-sleep-gemini.sh`, `package.json`, and `migration/` subproject (1.3GB target dir). Photography scripts (`backup_database.py`, `cleanup_duplicates.py`, `investigate_duplicates.py`) moved to photography-mind.
@@ -25,7 +26,7 @@
 - **test_notification Tool**: New tool for testing MCP notification capabilities (`peer.notify_logging_message`). Sends a logging message with a specified level to the client.
 - **call_cc Tool**: New tool for delegating tasks to Claude Code CLI. Synchronous execution with `--output-format stream-json`. Model selection via `ANTHROPIC_MODEL`/`ANTHROPIC_MODELS` env vars. Supports `--resume <id>` and `-c` (continue latest) for session management.
 - **call_warp Tool**: New tool for delegating tasks to Warp CLI. Multi-model access through single interface: Claude (haiku/sonnet/opus), GPT-5/Codex (with reasoning levels: -low/-medium/-high/-xhigh/-max), and auto modes (auto/auto-efficient/auto-genius). One-shot executor—no resume/session support. Required: `prompt`, `cwd`. Optional: `model`, `timeout_ms`, `max_response_chars`, `task_name`, `mode`.
-- **Observe Mode**: All four `call_*` tools (`call_gem`, `call_cc`, `call_codex`, `call_warp`) now support a `mode` parameter with values `"execute"` (default) or `"observe"`. In observe mode, the delegated agent is instructed to analyze and report only—no file modifications.
+- **Observe Mode**: All `call_*` tools support a `mode` parameter with values `"execute"` (default) or `"observe"`. In observe mode, the delegated agent is instructed to analyze and report only—no file modifications. (Note: `call_codex` was later removed.)
 - **Response Truncation**: Added `max_response_chars` parameter to all `call_*` tools (default 100KB). Prevents oversized responses from overwhelming clients. Set to `0` for no limit.
 - **Federation Context**: All `call_*` tools now prepend a `[FEDERATION CONTEXT]` header to prompts, informing the delegated agent it's being invoked as a subagent by surreal-mind MCP.
 

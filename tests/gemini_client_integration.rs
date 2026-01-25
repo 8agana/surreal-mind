@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use anyhow::Result;
+#[allow(unused_imports)]
 use surreal_mind::clients::{CognitiveAgent, GeminiClient};
 
 #[tokio::test]

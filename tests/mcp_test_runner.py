@@ -282,7 +282,7 @@ def main():
              lambda r: "health" in r["content"][0]["text"].lower()
         )
         
-        # Skipping call_gem, call_codex, call_cc for now as they might take long or require ext deps
+        # Skipping call_gem, call_cc for now as they might take long or require ext deps
         # We can stub them or run if needed. Let's run a simple one.
         
         def save_job_id(r):

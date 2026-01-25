@@ -2,6 +2,7 @@ pub mod claude;
 pub mod codex;
 pub mod gemini;
 pub mod traits;
+pub mod vibe;
 pub mod warp;
 
 pub use claude::ClaudeClient;

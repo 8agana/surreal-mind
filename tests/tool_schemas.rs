@@ -18,21 +18,25 @@ fn test_list_tools_returns_expected_tools() {
 
     let expected_tools = [
         "think",
-        "remember",
-        "search",
+        "wander",
         "maintain",
+        "rethink",
+        "corrections",
+        "test_notification",
+        "remember",
+        "howto",
         "call_gem",
-        "call_codex",
+        "call_cc",
+        "call_warp",
+        "search",
         "call_status",
         "call_jobs",
         "call_cancel",
-        "wander",
-        "howto",
     ];
     assert_eq!(
         expected_tools.len(),
-        11,
-        "Tool roster should list entries for all 11 tools"
+        15,
+        "Tool roster should list entries for all 15 tools"
     );
 }
 
@@ -83,7 +87,7 @@ fn test_howto_schema_structure() {
     let expected_schema = json!({
         "type": "object",
         "properties": {
-            "tool": {"type": "string", "enum": ["think", "remember", "search", "maintain", "call_gem", "call_codex", "call_status", "call_jobs", "call_cancel", "wander", "howto"]},
+            "tool": {"type": "string", "enum": ["think", "remember", "search", "maintain", "call_gem", "call_cc", "call_warp", "call_status", "call_jobs", "call_cancel", "wander", "howto", "rethink", "corrections"]},
             "format": {"type": "string", "enum": ["compact", "full"], "default": "full"}
         }
     });
