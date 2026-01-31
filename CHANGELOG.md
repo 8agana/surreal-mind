@@ -1,4 +1,8 @@
-## [Unreleased] - 2026-01-19
+## [Unreleased] - 2026-01-31
+
+### Fixed
+
+- **REMini launchd Environment**: Added explicit PATH environment variable to `dev.legacymind.remini.plist` to ensure homebrew binaries (`/opt/homebrew/bin`) are accessible to scheduled maintenance tasks. Fixed failing `wander` (gemini CLI not found) and `health` (surreal CLI not found) tasks. Also corrected typo in `SURR_ENV_FILE` path.
 
 ### Removed
 
