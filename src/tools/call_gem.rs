@@ -76,7 +76,15 @@ impl SurrealMindServer {
         );
 
         let model_override = normalize_optional_string(params.model);
-        let cwd = normalize_optional_string(params.cwd);
+        let cwd_input = normalize_optional_string(params.cwd);
+        let cwd = if let Some(input) = cwd_input {
+            Some(crate::workspace::resolve_workspace(
+                &input,
+                &self.config.runtime.workspace_map,
+            )?)
+        } else {
+            None
+        };
         let timeout = params.timeout_ms.unwrap_or_else(gemini_timeout_ms);
         let tool_timeout = params.tool_timeout_ms.unwrap_or_else(|| {
             std::env::var("GEMINI_TOOL_TIMEOUT_MS")

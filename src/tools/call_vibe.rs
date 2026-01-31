@@ -52,12 +52,14 @@ impl SurrealMindServer {
             });
         }
 
-        let cwd = params.cwd.trim().to_string();
-        if cwd.is_empty() {
+        let cwd_input = params.cwd.trim();
+        if cwd_input.is_empty() {
             return Err(SurrealMindError::InvalidParams {
                 message: "cwd is required and cannot be empty".into(),
             });
         }
+        let cwd =
+            crate::workspace::resolve_workspace(cwd_input, &self.config.runtime.workspace_map)?;
 
         // Apply federation context and observe mode prefix
         let observe_prefix = if params.mode.as_deref() == Some("observe") {

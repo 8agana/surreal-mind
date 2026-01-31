@@ -61,12 +61,14 @@ impl SurrealMindServer {
             observe_prefix, prompt
         );
 
-        let cwd = params.cwd.trim().to_string();
-        if cwd.is_empty() {
+        let cwd_input = params.cwd.trim();
+        if cwd_input.is_empty() {
             return Err(SurrealMindError::InvalidParams {
                 message: "cwd is required and cannot be empty".into(),
             });
         }
+        let cwd =
+            crate::workspace::resolve_workspace(cwd_input, &self.config.runtime.workspace_map)?;
 
         let _task_name =
             normalize_optional_string(params.task_name).unwrap_or_else(|| "call_warp".to_string());

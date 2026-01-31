@@ -49,7 +49,10 @@ pub fn call_gem_schema() -> Arc<Map<String, Value>> {
                 "enum": models,
                 "default": default_model
             },
-            "cwd": {"type": "string"},
+            "cwd": {
+                "type": "string",
+                "description": "Working directory: workspace alias (e.g., 'surreal-mind', 'home') or absolute path (e.g., '/Users/sam/Projects/foo'). Use '~/' for home expansion."
+            },
             "resume_session_id": {"type": "string"},
             "continue_latest": {"type": "boolean", "default": false},
             "timeout_ms": {"type": "number", "default": 60000},
@@ -88,7 +91,10 @@ pub fn call_cc_schema() -> Arc<Map<String, Value>> {
                 "enum": models,
                 "default": default_model
             },
-            "cwd": {"type": "string"},
+            "cwd": {
+                "type": "string",
+                "description": "Working directory: workspace alias (e.g., 'surreal-mind', 'home') or absolute path (e.g., '/Users/sam/Projects/foo'). Use '~/' for home expansion."
+            },
             "resume_session_id": {"type": "string"},
             "continue_latest": {"type": "boolean", "default": false},
             "timeout_ms": {"type": "number", "default": 60000},
@@ -136,7 +142,10 @@ pub fn call_warp_schema() -> Arc<Map<String, Value>> {
                 "enum": models,
                 "description": "Model to use (omit for Warp default)"
             },
-            "cwd": {"type": "string"},
+            "cwd": {
+                "type": "string",
+                "description": "Working directory: workspace alias (e.g., 'surreal-mind', 'home') or absolute path (e.g., '/Users/sam/Projects/foo'). Use '~/' for home expansion."
+            },
             "timeout_ms": {"type": "number", "default": 60000},
             "mode": {
                 "type": "string",
@@ -156,7 +165,10 @@ pub fn call_vibe_schema() -> Arc<Map<String, Value>> {
         "type": "object",
         "properties": {
             "prompt": {"type": "string"},
-            "cwd": {"type": "string"},
+            "cwd": {
+                "type": "string",
+                "description": "Working directory: workspace alias (e.g., 'surreal-mind', 'home') or absolute path (e.g., '/Users/sam/Projects/foo'). Use '~/' for home expansion."
+            },
             "agent": {
                 "type": "string",
                 "description": "Agent profile name from ~/.vibe/agents/*.toml"

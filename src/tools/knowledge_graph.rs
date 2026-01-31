@@ -418,33 +418,50 @@ impl SurrealMindServer {
         }
 
         // 2. Try to find by bare ID or Name in kg_entities
-        let entities: Vec<serde_json::Value> = self.db.query(
-            "SELECT id FROM kg_entities WHERE meta::id(id) = $val OR name = $val LIMIT 1"
-        ).bind(("val", entity.to_string())).await?.take(0)?;
-        if let Some(row) = entities.first() && let Some(id_val) = row.get("id") {
-             if let Ok(thing) = surrealdb::sql::Thing::from_str(&id_val.to_string().replace("\"", "")) {
-                 return Ok(Some(thing));
-             }
+        let entities: Vec<serde_json::Value> = self
+            .db
+            .query("SELECT id FROM kg_entities WHERE meta::id(id) = $val OR name = $val LIMIT 1")
+            .bind(("val", entity.to_string()))
+            .await?
+            .take(0)?;
+        if let Some(row) = entities.first()
+            && let Some(id_val) = row.get("id")
+            && let Ok(thing) =
+                surrealdb::sql::Thing::from_str(&id_val.to_string().replace("\"", ""))
+        {
+            return Ok(Some(thing));
         }
 
         // 3. Try to find by bare ID or Name in kg_observations
-        let observations: Vec<serde_json::Value> = self.db.query(
-            "SELECT id FROM kg_observations WHERE meta::id(id) = $val OR name = $val LIMIT 1"
-        ).bind(("val", entity.to_string())).await?.take(0)?;
-        if let Some(row) = observations.first() && let Some(id_val) = row.get("id") {
-             if let Ok(thing) = surrealdb::sql::Thing::from_str(&id_val.to_string().replace("\"", "")) {
-                 return Ok(Some(thing));
-             }
+        let observations: Vec<serde_json::Value> = self
+            .db
+            .query(
+                "SELECT id FROM kg_observations WHERE meta::id(id) = $val OR name = $val LIMIT 1",
+            )
+            .bind(("val", entity.to_string()))
+            .await?
+            .take(0)?;
+        if let Some(row) = observations.first()
+            && let Some(id_val) = row.get("id")
+            && let Ok(thing) =
+                surrealdb::sql::Thing::from_str(&id_val.to_string().replace("\"", ""))
+        {
+            return Ok(Some(thing));
         }
 
         // 4. Try to find by bare ID in thoughts
-        let thoughts: Vec<serde_json::Value> = self.db.query(
-            "SELECT id FROM thoughts WHERE meta::id(id) = $val LIMIT 1"
-        ).bind(("val", entity.to_string())).await?.take(0)?;
-        if let Some(row) = thoughts.first() && let Some(id_val) = row.get("id") {
-             if let Ok(thing) = surrealdb::sql::Thing::from_str(&id_val.to_string().replace("\"", "")) {
-                 return Ok(Some(thing));
-             }
+        let thoughts: Vec<serde_json::Value> = self
+            .db
+            .query("SELECT id FROM thoughts WHERE meta::id(id) = $val LIMIT 1")
+            .bind(("val", entity.to_string()))
+            .await?
+            .take(0)?;
+        if let Some(row) = thoughts.first()
+            && let Some(id_val) = row.get("id")
+            && let Ok(thing) =
+                surrealdb::sql::Thing::from_str(&id_val.to_string().replace("\"", ""))
+        {
+            return Ok(Some(thing));
         }
 
         Ok(None)

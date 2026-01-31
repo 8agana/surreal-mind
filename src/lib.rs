@@ -12,6 +12,7 @@ pub mod serializers;
 pub mod server;
 pub mod tools;
 pub mod utils;
+pub mod workspace;
 
 // Re-export maintenance types and functions for backwards compatibility
 pub use maintenance::{

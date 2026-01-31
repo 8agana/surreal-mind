@@ -100,6 +100,8 @@ pub struct RuntimeConfig {
     pub http_request_timeout_ms: u64,
     pub http_mcp_op_timeout_ms: Option<u64>,
     pub http_metrics_mode: String,
+    // Workspace alias resolution
+    pub workspace_map: crate::workspace::WorkspaceMap,
 }
 
 impl Default for RuntimeConfig {
@@ -141,6 +143,7 @@ impl Default for RuntimeConfig {
             http_request_timeout_ms: 10000,
             http_mcp_op_timeout_ms: None,
             http_metrics_mode: "basic".to_string(),
+            workspace_map: crate::workspace::WorkspaceMap::from_env(),
         }
     }
 }
@@ -424,6 +427,7 @@ impl RuntimeConfig {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(200),
+            workspace_map: crate::workspace::WorkspaceMap::from_env(),
             transport: "stdio".to_string(),
             http_bind: "127.0.0.1:8787"
                 .parse()
@@ -479,6 +483,9 @@ impl RuntimeConfig {
             .and_then(|v| v.parse::<u64>().ok());
         cfg.http_metrics_mode =
             std::env::var("SURR_HTTP_METRICS_MODE").unwrap_or_else(|_| "basic".to_string());
+
+        // Load workspace aliases from WORKSPACE_* env vars
+        cfg.workspace_map = crate::workspace::WorkspaceMap::from_env();
 
         cfg
     }

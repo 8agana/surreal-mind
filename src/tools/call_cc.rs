@@ -80,10 +80,15 @@ impl SurrealMindServer {
             observe_prefix, prompt
         );
 
-        let cwd = normalize_optional_string(params.cwd);
-        let cwd = cwd.ok_or_else(|| SurrealMindError::InvalidParams {
-            message: "cwd is required and cannot be empty".into(),
+        let cwd_input = normalize_optional_string(params.cwd).ok_or_else(|| {
+            SurrealMindError::InvalidParams {
+                message: "cwd is required and cannot be empty".into(),
+            }
         })?;
+
+        // Resolve workspace alias or expand path
+        let cwd =
+            crate::workspace::resolve_workspace(&cwd_input, &self.config.runtime.workspace_map)?;
 
         let resume_session_id = normalize_optional_string(params.resume_session_id);
         if resume_session_id.is_some() && params.continue_latest {
