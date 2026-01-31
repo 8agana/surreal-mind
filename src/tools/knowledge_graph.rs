@@ -4,7 +4,6 @@ use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
 use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde_json::json;
-use std::str::FromStr;
 
 impl SurrealMindServer {
     /// Handle the knowledgegraph_create tool call
@@ -120,40 +119,21 @@ impl SurrealMindServer {
                     rel_kind_s
                 );
 
-                // 1. Resolve entity refs to bare IDs (strings)
-                let src_id = self.resolve_entity_id_str(&src_s).await?;
-                let dst_id = self.resolve_entity_id_str(&dst_s).await?;
+                // 1. Resolve KG refs to concrete Things
+                let src_thing = self.resolve_kg_item(&src_s).await?;
+                let dst_thing = self.resolve_kg_item(&dst_s).await?;
 
-                let (src_bare, dst_bare) = match (src_id, dst_id) {
+                let (src_thing, dst_thing) = match (src_thing, dst_thing) {
                     (Some(s), Some(d)) => (s, d),
                     _ => {
                         return Err(SurrealMindError::Validation {
                             message: format!(
-                                "Could not resolve one or both entities for relationship: src: '{}', dst: '{}'",
+                                "Could not resolve one or both KG items for relationship: src: '{}', dst: '{}'",
                                 src_s, dst_s
                             ),
                         });
                     }
                 };
-                // Build Thing records for bind parameters
-                let src_thing =
-                    surrealdb::sql::Thing::from_str(&format!("kg_entities:{}", src_bare)).map_err(
-                        |_| SurrealMindError::Validation {
-                            message: format!(
-                                "Failed to construct record link for source entity: {}",
-                                src_bare
-                            ),
-                        },
-                    )?;
-                let dst_thing =
-                    surrealdb::sql::Thing::from_str(&format!("kg_entities:{}", dst_bare)).map_err(
-                        |_| SurrealMindError::Validation {
-                            message: format!(
-                                "Failed to construct record link for destination entity: {}",
-                                dst_bare
-                            ),
-                        },
-                    )?;
 
                 let existing_rel: Vec<serde_json::Value> = self
                     .db
@@ -426,28 +406,47 @@ impl SurrealMindServer {
 
     /// Helper: resolve an entity ref to its bare meta id string (no Thing types used in Rust).
     /// Accepts full Thing strings, bare IDs, or names.
-    async fn resolve_entity_id_str(&self, entity: &str) -> Result<Option<String>> {
-        // Full Thing? parse and return the inner id as string
+    /// Helper: resolve a KG reference (ID string, Thing, or Name) to a concrete Thing.
+    /// Searches across kg_entities, kg_observations, and thoughts.
+    async fn resolve_kg_item(&self, entity: &str) -> Result<Option<surrealdb::sql::Thing>> {
+        use std::str::FromStr;
+        // 1. If it's already a valid Thing string (table:id)
         if let Ok(thing) = surrealdb::sql::Thing::from_str(entity)
             && !thing.tb.is_empty()
         {
-            return Ok(Some(thing.id.to_string()));
+            return Ok(Some(thing));
         }
-        // Try match by exact meta id or constructed thing, else by name
-        let mut q = self
-            .db
-            .query(
-                r#"SELECT meta::id(id) as id FROM kg_entities WHERE meta::id(id) = $id OR id = type::thing('kg_entities', $id) OR name = $name LIMIT 1"#,
-            )
-            .bind(("id", entity.to_string()))
-            .bind(("name", entity.to_string()))
-            .await?;
-        let rows: Vec<serde_json::Value> = q.take(0)?;
-        let id = rows
-            .first()
-            .and_then(|v| v.get("id"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        Ok(id)
+
+        // 2. Try to find by bare ID or Name in kg_entities
+        let entities: Vec<serde_json::Value> = self.db.query(
+            "SELECT id FROM kg_entities WHERE meta::id(id) = $val OR name = $val LIMIT 1"
+        ).bind(("val", entity.to_string())).await?.take(0)?;
+        if let Some(row) = entities.first() && let Some(id_val) = row.get("id") {
+             if let Ok(thing) = surrealdb::sql::Thing::from_str(&id_val.to_string().replace("\"", "")) {
+                 return Ok(Some(thing));
+             }
+        }
+
+        // 3. Try to find by bare ID or Name in kg_observations
+        let observations: Vec<serde_json::Value> = self.db.query(
+            "SELECT id FROM kg_observations WHERE meta::id(id) = $val OR name = $val LIMIT 1"
+        ).bind(("val", entity.to_string())).await?.take(0)?;
+        if let Some(row) = observations.first() && let Some(id_val) = row.get("id") {
+             if let Ok(thing) = surrealdb::sql::Thing::from_str(&id_val.to_string().replace("\"", "")) {
+                 return Ok(Some(thing));
+             }
+        }
+
+        // 4. Try to find by bare ID in thoughts
+        let thoughts: Vec<serde_json::Value> = self.db.query(
+            "SELECT id FROM thoughts WHERE meta::id(id) = $val LIMIT 1"
+        ).bind(("val", entity.to_string())).await?.take(0)?;
+        if let Some(row) = thoughts.first() && let Some(id_val) = row.get("id") {
+             if let Ok(thing) = surrealdb::sql::Thing::from_str(&id_val.to_string().replace("\"", "")) {
+                 return Ok(Some(thing));
+             }
+        }
+
+        Ok(None)
     }
 }
