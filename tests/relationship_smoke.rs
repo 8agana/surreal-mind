@@ -100,7 +100,7 @@ async fn relationship_flow_smoke() {
         .unwrap()
         .structured_content
         .unwrap();
-    let items = items_val["items"].as_array().cloned().unwrap();
+    let items = items_val["memories"]["items"].as_array().cloned().unwrap();
 
     assert!(items.iter().any(|it| it["id"].as_str() == Some(&rel_id)));
 }

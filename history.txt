@@ -36,3 +36,27 @@ SELECT id, rel_type, source, target FROM kg_edges WHERE target = 'kg_entities:1h
 SELECT id, rel_type, source, target FROM kg_edges WHERE source = 'kg_entities:1hm0ar16dcbs4yajstxi' LIMIT 5;
 SELECT id, rel_type, source, target FROM kg_edges WHERE source CONTAINS 'kg_entities:1hm0ar16dcbs4yajstxi' OR target CONTAINS 'kg_entities:1hm0ar16dcbs4yajstxi' LIMIT 5;
 LET $stale = (SELECT id FROM kg_entities WHERE volatility = 'high' AND last_refreshed != NONE AND time::now() - last_refreshed > duration::days(90) AND marked_for = NONE LIMIT 100); UPDATE $stale SET marked_for = 'gemini', mark_type = 'research', mark_note = 'Auto-flagged: high volatility, stale', marked_at = time::now(), marked_by = 'health' RETURN NONE;
+CREATE kg_edges SET created_at = time::now(), source = kg_entities:w5fq0q3r9zanov5ex1fb, target = kg_entities:jstrwoov5miyxxl5e6dn, rel_type = 'triggers', data = {note: 'Manual test'};
+LET $stale = (SELECT id FROM kg_entities WHERE volatility = 'high' AND last_refreshed != NONE AND time::now() - last_refreshed > duration::days(90) AND marked_for = NONE LIMIT 100); UPDATE $stale SET marked_for = 'gemini', mark_type = 'research', mark_note = 'Auto-flagged: high volatility, stale', marked_at = time::now(), marked_by = 'health' RETURN NONE;
+SELECT string::concat(id) as id_str FROM kg_entities WHERE meta::id(id) = 'w12ealulwzxeqbkitby1' LIMIT 1
+SELECT * FROM kg_entities WHERE name ~ 'Scalpel' LIMIT 1
+SELECT * FROM kg_entities WHERE name = 'Scalpel (Haiku)' LIMIT 1
+LET $stale = (SELECT id FROM kg_entities WHERE volatility = 'high' AND last_refreshed != NONE AND time::now() - last_refreshed > duration::days(90) AND marked_for = NONE LIMIT 100); UPDATE $stale SET marked_for = 'gemini', mark_type = 'research', mark_note = 'Auto-flagged: high volatility, stale', marked_at = time::now(), marked_by = 'health' RETURN NONE;
+RETURN count((SELECT id FROM correction_events));
+RETURN count((SELECT id FROM correction_events WHERE new_state = {}));
+SELECT meta::id(id) as id, target_id, target_table, initiated_by, reasoning, previous_state, new_state, timestamp FROM correction_events LIMIT 6;
+SELECT meta::id(id) as id, name, entity_type, data FROM kg_entities WHERE id = type::thing('kg_entities','5k6uo2einulvh4n5d3cg');
+SELECT meta::id(id) as id, name, entity_type, data FROM kg_entities WHERE id = type::thing('kg_entities','tqwqszp5bfror3ciiwgi');
+SELECT meta::id(id) as id, name, entity_type, data FROM kg_entities WHERE id = type::thing('kg_entities','nbo6a4tj80e2kblv7wbk');
+SELECT meta::id(id) as id, name, entity_type, data FROM kg_entities WHERE id = type::thing('kg_entities','dfsx9ouvi8pog6jqu8ul');
+RETURN count((SELECT id FROM kg_entities WHERE name = 'Gemini CLI JSON Extraction Strategy'));
+RETURN count((SELECT id FROM kg_entities WHERE name = 'Gemini CLI Error Resilience Protocol'));
+RETURN count((SELECT id FROM kg_entities WHERE name = 'CognitiveAgent Trait'));
+RETURN count((SELECT id FROM kg_entities WHERE name = 'Gemini CLI Resiliency Framework'));
+SELECT meta::id(id) as id, name, entity_type, data.entity_type as data_entity_type FROM kg_entities WHERE name CONTAINS 'Gemini CLI JSON Extraction Strategy';
+SELECT meta::id(id) as id, name, entity_type, data.entity_type as data_entity_type FROM kg_entities WHERE name CONTAINS 'Gemini CLI Error' OR name CONTAINS 'Gemini CLI Resilien' OR name CONTAINS 'CognitiveAgent Trait';
+RETURN count((SELECT id FROM kg_entities WHERE created_at >= d'2026-02-17T07:00:00Z' AND name CONTAINS 'Gemini CLI'));
+RETURN count((SELECT id FROM kg_entities WHERE created_at >= d'2026-02-17T07:00:00Z' AND name = 'Gemini CLI JSON Extraction Strategy'));
+SELECT meta::id(id) as id, name, entity_type, created_at FROM kg_entities WHERE created_at >= d'2026-02-17T07:00:00Z' AND name CONTAINS 'Gemini CLI' LIMIT 20;
+SELECT name, count() AS c FROM kg_entities WHERE created_at >= d'2026-02-17T07:00:00Z' GROUP BY name;
+SELECT meta::id(id) as id, target_id, reasoning, initiated_by, timestamp, previous_state, new_state FROM correction_events WHERE timestamp >= d'2026-02-17T07:00:00Z';

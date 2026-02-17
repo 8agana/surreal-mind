@@ -137,9 +137,11 @@ impl SurrealMindServer {
 
                 let existing_rel: Vec<serde_json::Value> = self
                     .db
-                    .query("SELECT meta::id(id) as id FROM kg_edges WHERE source = $src AND target = $dst AND rel_type = $rel LIMIT 1")
-                    .bind(("src", src_thing.clone()))
-                    .bind(("dst", dst_thing.clone()))
+                    .query("SELECT meta::id(id) as id FROM kg_edges WHERE source = type::thing($stb, $sid) AND target = type::thing($dtb, $did) AND rel_type = $rel LIMIT 1")
+                    .bind(("stb", src_thing.tb.clone()))
+                    .bind(("sid", src_thing.id.to_string().replace("\"", "")))
+                    .bind(("dtb", dst_thing.tb.clone()))
+                    .bind(("did", dst_thing.id.to_string().replace("\"", "")))
                     .bind(("rel", rel_kind_s.clone()))
                     .await?
                     .take(0)?;
@@ -154,9 +156,11 @@ impl SurrealMindServer {
                 // 3. Create new relationship
                 let created_rel: Vec<serde_json::Value> = self
                     .db
-                    .query("CREATE kg_edges SET created_at = time::now(), source = $src, target = $dst, rel_type = $rel, data = $data RETURN meta::id(id) as id, rel_type, created_at;")
-                    .bind(("src", src_thing))
-                    .bind(("dst", dst_thing))
+                    .query("CREATE kg_edges SET created_at = time::now(), source = type::thing($stb, $sid), target = type::thing($dtb, $did), rel_type = $rel, data = $data RETURN meta::id(id) as id, rel_type, created_at;")
+                    .bind(("stb", src_thing.tb))
+                    .bind(("sid", src_thing.id.to_string().replace("\"", "")))
+                    .bind(("dtb", dst_thing.tb))
+                    .bind(("did", dst_thing.id.to_string().replace("\"", "")))
                     .bind(("rel", rel_kind_s))
                     .bind(("data", data.clone()))
                     .await?
@@ -418,16 +422,16 @@ impl SurrealMindServer {
         }
 
         // 2. Try to find by bare ID or Name in kg_entities
+        // Ensure we get a string ID back to avoid serialization issues
         let entities: Vec<serde_json::Value> = self
             .db
-            .query("SELECT id FROM kg_entities WHERE meta::id(id) = $val OR name = $val LIMIT 1")
+            .query("SELECT string::concat(id) as id_str FROM kg_entities WHERE meta::id(id) = $val OR name = $val LIMIT 1")
             .bind(("val", entity.to_string()))
             .await?
             .take(0)?;
         if let Some(row) = entities.first()
-            && let Some(id_val) = row.get("id")
-            && let Ok(thing) =
-                surrealdb::sql::Thing::from_str(&id_val.to_string().replace("\"", ""))
+            && let Some(id_str) = row.get("id_str").and_then(|v| v.as_str())
+            && let Ok(thing) = surrealdb::sql::Thing::from_str(id_str)
         {
             return Ok(Some(thing));
         }
@@ -436,15 +440,14 @@ impl SurrealMindServer {
         let observations: Vec<serde_json::Value> = self
             .db
             .query(
-                "SELECT id FROM kg_observations WHERE meta::id(id) = $val OR name = $val LIMIT 1",
+                "SELECT string::concat(id) as id_str FROM kg_observations WHERE meta::id(id) = $val OR name = $val LIMIT 1",
             )
             .bind(("val", entity.to_string()))
             .await?
             .take(0)?;
         if let Some(row) = observations.first()
-            && let Some(id_val) = row.get("id")
-            && let Ok(thing) =
-                surrealdb::sql::Thing::from_str(&id_val.to_string().replace("\"", ""))
+            && let Some(id_str) = row.get("id_str").and_then(|v| v.as_str())
+            && let Ok(thing) = surrealdb::sql::Thing::from_str(id_str)
         {
             return Ok(Some(thing));
         }
@@ -452,14 +455,13 @@ impl SurrealMindServer {
         // 4. Try to find by bare ID in thoughts
         let thoughts: Vec<serde_json::Value> = self
             .db
-            .query("SELECT id FROM thoughts WHERE meta::id(id) = $val LIMIT 1")
+            .query("SELECT string::concat(id) as id_str FROM thoughts WHERE meta::id(id) = $val LIMIT 1")
             .bind(("val", entity.to_string()))
             .await?
             .take(0)?;
         if let Some(row) = thoughts.first()
-            && let Some(id_val) = row.get("id")
-            && let Ok(thing) =
-                surrealdb::sql::Thing::from_str(&id_val.to_string().replace("\"", ""))
+            && let Some(id_str) = row.get("id_str").and_then(|v| v.as_str())
+            && let Ok(thing) = surrealdb::sql::Thing::from_str(id_str)
         {
             return Ok(Some(thing));
         }
