@@ -6,6 +6,8 @@
 	<dict>
 		<key>SURR_ENV_FILE</key>
 		<string>/Users/samuelatagana/Projects/LegacyMind/surreal-mind/.env</string>
+		<key>CONSOLIDATE_DELETE</key>
+		<string>1</string>
 	</dict>
 	<key>Label</key>
 	<string>dev.legacymind.remini</string>

@@ -160,6 +160,8 @@ fn run_task(
         }
         "consolidate" => {
             cmd_path.push("kg_consolidate");
+            // Nightly REMini should perform full cleanup, including safe loser deletion.
+            envs.push(("CONSOLIDATE_DELETE", "1"));
         }
         "wander" => {
             cmd_path.push("kg_wander");
