@@ -17,10 +17,11 @@ SHIFT_PROMPT="Your 1am maintenance shift has started.
 PHASE 1 - MAINTENANCE (required):
 Run these maintenance tasks using shell commands. Monitor each one, kill if it exceeds 30 minutes:
 1. kg_populate - populate KG from thoughts
-2. kg_embed - generate embeddings for new entries  
+2. kg_embed - generate embeddings for new entries
 3. gem_rethink - process correction marks
-4. kg_wander - semantic exploration for KG quality
-5. scripts/sm_health.sh - health check
+4. kg_consolidate - execute deterministic KG consolidation from correction events
+5. kg_wander - semantic exploration for KG quality
+6. scripts/sm_health.sh - health check
 
 After each task, log whether it succeeded, failed, or timed out.
 

@@ -152,6 +152,12 @@ impl SurrealMindServer {
                 self.handle_spawn_binary("gem_rethink", dry_run, &envs)
                     .await
             }
+            "consolidate" => {
+                let envs: Vec<(String, String)> =
+                    vec![("CONSOLIDATE_LIMIT".into(), limit.to_string())];
+                self.handle_spawn_binary("kg_consolidate", dry_run, &envs)
+                    .await
+            }
             "populate" => {
                 self.handle_spawn_binary("kg_populate", dry_run, &Vec::new())
                     .await
@@ -181,6 +187,7 @@ impl SurrealMindServer {
             "populate".into(),
             "embed".into(),
             "rethink".into(),
+            "consolidate".into(),
             "wander".into(),
             "health".into(),
             "report".into(),
@@ -205,6 +212,12 @@ impl SurrealMindServer {
                 "rethink" => {
                     let envs: Vec<(String, String)> = Vec::new();
                     self.handle_spawn_binary("gem_rethink", dry_run, &envs)
+                        .await
+                }
+                "consolidate" => {
+                    let envs: Vec<(String, String)> =
+                        vec![("CONSOLIDATE_LIMIT".into(), "100".into())];
+                    self.handle_spawn_binary("kg_consolidate", dry_run, &envs)
                         .await
                 }
                 "populate" => {
@@ -566,8 +579,8 @@ impl SurrealMindServer {
 
         // Add pending embeddings count (graceful degradation feature)
         let pending_query = r#"
-            SELECT count() AS c FROM thoughts 
-            WHERE embedding_status IN ['pending', 'failed'] 
+            SELECT count() AS c FROM thoughts
+            WHERE embedding_status IN ['pending', 'failed']
             GROUP ALL
         "#;
         let pending_res: Vec<serde_json::Value> = self.db.query(pending_query).await?.take(0)?;
@@ -807,10 +820,10 @@ impl SurrealMindServer {
         // Query thoughts with pending or failed embedding status
         // Note: SurrealDB 2.4+ requires ORDER BY fields in SELECT clause
         let query = r#"
-            SELECT meta::id(id) AS id, content, created_at 
-            FROM thoughts 
-            WHERE embedding_status IN ['pending', 'failed'] 
-            ORDER BY created_at ASC 
+            SELECT meta::id(id) AS id, content, created_at
+            FROM thoughts
+            WHERE embedding_status IN ['pending', 'failed']
+            ORDER BY created_at ASC
             LIMIT $limit;
         "#;
 
@@ -865,7 +878,7 @@ impl SurrealMindServer {
                 Ok(embedding) if !embedding.is_empty() => {
                     // Update thought with embedding
                     let update_query = r#"
-                        UPDATE type::thing('thoughts', $id) SET 
+                        UPDATE type::thing('thoughts', $id) SET
                         embedding = $embedding,
                         embedded_at = time::now(),
                         embedding_status = 'complete'
@@ -899,8 +912,8 @@ impl SurrealMindServer {
 
         // Count remaining pending
         let count_query = r#"
-            SELECT count() AS cnt 
-            FROM thoughts 
+            SELECT count() AS cnt
+            FROM thoughts
             WHERE embedding_status IN ['pending', 'failed'];
         "#;
         let mut count_response = self.db.query(count_query).await?;

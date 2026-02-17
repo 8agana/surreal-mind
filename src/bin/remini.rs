@@ -11,11 +11,11 @@ use serde::Serialize;
 #[derive(Parser, Debug)]
 #[command(author, version, about = "REMini wrapper orchestrating maintenance tasks", long_about = None)]
 struct Args {
-    /// Run all tasks (populate, embed, rethink, wander, health)
+    /// Run all tasks (populate, embed, rethink, consolidate, wander, health)
     #[arg(long)]
     all: bool,
 
-    /// Comma-separated tasks to run (populate,embed,rethink,wander,health)
+    /// Comma-separated tasks to run (populate,embed,rethink,consolidate,wander,health)
     #[arg(long)]
     tasks: Option<String>,
 
@@ -123,6 +123,7 @@ fn resolve_tasks(args: &Args) -> Vec<String> {
             "populate".into(),
             "embed".into(),
             "rethink".into(),
+            "consolidate".into(),
             "wander".into(),
             "health".into(),
         ]
@@ -132,6 +133,7 @@ fn resolve_tasks(args: &Args) -> Vec<String> {
             "populate".into(),
             "embed".into(),
             "rethink".into(),
+            "consolidate".into(),
             "wander".into(),
             "health".into(),
         ]
@@ -155,6 +157,9 @@ fn run_task(
             if let Some(rt) = rethink_types {
                 envs.push(("RETHINK_TYPES", rt));
             }
+        }
+        "consolidate" => {
+            cmd_path.push("kg_consolidate");
         }
         "wander" => {
             cmd_path.push("kg_wander");
