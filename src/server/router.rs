@@ -3,8 +3,8 @@ use rmcp::{
     ErrorData as McpError,
     handler::server::ServerHandler,
     model::{
-        CallToolRequestParam, CallToolResult, Implementation, InitializeRequestParam,
-        InitializeResult, ListToolsResult, PaginatedRequestParam, ProtocolVersion,
+        CallToolRequestParams, CallToolResult, Implementation, InitializeRequestParams,
+        InitializeResult, ListToolsResult, PaginatedRequestParams, ProtocolVersion,
         ServerCapabilities, ServerInfo, ToolsCapability,
     },
     service::{RequestContext, RoleServer},
@@ -25,6 +25,7 @@ impl ServerHandler for SurrealMindServer {
                 name: "surreal-mind".to_string(),
                 title: Some("Surreal Mind".to_string()),
                 version: "0.1.0".to_string(),
+                description: Some("Persistent cognition kernel for LegacyMind".to_string()),
                 website_url: Some("https://github.com/8agana/surreal-mind".to_string()),
                 icons: None,
             },
@@ -34,7 +35,7 @@ impl ServerHandler for SurrealMindServer {
 
     async fn initialize(
         &self,
-        request: InitializeRequestParam,
+        request: InitializeRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> std::result::Result<InitializeResult, McpError> {
         let mut info = self.get_info();
@@ -44,7 +45,7 @@ impl ServerHandler for SurrealMindServer {
 
     async fn list_tools(
         &self,
-        _request: Option<PaginatedRequestParam>,
+        _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> std::result::Result<ListToolsResult, McpError> {
         info!("tools/list requested");
@@ -85,6 +86,7 @@ impl ServerHandler for SurrealMindServer {
                 icons: None,
                 annotations: None,
                 output_schema: None,
+                execution: None,
                 meta: None,
             },
             Tool {
@@ -95,6 +97,7 @@ impl ServerHandler for SurrealMindServer {
                 icons: None,
                 annotations: None,
                 output_schema: None,
+                execution: None,
                 meta: None,
             },
             Tool {
@@ -105,6 +108,7 @@ impl ServerHandler for SurrealMindServer {
                 icons: None,
                 annotations: None,
                 output_schema: None,
+                execution: None,
                 meta: None,
             },
             Tool {
@@ -115,6 +119,7 @@ impl ServerHandler for SurrealMindServer {
                 icons: None,
                 annotations: None,
                 output_schema: None,
+                execution: None,
                 meta: None,
             },
             Tool {
@@ -125,6 +130,7 @@ impl ServerHandler for SurrealMindServer {
                 icons: None,
                 annotations: None,
                 output_schema: None,
+                execution: None,
                 meta: None,
             },
             Tool {
@@ -135,6 +141,7 @@ impl ServerHandler for SurrealMindServer {
                 icons: None,
                 annotations: None,
                 output_schema: None,
+                execution: None,
                 meta: None,
             },
             // (legacy think_search removed — use legacymind_search)
@@ -146,6 +153,7 @@ impl ServerHandler for SurrealMindServer {
                 icons: None,
                 annotations: None,
                 output_schema: None,
+                execution: None,
                 meta: None,
             },
             // (legacy memories_search removed — use legacymind_search)
@@ -157,6 +165,7 @@ impl ServerHandler for SurrealMindServer {
                 icons: None,
                 annotations: None,
                 output_schema: None,
+                execution: None,
                 meta: None,
             },
         ];
@@ -171,6 +180,7 @@ impl ServerHandler for SurrealMindServer {
             icons: None,
             annotations: None,
             output_schema: None,
+            execution: None,
             meta: None,
         });
 
@@ -184,6 +194,7 @@ impl ServerHandler for SurrealMindServer {
             icons: None,
             annotations: None,
             output_schema: None,
+            execution: None,
             meta: None,
         });
 
@@ -195,6 +206,7 @@ impl ServerHandler for SurrealMindServer {
             icons: None,
             annotations: None,
             output_schema: None,
+            execution: None,
             meta: None,
         });
 
@@ -206,6 +218,7 @@ impl ServerHandler for SurrealMindServer {
             icons: None,
             annotations: None,
             output_schema: None,
+            execution: None,
             meta: None,
         });
 
@@ -217,6 +230,7 @@ impl ServerHandler for SurrealMindServer {
             icons: None,
             annotations: None,
             output_schema: None,
+            execution: None,
             meta: None,
         });
 
@@ -228,6 +242,7 @@ impl ServerHandler for SurrealMindServer {
             icons: None,
             annotations: None,
             output_schema: None,
+            execution: None,
             meta: None,
         });
 
@@ -239,6 +254,7 @@ impl ServerHandler for SurrealMindServer {
             icons: None,
             annotations: None,
             output_schema: None,
+            execution: None,
             meta: None,
         });
 
@@ -250,6 +266,7 @@ impl ServerHandler for SurrealMindServer {
             icons: None,
             annotations: None,
             output_schema: None,
+            execution: None,
             meta: None,
         });
 
@@ -263,7 +280,7 @@ impl ServerHandler for SurrealMindServer {
 
     async fn call_tool(
         &self,
-        request: CallToolRequestParam,
+        request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> std::result::Result<CallToolResult, McpError> {
         // Route to appropriate tool handler

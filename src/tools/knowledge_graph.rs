@@ -2,14 +2,14 @@
 
 use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
-use rmcp::model::{CallToolRequestParam, CallToolResult};
+use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde_json::json;
 
 impl SurrealMindServer {
     /// Handle the knowledgegraph_create tool call
     pub async fn handle_knowledgegraph_create(
         &self,
-        request: CallToolRequestParam,
+        request: CallToolRequestParams,
     ) -> Result<CallToolResult> {
         let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {
             message: "Missing parameters".into(),
@@ -270,7 +270,7 @@ impl SurrealMindServer {
     /// Handle the knowledgegraph_search tool call
     pub async fn handle_knowledgegraph_search(
         &self,
-        request: CallToolRequestParam,
+        request: CallToolRequestParams,
     ) -> Result<CallToolResult> {
         let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {
             message: "Missing parameters".into(),

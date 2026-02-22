@@ -3,7 +3,7 @@
 use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
 use chrono::NaiveDate;
-use rmcp::model::{CallToolRequestParam, CallToolResult};
+use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -69,7 +69,7 @@ impl SurrealMindServer {
     /// LegacyMind unified search handler (current DB)
     pub async fn handle_unified_search(
         &self,
-        request: CallToolRequestParam,
+        request: CallToolRequestParams,
     ) -> Result<CallToolResult> {
         unified_search_inner(self, request).await
     }
@@ -77,7 +77,7 @@ impl SurrealMindServer {
 
 pub async fn unified_search_inner(
     server: &SurrealMindServer,
-    request: CallToolRequestParam,
+    request: CallToolRequestParams,
 ) -> Result<CallToolResult> {
     let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {
         message: "Missing parameters".into(),

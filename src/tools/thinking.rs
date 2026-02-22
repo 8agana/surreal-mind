@@ -27,7 +27,7 @@ use mode_detection::detect_mode;
 use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
 use anyhow::Context;
-use rmcp::model::{CallToolRequestParam, CallToolResult};
+use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde_json::json;
 
 /// Builder for creating thoughts with consistent logic
@@ -258,7 +258,7 @@ impl SurrealMindServer {
     /// Handle legacymind_think tool
     pub async fn handle_legacymind_think(
         &self,
-        request: CallToolRequestParam,
+        request: CallToolRequestParams,
     ) -> Result<CallToolResult> {
         let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {
             message: "Missing parameters".into(),

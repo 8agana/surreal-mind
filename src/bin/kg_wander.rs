@@ -9,7 +9,7 @@
 //! Run with: cargo run --bin kg_wander
 
 use anyhow::Result;
-use rmcp::model::CallToolRequestParam;
+use rmcp::model::CallToolRequestParams;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::io::Write;
@@ -159,9 +159,11 @@ async fn main() -> Result<()> {
                                 "rel_type": rel_type
                             }
                         });
-                        let req = CallToolRequestParam {
+                        let req = CallToolRequestParams {
+                            meta: None,
                             name: "memories_create".into(),
                             arguments: Some(args.as_object().unwrap().clone()),
+                            task: None,
                         };
                         match server.handle_knowledgegraph_create(req).await {
                             Ok(_) => println!("✅ Connected!"),
@@ -189,9 +191,11 @@ async fn main() -> Result<()> {
                             "entity_type": etype
                         }
                     });
-                    let req = CallToolRequestParam {
+                    let req = CallToolRequestParams {
+                        meta: None,
                         name: "memories_create".into(),
                         arguments: Some(args.as_object().unwrap().clone()),
+                        task: None,
                     };
                     match server.handle_knowledgegraph_create(req).await {
                         Ok(_) => println!("✅ Created."),
@@ -217,9 +221,11 @@ async fn main() -> Result<()> {
                             "content": content
                         }
                     });
-                    let req = CallToolRequestParam {
+                    let req = CallToolRequestParams {
+                        meta: None,
                         name: "memories_create".into(),
                         arguments: Some(args.as_object().unwrap().clone()),
+                        task: None,
                     };
                     match server.handle_knowledgegraph_create(req).await {
                         Ok(_) => println!("✅ Observed."),
@@ -285,9 +291,11 @@ async fn execute_wander(
         "recency_bias": false
     });
 
-    let req = CallToolRequestParam {
+    let req = CallToolRequestParams {
+        meta: None,
         name: "legacymind_wander".into(),
         arguments: Some(params.as_object().unwrap().clone()),
+        task: None,
     };
 
     let result = server.handle_wander(req).await?;

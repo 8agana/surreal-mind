@@ -1,6 +1,6 @@
 use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
-use rmcp::model::{CallToolRequestParam, CallToolResult};
+use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde_json::json;
 use std::str::FromStr;
 use surrealdb::sql::Thing;
@@ -64,7 +64,7 @@ impl SurrealMindServer {
     }
 
     /// Handle the wander tool call
-    pub async fn handle_wander(&self, request: CallToolRequestParam) -> Result<CallToolResult> {
+    pub async fn handle_wander(&self, request: CallToolRequestParams) -> Result<CallToolResult> {
         let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {
             message: "Missing parameters".into(),
         })?;

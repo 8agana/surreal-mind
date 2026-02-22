@@ -1,7 +1,7 @@
 use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
 use rmcp::model::{
-    CallToolRequestParam, CallToolResult, LoggingLevel, LoggingMessageNotificationParam,
+    CallToolRequestParams, CallToolResult, LoggingLevel, LoggingMessageNotificationParam,
 };
 use rmcp::service::{RequestContext, RoleServer};
 use serde::Deserialize;
@@ -18,7 +18,7 @@ impl SurrealMindServer {
     /// Handle test_notification tool
     pub async fn handle_test_notification(
         &self,
-        request: CallToolRequestParam,
+        request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult> {
         let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {

@@ -4,7 +4,7 @@
 use crate::clients::vibe::VibeClient;
 use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
-use rmcp::model::{CallToolRequestParam, CallToolResult};
+use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -35,7 +35,7 @@ pub struct CallVibeParams {
 
 impl SurrealMindServer {
     /// Handle the call_vibe tool call - synchronous execution
-    pub async fn handle_call_vibe(&self, request: CallToolRequestParam) -> Result<CallToolResult> {
+    pub async fn handle_call_vibe(&self, request: CallToolRequestParams) -> Result<CallToolResult> {
         let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {
             message: "Missing parameters".into(),
         })?;

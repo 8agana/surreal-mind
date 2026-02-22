@@ -2,7 +2,7 @@
 
 use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
-use rmcp::model::{CallToolRequestParam, CallToolResult};
+use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use surrealdb::Surreal;
@@ -37,7 +37,7 @@ impl SurrealMindServer {
     /// Handle the list_agent_jobs tool call
     pub async fn handle_list_agent_jobs(
         &self,
-        request: CallToolRequestParam,
+        request: CallToolRequestParams,
     ) -> Result<CallToolResult> {
         let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {
             message: "Missing parameters".into(),

@@ -4,7 +4,7 @@ use crate::clients::traits::CognitiveAgent;
 use crate::clients::{AgentError, GeminiClient};
 use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
-use rmcp::model::{CallToolRequestParam, CallToolResult};
+use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -46,7 +46,7 @@ pub struct DelegateGeminiParams {
 
 impl SurrealMindServer {
     /// Handle the delegate_gemini tool call - now synchronous
-    pub async fn handle_call_gem(&self, request: CallToolRequestParam) -> Result<CallToolResult> {
+    pub async fn handle_call_gem(&self, request: CallToolRequestParams) -> Result<CallToolResult> {
         let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {
             message: "Missing parameters".into(),
         })?;

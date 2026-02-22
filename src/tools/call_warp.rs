@@ -4,7 +4,7 @@
 use crate::clients::warp::WarpClient;
 use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
-use rmcp::model::{CallToolRequestParam, CallToolResult};
+use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -33,7 +33,7 @@ pub struct CallWarpParams {
 
 impl SurrealMindServer {
     /// Handle the call_warp tool call - synchronous execution
-    pub async fn handle_call_warp(&self, request: CallToolRequestParam) -> Result<CallToolResult> {
+    pub async fn handle_call_warp(&self, request: CallToolRequestParams) -> Result<CallToolResult> {
         let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {
             message: "Missing parameters".into(),
         })?;

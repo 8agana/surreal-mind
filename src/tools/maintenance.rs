@@ -4,7 +4,7 @@ use crate::error::{Result, SurrealMindError};
 use crate::indexes::{IndexHealth, TableInfo, get_expected_indexes};
 use crate::server::SurrealMindServer;
 // corrections tool handler is in scope via SurrealMindServer impl; no direct import needed
-use rmcp::model::{CallToolRequestParam, CallToolResult};
+use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde_json::json;
 use std::fs;
 use std::path::Path;
@@ -102,7 +102,7 @@ impl SurrealMindServer {
     /// Handle the maintenance_ops tool call
     pub async fn handle_maintenance_ops(
         &self,
-        request: CallToolRequestParam,
+        request: CallToolRequestParams,
     ) -> Result<CallToolResult> {
         let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {
             message: "Missing parameters".into(),
@@ -266,9 +266,11 @@ impl SurrealMindServer {
         if let Some(tid) = target_id {
             map.insert("target_id".into(), json!(tid));
         }
-        let req = CallToolRequestParam {
+        let req = CallToolRequestParams {
+            meta: None,
             name: "corrections".into(),
             arguments: Some(map),
+            task: None,
         };
         self.handle_corrections(req).await
     }

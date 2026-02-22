@@ -2,7 +2,7 @@
 
 use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
-use rmcp::model::{CallToolRequestParam, CallToolResult};
+use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde_json::json;
 
 /// Parameters for the rethink tool
@@ -20,7 +20,7 @@ pub struct RethinkParams {
 
 impl SurrealMindServer {
     /// Handle the rethink tool call (mark + correct modes)
-    pub async fn handle_rethink(&self, request: CallToolRequestParam) -> Result<CallToolResult> {
+    pub async fn handle_rethink(&self, request: CallToolRequestParams) -> Result<CallToolResult> {
         let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {
             message: "Missing parameters".into(),
         })?;

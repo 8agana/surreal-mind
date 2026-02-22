@@ -2,12 +2,12 @@
 
 use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
-use rmcp::model::{CallToolRequestParam, CallToolResult};
+use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde_json::json;
 
 impl SurrealMindServer {
     /// Handle the detailed_help tool call
-    pub async fn handle_howto(&self, request: CallToolRequestParam) -> Result<CallToolResult> {
+    pub async fn handle_howto(&self, request: CallToolRequestParams) -> Result<CallToolResult> {
         let args = request.arguments.unwrap_or_default();
 
         // Overview mode: when no 'tool' param provided, return a compact roster
