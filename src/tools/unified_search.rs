@@ -347,8 +347,8 @@ pub async fn unified_search_inner(
     }
     if target == "relationship" || target == "mixed" {
         let mut sql = "SELECT meta::id(id) as id,
-                    (IF type::is::record(source) THEN meta::id(source) ELSE string::concat(source) END) as source_id,
-                    (IF type::is::record(target) THEN meta::id(target) ELSE string::concat(target) END) as target_id,
+                    (IF meta::tb(source) IS NOT NONE THEN meta::id(source) ELSE string::concat(source) END) as source_id,
+                    (IF meta::tb(target) IS NOT NONE THEN meta::id(target) ELSE string::concat(target) END) as target_id,
                     rel_type, data, type::string(created_at) as created_at
              FROM kg_edges".to_string();
         if params.chain_id.is_some() {
@@ -577,15 +577,15 @@ pub async fn unified_search_inner(
             binds.insert("cid".to_string(), json!(cid));
         }
         if let Some(prev) = &params.previous_thought_id {
-            where_clauses.push("((type::is::record(previous_thought_id) AND meta::id(previous_thought_id) = $prev) OR previous_thought_id = $prev)".to_string());
+            where_clauses.push("((meta::tb(previous_thought_id) IS NOT NONE AND meta::id(previous_thought_id) = $prev) OR previous_thought_id = $prev)".to_string());
             binds.insert("prev".to_string(), json!(prev));
         }
         if let Some(rev) = &params.revises_thought {
-            where_clauses.push("((type::is::record(revises_thought) AND meta::id(revises_thought) = $rev) OR revises_thought = $rev)".to_string());
+            where_clauses.push("((meta::tb(revises_thought) IS NOT NONE AND meta::id(revises_thought) = $rev) OR revises_thought = $rev)".to_string());
             binds.insert("rev".to_string(), json!(rev));
         }
         if let Some(br) = &params.branch_from {
-            where_clauses.push("((type::is::record(branch_from) AND meta::id(branch_from) = $br) OR branch_from = $br)".to_string());
+            where_clauses.push("((meta::tb(branch_from) IS NOT NONE AND meta::id(branch_from) = $br) OR branch_from = $br)".to_string());
             binds.insert("br".to_string(), json!(br));
         }
         if let Some(origin) = &params.origin {

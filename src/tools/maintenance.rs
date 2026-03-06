@@ -502,7 +502,7 @@ impl SurrealMindServer {
 
             // 2. OK count (valid array of correct length)
             let q_ok = format!(
-                "SELECT count() AS c FROM {} WHERE type::is::array(embedding) AND array::len(embedding) = $d GROUP ALL",
+                "SELECT count() AS c FROM {} WHERE type::is_array(embedding) AND array::len(embedding) = $d GROUP ALL",
                 table
             );
             let ok_res: Vec<serde_json::Value> =
@@ -527,7 +527,7 @@ impl SurrealMindServer {
 
             // 4. Mismatched count (Array but wrong length)
             let q_mismatched = format!(
-                "SELECT count() AS c FROM {} WHERE type::is::array(embedding) AND array::len(embedding) != $d GROUP ALL",
+                "SELECT count() AS c FROM {} WHERE type::is_array(embedding) AND array::len(embedding) != $d GROUP ALL",
                 table
             );
             let mismatched_res: Vec<serde_json::Value> = self
@@ -556,7 +556,7 @@ impl SurrealMindServer {
 
             // 6. Get sample IDs for mismatched
             let q_sample_mismatched = format!(
-                "SELECT meta::id(id) as id FROM {} WHERE type::is::array(embedding) AND array::len(embedding) != $d LIMIT 5",
+                "SELECT meta::id(id) as id FROM {} WHERE type::is_array(embedding) AND array::len(embedding) != $d LIMIT 5",
                 table
             );
             let sample_mismatched_res: Vec<serde_json::Value> = self

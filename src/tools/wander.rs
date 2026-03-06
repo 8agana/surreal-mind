@@ -3,6 +3,8 @@ use crate::server::SurrealMindServer;
 use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde_json::json;
 
+const WANDER_NODE_FIELDS: &str = "meta::id(id) as id, meta::tb(id) as table, name, content, data, tags, embedding, mark_type, marked_for, mark_note, marked_by, type::string(marked_at) as marked_at, type::string(created_at) as created_at";
+
 /// Parameters for the wander tool
 #[derive(Debug, serde::Deserialize)]
 pub struct WanderParams {
@@ -71,8 +73,8 @@ impl SurrealMindServer {
                 let res: Vec<serde_json::Value> = self
                     .db
                     .query(format!(
-                        "SELECT meta::id(id) as id, * FROM {} WHERE id = type::record('{}', $id) LIMIT 1",
-                        table, table
+                        "SELECT {} FROM {} WHERE id = type::record('{}', $id) LIMIT 1",
+                        WANDER_NODE_FIELDS, table, table
                     ))
                     .bind(("id", short_id))
                     .await?
@@ -89,7 +91,7 @@ impl SurrealMindServer {
                 let res: Vec<serde_json::Value> = self
                     .db
                     .query(
-                        "SELECT meta::id(id) as id, * FROM thoughts, kg_entities, kg_observations
+                        "SELECT meta::id(id) as id, meta::tb(id) as table, name, content, data, tags, embedding, mark_type, marked_for, mark_note, marked_by, type::string(marked_at) as marked_at, type::string(created_at) as created_at FROM thoughts, kg_entities, kg_observations
                          WHERE id = type::record('thoughts', $id)
                             OR id = type::record('kg_entities', $id)
                             OR id = type::record('kg_observations', $id)
@@ -106,9 +108,15 @@ impl SurrealMindServer {
             // This enables "Start Wandering" without needing a specific ID
             if params.mode == "semantic" || params.mode == "meta" {
                 let q = if params.recency_bias {
-                    "SELECT meta::id(id) as id, * FROM thoughts ORDER BY created_at DESC LIMIT 1"
+                    format!(
+                        "SELECT {} FROM thoughts ORDER BY created_at DESC LIMIT 1",
+                        WANDER_NODE_FIELDS
+                    )
                 } else {
-                    "SELECT meta::id(id) as id, * FROM thoughts, kg_entities, kg_observations ORDER BY rand() LIMIT 1"
+                    format!(
+                        "SELECT {} FROM thoughts, kg_entities, kg_observations ORDER BY rand() LIMIT 1",
+                        WANDER_NODE_FIELDS
+                    )
                 };
 
                 let res: Vec<serde_json::Value> = self.db.query(q).await?.take(0)?;
@@ -244,7 +252,10 @@ impl SurrealMindServer {
         // Actually, let's use a UNION-like approach or just simple fallback order.
         // "SELECT * FROM thoughts, kg_entities, kg_observations ORDER BY rand() LIMIT 1" (SurrealDB might support comma separated targets? Yes.)
 
-        let q = "SELECT meta::id(id) as id, * FROM thoughts, kg_entities, kg_observations WHERE meta::id(id) NOT IN $visited ORDER BY rand() LIMIT 1";
+        let q = format!(
+            "SELECT {} FROM thoughts, kg_entities, kg_observations WHERE meta::id(id) NOT IN $visited ORDER BY rand() LIMIT 1",
+            WANDER_NODE_FIELDS
+        );
         let res: Vec<serde_json::Value> = self
             .db
             .query(q)
@@ -284,13 +295,16 @@ impl SurrealMindServer {
         // Use a threshold to ensure relevance, but loose enough for wandering
         // Note: Casting id to string for comparison safety
         // Note: Must filter for valid embeddings to avoid vector function errors
-        let q = "SELECT meta::id(id) as id, *, vector::similarity::cosine(embedding, $emb) as sim
+        let q = format!(
+            "SELECT {}, vector::similarity::cosine(embedding, $emb) as sim
                  FROM thoughts, kg_entities, kg_observations
                  WHERE meta::id(id) NOT IN $visited
                  AND <string>meta::id(id) != $current_id
                  AND embedding != NONE
-                 AND type::is::array(embedding)
-                 ORDER BY sim DESC LIMIT 1";
+                 AND type::is_array(embedding)
+                 ORDER BY sim DESC LIMIT 1",
+            WANDER_NODE_FIELDS
+        );
 
         let current_id = current
             .get("id")
@@ -340,11 +354,14 @@ impl SurrealMindServer {
 
         // Query: Overlap in tags
         // "SELECT * FROM ... WHERE tags CONTAINSANY $tags ..."
-        let q = "SELECT meta::id(id) as id, * FROM thoughts, kg_entities, kg_observations
+        let q = format!(
+            "SELECT {} FROM thoughts, kg_entities, kg_observations
                  WHERE meta::id(id) NOT IN $visited
                  AND <string>meta::id(id) != $current_id
                  AND (tags CONTAINSANY $tags OR data.tags CONTAINSANY $tags)
-                 ORDER BY rand() LIMIT 1";
+                 ORDER BY rand() LIMIT 1",
+            WANDER_NODE_FIELDS
+        );
 
         let res: Vec<serde_json::Value> = self
             .db
@@ -379,7 +396,7 @@ impl SurrealMindServer {
 
         // Fetch next mark (oldest first)
         let query = format!(
-            "SELECT meta::id(id) as id, meta::tb(id) as table, mark_type, marked_for, mark_note, marked_by, marked_at, name, content, data.name as data_name \
+            "SELECT meta::id(id) as id, meta::tb(id) as table, mark_type, marked_for, mark_note, marked_by, type::string(marked_at) as marked_at, name, content, data.name as data_name \
              FROM thoughts, kg_entities, kg_observations \
              WHERE marked_for != NONE {filter} \
              AND meta::id(id) NOT IN $visited \

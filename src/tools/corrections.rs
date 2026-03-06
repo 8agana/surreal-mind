@@ -32,7 +32,7 @@ impl SurrealMindServer {
             })?;
 
         let mut q = String::from(
-            "SELECT meta::id(id) as id, target_id, target_table, timestamp, reasoning, sources, initiated_by, corrects_previous, spawned_by, previous_state, new_state \
+            "SELECT meta::id(id) as id, target_id, target_table, type::string(timestamp) as timestamp, reasoning, sources, initiated_by, corrects_previous, spawned_by, previous_state, new_state \
              FROM correction_events",
         );
 

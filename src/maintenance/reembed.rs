@@ -248,8 +248,8 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
     // Entities
     {
         let sql = match limit {
-            Some(l) => format!("SELECT meta::id(id) as id, name, data, entity_type, (IF type::is::array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len, embedding_model FROM kg_entities LIMIT {}", l),
-            None => "SELECT meta::id(id) as id, name, data, entity_type, (IF type::is::array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len, embedding_model FROM kg_entities".to_string(),
+            Some(l) => format!("SELECT meta::id(id) as id, name, data, entity_type, (IF type::is_array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len, embedding_model FROM kg_entities LIMIT {}", l),
+            None => "SELECT meta::id(id) as id, name, data, entity_type, (IF type::is_array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len, embedding_model FROM kg_entities".to_string(),
         };
         let rows: Vec<Value> = db.query(sql).await?.take(0)?;
         for r in &rows {
@@ -329,8 +329,8 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
     // Observations
     {
         let sql = match limit {
-            Some(l) => format!("SELECT meta::id(id) as id, name, data, (IF type::is::array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len, embedding_model FROM kg_observations LIMIT {}", l),
-            None => "SELECT meta::id(id) as id, name, data, (IF type::is::array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len, embedding_model FROM kg_observations".to_string(),
+            Some(l) => format!("SELECT meta::id(id) as id, name, data, (IF type::is_array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len, embedding_model FROM kg_observations LIMIT {}", l),
+            None => "SELECT meta::id(id) as id, name, data, (IF type::is_array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len, embedding_model FROM kg_observations".to_string(),
         };
         let rows: Vec<Value> = db.query(sql).await?.take(0)?;
         for r in &rows {
@@ -403,8 +403,8 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
     // Edges
     {
         let sql = match limit {
-            Some(l) => format!("SELECT meta::id(id) as id, source.name as source_name, target.name as target_name, rel_type, data, (IF type::is::array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len, embedding_model FROM kg_edges LIMIT {}", l),
-            None => "SELECT meta::id(id) as id, source.name as source_name, target.name as target_name, rel_type, data, (IF type::is::array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len, embedding_model FROM kg_edges".to_string(),
+            Some(l) => format!("SELECT meta::id(id) as id, source.name as source_name, target.name as target_name, rel_type, data, (IF type::is_array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len, embedding_model FROM kg_edges LIMIT {}", l),
+            None => "SELECT meta::id(id) as id, source.name as source_name, target.name as target_name, rel_type, data, (IF type::is_array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len, embedding_model FROM kg_edges".to_string(),
         };
         let rows: Vec<Value> = db.query(sql).await?.take(0)?;
         for r in &rows {
@@ -586,7 +586,7 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
             "SELECT meta::id(id) as id, name, data, \
                 (embedding IS NULL) AS emb_is_null, \
                 (embedding IS NONE) AS emb_is_none, \
-                (IF type::is::array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len \
+                (IF type::is_array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len \
              FROM kg_entities \
              WHERE (embedding IS NULL OR embedding IS NONE OR array::len(embedding) = 0) \
              LIMIT {}",
@@ -701,7 +701,7 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
             "SELECT meta::id(id) as id, name, data, \
                 (embedding IS NULL) AS emb_is_null, \
                 (embedding IS NONE) AS emb_is_none, \
-                (IF type::is::array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len \
+                (IF type::is_array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len \
              FROM kg_observations \
              WHERE (embedding IS NULL OR embedding IS NONE OR array::len(embedding) = 0) \
              LIMIT {}",
@@ -811,7 +811,7 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
             "SELECT meta::id(id) as id, source.name as source_name, target.name as target_name, rel_type, data, \
                 (embedding IS NULL) AS emb_is_null, \
                 (embedding IS NONE) AS emb_is_none, \
-                (IF type::is::array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len \
+                (IF type::is_array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len \
              FROM kg_edges \
              WHERE (embedding IS NULL OR embedding IS NONE OR array::len(embedding) = 0) \
              LIMIT {}",

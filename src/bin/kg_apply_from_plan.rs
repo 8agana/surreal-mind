@@ -206,8 +206,8 @@ async fn main() -> Result<()> {
         let rows: Vec<Value> = db
             .query(
                 "SELECT meta::id(id) AS id, \
-                 (IF type::is::record(source) THEN meta::id(source) ELSE string::concat(source) END) AS sid, \
-                 (IF type::is::record(target) THEN meta::id(target) ELSE string::concat(target) END) AS tid, \
+                 (IF type::is_record(source) THEN meta::id(source) ELSE string::concat(source) END) AS sid, \
+                 (IF type::is_record(target) THEN meta::id(target) ELSE string::concat(target) END) AS tid, \
                  rel_type AS r \
                  FROM kg_edges",
             )

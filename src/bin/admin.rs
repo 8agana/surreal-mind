@@ -96,7 +96,7 @@ async fn inspect() -> Result<()> {
         println!("\n🔍 Inspecting {}:{}", table, id);
 
         let sql = format!(
-            "SELECT meta::id(id) as id, name, data, embedding, embedding_dim, embedding_provider, embedding_model, (IF type::is::array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len, created_at FROM {} WHERE meta::id(id) = '{}'",
+            "SELECT meta::id(id) as id, name, data, embedding, embedding_dim, embedding_provider, embedding_model, (IF type::is_array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len, created_at FROM {} WHERE meta::id(id) = '{}'",
             table, id
         );
 

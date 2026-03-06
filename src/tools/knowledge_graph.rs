@@ -332,9 +332,9 @@ impl SurrealMindServer {
             // Project to string IDs safely; handle legacy rows with non-record source/target
             let sql = format!(
                 "SELECT meta::id(id) as id,
-                        (IF type::is::record(source) THEN meta::id(source) ELSE string::concat(source) END) as source_id,
-                        (IF type::is::record(target) THEN meta::id(target) ELSE string::concat(target) END) as target_id,
-                        rel_type, data, created_at
+                        (IF meta::tb(source) IS NOT NONE THEN meta::id(source) ELSE string::concat(source) END) as source_id,
+                        (IF meta::tb(target) IS NOT NONE THEN meta::id(target) ELSE string::concat(target) END) as target_id,
+                        rel_type, data, type::string(created_at) as created_at
                  FROM kg_edges LIMIT {}",
                 top_k
             );

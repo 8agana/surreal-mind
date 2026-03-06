@@ -19,6 +19,8 @@ Emergency migration after `brew upgrade` installed SurrealDB 3.0.1, which could 
 - **REMini launchd Environment**: Added explicit PATH environment variable to `dev.legacymind.remini.plist` to ensure homebrew binaries (`/opt/homebrew/bin`) are accessible to scheduled maintenance tasks. Fixed failing `wander` (gemini CLI not found) and `health` (surreal CLI not found) tasks. Also corrected typo in `SURR_ENV_FILE` path.
 - **think Tool Hang on SurrealDB 3.x**: Resolved silent `think` stalls after migration to SurrealDB 3.x. Root cause was websocket deserialization failure when memory injection fetched raw embedding arrays from KG tables (`Failed to decode fb value`). `think` now completes and returns MCP responses reliably in stdio and HTTP flows.
 - **Test Compatibility with rmcp 0.16**: Updated integration/smoke tests to use `CallToolRequestParams` shape with required `meta` and `task` fields. This resolves `cargo clippy --all-targets` build failures caused by outdated request initializers.
+- **Git Push Divergence Resolved**: Fixed local `master` branch divergence from `origin/master` by fetching remote changes and rebasing local commits. Successfully pushed 3 local commits integrating 1 remote commit without conflicts, resolving non-fast-forward rejection.
+- **SurrealDB 3.x Query/Type Follow-ups (`search`, `wander`, `corrections`)**: Fixed missed migration issues by replacing legacy record checks in `unified_search` (`type::is::record(...)` → `meta::tb(...) IS NOT NONE`), removing `SELECT *` in `wander` in favor of explicit field projections, and string-casting datetime outputs (`created_at`, `marked_at`, `timestamp`) with `type::string(...)` to resolve runtime decode errors like `Expected any, got datetime`.
 
 ### Migration Process
 

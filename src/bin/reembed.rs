@@ -64,7 +64,7 @@ async fn main() -> Result<()> {
     // Get all thoughts using a raw query with meta::id() to avoid Thing serialization
     println!("\n📚 Fetching all thoughts from database...");
     let result = db
-        .query("SELECT meta::id(id) as id, content, array::len(embedding) as emb_len, embedding_model, embedding_provider, embedding_dim FROM thoughts")
+        .query("SELECT meta::id(id) as id, content, (IF type::is_array(embedding) THEN array::len(embedding) ELSE 0 END) as emb_len, embedding_model, embedding_provider, embedding_dim FROM thoughts")
         .await?;
     let mut response = result.check()?;
     let thoughts: Vec<serde_json::Value> = response.take(0)?;

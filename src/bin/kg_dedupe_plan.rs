@@ -85,7 +85,7 @@ async fn main() -> Result<()> {
     let entities: Vec<Value> = db
         .query(
             "SELECT meta::id(id) as id, name, data, entity_type, created_at, \
-             (IF type::is::array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len \
+             (IF type::is_array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len \
              FROM kg_entities",
         )
         .await?
@@ -95,8 +95,8 @@ async fn main() -> Result<()> {
     let edges: Vec<Value> = db
         .query(
             "SELECT meta::id(id) as id, \
-                (IF type::is::record(source) THEN meta::id(source) ELSE string::concat(source) END) as source_id, \
-                (IF type::is::record(target) THEN meta::id(target) ELSE string::concat(target) END) as target_id \
+                (IF type::is_record(source) THEN meta::id(source) ELSE string::concat(source) END) as source_id, \
+                (IF type::is_record(target) THEN meta::id(target) ELSE string::concat(target) END) as target_id \
              FROM kg_edges",
         )
         .await?
