@@ -15,10 +15,7 @@ pub struct CancelAgentJobParams {
     pub job_id: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct JobStatusRow {
-    status: String,
-}
+// JobStatusRow replaced with serde_json::Value deserialization below
 
 impl SurrealMindServer {
     /// Handle the cancel_agent_job tool call
@@ -53,22 +50,27 @@ async fn cancel_job(db: &Surreal<WsClient>, job_id: String) -> Result<Value> {
     // First check current status
     let check_sql = "SELECT status FROM agent_jobs WHERE job_id = $job_id LIMIT 1;";
     let mut response = db.query(check_sql).bind(("job_id", job_id.clone())).await?;
-    let rows: Vec<JobStatusRow> = response.take(0)?;
+    let rows: Vec<serde_json::Value> = response.take(0)?;
 
-    let current_status = rows.first().ok_or_else(|| SurrealMindError::Mcp {
+    let current_row = rows.first().ok_or_else(|| SurrealMindError::Mcp {
         message: format!("Job not found: {}", job_id),
     })?;
+    let current_status = current_row
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
 
     // Don't cancel already completed/failed jobs
-    if current_status.status == "completed" || current_status.status == "failed" {
+    if current_status == "completed" || current_status == "failed" {
         return Err(SurrealMindError::InvalidParams {
-            message: format!("Cannot cancel job in '{}' status", current_status.status),
+            message: format!("Cannot cancel job in '{}' status", current_status),
         });
     }
-    if current_status.status == "cancelled" {
+    if current_status == "cancelled" {
         return Ok(json!({
             "job_id": job_id,
-            "previous_status": current_status.status,
+            "previous_status": current_status,
             "new_status": "cancelled",
             "message": "Job already cancelled."
         }));
@@ -91,7 +93,7 @@ async fn cancel_job(db: &Surreal<WsClient>, job_id: String) -> Result<Value> {
 
     Ok(json!({
         "job_id": job_id,
-        "previous_status": current_status.status,
+        "previous_status": current_status,
         "new_status": "cancelled",
         "was_running_in_registry": was_running,
         "message": message

@@ -55,8 +55,8 @@ async fn main() -> Result<()> {
     // Connect DB
     let db = Surreal::new::<Ws>(&config.system.database_url).await?;
     db.signin(Root {
-        username: &config.runtime.database_user,
-        password: &config.runtime.database_pass,
+        username: config.runtime.database_user.clone(),
+        password: config.runtime.database_pass.clone(),
     })
     .await?;
     db.use_ns(&config.system.database_ns)
@@ -233,7 +233,7 @@ async fn handle_correction(
 
 async fn clear_mark(db: Arc<Surreal<WsClient>>, item: &MarkItem) -> Result<()> {
     let q = format!(
-        "UPDATE {} SET marked_for = NONE, mark_type = NONE, mark_note = NONE, marked_at = NONE, marked_by = NONE WHERE id = type::thing('{}', $id) RETURN NONE",
+        "UPDATE {} SET marked_for = NONE, mark_type = NONE, mark_note = NONE, marked_at = NONE, marked_by = NONE WHERE id = type::record('{}', $id) RETURN NONE",
         item.table, item.table
     );
     db.query(q).bind(("id", item.id.clone())).await?;

@@ -396,8 +396,8 @@ async fn ping_db_params(url: &str, ns: &str, db: &str, user: &str, pass: &str) -
     if !user.is_empty() {
         let _ = client
             .signin(surrealdb::opt::auth::Root {
-                username: user,
-                password: pass,
+                username: user.to_string(),
+                password: pass.to_string(),
             })
             .await
             .ok()?;
@@ -444,8 +444,8 @@ async fn get_db_counts_params(
     if !user.is_empty()
         && client
             .signin(surrealdb::opt::auth::Root {
-                username: user,
-                password: pass,
+                username: user.to_string(),
+                password: pass.to_string(),
             })
             .await
             .is_err()

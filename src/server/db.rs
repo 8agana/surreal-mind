@@ -2,7 +2,6 @@ use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
 use anyhow::Context;
 use lru::LruCache;
-use serde::Deserialize;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use tokio::sync::{RwLock, Semaphore};
@@ -81,8 +80,8 @@ impl SurrealMindServer {
 
         // Sign in with credentials
         db.signin(surrealdb::opt::auth::Root {
-            username: user.as_str(),
-            password: pass.as_str(),
+            username: user.clone(),
+            password: pass.clone(),
         })
         .await
         .with_context(|| format!("Failed to authenticate with SurrealDB as user '{}'", user))?;
@@ -165,6 +164,19 @@ impl SurrealMindServer {
         submode: Option<&str>,
         tool_name: Option<&str>,
     ) -> crate::error::Result<(usize, Option<String>)> {
+        let inject_start = std::time::Instant::now();
+        let should_trace_info = tool_name
+            .map(|name| name.starts_with("think_"))
+            .unwrap_or(false);
+        if should_trace_info {
+            tracing::info!(
+                thought_id = %thought_id,
+                tool = %tool_name.unwrap_or("unknown"),
+                injection_scale,
+                embedding_dim = embedding.len(),
+                "inject_memories.start"
+            );
+        }
         tracing::debug!("inject_memories: query embedding dims: {}", embedding.len());
         // Orbital mechanics: determine limit and threshold from scale
         let scale = injection_scale.clamp(0, 3) as u8;
@@ -251,107 +263,69 @@ impl SurrealMindServer {
             };
         }
 
-        // Fetch candidate entities and observations (two statements to avoid UNION pitfalls)
-        // Filter by embedding_dim to avoid dimension mismatches at the DB level
+        // Fetch scored candidates from entities and observations using DB-side cosine.
+        // We avoid selecting raw embedding vectors to reduce payload size and sidestep
+        // websocket decode issues observed after 3.x migration.
         let q_dim = embedding.len() as i64;
+        let fetch_start = std::time::Instant::now();
         let mut q = self
             .db
             .query(
-                "SELECT meta::id(id) as id, name, data, embedding FROM kg_entities \
-                 WHERE embedding_dim = $dim AND embedding IS NOT NULL LIMIT $lim; \
-                 SELECT meta::id(id) as id, name, data, embedding FROM kg_observations \
-                 WHERE embedding_dim = $dim AND embedding IS NOT NULL LIMIT $lim;",
+                "SELECT meta::id(id) as id, name, \
+                        data.entity_type AS entity_type, data.description AS description, \
+                        vector::similarity::cosine(embedding, $q) AS similarity \
+                 FROM kg_entities \
+                 WHERE embedding_dim = $dim AND embedding IS NOT NULL \
+                 ORDER BY similarity DESC LIMIT $lim; \
+                 SELECT meta::id(id) as id, name, \
+                        data.entity_type AS entity_type, data.description AS description, \
+                        vector::similarity::cosine(embedding, $q) AS similarity \
+                 FROM kg_observations \
+                 WHERE embedding_dim = $dim AND embedding IS NOT NULL \
+                 ORDER BY similarity DESC LIMIT $lim;",
             )
             .bind(("dim", q_dim))
             .bind(("lim", retrieve as i64))
+            .bind(("q", embedding.to_vec()))
             .await?;
         let mut rows: Vec<serde_json::Value> = q.take(0).unwrap_or_default();
         let mut rows2: Vec<serde_json::Value> = q.take(1).unwrap_or_default();
         let total_candidates = rows.len() + rows2.len();
         rows.append(&mut rows2);
+        if should_trace_info {
+            tracing::info!(
+                thought_id = %thought_id,
+                elapsed_ms = fetch_start.elapsed().as_millis(),
+                candidates = total_candidates,
+                "inject_memories.fetch_candidates.done"
+            );
+        }
         tracing::debug!(
             "inject_memories: Retrieved {} candidates from KG (entities+observations)",
             total_candidates
         );
 
-        // Iterate, compute or reuse embeddings, score by cosine similarity
+        // Iterate scored candidates
         let mut scored: Vec<(String, f32, String, String)> = Vec::new();
         let mut skipped = 0;
         for r in rows {
             if let Some(id) = r.get("id").and_then(|v| v.as_str()) {
-                // Try to use existing embedding; compute and persist if missing and allowed
-                let mut emb_opt: Option<Vec<f32>> = None;
-                if let Some(ev) = r.get("embedding").and_then(|v| v.as_array()) {
-                    let vecf: Vec<f32> = ev
-                        .iter()
-                        .filter_map(|x| x.as_f64())
-                        .map(|f| f as f32)
-                        .collect();
-                    if vecf.len() == embedding.len() {
-                        emb_opt = Some(vecf);
-                    }
-                }
-                if emb_opt.is_none() {
-                    // Build text for embedding: name + type or description
-                    let name_s = r.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                    let mut text = name_s.to_string();
-                    if let Some(d) = r.get("data").and_then(|v| v.as_object()) {
-                        if let Some(etype) = d.get("entity_type").and_then(|v| v.as_str()) {
-                            text = format!("{} ({})", name_s, etype);
-                        } else if let Some(desc) = d.get("description").and_then(|v| v.as_str()) {
-                            text.push_str(" - ");
-                            text.push_str(desc);
-                        }
-                    }
-                    let new_emb = self.embedder.embed(&text).await.unwrap_or_default();
-                    if new_emb.len() == embedding.len() {
-                        emb_opt = Some(new_emb.clone());
-                        // Determine table from id (kg_entities or kg_observations)
-                        let tb = if id.starts_with("kg_entities:") {
-                            "kg_entities"
-                        } else if id.starts_with("kg_observations:") {
-                            "kg_observations"
-                        } else {
-                            "kg_entities" // fallback
-                        };
-                        let inner_id = id
-                            .split(':')
-                            .nth(1)
-                            .unwrap_or(id)
-                            .trim_start_matches('⟨')
-                            .trim_end_matches('⟩');
-                        // Persist embedding for future fast retrieval (best-effort)
-                        let (provider, model, dim) = self.get_embedding_metadata();
-                        let _ = self
-                            .db
-                            .query("UPDATE type::thing($tb, $id) SET embedding = $emb, embedding_provider = $provider, embedding_model = $model, embedding_dim = $dim, embedded_at = time::now() RETURN meta::id(id) as id")
-                            .bind(("tb", tb))
-                            .bind(("id", inner_id.to_string()))
-                            .bind(("emb", new_emb))
-                            .bind(("provider", provider))
-                            .bind(("model", model))
-                            .bind(("dim", dim))
-                            .await;
-                    }
-                }
-                if let Some(emb_e) = emb_opt {
-                    let sim = Self::cosine_similarity(embedding, &emb_e);
-                    if sim >= prox_thresh {
-                        let name_s = r
-                            .get("name")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        let etype_or_desc = r
-                            .get("data")
-                            .and_then(|d| d.get("entity_type").or_else(|| d.get("description")))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        scored.push((id.to_string(), sim, name_s, etype_or_desc));
-                    } else {
-                        skipped += 1;
-                    }
+                let sim = r.get("similarity").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+                if sim >= prox_thresh {
+                    let name_s = r
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let etype_or_desc = r
+                        .get("entity_type")
+                        .or_else(|| r.get("description"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    scored.push((id.to_string(), sim, name_s, etype_or_desc));
+                } else {
+                    skipped += 1;
                 }
             }
         }
@@ -422,13 +396,21 @@ impl SurrealMindServer {
         // Persist to the thought
         let q = self
             .db
-            .query("UPDATE type::thing($tb, $id) SET injected_memories = $mems, enriched_content = $enr RETURN meta::id(id) as id")
+            .query("UPDATE type::record($tb, $id) SET injected_memories = $mems, enriched_content = $enr RETURN meta::id(id) as id")
             .bind(("tb", "thoughts"))
             .bind(("id", thought_id.to_string()))
             .bind(("mems", memory_ids.clone()))
             .bind(("enr", enriched.clone().unwrap_or_default()));
         // Note: empty string will act like clearing or setting to empty; acceptable for now
         let _: Vec<serde_json::Value> = q.await?.take(0)?;
+        if should_trace_info {
+            tracing::info!(
+                thought_id = %thought_id,
+                elapsed_ms = inject_start.elapsed().as_millis(),
+                injected = memory_ids.len(),
+                "inject_memories.done"
+            );
+        }
         tracing::debug!(
             "inject_memories: Injected {} memories for thought {}, enriched content length: {}",
             memory_ids.len(),
@@ -441,11 +423,6 @@ impl SurrealMindServer {
 
     /// Check for mixed embedding dimensions across thoughts and KG tables
     pub async fn check_embedding_dims(&self) -> Result<()> {
-        #[derive(Debug, Deserialize)]
-        struct DimRow {
-            dim: Option<i64>,
-        }
-
         // Query distinct embedding dimensions in thoughts
         let thoughts_dims: Vec<i64> = self
             .db
@@ -454,9 +431,9 @@ impl SurrealMindServer {
             .map_err(|e| SurrealMindError::Database {
                 message: format!("Database query error: {}", e),
             })?
-            .take::<Vec<DimRow>>(0)?
+            .take::<Vec<serde_json::Value>>(0)?
             .into_iter()
-            .filter_map(|row| row.dim)
+            .filter_map(|row| row.get("dim").and_then(|v| v.as_i64()))
             .collect();
 
         // Query distinct dimensions in KG entities
@@ -467,9 +444,9 @@ impl SurrealMindServer {
             .map_err(|e| SurrealMindError::Database {
                 message: format!("Database query error: {}", e),
             })?
-            .take::<Vec<DimRow>>(0)?
+            .take::<Vec<serde_json::Value>>(0)?
             .into_iter()
-            .filter_map(|row| row.dim)
+            .filter_map(|row| row.get("dim").and_then(|v| v.as_i64()))
             .collect();
 
         // Query distinct dimensions in KG observations
@@ -480,9 +457,9 @@ impl SurrealMindServer {
             .map_err(|e| SurrealMindError::Database {
                 message: format!("Database query error: {}", e),
             })?
-            .take::<Vec<DimRow>>(0)?
+            .take::<Vec<serde_json::Value>>(0)?
             .into_iter()
-            .filter_map(|row| row.dim)
+            .filter_map(|row| row.get("dim").and_then(|v| v.as_i64()))
             .collect();
 
         let mut all_dims = Vec::new();

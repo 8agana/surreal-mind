@@ -36,7 +36,7 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
 
 ## Quick Start
 
-1) Prereqs: Rust 1.85+, SurrealDB 2.0 (ws or wss). See [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) for a complete list of system and crate dependencies.
+1) Prereqs: Rust 1.85+, SurrealDB 3.0+ (ws or wss). See [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) for a complete list of system and crate dependencies.
    `protobuf` via `brew install protobuf` if protoc errors.
 2) Configure:
 

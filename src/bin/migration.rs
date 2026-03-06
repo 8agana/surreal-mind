@@ -1,29 +1,8 @@
 use anyhow::Result;
-use serde::Deserialize;
 
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::Ws;
 use surrealdb::opt::auth::Root;
-use surrealdb::sql::Thing;
-
-#[derive(Debug, Deserialize)]
-struct Skater {
-    id: Thing,
-    first_name: String,
-    last_name: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct CompeteIn {
-    id: Thing,
-    out: Thing,
-    skate_order: Option<u32>,
-    request_status: String,
-    gallery_status: String,
-    gallery_url: Option<String>,
-    purchase_amount: Option<f64>,
-    notes: Option<String>,
-}
 
 #[derive(Debug)]
 struct ParsedSkater {
@@ -51,8 +30,8 @@ async fn main() -> Result<()> {
     // Connect to SurrealDB
     let db = Surreal::new::<Ws>(url).await?;
     db.signin(Root {
-        username: &user,
-        password: &pass,
+        username: user,
+        password: pass,
     })
     .await?;
     db.use_ns(ns).use_db(dbname).await?;
@@ -63,18 +42,34 @@ async fn main() -> Result<()> {
     let mut resp = db
         .query("SELECT id, first_name, last_name FROM skater WHERE first_name CONTAINS 'and'")
         .await?;
-    let broken_skaters: Vec<Skater> = resp.take(0)?;
+    let broken_skaters: Vec<serde_json::Value> = resp.take(0)?;
 
     println!("Found {} broken skater records", broken_skaters.len());
 
     for skater in broken_skaters {
+        let skater_id = skater
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let first_name = skater
+            .get("first_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let last_name = skater
+            .get("last_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
         println!(
             "Migrating skater: {} {} (id: {})",
-            skater.first_name, skater.last_name, skater.id
+            first_name, last_name, skater_id
         );
 
         // Reconstruct full name
-        let full_name = format!("{} {}", skater.first_name, skater.last_name);
+        let full_name = format!("{} {}", first_name, last_name);
 
         // Parse
         let parsed = match parse_skater_names(&full_name) {
@@ -109,9 +104,9 @@ async fn main() -> Result<()> {
         // Get existing competed_in relations
         let mut compete_resp = db
             .query("SELECT * FROM competed_in WHERE in = $skater_id")
-            .bind(("skater_id", skater.id.clone()))
+            .bind(("skater_id", skater_id.clone()))
             .await?;
-        let competitions: Vec<CompeteIn> = compete_resp.take(0)?;
+        let competitions: Vec<serde_json::Value> = compete_resp.take(0)?;
 
         // For each parsed skater
         for skater_data in &parsed.skaters {
@@ -138,7 +133,7 @@ async fn main() -> Result<()> {
             // Create belongs_to
             let belongs_resp = db
                 .query(
-                    "RELATE (type::thing('skater', $skater_id))->belongs_to->(type::thing('family', $family_id))
+                    "RELATE (type::record('skater', $skater_id))->belongs_to->(type::record('family', $family_id))
                      CONTENT { created_at: time::now() }",
                 )
                 .bind(("skater_id", new_skater_id.clone()))
@@ -148,9 +143,37 @@ async fn main() -> Result<()> {
 
             // Create new competed_in relations
             for comp in &competitions {
+                let event_id = comp
+                    .get("out")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let skate_order = comp
+                    .get("skate_order")
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as u32);
+                let request_status = comp
+                    .get("request_status")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let gallery_status = comp
+                    .get("gallery_status")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let gallery_url = comp
+                    .get("gallery_url")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let purchase_amount = comp.get("purchase_amount").and_then(|v| v.as_f64());
+                let notes = comp
+                    .get("notes")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
                 let new_relation_resp = db
                     .query(
-                        "RELATE (type::thing('skater', $new_skater_id))->competed_in->(type::thing('event', $event_id))
+                        "RELATE (type::record('skater', $new_skater_id))->competed_in->(type::record('event', $event_id))
                          CONTENT {
                             skate_order: $skate_order,
                             request_status: $request_status,
@@ -161,13 +184,13 @@ async fn main() -> Result<()> {
                          }",
                     )
                     .bind(("new_skater_id", new_skater_id.clone()))
-                    .bind(("event_id", comp.out.clone()))
-                    .bind(("skate_order", comp.skate_order))
-                    .bind(("request_status", comp.request_status.clone()))
-                    .bind(("gallery_status", comp.gallery_status.clone()))
-                    .bind(("gallery_url", comp.gallery_url.clone()))
-                    .bind(("purchase_amount", comp.purchase_amount))
-                    .bind(("notes", comp.notes.clone()))
+                    .bind(("event_id", event_id))
+                    .bind(("skate_order", skate_order))
+                    .bind(("request_status", request_status))
+                    .bind(("gallery_status", gallery_status))
+                    .bind(("gallery_url", gallery_url))
+                    .bind(("purchase_amount", purchase_amount))
+                    .bind(("notes", notes))
                     .await?;
                 new_relation_resp.check()?;
             }
@@ -175,14 +198,16 @@ async fn main() -> Result<()> {
 
         // Delete old competed_in relations
         for comp in &competitions {
-            let _ = db.query("DELETE $id").bind(("id", comp.id.clone())).await?;
+            let comp_id = comp
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let _ = db.query("DELETE $id").bind(("id", comp_id)).await?;
         }
 
         // Delete old skater
-        let _ = db
-            .query("DELETE $id")
-            .bind(("id", skater.id.clone()))
-            .await?;
+        let _ = db.query("DELETE $id").bind(("id", skater_id)).await?;
     }
 
     println!("Migration completed!");

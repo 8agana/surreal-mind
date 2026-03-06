@@ -47,8 +47,14 @@ impl SurrealMindServer {
         branch_from: Option<String>,
         confidence: Option<f32>,
     ) -> Result<(serde_json::Value, ContinuityResult)> {
+        let runner_start = std::time::Instant::now();
         let injection_scale_val = injection_scale.unwrap_or(1) as i64;
         let tags = tags.unwrap_or_default();
+        tracing::info!(
+            injection_scale = injection_scale_val,
+            content_len = content.len(),
+            "think.run_convo.start"
+        );
 
         // Use ThoughtBuilder to create the thought (graceful degradation)
         let (thought_id, embedding, resolved_continuity, embedding_status) =
@@ -93,7 +99,8 @@ impl SurrealMindServer {
         }
 
         if framework_enhanced || framework_analysis.is_some() {
-            let query = "UPDATE type::thing('thoughts', $id) SET framework_enhanced = $enhanced, framework_analysis = $analysis RETURN NONE;";
+            let query = "UPDATE type::record('thoughts', $id) SET framework_enhanced = $enhanced, framework_analysis = $analysis RETURN NONE;";
+            let framework_start = std::time::Instant::now();
             self.db
                 .query(query)
                 .bind(("id", thought_id.clone()))
@@ -105,10 +112,16 @@ impl SurrealMindServer {
                         .unwrap_or(serde_json::Value::Null),
                 ))
                 .await?;
+            tracing::info!(
+                thought_id = %thought_id,
+                elapsed_ms = framework_start.elapsed().as_millis(),
+                "think.run_convo.framework_update.done"
+            );
         }
 
         // Memory injection - only if we have an embedding
         let (mem_count, enriched) = if !embedding.is_empty() {
+            let inject_start = std::time::Instant::now();
             self.inject_memories(
                 &thought_id,
                 &embedding,
@@ -117,6 +130,14 @@ impl SurrealMindServer {
                 Some("think_convo"),
             )
             .await
+            .inspect(|v| {
+                tracing::info!(
+                    thought_id = %thought_id,
+                    elapsed_ms = inject_start.elapsed().as_millis(),
+                    memories_injected = v.0,
+                    "think.run_convo.inject.done"
+                );
+            })
             .unwrap_or((0, None))
         } else {
             (0, None)
@@ -138,6 +159,11 @@ impl SurrealMindServer {
                 "Thought saved but embedding failed. Use 'maintain embed_pending' to retry later."
             );
         }
+        tracing::info!(
+            thought_id = %thought_id,
+            elapsed_ms = runner_start.elapsed().as_millis(),
+            "think.run_convo.done"
+        );
 
         Ok((original_result, resolved_continuity))
     }
@@ -168,6 +194,7 @@ impl SurrealMindServer {
         branch_from: Option<String>,
         confidence: Option<f32>,
     ) -> Result<(serde_json::Value, ContinuityResult)> {
+        let runner_start = std::time::Instant::now();
         let (default_injection_scale, default_significance) = match mode {
             "debug" => (3u8, 0.8_f32),
             "build" => (2u8, 0.6_f32),
@@ -177,6 +204,12 @@ impl SurrealMindServer {
         };
         let injection_scale_val = injection_scale.unwrap_or(default_injection_scale) as i64;
         let tags = tags.unwrap_or_default();
+        tracing::info!(
+            mode = %mode,
+            injection_scale = injection_scale_val,
+            content_len = content.len(),
+            "think.run_technical.start"
+        );
 
         // Use ThoughtBuilder (graceful degradation)
         let (thought_id, embedding, resolved_continuity, embedding_status) =
@@ -216,7 +249,8 @@ impl SurrealMindServer {
         }
 
         if framework_enhanced || framework_analysis.is_some() {
-            let query = "UPDATE type::thing('thoughts', $id) SET framework_enhanced = $enhanced, framework_analysis = $analysis RETURN NONE;";
+            let query = "UPDATE type::record('thoughts', $id) SET framework_enhanced = $enhanced, framework_analysis = $analysis RETURN NONE;";
+            let framework_start = std::time::Instant::now();
             self.db
                 .query(query)
                 .bind(("id", thought_id.clone()))
@@ -228,11 +262,17 @@ impl SurrealMindServer {
                         .unwrap_or(serde_json::Value::Null),
                 ))
                 .await?;
+            tracing::info!(
+                thought_id = %thought_id,
+                elapsed_ms = framework_start.elapsed().as_millis(),
+                "think.run_technical.framework_update.done"
+            );
         }
 
         // Memory injection - only if we have an embedding
         let tool_name = format!("think_{}", mode);
         let (mem_count, enriched) = if !embedding.is_empty() {
+            let inject_start = std::time::Instant::now();
             self.inject_memories(
                 &thought_id,
                 &embedding,
@@ -241,6 +281,14 @@ impl SurrealMindServer {
                 Some(&tool_name),
             )
             .await
+            .inspect(|v| {
+                tracing::info!(
+                    thought_id = %thought_id,
+                    elapsed_ms = inject_start.elapsed().as_millis(),
+                    memories_injected = v.0,
+                    "think.run_technical.inject.done"
+                );
+            })
             .unwrap_or((0, None))
         } else {
             (0, None)
@@ -262,6 +310,12 @@ impl SurrealMindServer {
                 "Thought saved but embedding failed. Use 'maintain embed_pending' to retry later."
             );
         }
+        tracing::info!(
+            thought_id = %thought_id,
+            mode = %mode,
+            elapsed_ms = runner_start.elapsed().as_millis(),
+            "think.run_technical.done"
+        );
 
         Ok((original_result, resolved_continuity))
     }

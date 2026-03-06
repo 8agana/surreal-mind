@@ -25,7 +25,7 @@ impl SurrealMindServer {
             DEFINE FIELD last_accessed ON TABLE thoughts TYPE option<datetime>;
             DEFINE FIELD submode ON TABLE thoughts TYPE option<string>;
             DEFINE FIELD framework_enhanced ON TABLE thoughts TYPE option<bool>;
-            DEFINE FIELD framework_analysis ON TABLE thoughts FLEXIBLE TYPE option<object>;
+            DEFINE FIELD OVERWRITE framework_analysis ON TABLE thoughts TYPE option<object> FLEXIBLE;
             DEFINE FIELD status ON TABLE thoughts TYPE option<string>;
             -- Origin and privacy fields for retrieval
             DEFINE FIELD origin ON TABLE thoughts TYPE option<string>;
@@ -126,7 +126,6 @@ impl SurrealMindServer {
 
             -- CorrectionEvent table for REMini correction system
             DEFINE TABLE correction_events SCHEMAFULL;
-            DEFINE FIELD id ON TABLE correction_events TYPE record<correction_events>;
             DEFINE FIELD timestamp ON TABLE correction_events TYPE datetime DEFAULT time::now();
             DEFINE FIELD target_id ON TABLE correction_events TYPE string;
             DEFINE FIELD target_table ON TABLE correction_events TYPE string;
@@ -143,7 +142,6 @@ impl SurrealMindServer {
 
             -- Agent exchange logging
             DEFINE TABLE agent_exchanges SCHEMAFULL;
-            DEFINE FIELD id ON TABLE agent_exchanges TYPE record<agent_exchanges>;
             DEFINE FIELD agent_source ON TABLE agent_exchanges TYPE string;
             DEFINE FIELD agent_instance ON TABLE agent_exchanges TYPE string;
             DEFINE FIELD prompt ON TABLE agent_exchanges TYPE string;

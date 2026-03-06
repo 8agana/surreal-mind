@@ -73,29 +73,7 @@ async fn fetch_job_status(db: &Surreal<WsClient>, job_id: String) -> Result<Valu
         }
     };
 
-    // Define a struct to deserialize the job row
-    // Option<T> fields allow NONE/null values to deserialize as None
-    // Only include fields that actually exist in the schema
-    #[derive(Deserialize)]
-    struct JobRow {
-        job_id: String,
-        status: Option<String>,
-        created_at: Option<String>,
-        started_at: Option<String>,
-        completed_at: Option<String>,
-        duration_ms: Option<i64>,
-        error: Option<String>,
-        session_id: Option<String>,
-        exchange_id: Option<String>,
-        metadata: Option<serde_json::Value>,
-        prompt: Option<String>,
-        task_name: Option<String>,
-        model_override: Option<String>,
-        cwd: Option<String>,
-        timeout_ms: Option<i64>,
-    }
-
-    let rows: Vec<JobRow> = match response.take(0) {
+    let raw_rows: Vec<serde_json::Value> = match response.take(0) {
         Ok(rows) => rows,
         Err(err) => {
             tracing::error!("agent_job_status take failed: {}", err);
@@ -103,23 +81,33 @@ async fn fetch_job_status(db: &Surreal<WsClient>, job_id: String) -> Result<Valu
         }
     };
 
-    let row = rows.first().ok_or_else(|| SurrealMindError::Mcp {
+    let row = raw_rows.first().ok_or_else(|| SurrealMindError::Mcp {
         message: format!("Job not found: {}", job_id),
     })?;
 
-    if row.job_id.is_empty() {
+    let job_id_val = row
+        .get("job_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if job_id_val.is_empty() {
         return Err(SurrealMindError::Mcp {
             message: format!("Job not found: {}", job_id),
         });
     }
 
-    let mut metadata = row.metadata.clone();
+    let mut metadata: Option<Value> = row.get("metadata").cloned();
     let mut response = extract_response_from_metadata(&metadata);
 
+    let exchange_id = row
+        .get("exchange_id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
     if response.is_none()
-        && let Some(exchange_id) = row.exchange_id.as_deref()
+        && let Some(ref eid) = exchange_id
         && let Some((exchange_response, exchange_metadata)) =
-            fetch_exchange_response(db, exchange_id).await?
+            fetch_exchange_response(db, eid.as_str()).await?
     {
         response = exchange_response;
         if metadata_is_empty(&metadata) {
@@ -128,22 +116,22 @@ async fn fetch_job_status(db: &Surreal<WsClient>, job_id: String) -> Result<Valu
     }
 
     Ok(json!({
-        "job_id": row.job_id,
-        "status": row.status.clone().unwrap_or_default(),
-        "created_at": row.created_at,
-        "started_at": row.started_at,
-        "completed_at": row.completed_at,
-        "duration_ms": row.duration_ms,
-        "error": row.error,
-        "session_id": row.session_id,
-        "exchange_id": row.exchange_id,
+        "job_id": job_id_val,
+        "status": row.get("status").and_then(|v| v.as_str()).unwrap_or(""),
+        "created_at": row.get("created_at"),
+        "started_at": row.get("started_at"),
+        "completed_at": row.get("completed_at"),
+        "duration_ms": row.get("duration_ms"),
+        "error": row.get("error"),
+        "session_id": row.get("session_id"),
+        "exchange_id": exchange_id,
         "metadata": metadata,
         "response": response,
-        "prompt": row.prompt,
-        "task_name": row.task_name,
-        "model_override": row.model_override,
-        "cwd": row.cwd,
-        "timeout_ms": row.timeout_ms
+        "prompt": row.get("prompt"),
+        "task_name": row.get("task_name"),
+        "model_override": row.get("model_override"),
+        "cwd": row.get("cwd"),
+        "timeout_ms": row.get("timeout_ms")
     }))
 }
 
@@ -171,18 +159,18 @@ async fn fetch_exchange_response(
     db: &Surreal<WsClient>,
     exchange_id: &str,
 ) -> Result<Option<(Option<String>, Option<Value>)>> {
-    let sql = "SELECT response, metadata FROM agent_exchanges WHERE id = type::thing($exchange_id) LIMIT 1;";
+    let sql = "SELECT response, metadata FROM agent_exchanges WHERE id = type::record($exchange_id) LIMIT 1;";
     let mut response = db
         .query(sql)
         .bind(("exchange_id", exchange_id.to_string()))
         .await?;
-    #[derive(Deserialize)]
-    struct ExchangeRow {
-        response: Option<String>,
-        metadata: Option<Value>,
-    }
-    let rows: Vec<ExchangeRow> = response.take(0)?;
-    Ok(rows
-        .first()
-        .map(|row| (row.response.clone(), row.metadata.clone())))
+    let rows: Vec<serde_json::Value> = response.take(0)?;
+    Ok(rows.first().map(|row| {
+        let resp = row
+            .get("response")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let meta = row.get("metadata").cloned();
+        (resp, meta)
+    }))
 }

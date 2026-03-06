@@ -1,4 +1,4 @@
-use rmcp::model::CallToolRequestParam;
+use rmcp::model::CallToolRequestParams;
 use surreal_mind::{config::Config, server::SurrealMindServer};
 
 #[tokio::test]
@@ -21,9 +21,11 @@ async fn relationship_flow_smoke() {
     );
     a_args.insert("upsert".into(), serde_json::Value::Bool(true));
     let e1 = server
-        .handle_knowledgegraph_create(CallToolRequestParam {
+        .handle_knowledgegraph_create(CallToolRequestParams {
+            meta: None,
             name: "remember".into(),
             arguments: Some(a_args),
+            task: None,
         })
         .await
         .unwrap();
@@ -43,9 +45,11 @@ async fn relationship_flow_smoke() {
     );
     b_args.insert("upsert".into(), serde_json::Value::Bool(true));
     let e2 = server
-        .handle_knowledgegraph_create(CallToolRequestParam {
+        .handle_knowledgegraph_create(CallToolRequestParams {
+            meta: None,
             name: "remember".into(),
             arguments: Some(b_args),
+            task: None,
         })
         .await
         .unwrap();
@@ -69,9 +73,11 @@ async fn relationship_flow_smoke() {
     );
     r_args.insert("upsert".into(), serde_json::Value::Bool(true));
     let rel = server
-        .handle_knowledgegraph_create(CallToolRequestParam {
+        .handle_knowledgegraph_create(CallToolRequestParams {
+            meta: None,
             name: "remember".into(),
             arguments: Some(r_args),
+            task: None,
         })
         .await
         .unwrap();
@@ -92,9 +98,11 @@ async fn relationship_flow_smoke() {
     );
     s_args.insert("top_k".into(), serde_json::Value::Number(10u64.into()));
     let items_val = server
-        .handle_unified_search(CallToolRequestParam {
+        .handle_unified_search(CallToolRequestParams {
+            meta: None,
             name: "search".into(),
             arguments: Some(s_args),
+            task: None,
         })
         .await
         .unwrap()

@@ -2,8 +2,6 @@ use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
 use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde_json::json;
-use std::str::FromStr;
-use surrealdb::sql::Thing;
 
 /// Parameters for the wander tool
 #[derive(Debug, serde::Deserialize)]
@@ -29,7 +27,7 @@ pub struct WanderParams {
 
 impl SurrealMindServer {
     /// Normalize an incoming record reference into (table, id) pairs.
-    /// Accepts full Thing strings (e.g., "kg_entities:xyz"), aliases like
+    /// Accepts full record strings (e.g., "kg_entities:xyz"), aliases like
     /// "entity:xyz" / "observation:xyz", and returns None if unrecognized.
     fn normalize_record_ref(raw: &str) -> Option<(String, String)> {
         fn map_table_alias(tb: &str) -> Option<&'static str> {
@@ -41,15 +39,7 @@ impl SurrealMindServer {
             }
         }
 
-        // Try full Thing parsing first (handles table:id format)
-        if let Ok(thing) = Thing::from_str(raw) {
-            if let Some(tb) = map_table_alias(&thing.tb) {
-                return Some((tb.to_string(), thing.id.to_string()));
-            }
-            return None;
-        }
-
-        // Fallback: simple split if Thing parsing fails
+        // Parse table:id format by splitting on the first colon
         if raw.contains(':') {
             let mut parts = raw.splitn(2, ':');
             let table = parts.next().unwrap_or("");
@@ -81,7 +71,7 @@ impl SurrealMindServer {
                 let res: Vec<serde_json::Value> = self
                     .db
                     .query(format!(
-                        "SELECT meta::id(id) as id, * FROM {} WHERE id = type::thing('{}', $id) LIMIT 1",
+                        "SELECT meta::id(id) as id, * FROM {} WHERE id = type::record('{}', $id) LIMIT 1",
                         table, table
                     ))
                     .bind(("id", short_id))
@@ -100,9 +90,9 @@ impl SurrealMindServer {
                     .db
                     .query(
                         "SELECT meta::id(id) as id, * FROM thoughts, kg_entities, kg_observations
-                         WHERE id = type::thing('thoughts', $id)
-                            OR id = type::thing('kg_entities', $id)
-                            OR id = type::thing('kg_observations', $id)
+                         WHERE id = type::record('thoughts', $id)
+                            OR id = type::record('kg_entities', $id)
+                            OR id = type::record('kg_observations', $id)
                          LIMIT 1",
                     )
                     .bind(("id", id.clone()))

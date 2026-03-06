@@ -57,7 +57,7 @@ pub struct Thought {
     #[serde(deserialize_with = "deserialize_thing_to_string")]
     pub id: String,
     pub content: String,
-    pub created_at: surrealdb::sql::Datetime,
+    pub created_at: surrealdb::types::Datetime,
     #[serde(default)]
     pub embedding: Vec<f32>,
     #[serde(default)]
@@ -69,7 +69,7 @@ pub struct Thought {
     pub significance: f32,
     #[serde(default)]
     pub access_count: u32,
-    pub last_accessed: Option<surrealdb::sql::Datetime>,
+    pub last_accessed: Option<surrealdb::types::Datetime>,
     #[serde(default)]
     pub submode: Option<String>,
     #[serde(default)]
@@ -82,7 +82,7 @@ pub struct Thought {
     #[serde(default)]
     pub embedding_dim: Option<i64>,
     #[serde(default)]
-    pub embedded_at: Option<surrealdb::sql::Datetime>,
+    pub embedded_at: Option<surrealdb::types::Datetime>,
     #[serde(default)]
     pub extracted_to_kg: bool,
     #[serde(default)]

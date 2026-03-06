@@ -3,7 +3,7 @@
 // Integration tests focused on direct handler + DB checks.
 // For full MCP protocol coverage (JSON-RPC over sink/stream), see tests/mcp_protocol.rs.
 
-use rmcp::{ServerHandler, model::CallToolRequestParam};
+use rmcp::{ServerHandler, model::CallToolRequestParams};
 use serde_json::json;
 use surreal_mind::{config::Config, server::SurrealMindServer};
 
@@ -94,7 +94,8 @@ async fn test_think_handler() {
     let server = create_test_server().await;
 
     // Test with valid params
-    let request = CallToolRequestParam {
+    let request = CallToolRequestParams {
+        meta: None,
         name: "think".into(),
         arguments: Some(
             json!({
@@ -104,6 +105,7 @@ async fn test_think_handler() {
             .unwrap()
             .clone(),
         ),
+        task: None,
     };
 
     // Call the internal handler directly
@@ -125,7 +127,8 @@ async fn test_think_with_continuity() {
 
     // Test with non-existent previous_thought_id
     let non_existent_id = "non_existent_thought_id_12345";
-    let request = CallToolRequestParam {
+    let request = CallToolRequestParams {
+        meta: None,
         name: "think".into(),
         arguments: Some(
             json!({
@@ -136,6 +139,7 @@ async fn test_think_with_continuity() {
             .unwrap()
             .clone(),
         ),
+        task: None,
     };
 
     // Call the internal handler directly
@@ -181,7 +185,8 @@ async fn test_think_invalid_params() {
     let server = create_test_server().await;
 
     // Test with invalid params (missing required 'content' field)
-    let request = CallToolRequestParam {
+    let request = CallToolRequestParams {
+        meta: None,
         name: "think".into(),
         arguments: Some(
             json!({
@@ -191,6 +196,7 @@ async fn test_think_invalid_params() {
             .unwrap()
             .clone(),
         ),
+        task: None,
     };
 
     // Call the internal handler directly

@@ -61,7 +61,7 @@ impl SurrealMindServer {
             };
 
             // Query the database to check if the record exists
-            let check_query = "SELECT id FROM type::thing($id) LIMIT 1";
+            let check_query = "SELECT id FROM type::record($id) LIMIT 1";
             let query_result = match self
                 .db
                 .query(check_query)

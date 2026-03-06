@@ -68,8 +68,8 @@ async fn main() -> Result<()> {
 
     let db = Surreal::new::<Ws>(&config.system.database_url).await?;
     db.signin(Root {
-        username: &config.runtime.database_user,
-        password: &config.runtime.database_pass,
+        username: config.runtime.database_user.clone(),
+        password: config.runtime.database_pass.clone(),
     })
     .await?;
     db.use_ns(&config.system.database_ns)
@@ -273,10 +273,10 @@ async fn main() -> Result<()> {
 
 fn normalize_entity_id(raw: &str) -> String {
     let cleaned = raw.trim().trim_matches(|c: char| c == '"' || c == '\'');
-    if let Some((prefix, id)) = cleaned.split_once(':') {
-        if matches!(prefix, "kg_entities" | "entity") {
-            return sanitize_id(id);
-        }
+    if let Some((prefix, id)) = cleaned.split_once(':')
+        && matches!(prefix, "kg_entities" | "entity")
+    {
+        return sanitize_id(id);
     }
     sanitize_id(cleaned)
 }
@@ -314,7 +314,7 @@ fn parse_merge_target(reasoning: &str) -> Option<String> {
 async fn entity_exists(db: Arc<Surreal<WsClient>>, id: &str) -> Result<bool> {
     let count: Option<i64> = db
         .query(
-            "RETURN count((SELECT id FROM kg_entities WHERE id = type::thing('kg_entities', $id)))",
+            "RETURN count((SELECT id FROM kg_entities WHERE id = type::record('kg_entities', $id)))",
         )
         .bind(("id", id.to_string()))
         .await?
@@ -324,12 +324,12 @@ async fn entity_exists(db: Arc<Surreal<WsClient>>, id: &str) -> Result<bool> {
 
 async fn edge_count_for(db: Arc<Surreal<WsClient>>, ent_id: &str) -> Result<i64> {
     let src_rows: Vec<Value> = db
-        .query("SELECT count() AS c FROM kg_edges WHERE source = type::thing('kg_entities', $id) GROUP ALL")
+        .query("SELECT count() AS c FROM kg_edges WHERE source = type::record('kg_entities', $id) GROUP ALL")
         .bind(("id", ent_id.to_string()))
         .await?
         .take(0)?;
     let dst_rows: Vec<Value> = db
-        .query("SELECT count() AS c FROM kg_edges WHERE target = type::thing('kg_entities', $id) GROUP ALL")
+        .query("SELECT count() AS c FROM kg_edges WHERE target = type::record('kg_entities', $id) GROUP ALL")
         .bind(("id", ent_id.to_string()))
         .await?
         .take(0)?;
@@ -355,23 +355,23 @@ async fn apply_merge(
     delete_enabled: bool,
 ) -> Result<bool> {
     db.query(
-        "UPDATE kg_edges SET source = type::thing('kg_entities', $toid) \
-         WHERE source = type::thing('kg_entities', $fromid)",
+        "UPDATE kg_edges SET source = type::record('kg_entities', $toid) \
+         WHERE source = type::record('kg_entities', $fromid)",
     )
     .bind(("toid", winner_id.to_string()))
     .bind(("fromid", loser_id.to_string()))
     .await?;
 
     db.query(
-        "UPDATE kg_edges SET target = type::thing('kg_entities', $toid) \
-         WHERE target = type::thing('kg_entities', $fromid)",
+        "UPDATE kg_edges SET target = type::record('kg_entities', $toid) \
+         WHERE target = type::record('kg_entities', $fromid)",
     )
     .bind(("toid", winner_id.to_string()))
     .bind(("fromid", loser_id.to_string()))
     .await?;
 
     db.query(
-        "UPDATE type::thing('kg_entities', $id) \
+        "UPDATE type::record('kg_entities', $id) \
          SET data.canonical_id = $cid, data.is_alias = true",
     )
     .bind(("id", loser_id.to_string()))
@@ -382,7 +382,7 @@ async fn apply_merge(
     if delete_enabled {
         let remaining = edge_count_for(db.clone(), loser_id).await.unwrap_or(1);
         if remaining == 0 {
-            db.query("DELETE type::thing('kg_entities', $id)")
+            db.query("DELETE type::record('kg_entities', $id)")
                 .bind(("id", loser_id.to_string()))
                 .await?;
             deleted = true;
@@ -400,7 +400,7 @@ async fn apply_merge(
     });
 
     db.query(
-        "UPDATE type::thing('correction_events', $id) \
+        "UPDATE type::record('correction_events', $id) \
          SET new_state = $state, verification_status = 'auto_applied'",
     )
     .bind(("id", event_id.to_string()))

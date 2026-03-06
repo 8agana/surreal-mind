@@ -1,6 +1,6 @@
 #![cfg(feature = "db_integration")]
 
-use rmcp::model::CallToolRequestParam;
+use rmcp::model::CallToolRequestParams;
 use serde_json::json;
 use surreal_mind::{config::Config, server::SurrealMindServer};
 
@@ -19,7 +19,8 @@ async fn test_wander_random() {
 
     let server = create_test_server().await;
 
-    let request = CallToolRequestParam {
+    let request = CallToolRequestParams {
+        meta: None,
         name: "legacymind_wander".into(),
         arguments: Some(
             json!({
@@ -30,6 +31,7 @@ async fn test_wander_random() {
             .unwrap()
             .clone(),
         ),
+        task: None,
     };
 
     let result = server.handle_wander(request).await;
@@ -54,9 +56,11 @@ async fn test_wander_visited_exclusion() {
     let server = create_test_server().await;
 
     // First wander to get an ID
-    let request1 = CallToolRequestParam {
+    let request1 = CallToolRequestParams {
+        meta: None,
         name: "legacymind_wander".into(),
         arguments: Some(json!({"mode": "random"}).as_object().unwrap().clone()),
+        task: None,
     };
     let _res1 = server.handle_wander(request1).await.unwrap();
 
@@ -66,9 +70,11 @@ async fn test_wander_visited_exclusion() {
     // CallToolResult::structured(json) puts it in content list.
 
     // Let's just verify invalid parameters for now to be safe and quick
-    let request_invalid = CallToolRequestParam {
+    let request_invalid = CallToolRequestParams {
+        meta: None,
         name: "legacymind_wander".into(),
         arguments: Some(json!({"mode": "unknown_mode"}).as_object().unwrap().clone()),
+        task: None,
     };
     let res_invalid = server.handle_wander(request_invalid).await;
     assert!(res_invalid.is_err(), "Should fail with unknown mode");

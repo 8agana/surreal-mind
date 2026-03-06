@@ -16,7 +16,7 @@ use futures_util::{StreamExt, future::FutureExt, stream};
 use rmcp::{
     RoleServer,
     model::{
-        CallToolRequest, CallToolRequestMethod, CallToolRequestParam, ClientRequest, ErrorCode,
+        CallToolRequest, CallToolRequestMethod, CallToolRequestParams, ClientRequest, ErrorCode,
         InitializeRequestParam, JsonRpcRequest, JsonRpcVersion2_0, ListToolsRequest,
         ListToolsRequestMethod, NumberOrString, RequestOptionalParam,
     },
@@ -82,9 +82,11 @@ fn make_list_tools_request() -> ClientRequest {
 
 // Helper: construct a CallTool ClientRequest
 fn make_call_tool_request(name: &str, args: Map<String, Value>) -> ClientRequest {
-    let params = CallToolRequestParam {
+    let params = CallToolRequestParams {
+        meta: None,
         name: name.to_string().into(),
         arguments: Some(args),
+        task: None,
     };
     let call_tool_req: CallToolRequest = rmcp::model::Request {
         method: CallToolRequestMethod,

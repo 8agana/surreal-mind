@@ -226,8 +226,8 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
     let dbname = config.system.database_db.clone();
     let db = Surreal::new::<Ws>(&url).await?;
     db.signin(Root {
-        username: &user,
-        password: &pass,
+        username: user.clone(),
+        password: pass.clone(),
     })
     .await?;
     db.use_ns(&ns).use_db(&dbname).await?;
@@ -545,8 +545,8 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
     let dbname = config.system.database_db.clone();
     let db = Surreal::new::<Ws>(&url).await?;
     db.signin(Root {
-        username: &user,
-        password: &pass,
+        username: user.clone(),
+        password: pass.clone(),
     })
     .await?;
     db.use_ns(&ns).use_db(&dbname).await?;

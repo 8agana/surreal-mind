@@ -23,8 +23,8 @@ async fn main() -> Result<()> {
 
     let db = Surreal::new::<Ws>(&url).await?;
     db.signin(Root {
-        username: &user,
-        password: &pass,
+        username: user.clone(),
+        password: pass.clone(),
     })
     .await?;
     db.use_ns(&ns).use_db(&dbname).await?;

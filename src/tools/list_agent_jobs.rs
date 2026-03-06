@@ -23,15 +23,7 @@ fn default_limit() -> u32 {
     20
 }
 
-#[derive(Debug, Deserialize)]
-struct JobSummary {
-    job_id: String,
-    status: String,
-    tool_name: String,
-    created_at: String,
-    completed_at: Option<String>,
-    duration_ms: Option<i64>,
-}
+// JobSummary replaced with serde_json::Value deserialization below
 
 impl SurrealMindServer {
     /// Handle the list_agent_jobs tool call
@@ -98,18 +90,18 @@ async fn fetch_jobs(
     sql.push_str(&format!(" LIMIT {}", limit));
 
     let mut response = db.query(&sql).await?;
-    let rows: Vec<JobSummary> = response.take(0)?;
+    let rows: Vec<serde_json::Value> = response.take(0)?;
 
     Ok(rows
         .into_iter()
         .map(|job| {
             json!({
-                "job_id": job.job_id,
-                "status": job.status,
-                "tool_name": job.tool_name,
-                "created_at": job.created_at,
-                "completed_at": job.completed_at,
-                "duration_ms": job.duration_ms
+                "job_id": job.get("job_id"),
+                "status": job.get("status"),
+                "tool_name": job.get("tool_name"),
+                "created_at": job.get("created_at"),
+                "completed_at": job.get("completed_at"),
+                "duration_ms": job.get("duration_ms")
             })
         })
         .collect())

@@ -138,12 +138,12 @@ impl SurrealMindServer {
         // Extract ID part from "table:id" format and clone it for binding
         let id_part = parts[1].to_string();
 
-        // Check if the record exists using type::thing(), but avoid deserializing record IDs.
+        // Check if the record exists using type::record(), but avoid deserializing record IDs.
         // Use a scalar RETURN count(...) so the SDK deserializes directly into i64 instead of an object.
         let count: Option<i64> = self
             .db
             .query(format!(
-                "RETURN count((SELECT * FROM {} WHERE id = type::thing('{}', $id)))",
+                "RETURN count((SELECT * FROM {} WHERE id = type::record('{}', $id)))",
                 table_name, table_name
             ))
             .bind(("id", id_part.clone()))
@@ -161,7 +161,7 @@ impl SurrealMindServer {
             // Use RETURN NONE to avoid SurrealDB SDK datetime serialization issues
             self.db
                 .query(format!(
-                    "UPDATE {} SET marked_for = $marked_for, mark_type = $mark_type, mark_note = $note, marked_at = time::now(), marked_by = $marked_by WHERE id = type::thing('{}', $id) RETURN NONE",
+                    "UPDATE {} SET marked_for = $marked_for, mark_type = $mark_type, mark_note = $note, marked_at = time::now(), marked_by = $marked_by WHERE id = type::record('{}', $id) RETURN NONE",
                     table_name, table_name
                 ))
                 .bind(("id", id_part))
@@ -190,7 +190,7 @@ impl SurrealMindServer {
         let previous: Vec<serde_json::Value> = self
             .db
             .query(format!(
-                "SELECT meta::id(id) as id, meta::tb(id) as table, * FROM {} WHERE id = type::thing('{}', $id) LIMIT 1",
+                "SELECT meta::id(id) as id, meta::tb(id) as table, * FROM {} WHERE id = type::record('{}', $id) LIMIT 1",
                 table_name, table_name
             ))
             .bind(("id", id_part.clone()))
@@ -240,7 +240,7 @@ impl SurrealMindServer {
         // 3) Clear mark fields on target
         self.db
             .query(format!(
-                "UPDATE {} SET marked_for = NONE, mark_type = NONE, mark_note = NONE, marked_at = NONE, marked_by = NONE WHERE id = type::thing('{}', $id) RETURN NONE",
+                "UPDATE {} SET marked_for = NONE, mark_type = NONE, mark_note = NONE, marked_at = NONE, marked_by = NONE WHERE id = type::record('{}', $id) RETURN NONE",
                 table_name, table_name
             ))
             .bind(("id", id_part.clone()))

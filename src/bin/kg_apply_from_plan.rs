@@ -36,8 +36,8 @@ async fn main() -> Result<()> {
 
     let db: Surreal<Client> = Surreal::new::<Ws>(url).await?;
     db.signin(Root {
-        username: &user,
-        password: &pass,
+        username: user.clone(),
+        password: pass.clone(),
     })
     .await?;
     db.use_ns(ns).use_db(dbname).await?;
@@ -106,14 +106,14 @@ async fn main() -> Result<()> {
     async fn edge_count_for(db: &Surreal<Client>, ent_id: &str) -> Result<i64> {
         let src_rows: Vec<Value> = db
             .query(
-                "SELECT count() AS c FROM kg_edges WHERE source = type::thing('kg_entities', $id) GROUP ALL",
+                "SELECT count() AS c FROM kg_edges WHERE source = type::record('kg_entities', $id) GROUP ALL",
             )
             .bind(("id", ent_id.to_string()))
             .await?
             .take(0)?;
         let dst_rows: Vec<Value> = db
             .query(
-                "SELECT count() AS c FROM kg_edges WHERE target = type::thing('kg_entities', $id) GROUP ALL",
+                "SELECT count() AS c FROM kg_edges WHERE target = type::record('kg_entities', $id) GROUP ALL",
             )
             .bind(("id", ent_id.to_string()))
             .await?
@@ -134,14 +134,14 @@ async fn main() -> Result<()> {
     async fn redirect_edges(db: &Surreal<Client>, from_id: &str, to_id: &str) -> Result<()> {
         db
             .query(
-                "UPDATE kg_edges SET source = type::thing('kg_entities', $toid) WHERE source = type::thing('kg_entities', $fromid)",
+                "UPDATE kg_edges SET source = type::record('kg_entities', $toid) WHERE source = type::record('kg_entities', $fromid)",
             )
             .bind(("toid", to_id.to_string()))
             .bind(("fromid", from_id.to_string()))
             .await?;
         db
             .query(
-                "UPDATE kg_edges SET target = type::thing('kg_entities', $toid) WHERE target = type::thing('kg_entities', $fromid)",
+                "UPDATE kg_edges SET target = type::record('kg_entities', $toid) WHERE target = type::record('kg_entities', $fromid)",
             )
             .bind(("toid", to_id.to_string()))
             .bind(("fromid", from_id.to_string()))
@@ -152,7 +152,7 @@ async fn main() -> Result<()> {
     async fn mark_alias(db: &Surreal<Client>, alias_id: &str, canonical_id: &str) -> Result<()> {
         db
             .query(
-                "UPDATE type::thing('kg_entities', $id) SET data.canonical_id = $cid, data.is_alias = true",
+                "UPDATE type::record('kg_entities', $id) SET data.canonical_id = $cid, data.is_alias = true",
             )
             .bind(("id", alias_id.to_string()))
             .bind(("cid", canonical_id.to_string()))
@@ -229,7 +229,7 @@ async fn main() -> Result<()> {
         }
         for id in &to_delete {
             let _ = db
-                .query("DELETE type::thing('kg_edges', $id)")
+                .query("DELETE type::record('kg_edges', $id)")
                 .bind(("id", id.to_string()))
                 .await;
         }
@@ -243,7 +243,7 @@ async fn main() -> Result<()> {
             let cnt = edge_count_for(&db, id).await.unwrap_or(0);
             if cnt == 0 {
                 let _ = db
-                    .query("DELETE type::thing('kg_entities', $id)")
+                    .query("DELETE type::record('kg_entities', $id)")
                     .bind(("id", id.to_string()))
                     .await;
                 deleted_entities += 1;

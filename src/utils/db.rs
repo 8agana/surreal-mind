@@ -90,7 +90,7 @@ pub async fn upsert_tool_session(
             UPDATE tool_sessions
             SET exchange_count += 1,
                 last_agent_session_id = $arg_session,
-                last_exchange_id = type::thing($exchange_id),
+                last_exchange_id = type::record($exchange_id),
                 last_updated = time::now()
             WHERE tool_name = $arg_tool
         );
@@ -98,7 +98,7 @@ pub async fn upsert_tool_session(
             CREATE tool_sessions CONTENT {
                 tool_name: $arg_tool,
                 last_agent_session_id: $arg_session,
-                last_exchange_id: type::thing($exchange_id),
+                last_exchange_id: type::record($exchange_id),
                 exchange_count: 1,
                 last_updated: time::now()
             };

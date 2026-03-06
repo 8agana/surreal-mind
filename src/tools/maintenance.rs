@@ -40,14 +40,22 @@ impl SurrealMindServer {
 
         for table_def in get_expected_indexes() {
             // Get current indexes for table
-            let info: Vec<TableInfo> = self
+            // Use serde_json::Value since INFO FOR TABLE returns a complex object
+            let info: Vec<serde_json::Value> = self
                 .db
                 .query(format!("INFO FOR TABLE {}", table_def.table))
                 .await?
                 .take(0)?;
 
-            let table_info = info.first().ok_or_else(|| SurrealMindError::Internal {
+            let raw_info = info.first().ok_or_else(|| SurrealMindError::Internal {
                 message: format!("No info returned for table {}", table_def.table),
+            })?;
+
+            // Deserialize into TableInfo manually
+            let table_info: TableInfo = serde_json::from_value(raw_info.clone()).map_err(|e| {
+                SurrealMindError::Internal {
+                    message: format!("Failed to parse table info for {}: {}", table_def.table, e),
+                }
             })?;
 
             // Get expected index names (both required and optional)
@@ -880,7 +888,7 @@ impl SurrealMindServer {
                 Ok(embedding) if !embedding.is_empty() => {
                     // Update thought with embedding
                     let update_query = r#"
-                        UPDATE type::thing('thoughts', $id) SET
+                        UPDATE type::record('thoughts', $id) SET
                         embedding = $embedding,
                         embedded_at = time::now(),
                         embedding_status = 'complete'

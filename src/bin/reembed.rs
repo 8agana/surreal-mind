@@ -30,8 +30,8 @@ async fn main() -> Result<()> {
     // Connect to SurrealDB using config
     let db = Surreal::new::<Ws>(&config.system.database_url).await?;
     db.signin(Root {
-        username: &config.runtime.database_user,
-        password: &config.runtime.database_pass,
+        username: config.runtime.database_user.clone(),
+        password: config.runtime.database_pass.clone(),
     })
     .await?;
     db.use_ns(&config.system.database_ns)
@@ -118,7 +118,7 @@ async fn main() -> Result<()> {
                     config.system.embedding_provider.clone(),
                     config.system.embedding_model.clone(),
                 );
-                let query = "UPDATE type::thing('thoughts', $id) SET embedding = $embedding, embedding_provider = $provider, embedding_model = $model, embedding_dim = $dims, embedded_at = time::now() RETURN meta::id(id) as id";
+                let query = "UPDATE type::record('thoughts', $id) SET embedding = $embedding, embedding_provider = $provider, embedding_model = $model, embedding_dim = $dims, embedded_at = time::now() RETURN meta::id(id) as id";
 
                 match db
                     .query(query)

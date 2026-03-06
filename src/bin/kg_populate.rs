@@ -12,6 +12,7 @@ use surreal_mind::config::Config;
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::{Client as WsClient, Ws};
 use surrealdb::opt::auth::Root;
+use surrealdb::types::SurrealValue;
 
 const EXTRACTION_PROMPT_VERSION: &str = "v1";
 const DEFAULT_BATCH_SIZE: usize = 5;
@@ -22,7 +23,8 @@ const DEFAULT_TIMEOUT_MS: u64 = 120_000;
 // ============================================================================
 
 /// A thought record from the database
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, SurrealValue)]
+#[surreal(crate = "surrealdb::types")]
 struct ThoughtRecord {
     id: String,
     content: String,
@@ -150,8 +152,8 @@ async fn main() -> Result<()> {
     // Connect to SurrealDB
     let db = Surreal::new::<Ws>(&config.system.database_url).await?;
     db.signin(Root {
-        username: &config.runtime.database_user,
-        password: &config.runtime.database_pass,
+        username: config.runtime.database_user.clone(),
+        password: config.runtime.database_pass.clone(),
     })
     .await?;
     db.use_ns(&config.system.database_ns)
@@ -570,7 +572,7 @@ async fn upsert_edge(
     let target_thing = format!("kg_entities:{}", to_id);
 
     // Check if edge already exists
-    let check_sql = "SELECT meta::id(id) as id, source_thought_ids FROM kg_edges WHERE source = type::thing($src) AND target = type::thing($dst) AND rel_type = $rel LIMIT 1";
+    let check_sql = "SELECT meta::id(id) as id, source_thought_ids FROM kg_edges WHERE source = type::record($src) AND target = type::record($dst) AND rel_type = $rel LIMIT 1";
     let existing: Vec<serde_json::Value> = db
         .query(check_sql)
         .bind(("src", source_thing.clone()))
@@ -605,7 +607,7 @@ async fn upsert_edge(
         "description": relationship.description,
     });
 
-    db.query("CREATE kg_edges SET created_at = time::now(), source = type::thing($src), target = type::thing($dst), rel_type = $rel, data = $data, source_thought_ids = $thought_ids, extraction_batch_id = $batch_id, extracted_at = time::now(), extraction_confidence = $confidence, extraction_prompt_version = $version, embedding = NONE")
+    db.query("CREATE kg_edges SET created_at = time::now(), source = type::record($src), target = type::record($dst), rel_type = $rel, data = $data, source_thought_ids = $thought_ids, extraction_batch_id = $batch_id, extracted_at = time::now(), extraction_confidence = $confidence, extraction_prompt_version = $version, embedding = NONE")
         .bind(("src", source_thing))
         .bind(("dst", target_thing))
         .bind(("rel", relationship.relation))

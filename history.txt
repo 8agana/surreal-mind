@@ -1,14 +1,4 @@
 #V2
-LET $stale = (SELECT id FROM kg_entities WHERE volatility = 'high' AND last_refreshed != NONE AND time::now() - last_refreshed > duration::days(90) AND marked_for = NONE LIMIT 100); UPDATE $stale SET marked_for = 'gemini', mark_type = 'research', mark_note = 'Auto-flagged: high volatility, stale', marked_at = time::now(), marked_by = 'health' RETURN NONE;
-SELECT count() FROM thoughts GROUP ALL
-SELECT count() FROM kg_entity; SELECT count() FROM kg_relationship; SELECT count() FROM kg_observation;
-INFO FOR DB;
-SELECT count() FROM thoughts; SELECT count() FROM kg_entity; SELECT count() FROM kg_relationship; SELECT count() FROM kg_observation;
-INFO FOR DB;
-SELECT count() FROM thoughts GROUP ALL; SELECT count() FROM kg_entities GROUP ALL; SELECT count() FROM kg_edges GROUP ALL; SELECT count() FROM kg_observations GROUP ALL;
-SELECT count() FROM kg_entity_candidates GROUP ALL; SELECT count() FROM kg_edge_candidates GROUP ALL;
-SELECT count() FROM correction_events WHERE processed = false GROUP ALL;
-SELECT count() FROM correction_events GROUP ALL;
 SELECT processed, count() FROM correction_events GROUP BY processed;
 SELECT count() FROM thoughts WHERE embedding = NONE GROUP ALL; SELECT count() FROM kg_entities WHERE embedding = NONE GROUP ALL;
 SELECT count() FROM thoughts WHERE !embedding GROUP ALL; SELECT count() FROM kg_entities WHERE !embedding GROUP ALL;
@@ -68,3 +58,44 @@ RETURN count((SELECT id FROM kg_edges WHERE source = type::thing('kg_entities','
 RETURN count((SELECT id FROM kg_edges WHERE source = type::thing('kg_entities','tqwqszp5bfror3ciiwgi') OR target = type::thing('kg_entities','tqwqszp5bfror3ciiwgi')));
 UPDATE type::thing('correction_events','j6gth19sgaze8sw66vzj') SET new_state = { status: 'manual_test' };
 SELECT meta::id(id) as id, new_state FROM correction_events WHERE meta::id(id) = 'j6gth19sgaze8sw66vzj';
+LET $stale = (SELECT id FROM kg_entities WHERE volatility = 'high' AND last_refreshed != NONE AND time::now() - last_refreshed > duration::days(90) AND marked_for = NONE LIMIT 100); UPDATE $stale SET marked_for = 'gemini', mark_type = 'research', mark_note = 'Auto-flagged: high volatility, stale', marked_at = time::now(), marked_by = 'health' RETURN NONE;
+SELECT reasoning FROM correction_events WHERE target_table = 'kg_entities' LIMIT 5
+SELECT id FROM kg_entities WHERE id = kg_entities:w12ealulwzxeqbkitby1
+SELECT id, target_id, reasoning FROM correction_events WHERE target_table = 'kg_entities' LIMIT 10
+SELECT id FROM kg_entities WHERE id = kg_entities:nx7drjlxf1lxyy7t7plc
+LET $stale = (SELECT id FROM kg_entities WHERE volatility = 'high' AND last_refreshed != NONE AND time::now() - last_refreshed > duration::days(90) AND marked_for = NONE LIMIT 100); UPDATE $stale SET marked_for = 'gemini', mark_type = 'research', mark_note = 'Auto-flagged: high volatility, stale', marked_at = time::now(), marked_by = 'health' RETURN NONE;
+SELECT count() FROM thoughts; SELECT count() FROM kg_entities; SELECT count() FROM kg_observations; SELECT count() FROM kg_edges;
+USE NS legacymind DB mind; SELECT count() FROM thoughts; SELECT count() FROM kg_entities; SELECT count() FROM kg_observations; SELECT count() FROM kg_edges;
+USE NS legacymind DB mind; SELECT count() FROM thoughts GROUP ALL; SELECT count() FROM kg_entities GROUP ALL; SELECT count() FROM kg_observations GROUP ALL; SELECT count() FROM kg_edges GROUP ALL;
+INFO FOR DB;
+INFO FOR NS;
+INFO FOR DB;
+SELECT count() FROM thoughts GROUP ALL;
+INFO FOR NS;
+INFO FOR DB;
+INFO FOR NS;
+SELECT count() FROM thoughts GROUP ALL;
+INFO FOR DB;
+INFO FOR ROOT;
+INFO FOR NS;
+INFO FOR DB;
+SELECT count() FROM thoughts GROUP ALL; SELECT count() FROM kg_entities GROUP ALL; SELECT count() FROM kg_observations GROUP ALL; SELECT count() FROM kg_edges GROUP ALL;
+SELECT id, created_at, content FROM thoughts ORDER BY created_at DESC LIMIT 1;
+SELECT count() FROM correction_events WHERE created_at > d'2026-02-22T04:26:47Z' GROUP ALL;
+SELECT count() FROM thoughts WHERE processed_at = NONE GROUP ALL;
+SELECT count() FROM thoughts WHERE processed_at != NONE GROUP ALL;
+SELECT count() FROM thoughts WHERE kg_extracted = true GROUP ALL;
+SELECT count() FROM thoughts WHERE kg_sync = true GROUP ALL;
+SELECT count() FROM thoughts WHERE processed = true GROUP ALL;
+SELECT * FROM thoughts LIMIT 1;
+SELECT count() FROM thoughts WHERE extracted_to_kg = false GROUP ALL;
+SELECT count() FROM thoughts WHERE extracted_to_kg = NONE GROUP ALL;
+LET $stale = (SELECT id FROM kg_entities WHERE volatility = 'high' AND last_refreshed != NONE AND time::now() - last_refreshed > duration::days(90) AND marked_for = NONE LIMIT 100); UPDATE $stale SET marked_for = 'gemini', mark_type = 'research', mark_note = 'Auto-flagged: high volatility, stale', marked_at = time::now(), marked_by = 'health' RETURN NONE;
+SELECT count() FROM kg_observations WHERE embedding = NONE GROUP ALL
+SELECT * FROM kg_entities WHERE name CONTAINS "Najiyy" OR description CONTAINS "Najiyy"
+SELECT * FROM kg_entities WHERE name CONTAINS "Socks" OR description CONTAINS "Socks"
+SELECT * FROM kg_edges WHERE in = kg_entities:qhpb8o7qs07xc9rernyd OR out = kg_entities:qhpb8o7qs07xc9rernyd
+SELECT * FROM kg_observations WHERE content CONTAINS "Najiyy" OR content CONTAINS "Socks"
+SELECT count() FROM kg_entities GROUP ALL
+SELECT id, content FROM thoughts WHERE content ~ "Najiyy" LIMIT 5; SELECT id, content FROM kg_observations WHERE content ~ "Najiyy" LIMIT 5;
+SELECT id, content FROM thoughts WHERE content CONTAINS "LegacyMind" LIMIT 1

@@ -119,11 +119,11 @@ impl SurrealMindServer {
                     rel_kind_s
                 );
 
-                // 1. Resolve KG refs to concrete Things
-                let src_thing = self.resolve_kg_item(&src_s).await?;
-                let dst_thing = self.resolve_kg_item(&dst_s).await?;
+                // 1. Resolve KG refs to (table, key) pairs
+                let src_resolved = self.resolve_kg_item(&src_s).await?;
+                let dst_resolved = self.resolve_kg_item(&dst_s).await?;
 
-                let (src_thing, dst_thing) = match (src_thing, dst_thing) {
+                let ((src_tb, src_id), (dst_tb, dst_id)) = match (src_resolved, dst_resolved) {
                     (Some(s), Some(d)) => (s, d),
                     _ => {
                         return Err(SurrealMindError::Validation {
@@ -137,11 +137,11 @@ impl SurrealMindServer {
 
                 let existing_rel: Vec<serde_json::Value> = self
                     .db
-                    .query("SELECT meta::id(id) as id FROM kg_edges WHERE source = type::thing($stb, $sid) AND target = type::thing($dtb, $did) AND rel_type = $rel LIMIT 1")
-                    .bind(("stb", src_thing.tb.clone()))
-                    .bind(("sid", src_thing.id.to_string().replace("\"", "")))
-                    .bind(("dtb", dst_thing.tb.clone()))
-                    .bind(("did", dst_thing.id.to_string().replace("\"", "")))
+                    .query("SELECT meta::id(id) as id FROM kg_edges WHERE source = type::record($stb, $sid) AND target = type::record($dtb, $did) AND rel_type = $rel LIMIT 1")
+                    .bind(("stb", src_tb.clone()))
+                    .bind(("sid", src_id.replace("\"", "")))
+                    .bind(("dtb", dst_tb.clone()))
+                    .bind(("did", dst_id.replace("\"", "")))
                     .bind(("rel", rel_kind_s.clone()))
                     .await?
                     .take(0)?;
@@ -156,11 +156,11 @@ impl SurrealMindServer {
                 // 3. Create new relationship
                 let created_rel: Vec<serde_json::Value> = self
                     .db
-                    .query("CREATE kg_edges SET created_at = time::now(), source = type::thing($stb, $sid), target = type::thing($dtb, $did), rel_type = $rel, data = $data RETURN meta::id(id) as id, rel_type, created_at;")
-                    .bind(("stb", src_thing.tb))
-                    .bind(("sid", src_thing.id.to_string().replace("\"", "")))
-                    .bind(("dtb", dst_thing.tb))
-                    .bind(("did", dst_thing.id.to_string().replace("\"", "")))
+                    .query("CREATE kg_edges SET created_at = time::now(), source = type::record($stb, $sid), target = type::record($dtb, $did), rel_type = $rel, data = $data RETURN meta::id(id) as id, rel_type, created_at;")
+                    .bind(("stb", src_tb))
+                    .bind(("sid", src_id.replace("\"", "")))
+                    .bind(("dtb", dst_tb))
+                    .bind(("did", dst_id.replace("\"", "")))
                     .bind(("rel", rel_kind_s))
                     .bind(("data", data.clone()))
                     .await?
@@ -396,7 +396,7 @@ impl SurrealMindServer {
         // Update record with embedding metadata
         self.db
             .query(
-                "UPDATE type::thing($tb, $id) SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = time::now()",
+                "UPDATE type::record($tb, $id) SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = time::now()",
             )
             .bind(("tb", table.to_string()))
             .bind(("id", id.to_string()))
@@ -408,21 +408,25 @@ impl SurrealMindServer {
         Ok(())
     }
 
-    /// Helper: resolve an entity ref to its bare meta id string (no Thing types used in Rust).
-    /// Accepts full Thing strings, bare IDs, or names.
-    /// Helper: resolve a KG reference (ID string, Thing, or Name) to a concrete Thing.
+    /// Helper: resolve a KG reference (ID string or Name) to a (table, key) pair.
+    /// Accepts full record strings like "kg_entities:xyz", bare IDs, or names.
     /// Searches across kg_entities, kg_observations, and thoughts.
-    async fn resolve_kg_item(&self, entity: &str) -> Result<Option<surrealdb::sql::Thing>> {
-        use std::str::FromStr;
-        // 1. If it's already a valid Thing string (table:id)
-        if let Ok(thing) = surrealdb::sql::Thing::from_str(entity)
-            && !thing.tb.is_empty()
-        {
-            return Ok(Some(thing));
+    async fn resolve_kg_item(&self, entity: &str) -> Result<Option<(String, String)>> {
+        /// Split a "table:key" string into (table, key), or return None.
+        fn split_record_str(s: &str) -> Option<(String, String)> {
+            let (tb, key) = s.split_once(':')?;
+            if tb.is_empty() {
+                return None;
+            }
+            Some((tb.to_string(), key.to_string()))
+        }
+
+        // 1. If it's already a valid record string (table:key)
+        if let Some(pair) = split_record_str(entity) {
+            return Ok(Some(pair));
         }
 
         // 2. Try to find by bare ID or Name in kg_entities
-        // Ensure we get a string ID back to avoid serialization issues
         let entities: Vec<serde_json::Value> = self
             .db
             .query("SELECT string::concat(id) as id_str FROM kg_entities WHERE meta::id(id) = $val OR name = $val LIMIT 1")
@@ -431,9 +435,9 @@ impl SurrealMindServer {
             .take(0)?;
         if let Some(row) = entities.first()
             && let Some(id_str) = row.get("id_str").and_then(|v| v.as_str())
-            && let Ok(thing) = surrealdb::sql::Thing::from_str(id_str)
+            && let Some(pair) = split_record_str(id_str)
         {
-            return Ok(Some(thing));
+            return Ok(Some(pair));
         }
 
         // 3. Try to find by bare ID or Name in kg_observations
@@ -447,9 +451,9 @@ impl SurrealMindServer {
             .take(0)?;
         if let Some(row) = observations.first()
             && let Some(id_str) = row.get("id_str").and_then(|v| v.as_str())
-            && let Ok(thing) = surrealdb::sql::Thing::from_str(id_str)
+            && let Some(pair) = split_record_str(id_str)
         {
-            return Ok(Some(thing));
+            return Ok(Some(pair));
         }
 
         // 4. Try to find by bare ID in thoughts
@@ -461,9 +465,9 @@ impl SurrealMindServer {
             .take(0)?;
         if let Some(row) = thoughts.first()
             && let Some(id_str) = row.get("id_str").and_then(|v| v.as_str())
-            && let Ok(thing) = surrealdb::sql::Thing::from_str(id_str)
+            && let Some(pair) = split_record_str(id_str)
         {
-            return Ok(Some(thing));
+            return Ok(Some(pair));
         }
 
         Ok(None)

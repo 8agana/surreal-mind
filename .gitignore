@@ -18,7 +18,10 @@ CLAUDE.md
 # SurrealDB backups
 /backups
 *.sql
+*.surql
 *.db.backup
+surreal-migration-backup*/
+surreal_data_backup*/
 
 .junie
 *.fix

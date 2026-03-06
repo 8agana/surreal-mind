@@ -51,7 +51,8 @@ async fn test_agent_job_status_deserialization() {
 
     // Test the agent_job_status functionality
     let result = server
-        .handle_agent_job_status(rmcp::model::CallToolRequestParam {
+        .handle_agent_job_status(rmcp::model::CallToolRequestParams {
+            meta: None,
             name: "agent_job_status".into(),
             arguments: Some(
                 serde_json::json!({
@@ -61,6 +62,7 @@ async fn test_agent_job_status_deserialization() {
                 .unwrap()
                 .clone(),
             ),
+            task: None,
         })
         .await;
 
@@ -144,7 +146,8 @@ async fn test_agent_job_status_with_exchange_id() {
 
     // Test the agent_job_status functionality - this should NOT fail with serialization error
     let result = server
-        .handle_agent_job_status(rmcp::model::CallToolRequestParam {
+        .handle_agent_job_status(rmcp::model::CallToolRequestParams {
+            meta: None,
             name: "agent_job_status".into(),
             arguments: Some(
                 serde_json::json!({
@@ -154,6 +157,7 @@ async fn test_agent_job_status_with_exchange_id() {
                 .unwrap()
                 .clone(),
             ),
+            task: None,
         })
         .await;
 
@@ -216,7 +220,8 @@ async fn test_agent_job_status_running_job_with_none_values() {
     // Test the agent_job_status functionality on a running job
     // This should NOT fail with "cannot convert NONE into a string" error
     let result = server
-        .handle_agent_job_status(rmcp::model::CallToolRequestParam {
+        .handle_agent_job_status(rmcp::model::CallToolRequestParams {
+            meta: None,
             name: "agent_job_status".into(),
             arguments: Some(
                 serde_json::json!({
@@ -226,6 +231,7 @@ async fn test_agent_job_status_running_job_with_none_values() {
                 .unwrap()
                 .clone(),
             ),
+            task: None,
         })
         .await;
 

@@ -119,7 +119,10 @@ fn expand_tilde(path: &str) -> Result<String> {
     } else {
         // ~username syntax not supported
         Err(SurrealMindError::InvalidParams {
-            message: format!("Unsupported tilde expansion: '{}'. Use '~/' or absolute path.", path),
+            message: format!(
+                "Unsupported tilde expansion: '{}'. Use '~/' or absolute path.",
+                path
+            ),
         })
     }
 }
@@ -158,9 +161,11 @@ fn levenshtein_distance(s1: &str, s2: &str) -> usize {
 
     let mut matrix = vec![vec![0; len2 + 1]; len1 + 1];
 
+    #[allow(clippy::needless_range_loop)]
     for i in 0..=len1 {
         matrix[i][0] = i;
     }
+    #[allow(clippy::needless_range_loop)]
     for j in 0..=len2 {
         matrix[0][j] = j;
     }
@@ -173,10 +178,10 @@ fn levenshtein_distance(s1: &str, s2: &str) -> usize {
             let cost = if c1 == c2 { 0 } else { 1 };
             matrix[i + 1][j + 1] = std::cmp::min(
                 std::cmp::min(
-                    matrix[i][j + 1] + 1,     // deletion
-                    matrix[i + 1][j] + 1,     // insertion
+                    matrix[i][j + 1] + 1, // deletion
+                    matrix[i + 1][j] + 1, // insertion
                 ),
-                matrix[i][j] + cost,          // substitution
+                matrix[i][j] + cost, // substitution
             );
         }
     }
@@ -198,7 +203,10 @@ mod tests {
         let map = WorkspaceMap::from_env();
         assert_eq!(map.get("home"), Some(&"/Users/test".to_string()));
         assert_eq!(map.get("HOME"), Some(&"/Users/test".to_string())); // case insensitive
-        assert_eq!(map.get("projects"), Some(&"/Users/test/Projects".to_string()));
+        assert_eq!(
+            map.get("projects"),
+            Some(&"/Users/test/Projects".to_string())
+        );
 
         unsafe {
             std::env::remove_var("WORKSPACE_HOME");
@@ -208,7 +216,9 @@ mod tests {
 
     #[test]
     fn test_resolve_absolute_path() {
-        let map = WorkspaceMap { aliases: HashMap::new() };
+        let map = WorkspaceMap {
+            aliases: HashMap::new(),
+        };
         assert_eq!(
             resolve_workspace("/absolute/path", &map).unwrap(),
             "/absolute/path"
@@ -220,9 +230,14 @@ mod tests {
         unsafe {
             std::env::set_var("HOME", "/Users/test");
         }
-        let map = WorkspaceMap { aliases: HashMap::new() };
+        let map = WorkspaceMap {
+            aliases: HashMap::new(),
+        };
 
-        assert_eq!(resolve_workspace("~/Projects", &map).unwrap(), "/Users/test/Projects");
+        assert_eq!(
+            resolve_workspace("~/Projects", &map).unwrap(),
+            "/Users/test/Projects"
+        );
         assert_eq!(resolve_workspace("~", &map).unwrap(), "/Users/test");
 
         unsafe {
@@ -233,7 +248,10 @@ mod tests {
     #[test]
     fn test_resolve_workspace_alias() {
         let mut aliases = HashMap::new();
-        aliases.insert("surreal-mind".to_string(), "/path/to/surreal-mind".to_string());
+        aliases.insert(
+            "surreal-mind".to_string(),
+            "/path/to/surreal-mind".to_string(),
+        );
         let map = WorkspaceMap { aliases };
 
         assert_eq!(
@@ -245,7 +263,10 @@ mod tests {
     #[test]
     fn test_resolve_unknown_alias_with_suggestion() {
         let mut aliases = HashMap::new();
-        aliases.insert("surreal-mind".to_string(), "/path/to/surreal-mind".to_string());
+        aliases.insert(
+            "surreal-mind".to_string(),
+            "/path/to/surreal-mind".to_string(),
+        );
         let map = WorkspaceMap { aliases };
 
         let result = resolve_workspace("surreal", &map);

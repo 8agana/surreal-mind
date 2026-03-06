@@ -80,8 +80,8 @@ async fn inspect() -> Result<()> {
     let dbname = config.system.database_db.clone();
     let db = Surreal::new::<Ws>(&url).await?;
     db.signin(Root {
-        username: &user,
-        password: &pass,
+        username: user.clone(),
+        password: pass.clone(),
     })
     .await?;
     db.use_ns(&ns).use_db(&dbname).await?;
@@ -178,8 +178,8 @@ async fn sanity_cosine() -> Result<()> {
     let db =
         Surreal::new::<Ws>(std::env::var("SURR_DB_URL").unwrap_or("127.0.0.1:8000".into())).await?;
     db.signin(Root {
-        username: &std::env::var("SURR_DB_USER").unwrap_or("root".into()),
-        password: &std::env::var("SURR_DB_PASS").unwrap_or("root".into()),
+        username: std::env::var("SURR_DB_USER").unwrap_or("root".into()),
+        password: std::env::var("SURR_DB_PASS").unwrap_or("root".into()),
     })
     .await?;
     db.use_ns(std::env::var("SURR_DB_NS").unwrap_or("surreal_mind".into()))
@@ -209,7 +209,7 @@ async fn sanity_cosine() -> Result<()> {
     let embedder = create_embedder(&config).await?;
     let q: Vec<f32> = embedder.embed(&content).await?;
     let stored: Vec<serde_json::Value> = db
-        .query("SELECT embedding FROM thoughts WHERE id = type::thing('thoughts', $id) LIMIT 1")
+        .query("SELECT embedding FROM thoughts WHERE id = type::record('thoughts', $id) LIMIT 1")
         .bind(("id", id.clone()))
         .await?
         .take(0)?;
@@ -246,8 +246,8 @@ async fn db_check() -> Result<()> {
 
     // Authenticate
     db.signin(Root {
-        username: &user,
-        password: &pass,
+        username: user.clone(),
+        password: pass.clone(),
     })
     .await?;
 
@@ -375,8 +375,8 @@ async fn check_contents() -> Result<()> {
 
     let db = Surreal::new::<Ws>(url).await?;
     db.signin(Root {
-        username: &user,
-        password: &pass,
+        username: user.clone(),
+        password: pass.clone(),
     })
     .await?;
     db.use_ns(&ns).use_db(&dbname).await?;
@@ -445,8 +445,8 @@ async fn simple_test() -> Result<()> {
 
     // Authenticate
     db.signin(Root {
-        username: &user,
-        password: &pass,
+        username: user.clone(),
+        password: pass.clone(),
     })
     .await?;
 
@@ -560,8 +560,8 @@ async fn fix_dims() -> Result<()> {
     // Connect to SurrealDB
     let db = Surreal::new::<Ws>(&config.system.database_url).await?;
     db.signin(Root {
-        username: &config.runtime.database_user,
-        password: &config.runtime.database_pass,
+        username: config.runtime.database_user.clone(),
+        password: config.runtime.database_pass.clone(),
     })
     .await?;
     db.use_ns(&config.system.database_ns)
@@ -634,7 +634,7 @@ async fn fix_dims() -> Result<()> {
                 // Update thought with corrected embedding and metadata
                 let provider = config.system.embedding_provider.clone();
                 let model = config.system.embedding_model.clone();
-                let query = "UPDATE type::thing('thoughts', $id) SET embedding = $embedding, embedding_provider = $provider, embedding_model = $model, embedding_dim = $dims, embedded_at = time::now() RETURN meta::id(id) as id";
+                let query = "UPDATE type::record('thoughts', $id) SET embedding = $embedding, embedding_provider = $provider, embedding_model = $model, embedding_dim = $dims, embedded_at = time::now() RETURN meta::id(id) as id";
 
                 match db
                     .query(query)

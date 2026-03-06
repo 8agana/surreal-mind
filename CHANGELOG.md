@@ -1,8 +1,34 @@
-## [Unreleased] - 2026-01-31
+## [0.8.0] - 2026-03-05
+
+### SurrealDB 2.x → 3.x Migration
+
+Emergency migration after `brew upgrade` installed SurrealDB 3.0.1, which could not read the v2 SurrealKV manifest format (`Unsupported manifest format version: 0`). All data (2,393 thoughts, full KG, photography namespace) preserved and restored.
+
+### Changed
+
+- **surrealdb Crate 2.0 → 3.0**: Updated Rust client crate across 28 source files. API changes include query response handling, `WsClient` type usage, and record ID deserialization.
+- **`type::thing` → `type::record`**: Renamed across 49 occurrences in 15+ files. SurrealDB 3.x renamed this function; old name produces parse errors.
+- **Schema `FLEXIBLE` Keyword**: Moved from before `TYPE` to after (e.g., `TYPE option<object> FLEXIBLE`). SurrealDB 3.x reversed the keyword order.
+- **Schema `DEFINE FIELD id` Removal**: Removed `DEFINE FIELD id ON TABLE ... TYPE record<...>` from `correction_events` and `agent_exchanges` tables. SurrealDB 3.x rejects explicit `record<table>` type on `id` fields.
+- **SurrealDB Plist**: Added `--user root --pass root` to `com.legacymind.surrealdb.plist` ProgramArguments for fresh instance authentication after data directory wipe and reimport.
+- **Memory Injection Retrieval Path**: Switched `inject_memories` from Rust-side cosine scoring over fetched raw embeddings to DB-side scoring using `vector::similarity::cosine(...)` with scalar result fields only (`id`, `name`, `entity_type/description`, `similarity`). This reduces payload size, avoids SurrealDB 3.x WS decode edge cases, and keeps threshold/floor behavior unchanged.
+- **think Debug Telemetry**: Added step-level timing logs around `think` execution (`continuity`, `CREATE`, embedding call, `UPDATE`, framework update, candidate fetch, injection persist) to make future runtime stalls diagnosable without invasive tracing.
 
 ### Fixed
 
 - **REMini launchd Environment**: Added explicit PATH environment variable to `dev.legacymind.remini.plist` to ensure homebrew binaries (`/opt/homebrew/bin`) are accessible to scheduled maintenance tasks. Fixed failing `wander` (gemini CLI not found) and `health` (surreal CLI not found) tasks. Also corrected typo in `SURR_ENV_FILE` path.
+- **think Tool Hang on SurrealDB 3.x**: Resolved silent `think` stalls after migration to SurrealDB 3.x. Root cause was websocket deserialization failure when memory injection fetched raw embedding arrays from KG tables (`Failed to decode fb value`). `think` now completes and returns MCP responses reliably in stdio and HTTP flows.
+- **Test Compatibility with rmcp 0.16**: Updated integration/smoke tests to use `CallToolRequestParams` shape with required `meta` and `task` fields. This resolves `cargo clippy --all-targets` build failures caused by outdated request initializers.
+
+### Migration Process
+
+1. Downloaded SurrealDB 2.6.3 binary to export existing data with `--v3` compatibility flag
+2. Exported all 6 databases across 4 namespaces (surreal_mind, photography, legacymind, test)
+3. Backed up v2 data directory, started fresh 3.0.1 instance
+4. Imported smaller databases directly, fixed consciousness export (removed `DEFINE FIELD id TYPE record<>` lines, changed `SCHEMAFULL` → `SCHEMALESS` for tables with extra fields)
+5. Updated surrealdb Rust crate, fixed all compile errors, replaced `type::thing` → `type::record`
+6. Fixed `FLEXIBLE` keyword positioning in schema.rs
+7. Resolved think tool hang caused by WS deserialization of raw embedding arrays
 
 ### Removed
 
@@ -20,6 +46,10 @@
 ### Changed
 
 - **Tool File Naming**: Renamed `delegate_gemini.rs` → `call_gem.rs` and `detailed_help.rs` → `howto.rs` for consistency with tool names. Handler methods also renamed (`handle_delegate_gemini` → `handle_call_gem`, `handle_detailed_help` → `handle_howto`).
+- **Memory Injection Retrieval Path**: Switched `inject_memories` from Rust-side cosine scoring over fetched raw embeddings to DB-side scoring using `vector::similarity::cosine(...)` with scalar result fields only (`id`, `name`, `entity_type/description`, `similarity`). This reduces payload size, avoids SurrealDB 3.x WS decode edge cases, and keeps threshold/floor behavior unchanged.
+- **think Debug Telemetry**: Added step-level timing logs around `think` execution (`continuity`, `CREATE`, embedding call, `UPDATE`, framework update, candidate fetch, injection persist) to make future runtime stalls diagnosable without invasive tracing.
+- **Repository Hygiene Pass**: Completed `cargo fmt` and `cargo clippy --all-targets` with clean results after migration fixes. Also removed temporary debug/test artifacts created during incident triage.
+- **Documentation Sync**: Updated `README.md`, `docs/AGENTS/{arch,setup,connections}.md`, and `docs/DEPENDENCIES.md` to reflect SurrealDB 3.x baseline, current tool naming (`call_gem`), and current runtime environment variable expectations.
 - **call_codex Tool**: Refactored to synchronous execution - returns response directly in MCP call instead of async job queue. Removed worker polling pattern for simpler, more reliable operation.
 - **CodexClient**: Added `--skip-git-repo-check` flag for execution in any directory. Fixed NDJSON parser to handle Codex's `item.aggregated_output` format and `thread_id` extraction.
 - **Codex Model Configuration**: Default model and available models dropdown now read from environment variables (`CODEX_MODEL` and `CODEX_MODELS`) instead of hardcoded - no rebuild required to change model list.

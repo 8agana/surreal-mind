@@ -7,7 +7,7 @@ This document outlines the system and software dependencies required to build an
 ### Runtime Environment
 
 * **Rust Toolchain**: Stable channel (Edition 2024).
-* **SurrealDB**: Version 2.0+ (Protocol: WebSocket `ws://`).
+* **SurrealDB**: Version 3.0+ (Protocol: WebSocket `ws://` / `wss://`).
   * The application operates as a client (`surrealdb` crate); a running SurrealDB server instance is required for persistence.
 
 ### Build Dependencies
@@ -32,7 +32,7 @@ The project leverages the Rust ecosystem for core functionality. See `Cargo.toml
 ### Data & Persistence
 
 * **[surrealdb](https://crates.io/crates/surrealdb)**: The primary database driver/client.
-  * *Critical Feature:* `protocol-ws` (WebSocket) is required for the connection logic used in `src/db/`.
+  * *Critical Feature:* `protocol-ws` (WebSocket) is required for the connection logic used in `src/server/db.rs`.
 * **[serde](https://crates.io/crates/serde)** / **[serde_json](https://crates.io/crates/serde_json)**: Universal serialization framework.
 * **[dashmap](https://crates.io/crates/dashmap)**: Concurrent associative arrays (likely used for in-memory caching or state).
 
@@ -50,8 +50,9 @@ Runtime behavior is heavily influenced by environment variables, loaded via **[d
 
 * **Config Source**: `.env` file (see `.env.example`).
 * **Critical Variables**:
-  * `SURR_BRAIN_URL`: Connection string for SurrealDB.
-  * `SURREAL_OPENAI_API_KEY`: Required if using embedding/vector search features.
+  * `SURR_DB_URL`, `SURR_DB_NS`, `SURR_DB_DB`, `SURR_DB_USER`, `SURR_DB_PASS`: SurrealDB connection and namespace/database selection.
+  * `OPENAI_API_KEY`: Required for embedding/vector features.
+  * `SURR_TRANSPORT`, `SURR_HTTP_BIND`, `SURR_HTTP_PATH`, `SURR_BEARER_TOKEN`: MCP transport/runtime behavior.
 
 ## Inspecting Dependencies
 

@@ -107,8 +107,10 @@ impl<'a> ThoughtBuilder<'a> {
     pub async fn execute(self) -> Result<(String, Vec<f32>, ContinuityResult, String)> {
         let thought_id = uuid::Uuid::new_v4().to_string();
         let (provider, model, dim) = self.server.get_embedding_metadata();
+        tracing::info!(thought_id = %thought_id, "think.execute.start");
 
         // Resolve continuity links first (doesn't depend on embedding)
+        let continuity_start = std::time::Instant::now();
         let mut resolved_continuity = self
             .server
             .resolve_continuity_links(
@@ -118,16 +120,23 @@ impl<'a> ThoughtBuilder<'a> {
                 self.branch_from,
             )
             .await?;
+        tracing::info!(
+            thought_id = %thought_id,
+            elapsed_ms = continuity_start.elapsed().as_millis(),
+            "think.execute.continuity.done"
+        );
         resolved_continuity.session_id = self.session_id;
         resolved_continuity.chain_id = self.chain_id;
         resolved_continuity.confidence = self.confidence;
 
         // SAVE FIRST with pending status - thought is never lost
+        let create_start = std::time::Instant::now();
+        tracing::info!(thought_id = %thought_id, "think.execute.create.start");
         let mut create_resp = self
             .server
             .db
             .query(
-                "CREATE type::thing('thoughts', $id) CONTENT {
+                "CREATE type::record('thoughts', $id) CONTENT {
             content: $content,
             created_at: time::now(),
             embedding: NONE,
@@ -178,6 +187,11 @@ impl<'a> ThoughtBuilder<'a> {
             .bind(("branch_from", resolved_continuity.branch_from.clone()))
             .bind(("confidence", resolved_continuity.confidence))
             .await?;
+        tracing::info!(
+            thought_id = %thought_id,
+            elapsed_ms = create_start.elapsed().as_millis(),
+            "think.execute.create.done"
+        );
 
         let created: Vec<serde_json::Value> = create_resp.take(0)?;
         if created.is_empty() {
@@ -187,15 +201,24 @@ impl<'a> ThoughtBuilder<'a> {
         }
 
         // NOW attempt embedding - failure won't lose the thought
+        let embed_start = std::time::Instant::now();
+        tracing::info!(thought_id = %thought_id, "think.execute.embed.start");
         let embed_result = self.server.embedder.embed(&self.content).await;
+        tracing::info!(
+            thought_id = %thought_id,
+            elapsed_ms = embed_start.elapsed().as_millis(),
+            "think.execute.embed.done"
+        );
 
         match embed_result {
             Ok(embedding) if !embedding.is_empty() => {
                 // Success - update with embedding and mark complete
+                let update_start = std::time::Instant::now();
+                tracing::info!(thought_id = %thought_id, "think.execute.update_embedding.start");
                 self.server
                     .db
                     .query(
-                        "UPDATE type::thing('thoughts', $id) SET 
+                        "UPDATE type::record('thoughts', $id) SET
                         embedding = $embedding,
                         embedded_at = time::now(),
                         embedding_status = 'complete'
@@ -204,6 +227,12 @@ impl<'a> ThoughtBuilder<'a> {
                     .bind(("id", thought_id.clone()))
                     .bind(("embedding", embedding.clone()))
                     .await?;
+                tracing::info!(
+                    thought_id = %thought_id,
+                    elapsed_ms = update_start.elapsed().as_millis(),
+                    embedding_dim = embedding.len(),
+                    "think.execute.update_embedding.done"
+                );
 
                 Ok((
                     thought_id,
@@ -218,15 +247,21 @@ impl<'a> ThoughtBuilder<'a> {
                     thought_id = %thought_id,
                     "Embedding returned empty vector, thought saved with pending status"
                 );
+                let fail_start = std::time::Instant::now();
                 self.server
                     .db
                     .query(
-                        "UPDATE type::thing('thoughts', $id) SET 
+                        "UPDATE type::record('thoughts', $id) SET
                         embedding_status = 'failed'
                         RETURN NONE;",
                     )
                     .bind(("id", thought_id.clone()))
                     .await?;
+                tracing::info!(
+                    thought_id = %thought_id,
+                    elapsed_ms = fail_start.elapsed().as_millis(),
+                    "think.execute.mark_failed.done"
+                );
 
                 Ok((
                     thought_id,
@@ -263,10 +298,16 @@ impl SurrealMindServer {
         let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {
             message: "Missing parameters".into(),
         })?;
+        tracing::info!("think.handle.start");
         let params: LegacymindThinkParams = serde_json::from_value(serde_json::Value::Object(args))
             .map_err(|e| SurrealMindError::InvalidParams {
                 message: format!("Invalid parameters: {}", e),
             })?;
+        tracing::info!(
+            content_len = params.content.len(),
+            hint = params.hint.as_deref().unwrap_or("none"),
+            "think.handle.params_parsed"
+        );
 
         if params.content.len() > MAX_CONTENT_SIZE {
             return Err(SurrealMindError::Validation {
@@ -550,6 +591,11 @@ impl SurrealMindServer {
             };
 
         let is_conclude = matches!(mode, ThinkMode::Conclude);
+        tracing::info!(
+            mode = %mode_selected,
+            reason = %reason,
+            "think.handle.mode_selected"
+        );
 
         let (delegated_result, continuity_result) = match mode {
             ThinkMode::Question | ThinkMode::Conclude => {
@@ -634,7 +680,7 @@ impl SurrealMindServer {
             let thought_id = thought_id.to_string();
             let _ = self
                 .db
-                .query("UPDATE type::thing('thoughts', $id) SET verification = $verif")
+                .query("UPDATE type::record('thoughts', $id) SET verification = $verif")
                 .bind(("id", thought_id))
                 .bind((
                     "verif",

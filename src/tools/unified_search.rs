@@ -205,7 +205,7 @@ pub async fn unified_search_inner(
             };
 
             if table == "kg_entities" || !entity_id.contains(':') {
-                let sql = "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities WHERE meta::id(id) = $id LIMIT 1";
+                let sql = "SELECT meta::id(id) as id, name, data, type::string(created_at) as created_at FROM kg_entities WHERE meta::id(id) = $id LIMIT 1";
                 let rows: Vec<serde_json::Value> = server
                     .db
                     .query(sql)
@@ -239,7 +239,7 @@ pub async fn unified_search_inner(
             // Semantic search using embeddings
             let q_dim = q_emb_val.len() as i64;
             // UPDATED: Order by similarity DESC (not created_at) for semantic search
-            let mut sql = "SELECT meta::id(id) as id, name, data, created_at, vector::similarity::cosine(embedding, $q) AS similarity
+            let mut sql = "SELECT meta::id(id) as id, name, data, type::string(created_at) as created_at, vector::similarity::cosine(embedding, $q) AS similarity
                  FROM kg_entities WHERE embedding_dim = $dim AND embedding IS NOT NONE".to_string();
 
             if params.chain_id.is_some() {
@@ -252,15 +252,6 @@ pub async fn unified_search_inner(
                 top_k_mem * 3
             ));
 
-            #[derive(Debug, serde::Deserialize)]
-            struct EntityRow {
-                id: String,
-                name: String,
-                data: serde_json::Value,
-                created_at: serde_json::Value,
-                similarity: Option<f32>,
-            }
-
             let mut query = server
                 .db
                 .query(sql)
@@ -269,20 +260,23 @@ pub async fn unified_search_inner(
             if let Some(ref cid) = params.chain_id {
                 query = query.bind(("cid", cid.clone()));
             }
-            let rows: Vec<EntityRow> = query.await?.take(0)?;
+            let rows: Vec<serde_json::Value> = query.await?.take(0)?;
 
             let mut scored_entities: Vec<serde_json::Value> = Vec::new();
             for row in rows {
-                let similarity = row.similarity;
+                let similarity = row
+                    .get("similarity")
+                    .and_then(|v| v.as_f64())
+                    .map(|f| f as f32);
                 if let Some(sim) = similarity
                     && sim >= sim_thresh
                 {
                     let entity_json = json!({
-                        "id": row.id,
+                        "id": row.get("id"),
                         "kind": "entity",
-                        "name": row.name,
-                        "data": row.data,
-                        "created_at": row.created_at,
+                        "name": row.get("name"),
+                        "data": row.get("data"),
+                        "created_at": row.get("created_at"),
                         "similarity": sim
                     });
                     scored_entities.push(entity_json);
@@ -303,7 +297,7 @@ pub async fn unified_search_inner(
             if let Some(ref nl) = name_like {
                 // Fallback to name pattern matching when no embedding available
                 let mut sql =
-                    "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities WHERE name ~ $name"
+                    "SELECT meta::id(id) as id, name, data, type::string(created_at) as created_at FROM kg_entities WHERE name ~ $name"
                         .to_string();
                 if params.chain_id.is_some() {
                     sql.push_str(" AND ");
@@ -326,7 +320,7 @@ pub async fn unified_search_inner(
                 }));
             } else {
                 // Fallback to recent items when no query or embedding
-                let mut sql = "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities"
+                let mut sql = "SELECT meta::id(id) as id, name, data, type::string(created_at) as created_at FROM kg_entities"
                     .to_string();
                 if params.chain_id.is_some() {
                     sql.push_str(" WHERE ");
@@ -355,7 +349,7 @@ pub async fn unified_search_inner(
         let mut sql = "SELECT meta::id(id) as id,
                     (IF type::is::record(source) THEN meta::id(source) ELSE string::concat(source) END) as source_id,
                     (IF type::is::record(target) THEN meta::id(target) ELSE string::concat(target) END) as target_id,
-                    rel_type, data, created_at
+                    rel_type, data, type::string(created_at) as created_at
              FROM kg_edges".to_string();
         if params.chain_id.is_some() {
             sql.push_str(" WHERE ");
@@ -389,7 +383,7 @@ pub async fn unified_search_inner(
             };
 
             if table == "kg_observations" {
-                let sql = "SELECT meta::id(id) as id, name, data, created_at FROM kg_observations WHERE meta::id(id) = $id LIMIT 1";
+                let sql = "SELECT meta::id(id) as id, name, data, type::string(created_at) as created_at FROM kg_observations WHERE meta::id(id) = $id LIMIT 1";
                 let rows: Vec<serde_json::Value> = server
                     .db
                     .query(sql)
@@ -421,7 +415,7 @@ pub async fn unified_search_inner(
         if !found_semantic_obs && let Some(ref q_emb_val) = q_emb {
             // Semantic search using embeddings
             let q_dim = q_emb_val.len() as i64;
-            let mut sql = "SELECT meta::id(id) as id, name, data, created_at, vector::similarity::cosine(embedding, $q) AS similarity
+            let mut sql = "SELECT meta::id(id) as id, name, data, type::string(created_at) as created_at, vector::similarity::cosine(embedding, $q) AS similarity
                  FROM kg_observations WHERE embedding_dim = $dim AND embedding IS NOT NONE".to_string();
 
             if params.chain_id.is_some() {
@@ -434,15 +428,6 @@ pub async fn unified_search_inner(
                 top_k_mem * 3
             ));
 
-            #[derive(Debug, serde::Deserialize)]
-            struct ObservationRow {
-                id: String,
-                name: String,
-                data: serde_json::Value,
-                created_at: serde_json::Value,
-                similarity: Option<f32>,
-            }
-
             let mut query = server
                 .db
                 .query(sql)
@@ -451,20 +436,23 @@ pub async fn unified_search_inner(
             if let Some(ref cid) = params.chain_id {
                 query = query.bind(("cid", cid.clone()));
             }
-            let rows: Vec<ObservationRow> = query.await?.take(0)?;
+            let rows: Vec<serde_json::Value> = query.await?.take(0)?;
 
             let mut scored_observations: Vec<serde_json::Value> = Vec::new();
             for row in rows {
-                let similarity = row.similarity;
+                let similarity = row
+                    .get("similarity")
+                    .and_then(|v| v.as_f64())
+                    .map(|f| f as f32);
                 if let Some(sim) = similarity
                     && sim >= sim_thresh
                 {
                     let observation_json = json!({
-                        "id": row.id,
+                        "id": row.get("id"),
                         "kind": "observation",
-                        "name": row.name,
-                        "data": row.data,
-                        "created_at": row.created_at,
+                        "name": row.get("name"),
+                        "data": row.get("data"),
+                        "created_at": row.get("created_at"),
                         "similarity": sim
                     });
                     scored_observations.push(observation_json);
@@ -483,7 +471,7 @@ pub async fn unified_search_inner(
         if !found_semantic_obs {
             if let Some(ref nl) = name_like {
                 // Fallback to name pattern matching when no embedding available
-                let mut sql = "SELECT meta::id(id) as id, name, data, created_at FROM kg_observations WHERE name ~ $name".to_string();
+                let mut sql = "SELECT meta::id(id) as id, name, data, type::string(created_at) as created_at FROM kg_observations WHERE name ~ $name".to_string();
                 if params.chain_id.is_some() {
                     sql.push_str(" AND ");
                     sql.push_str(&chain_filter_sql(""));
@@ -505,7 +493,7 @@ pub async fn unified_search_inner(
             } else {
                 // Fallback to recent items
                 let mut sql =
-                    "SELECT meta::id(id) as id, name, data, created_at FROM kg_observations"
+                    "SELECT meta::id(id) as id, name, data, type::string(created_at) as created_at FROM kg_observations"
                         .to_string();
                 if params.chain_id.is_some() {
                     sql.push_str(" WHERE ");
@@ -648,11 +636,10 @@ pub async fn unified_search_inner(
 
         // Build SELECT
         let select_fields = if q_emb.is_some() {
-            // Include created_at in projection to satisfy SurrealDB 2.x ORDER BY requirements
-            "meta::id(id) as id, content, significance, created_at, vector::similarity::cosine(embedding, $q) AS similarity"
+            // created_at is used for ordering but we do not need it in tool output
+            "meta::id(id) as id, content, significance, vector::similarity::cosine(embedding, $q) AS similarity"
         } else {
-            // Always project created_at if used for ordering
-            "meta::id(id) as id, content, significance, created_at"
+            "meta::id(id) as id, content, significance"
         };
         let where_sql = if where_clauses.is_empty() {
             "true".to_string()
@@ -690,23 +677,29 @@ pub async fn unified_search_inner(
 
         let mut resp = query.await?;
 
-        #[derive(Debug, Deserialize)]
-        struct Row {
-            id: String,
-            content: String,
-            #[serde(default)]
-            significance: f32,
-            #[serde(default)]
-            similarity: Option<f32>,
-        }
-        let rows: Vec<Row> = resp.take(0)?;
+        let rows: Vec<serde_json::Value> = resp.take(0)?;
         let results: Vec<ThoughtOut> = rows
             .into_iter()
             .map(|r| ThoughtOut {
-                id: r.id,
-                content: r.content,
-                similarity: r.similarity,
-                significance: Some(r.significance),
+                id: r
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                content: r
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                similarity: r
+                    .get("similarity")
+                    .and_then(|v| v.as_f64())
+                    .map(|f| f as f32),
+                significance: Some(
+                    r.get("significance")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0) as f32,
+                ),
             })
             .collect();
         out.insert(
