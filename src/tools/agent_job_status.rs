@@ -48,11 +48,12 @@ async fn fetch_job_status(db: &Surreal<WsClient>, job_id: String) -> Result<Valu
     // For exchange_id (Record<agent_exchanges>), use IF THEN ELSE to safely convert to string
     // when the value exists, or return null when it's NONE.
     let sql = "SELECT
+            meta::id(id) as id,
             job_id,
             status,
-            created_at,
-            started_at,
-            completed_at,
+            type::string(created_at) as ts_created,
+            type::string(started_at) as ts_started,
+            type::string(completed_at) as ts_completed,
             duration_ms,
             error,
             session_id,
@@ -118,9 +119,9 @@ async fn fetch_job_status(db: &Surreal<WsClient>, job_id: String) -> Result<Valu
     Ok(json!({
         "job_id": job_id_val,
         "status": row.get("status").and_then(|v| v.as_str()).unwrap_or(""),
-        "created_at": row.get("created_at"),
-        "started_at": row.get("started_at"),
-        "completed_at": row.get("completed_at"),
+        "created_at": row.get("ts_created"),
+        "started_at": row.get("ts_started"),
+        "completed_at": row.get("ts_completed"),
         "duration_ms": row.get("duration_ms"),
         "error": row.get("error"),
         "session_id": row.get("session_id"),

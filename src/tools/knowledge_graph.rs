@@ -76,7 +76,7 @@ impl SurrealMindServer {
                 // Create new entity; also store entity_type as top-level convenience if present
                 let created_raw: Vec<serde_json::Value> = self
                     .db
-                    .query("CREATE kg_entities SET created_at = time::now(), name = $name, entity_type = $etype, data = $data RETURN meta::id(id) as id, name, data, created_at;")
+                    .query("CREATE kg_entities SET created_at = time::now(), name = $name, entity_type = $etype, data = $data RETURN meta::id(id) as id, name, data, type::string(created_at) as created_at;")
                     .bind(("name", name_s.clone()))
                     .bind(("etype", entity_type_s.clone().unwrap_or_default()))
                     .bind(("data", data.clone()))
@@ -156,7 +156,7 @@ impl SurrealMindServer {
                 // 3. Create new relationship
                 let created_rel: Vec<serde_json::Value> = self
                     .db
-                    .query("CREATE kg_edges SET created_at = time::now(), source = type::record($stb, $sid), target = type::record($dtb, $did), rel_type = $rel, data = $data RETURN meta::id(id) as id, rel_type, created_at;")
+                    .query("CREATE kg_edges SET created_at = time::now(), source = type::record($stb, $sid), target = type::record($dtb, $did), rel_type = $rel, data = $data RETURN meta::id(id) as id, rel_type, type::string(created_at) as created_at;")
                     .bind(("stb", src_tb))
                     .bind(("sid", src_id.replace("\"", "")))
                     .bind(("dtb", dst_tb))
@@ -211,7 +211,7 @@ impl SurrealMindServer {
 
                 let created_raw: Vec<serde_json::Value> = self
                     .db
-                    .query("CREATE kg_observations SET created_at = time::now(), name = $name, data = $data, source_thought_id = $src, confidence = $conf RETURN meta::id(id) as id, name, data, created_at;")
+                    .query("CREATE kg_observations SET created_at = time::now(), name = $name, data = $data, source_thought_id = $src, confidence = $conf RETURN meta::id(id) as id, name, data, type::string(created_at) as created_at;")
                     .bind(("name", name_s.clone()))
                     .bind(("data", data.clone()))
                     .bind(("src", source_thought_id_s))
@@ -312,12 +312,12 @@ impl SurrealMindServer {
         if target_s == "entity" || target_s == "mixed" {
             let sql = if name_like_s.is_empty() {
                 format!(
-                    "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities LIMIT {}",
+                    "SELECT meta::id(id) as id, name, data, type::string(created_at) as created_at FROM kg_entities LIMIT {}",
                     top_k
                 )
             } else {
                 format!(
-                    "SELECT meta::id(id) as id, name, data, created_at FROM kg_entities WHERE name ~ $name LIMIT {}",
+                    "SELECT meta::id(id) as id, name, data, type::string(created_at) as created_at FROM kg_entities WHERE name ~ $name LIMIT {}",
                     top_k
                 )
             };
@@ -344,12 +344,12 @@ impl SurrealMindServer {
         if target_s == "observation" || target_s == "mixed" {
             let sql = if name_like_s.is_empty() {
                 format!(
-                    "SELECT meta::id(id) as id, name, data, created_at FROM kg_observations LIMIT {}",
+                    "SELECT meta::id(id) as id, name, data, type::string(created_at) as created_at FROM kg_observations LIMIT {}",
                     top_k
                 )
             } else {
                 format!(
-                    "SELECT meta::id(id) as id, name, data, created_at FROM kg_observations WHERE name ~ $name LIMIT {}",
+                    "SELECT meta::id(id) as id, name, data, type::string(created_at) as created_at FROM kg_observations WHERE name ~ $name LIMIT {}",
                     top_k
                 )
             };

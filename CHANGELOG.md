@@ -21,6 +21,7 @@ Emergency migration after `brew upgrade` installed SurrealDB 3.0.1, which could 
 - **Test Compatibility with rmcp 0.16**: Updated integration/smoke tests to use `CallToolRequestParams` shape with required `meta` and `task` fields. This resolves `cargo clippy --all-targets` build failures caused by outdated request initializers.
 - **Git Push Divergence Resolved**: Fixed local `master` branch divergence from `origin/master` by fetching remote changes and rebasing local commits. Successfully pushed 3 local commits integrating 1 remote commit without conflicts, resolving non-fast-forward rejection.
 - **SurrealDB 3.x Query/Type Follow-ups (`search`, `wander`, `corrections`)**: Fixed missed migration issues by replacing legacy record checks in `unified_search` (`type::is::record(...)` → `meta::tb(...) IS NOT NONE`), removing `SELECT *` in `wander` in favor of explicit field projections, and string-casting datetime outputs (`created_at`, `marked_at`, `timestamp`) with `type::string(...)` to resolve runtime decode errors like `Expected any, got datetime`.
+- **`search` Chain-ID Hang**: Fixed `unified_search` stalling when `chain_id` was provided. Root cause was repeated inline subqueries (`SELECT ... FROM thoughts WHERE chain_id = $cid`) inside entity/relationship/observation filters. Search now resolves chain thought IDs once per request and reuses a bound `$chain_ids` list, eliminating the pathological query plan and returning promptly.
 
 ### Migration Process
 

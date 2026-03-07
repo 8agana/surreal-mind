@@ -70,7 +70,7 @@ async fn fetch_jobs(
     tool_name_filter: Option<&str>,
 ) -> Result<Vec<Value>> {
     let mut sql =
-        "SELECT job_id, status, tool_name, created_at, completed_at, duration_ms FROM agent_jobs"
+        "SELECT meta::id(id) as id, job_id, status, tool_name, type::string(created_at) as ts_created, type::string(started_at) as ts_started, type::string(completed_at) as ts_completed, duration_ms FROM agent_jobs"
             .to_string();
     let mut conditions = Vec::new();
 
@@ -86,7 +86,7 @@ async fn fetch_jobs(
         sql.push_str(&conditions.join(" AND "));
     }
 
-    sql.push_str(" ORDER BY created_at DESC");
+    sql.push_str(" ORDER BY ts_created DESC");
     sql.push_str(&format!(" LIMIT {}", limit));
 
     let mut response = db.query(&sql).await?;
@@ -99,8 +99,9 @@ async fn fetch_jobs(
                 "job_id": job.get("job_id"),
                 "status": job.get("status"),
                 "tool_name": job.get("tool_name"),
-                "created_at": job.get("created_at"),
-                "completed_at": job.get("completed_at"),
+                "created_at": job.get("ts_created"),
+                "started_at": job.get("ts_started"),
+                "completed_at": job.get("ts_completed"),
                 "duration_ms": job.get("duration_ms")
             })
         })

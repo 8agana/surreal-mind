@@ -6,6 +6,7 @@ use chrono::NaiveDate;
 use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::BTreeSet;
 
 #[derive(Debug, Deserialize)]
 pub struct UnifiedSearchParams {
@@ -180,14 +181,50 @@ pub async fn unified_search_inner(
     // 1) Memories search: entities/relationships/observations as requested
     let mut items: Vec<serde_json::Value> = Vec::new();
 
+    // Resolve chain thoughts once to avoid repeated subqueries in every memory query.
+    // This avoids pathological query plans that can stall on large datasets.
+    let chain_filter_ids: Option<Vec<String>> = if let Some(cid) = &params.chain_id {
+        let rows: Vec<serde_json::Value> = server
+            .db
+            .query(
+                "SELECT type::string(id) as full_id, meta::id(id) as short_id FROM thoughts WHERE chain_id = $cid",
+            )
+            .bind(("cid", cid.clone()))
+            .await?
+            .take(0)?;
+
+        let mut unique = BTreeSet::new();
+        for row in rows {
+            if let Some(full_id) = row.get("full_id").and_then(|v| v.as_str()) {
+                unique.insert(full_id.to_string());
+            }
+            if let Some(short_id) = row.get("short_id").and_then(|v| v.as_str()) {
+                unique.insert(short_id.to_string());
+            }
+        }
+        let ids: Vec<String> = unique.into_iter().collect();
+        tracing::debug!(
+            "🔍 Unified search chain_id={} resolved {} thought ids",
+            cid,
+            ids.len()
+        );
+        Some(ids)
+    } else {
+        None
+    };
+
     // Helper for chain_id predicate (used in multiple places)
     let chain_filter_sql = |field_prefix: &str| -> String {
-        format!(
-            "({prefix}source_thought_id IN (SELECT value id FROM thoughts WHERE chain_id = $cid) \
-            OR {prefix}staged_by_thought IN (SELECT value id FROM thoughts WHERE chain_id = $cid) \
-            OR source_thought_ids CONTAINSANY (SELECT value id FROM thoughts WHERE chain_id = $cid))",
-            prefix = field_prefix
-        )
+        match chain_filter_ids.as_ref() {
+            Some(ids) if ids.is_empty() => "false".to_string(),
+            Some(_) => format!(
+                "({prefix}source_thought_id IN $chain_ids \
+                OR {prefix}staged_by_thought IN $chain_ids \
+                OR source_thought_ids CONTAINSANY $chain_ids)",
+                prefix = field_prefix
+            ),
+            None => "true".to_string(),
+        }
     };
 
     if target == "entity" || target == "mixed" {
@@ -257,8 +294,8 @@ pub async fn unified_search_inner(
                 .query(sql)
                 .bind(("dim", q_dim))
                 .bind(("q", q_emb_val.clone()));
-            if let Some(ref cid) = params.chain_id {
-                query = query.bind(("cid", cid.clone()));
+            if let Some(ref chain_ids) = chain_filter_ids {
+                query = query.bind(("chain_ids", chain_ids.clone()));
             }
             let rows: Vec<serde_json::Value> = query.await?.take(0)?;
 
@@ -305,8 +342,8 @@ pub async fn unified_search_inner(
                 }
                 sql.push_str(&format!(" LIMIT {}", top_k_mem));
                 let mut query = server.db.query(sql).bind(("name", nl.clone()));
-                if let Some(ref cid) = params.chain_id {
-                    query = query.bind(("cid", cid.clone()));
+                if let Some(ref chain_ids) = chain_filter_ids {
+                    query = query.bind(("chain_ids", chain_ids.clone()));
                 }
                 let rows: Vec<serde_json::Value> = query.await?.take(0)?;
 
@@ -328,9 +365,8 @@ pub async fn unified_search_inner(
                 }
                 sql.push_str(&format!(" ORDER BY created_at DESC LIMIT {}", top_k_mem));
                 let mut query = server.db.query(sql);
-                #[allow(unused_variables)]
-                if let Some(ref cid) = params.chain_id {
-                    query = query.bind(("cid", cid.clone()));
+                if let Some(ref chain_ids) = chain_filter_ids {
+                    query = query.bind(("chain_ids", chain_ids.clone()));
                 }
                 let rows: Vec<serde_json::Value> = query.await?.take(0)?;
 
@@ -349,17 +385,16 @@ pub async fn unified_search_inner(
         let mut sql = "SELECT meta::id(id) as id,
                     (IF meta::tb(source) IS NOT NONE THEN meta::id(source) ELSE string::concat(source) END) as source_id,
                     (IF meta::tb(target) IS NOT NONE THEN meta::id(target) ELSE string::concat(target) END) as target_id,
-                    rel_type, data, type::string(created_at) as created_at
+                    rel_type, data, type::string(created_at) as ts_created
              FROM kg_edges".to_string();
         if params.chain_id.is_some() {
             sql.push_str(" WHERE ");
             sql.push_str(&chain_filter_sql("data."));
         }
-        sql.push_str(&format!(" ORDER BY created_at DESC LIMIT {}", top_k_mem));
+        sql.push_str(&format!(" ORDER BY ts_created DESC LIMIT {}", top_k_mem));
         let mut query = server.db.query(sql);
-        #[allow(unused_variables)]
-        if let Some(ref cid) = params.chain_id {
-            query = query.bind(("cid", cid.clone()));
+        if let Some(ref chain_ids) = chain_filter_ids {
+            query = query.bind(("chain_ids", chain_ids.clone()));
         }
         let rows: Vec<serde_json::Value> = query.await?.take(0)?;
 
@@ -433,8 +468,8 @@ pub async fn unified_search_inner(
                 .query(sql)
                 .bind(("dim", q_dim))
                 .bind(("q", q_emb_val.clone()));
-            if let Some(ref cid) = params.chain_id {
-                query = query.bind(("cid", cid.clone()));
+            if let Some(ref chain_ids) = chain_filter_ids {
+                query = query.bind(("chain_ids", chain_ids.clone()));
             }
             let rows: Vec<serde_json::Value> = query.await?.take(0)?;
 
@@ -478,8 +513,8 @@ pub async fn unified_search_inner(
                 }
                 sql.push_str(&format!(" LIMIT {}", top_k_mem));
                 let mut query = server.db.query(sql).bind(("name", nl.clone()));
-                if let Some(ref cid) = params.chain_id {
-                    query = query.bind(("cid", cid.clone()));
+                if let Some(ref chain_ids) = chain_filter_ids {
+                    query = query.bind(("chain_ids", chain_ids.clone()));
                 }
                 let rows: Vec<serde_json::Value> = query.await?.take(0)?;
 
@@ -501,9 +536,8 @@ pub async fn unified_search_inner(
                 }
                 sql.push_str(&format!(" ORDER BY created_at DESC LIMIT {}", top_k_mem));
                 let mut query = server.db.query(sql);
-                #[allow(unused_variables)]
-                if let Some(ref cid) = params.chain_id {
-                    query = query.bind(("cid", cid.clone()));
+                if let Some(ref chain_ids) = chain_filter_ids {
+                    query = query.bind(("chain_ids", chain_ids.clone()));
                 }
                 let rows: Vec<serde_json::Value> = query.await?.take(0)?;
 
@@ -517,6 +551,10 @@ pub async fn unified_search_inner(
             }
         }
     }
+
+    // Note: entity and observation fallback queries use `type::string(created_at) as created_at`
+    // which allows ORDER BY created_at to work since the alias matches. The thoughts section
+    // uses `ts_created` alias to avoid collision with the raw datetime field.
 
     let mut augmented_items = items;
     if forensic {
@@ -618,28 +656,27 @@ pub async fn unified_search_inner(
         let has_continuity = params.session_id.is_some() || params.chain_id.is_some();
         let order_by = if has_continuity && params.order.is_none() {
             if q_emb.is_some() {
-                "created_at ASC, similarity DESC"
+                "ts_created ASC, similarity DESC"
             } else {
-                "created_at ASC"
+                "ts_created ASC"
             }
         } else if let Some(order) = &params.order {
             match order.as_str() {
-                "created_at_asc" => "created_at ASC",
-                "created_at_desc" => "created_at DESC",
+                "created_at_asc" => "ts_created ASC",
+                "created_at_desc" => "ts_created DESC",
                 _ => "similarity DESC", // fallback
             }
         } else if q_emb.is_some() {
             "similarity DESC"
         } else {
-            "created_at DESC" // fallback if no query and no order
+            "ts_created DESC" // fallback if no query and no order
         };
 
-        // Build SELECT
+        // Build SELECT — include created_at for ORDER BY (SurrealDB 3.x requires it)
         let select_fields = if q_emb.is_some() {
-            // created_at is used for ordering but we do not need it in tool output
-            "meta::id(id) as id, content, significance, vector::similarity::cosine(embedding, $q) AS similarity"
+            "meta::id(id) as id, content, significance, type::string(created_at) as ts_created, vector::similarity::cosine(embedding, $q) AS similarity"
         } else {
-            "meta::id(id) as id, content, significance"
+            "meta::id(id) as id, content, significance, type::string(created_at) as ts_created"
         };
         let where_sql = if where_clauses.is_empty() {
             "true".to_string()
