@@ -113,53 +113,6 @@ pub fn call_cc_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
-pub fn call_warp_schema() -> Arc<Map<String, Value>> {
-    // Warp models (no env var - hardcoded list)
-    let models: Vec<Value> = vec![
-        "claude-4-5-haiku",
-        "claude-4-5-sonnet",
-        "claude-4-5-opus",
-        "gpt-5-2-codex-low",
-        "gpt-5-2-codex-medium",
-        "gpt-5-2-codex-high",
-        "gpt-5-2-codex-xhigh",
-        "gpt-5-2-codex-max",
-        "auto",
-        "auto-efficient",
-        "auto-genius",
-    ]
-    .into_iter()
-    .map(|s| Value::String(s.to_string()))
-    .collect();
-
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "prompt": {"type": "string"},
-            "task_name": {"type": "string", "default": "call_warp"},
-            "model": {
-                "type": "string",
-                "enum": models,
-                "description": "Model to use (omit for Warp default)"
-            },
-            "cwd": {
-                "type": "string",
-                "description": "Working directory: workspace alias (e.g., 'surreal-mind', 'home') or absolute path (e.g., '/Users/sam/Projects/foo'). Use '~/' for home expansion."
-            },
-            "timeout_ms": {"type": "number", "default": 60000},
-            "mode": {
-                "type": "string",
-                "enum": ["execute", "observe"],
-                "default": "execute",
-                "description": "execute: normal operation with file changes. observe: analyze and report only, no file modifications."
-            },
-            "max_response_chars": {"type": "integer", "default": 100000, "description": "Max chars for response (0 = no limit, default 100000)"}
-        },
-        "required": ["prompt", "cwd"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
 pub fn call_vibe_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
@@ -252,13 +205,13 @@ pub fn howto_schema() -> Arc<Map<String, Value>> {
                 "maintain",
                 "call_gem",
                 "call_cc",
-                "call_warp",
                 "call_vibe",
                 "call_status",
                 "call_jobs",
                 "call_cancel",
                 "wander",
                 "howto",
+                "journal",
                 "rethink",
                 "corrections"
             ]},
@@ -370,6 +323,78 @@ pub fn corrections_schema() -> Arc<Map<String, Value>> {
             "target_id": {"type": "string", "description": "Optional filter: correction events for this target id"},
             "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 10, "description": "Max events to return"}
         }
+    });
+    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
+}
+
+pub fn journal_schema() -> Arc<Map<String, Value>> {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "mode": {
+                "type": "string",
+                "enum": ["write", "read", "threads", "status"],
+                "description": "Operation mode"
+            },
+            "thread": {
+                "type": "string",
+                "description": "Thread name or ID (required for write, read, status)"
+            },
+            "content": {
+                "type": "string",
+                "description": "Journal entry content (write mode)"
+            },
+            "observation_type": {
+                "type": "string",
+                "enum": ["question", "hypothesis", "evidence", "reflection", "dead_end", "follow_up"],
+                "description": "Type of journal entry (write mode)"
+            },
+            "author": {
+                "type": "string",
+                "enum": ["cc", "gem", "vibe", "dt"],
+                "default": "cc",
+                "description": "Who is writing this entry"
+            },
+            "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Tags for the entry (write mode)"
+            },
+            "confidence": {
+                "type": "number",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "description": "Confidence level (write mode)"
+            },
+            "thread_status": {
+                "type": "string",
+                "enum": ["open", "pursuing", "resolved", "abandoned"],
+                "description": "New status for thread (status mode)"
+            },
+            "author_filter": {
+                "type": "string",
+                "enum": ["cc", "gem", "vibe", "dt"],
+                "description": "Filter by author (read/threads mode)"
+            },
+            "type_filter": {
+                "type": "string",
+                "enum": ["question", "hypothesis", "evidence", "reflection", "dead_end", "follow_up"],
+                "description": "Filter by observation type (read mode)"
+            },
+            "status_filter": {
+                "type": "string",
+                "enum": ["open", "pursuing", "resolved", "abandoned"],
+                "description": "Filter by thread status (threads mode)"
+            },
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100,
+                "default": 20,
+                "description": "Max entries to return (read mode)"
+            }
+        },
+        "required": ["mode"]
     });
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }

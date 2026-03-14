@@ -81,11 +81,12 @@ mod tests {
         let job_id = format!("test-job-1-{}", uuid::Uuid::new_v4());
 
         register_job(job_id.clone(), handle);
-        let was_registered = registry_size() > 0;
-        assert!(was_registered);
 
         let aborted = abort_job(&job_id);
         assert!(aborted);
+
+        // Idempotent safety: second abort should report not found.
+        assert!(!abort_job(&job_id));
     }
 
     #[tokio::test]
@@ -98,13 +99,12 @@ mod tests {
     async fn test_unregister() {
         let handle = tokio::spawn(async {});
         let job_id = format!("test-job-2-{}", uuid::Uuid::new_v4());
-        let initial_size = registry_size();
 
         register_job(job_id.clone(), handle);
-        assert!(registry_size() > initial_size);
-
         unregister_job(&job_id);
-        assert_eq!(registry_size(), initial_size);
+
+        // After unregister, abort should not find the job.
+        assert!(!abort_job(&job_id));
     }
 
     #[tokio::test]

@@ -28,19 +28,21 @@ fn test_backward_compatibility_absolute_paths() {
 
 #[test]
 fn test_error_suggests_valid_aliases() {
+    // Use a unique alias so the suggestion is deterministic even when other
+    // WORKSPACE_* env vars are present in the process environment.
     unsafe {
-        std::env::set_var("WORKSPACE_SURREAL_MIND", "/path/to/surreal-mind");
+        std::env::set_var("WORKSPACE_LMTESTALIASXYZ", "/tmp/lmtestaliasxyz");
     }
 
     let map = WorkspaceMap::from_env();
-    let result = resolve_workspace("surreal", &map);
+    let result = resolve_workspace("lmtestaliasxy", &map); // one-char typo
 
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
-    assert!(err_msg.contains("surreal-mind"));
+    assert!(err_msg.contains("lmtestaliasxyz"));
     assert!(err_msg.contains("Did you mean"));
 
     unsafe {
-        std::env::remove_var("WORKSPACE_SURREAL_MIND");
+        std::env::remove_var("WORKSPACE_LMTESTALIASXYZ");
     }
 }

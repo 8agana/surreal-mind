@@ -24,7 +24,7 @@ impl ServerHandler for SurrealMindServer {
             server_info: Implementation {
                 name: "surreal-mind".to_string(),
                 title: Some("Surreal Mind".to_string()),
-                version: "0.1.0".to_string(),
+                version: env!("CARGO_PKG_VERSION").to_string(),
                 description: Some("Persistent cognition kernel for LegacyMind".to_string()),
                 website_url: Some("https://github.com/8agana/surreal-mind".to_string()),
                 icons: None,
@@ -62,13 +62,13 @@ impl ServerHandler for SurrealMindServer {
         let howto_schema_map = crate::schemas::howto_schema();
         let search_schema_map = crate::schemas::search_schema();
         let wander_schema_map = crate::schemas::wander_schema();
+        let journal_schema_map = crate::schemas::journal_schema();
         let rethink_schema_map = crate::schemas::rethink_schema();
         let corrections_schema_map = crate::schemas::corrections_schema();
         let test_notification_schema_map = crate::schemas::test_notification_schema();
 
         let call_gem_schema = crate::schemas::call_gem_schema();
         let call_cc_schema = crate::schemas::call_cc_schema();
-        let call_warp_schema = crate::schemas::call_warp_schema();
         let call_vibe_schema = crate::schemas::call_vibe_schema();
         let call_status_schema = crate::schemas::call_status_schema();
         let call_jobs_schema = crate::schemas::call_jobs_schema();
@@ -105,6 +105,20 @@ impl ServerHandler for SurrealMindServer {
                 title: Some("Maintain".into()),
                 description: Some("Maintenance operations for archival, cleanup, and health checks".into()),
                 input_schema: maintain_schema_map,
+                icons: None,
+                annotations: None,
+                output_schema: None,
+                execution: None,
+                meta: None,
+            },
+            Tool {
+                name: "journal".into(),
+                title: Some("Journal".into()),
+                description: Some(
+                    "Research thread management — create threads, add entries, view dashboard, update status. A looking glass over the KG for structured research."
+                        .into(),
+                ),
+                input_schema: journal_schema_map,
                 icons: None,
                 annotations: None,
                 output_schema: None,
@@ -191,18 +205,6 @@ impl ServerHandler for SurrealMindServer {
                 "Delegate a task to Claude Code CLI with full context and tracking".into(),
             ),
             input_schema: call_cc_schema.clone(),
-            icons: None,
-            annotations: None,
-            output_schema: None,
-            execution: None,
-            meta: None,
-        });
-
-        tools.push(Tool {
-            name: "call_warp".into(),
-            title: Some("Call Warp".into()),
-            description: Some("Delegate a task to Warp CLI with full context and tracking".into()),
-            input_schema: call_warp_schema.clone(),
             icons: None,
             annotations: None,
             output_schema: None,
@@ -304,6 +306,7 @@ impl ServerHandler for SurrealMindServer {
                 .handle_maintenance_ops(request)
                 .await
                 .map_err(|e| e.into()),
+            "journal" => self.handle_journal(request).await.map_err(|e| e.into()),
             "rethink" => self.handle_rethink(request).await.map_err(|e| e.into()),
             // Memory tools
             "remember" => self
@@ -312,7 +315,6 @@ impl ServerHandler for SurrealMindServer {
                 .map_err(|e| e.into()),
             "call_gem" => self.handle_call_gem(request).await.map_err(|e| e.into()),
             "call_cc" => self.handle_call_cc(request).await.map_err(|e| e.into()),
-            "call_warp" => self.handle_call_warp(request).await.map_err(|e| e.into()),
             "call_vibe" => self.handle_call_vibe(request).await.map_err(|e| e.into()),
 
             "call_status" => self

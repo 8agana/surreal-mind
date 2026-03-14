@@ -187,11 +187,14 @@ impl SurrealMindServer {
 
         // --- correct mode ---
         // 1) Fetch previous state
+        // Use explicit fields with datetime casts to avoid SurrealDB 3.x SDK deserialization errors.
+        // Same pattern as WANDER_NODE_FIELDS — covers all three table types (missing fields return null).
+        let provenance_fields = "meta::id(id) as id, meta::tb(id) as table, name, content, data, description, entity_type, observation_type, significance, chain_id, tags, confidence, source_thought_ids, mark_type, marked_for, mark_note, marked_by, type::string(marked_at) as marked_at, type::string(created_at) as created_at";
         let previous: Vec<serde_json::Value> = self
             .db
             .query(format!(
-                "SELECT meta::id(id) as id, meta::tb(id) as table, * FROM {} WHERE id = type::record('{}', $id) LIMIT 1",
-                table_name, table_name
+                "SELECT {} FROM {} WHERE id = type::record('{}', $id) LIMIT 1",
+                provenance_fields, table_name, table_name
             ))
             .bind(("id", id_part.clone()))
             .await?

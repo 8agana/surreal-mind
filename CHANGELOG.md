@@ -1,3 +1,17 @@
+## [0.8.2] - 2026-03-12
+
+### Fixed
+
+- **Registry test stability**: Removed brittle global-size assertions in registry/cancel tests and switched to UUID-scoped assertions to avoid cross-test interference from shared global registry state.
+- **Server version consistency**: `server_info.version` now reads from `env!("CARGO_PKG_VERSION")` so MCP runtime metadata stays in sync with crate version.
+- **agent_job_status robustness**: Optional `started_at`/`completed_at` values now emit `null` (not stringified `NONE`) and integration tests serialize shared DB/server access to eliminate parallel cross-test flakiness.
+
+## [0.8.1] - 2026-03-07
+
+### Removed
+
+- **call_warp Tool**: Removed `call_warp` delegation tool from MCP surface. The `WarpClient` remains available in the codebase for potential future use. Federation now uses three delegation paths: `call_gem`, `call_cc`, and `call_vibe`.
+
 ## [0.8.0] - 2026-03-05
 
 ### SurrealDB 2.x → 3.x Migration

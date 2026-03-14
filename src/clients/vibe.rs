@@ -61,8 +61,7 @@ impl VibeClient {
             cmd.current_dir(cwd);
         }
 
-        // vibe --auto-approve -p "<prompt>" [--agent <name>] [--continue]
-        cmd.arg("--auto-approve");
+        // vibe -p "<prompt>" [--agent <name>] [-c]
         cmd.arg("-p").arg(prompt);
 
         if let Some(ref agent) = self.agent {
@@ -70,7 +69,7 @@ impl VibeClient {
         }
 
         if self.continue_latest {
-            cmd.arg("--continue");
+            cmd.arg("-c");
         }
 
         // Execute with timeout

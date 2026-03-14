@@ -92,6 +92,10 @@ impl SurrealMindServer {
             DEFINE FIELD refresh_count ON TABLE kg_entities TYPE option<int> DEFAULT 0;
             DEFINE FIELD decay_confidence ON TABLE kg_entities TYPE option<float>;
 
+            -- Journal thread fields
+            DEFINE FIELD thread_status ON TABLE kg_entities TYPE option<string>;
+            DEFINE INDEX idx_kge_entity_type_status ON TABLE kg_entities FIELDS entity_type, thread_status;
+
             DEFINE TABLE kg_edges SCHEMALESS;
             DEFINE FIELD source_thought_ids ON TABLE kg_edges TYPE option<array<string>>;
             DEFINE FIELD extraction_batch_id ON TABLE kg_edges TYPE option<string>;
@@ -112,6 +116,11 @@ impl SurrealMindServer {
             DEFINE INDEX idx_kgo_name ON TABLE kg_observations FIELDS name;
             DEFINE INDEX idx_kgo_name_src ON TABLE kg_observations FIELDS name, source_thought_id;
             DEFINE INDEX idx_kgo_extraction_batch ON TABLE kg_observations FIELDS extraction_batch_id;
+            -- Journal entry fields
+            DEFINE FIELD author ON TABLE kg_observations TYPE option<string>;
+            DEFINE FIELD observation_type ON TABLE kg_observations TYPE option<string>;
+            DEFINE INDEX idx_kgo_author ON TABLE kg_observations FIELDS author;
+            DEFINE INDEX idx_kgo_obs_type ON TABLE kg_observations FIELDS observation_type;
             -- Mark fields for REMini correction system
             DEFINE FIELD marked_for ON TABLE kg_observations TYPE option<string>;
             DEFINE FIELD mark_type ON TABLE kg_observations TYPE option<string>;

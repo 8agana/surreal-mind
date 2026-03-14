@@ -34,6 +34,7 @@ impl SurrealMindServer {
                     json!({"name": "howto", "one_liner": "Get help for a specific tool or list all tools", "key_params": ["tool", "format"]}),
                     json!({"name": "wander", "one_liner": "Explore the knowledge graph for curiosity-driven discovery", "key_params": ["mode", "current_thought_id", "visited_ids", "recency_bias", "for"]}),
                     json!({"name": "rethink", "one_liner": "Revise or mark knowledge graph items for correction", "key_params": ["target_id", "mode", "mark_type", "marked_for"]}),
+                    json!({"name": "journal", "one_liner": "Research thread management — create threads, add entries, view dashboard", "key_params": ["mode", "thread", "content", "observation_type", "author"]}),
                     json!({"name": "corrections", "one_liner": "List recent correction events to inspect the learning journey", "key_params": ["target_id", "limit"]}),
                 ];
                 return Ok(CallToolResult::structured(json!({ "tools": tools })));
@@ -182,6 +183,37 @@ impl SurrealMindServer {
                     "count": "integer",
                     "events": "array of correction_event objects"
                 }
+            }),
+            "journal" => json!({
+                "name": "journal",
+                "description": "Research thread management tool. Create and track research threads as KG entities, add journal entries as observations. A looking glass over the existing KG — no new tables.",
+                "arguments": {
+                    "mode": "string (required) — 'write', 'read', 'threads', 'status'",
+                    "thread": "string — thread name (required for write/read/status)",
+                    "content": "string — journal entry content (required for write)",
+                    "observation_type": "string — 'question', 'hypothesis', 'evidence', 'reflection', 'dead_end', 'follow_up' (required for write)",
+                    "author": "string — 'cc', 'gem', 'vibe', 'dt' (default 'cc')",
+                    "tags": "string[] — optional tags (write mode)",
+                    "confidence": "number (0.0-1.0) — optional confidence (write mode)",
+                    "thread_status": "string — 'open', 'pursuing', 'resolved', 'abandoned' (required for status mode)",
+                    "author_filter": "string — filter by author (read/threads mode)",
+                    "type_filter": "string — filter by observation_type (read mode)",
+                    "status_filter": "string — filter by thread status (threads mode)",
+                    "limit": "integer (1-100, default 20) — max entries (read mode)"
+                },
+                "returns": {
+                    "write": {"success": true, "thread": "object", "entry": "object"},
+                    "read": {"thread": "object", "entries": "array", "count": "integer"},
+                    "threads": {"threads": "array (enriched with entry_count, last_activity)", "total": "integer"},
+                    "status": {"success": true, "thread": "object with previous/new status"}
+                },
+                "examples": [
+                    {"description": "Start a new research thread", "call": {"mode": "write", "thread": "Embedding dimension drift", "content": "Why do we see dimension mismatches after provider switches?", "observation_type": "question"}},
+                    {"description": "Add evidence to a thread", "call": {"mode": "write", "thread": "Embedding dimension drift", "content": "Found 3 entities with 768-dim embeddings from old BGE provider", "observation_type": "evidence", "confidence": 0.9}},
+                    {"description": "Read all entries for a thread", "call": {"mode": "read", "thread": "Embedding dimension drift"}},
+                    {"description": "View all open threads", "call": {"mode": "threads", "status_filter": "open"}},
+                    {"description": "Mark a thread as resolved", "call": {"mode": "status", "thread": "Embedding dimension drift", "thread_status": "resolved"}}
+                ]
             }),
             "remember" => json!({
                 "name": "remember",

@@ -7,17 +7,10 @@ use serde_json::Value;
 use surreal_mind::config::Config;
 use surreal_mind::error::Result;
 use surreal_mind::server::SurrealMindServer;
-use tokio::sync::OnceCell;
 
-static SERVER: OnceCell<SurrealMindServer> = OnceCell::const_new();
-
-async fn get_server() -> Result<&'static SurrealMindServer> {
-    SERVER
-        .get_or_try_init(|| async {
-            let config = Config::load().unwrap_or_default();
-            SurrealMindServer::new(&config).await
-        })
-        .await
+async fn get_server() -> Result<SurrealMindServer> {
+    let config = Config::load().unwrap_or_default();
+    SurrealMindServer::new(&config).await
 }
 
 #[tokio::test]
@@ -66,7 +59,11 @@ async fn test_agent_job_status_deserialization() {
         })
         .await;
 
-    assert!(result.is_ok(), "agent_job_status should succeed");
+    assert!(
+        result.is_ok(),
+        "agent_job_status should succeed: {:?}",
+        result.err()
+    );
     let response = result.unwrap();
 
     // Verify the response contains expected fields
