@@ -84,7 +84,7 @@ async fn main() -> Result<()> {
     // Fetch entities
     let entities: Vec<Value> = db
         .query(
-            "SELECT meta::id(id) as id, name, data, entity_type, created_at, \
+            "SELECT meta::id(id) as id, name, data, entity_type, type::string(created_at) as created_at, \
              (IF type::is_array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len \
              FROM kg_entities",
         )
