@@ -86,7 +86,9 @@ async fn main() -> Result<()> {
         .query(
             "SELECT meta::id(id) as id, name, data, entity_type, type::string(created_at) as created_at, \
              (IF type::is_array(embedding) THEN array::len(embedding) ELSE 0 END) AS emb_len \
-             FROM kg_entities",
+             FROM kg_entities \
+             WHERE (data.is_alias IS NONE OR data.is_alias = false) \
+               AND data.canonical_id IS NONE",
         )
         .await?
         .take(0)?;
@@ -305,7 +307,11 @@ async fn main() -> Result<()> {
     let mut by_norm: HashMap<String, Vec<(String, String)>> = HashMap::new(); // norm -> [(id, name)]
     // Re-fetch a light list for indexing survivors quickly
     let survivors_rows: Vec<Value> = db
-        .query("SELECT meta::id(id) as id, name FROM kg_entities")
+        .query(
+            "SELECT meta::id(id) as id, name, data FROM kg_entities \
+             WHERE (data.is_alias IS NONE OR data.is_alias = false) \
+               AND data.canonical_id IS NONE",
+        )
         .await?
         .take(0)?;
     for r in &survivors_rows {
@@ -323,6 +329,10 @@ async fn main() -> Result<()> {
     for (alias, canonical_norm) in &canonical_map {
         if let Some(list) = by_norm.get(*alias) {
             let canonical_id = canonical_ids.get(*canonical_norm).and_then(|o| o.clone());
+            let should_emit = canonical_id.is_none() || list.len() > 1;
+            if !should_emit {
+                continue;
+            }
             forced_groups.push(json!({
                 "canonical_norm": canonical_norm,
                 "canonical_id": canonical_id,

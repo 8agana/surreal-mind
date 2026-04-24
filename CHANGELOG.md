@@ -2,6 +2,7 @@
 
 ### Fixed
 
+- **KG dedupe planner alias awareness**: `kg_dedupe_plan` now excludes entities already marked as aliases/canonicalized from candidate queries, so post-apply duplicate-group counts reflect remaining real work instead of re-counting already-merged losers.
 - **KG dedupe planner datetime decoding**: `kg_dedupe_plan` now string-casts `created_at` in its entity query (`type::string(created_at)`) so the planner can read SurrealDB 3.x datetime results without failing with `Expected any, got datetime`.
 - **Registry test stability**: Removed brittle global-size assertions in registry/cancel tests and switched to UUID-scoped assertions to avoid cross-test interference from shared global registry state.
 - **Server version consistency**: `server_info.version` now reads from `env!("CARGO_PKG_VERSION")` so MCP runtime metadata stays in sync with crate version.
