@@ -2,6 +2,7 @@
 
 ### Fixed
 
+- **KG dedupe planner datetime decoding**: `kg_dedupe_plan` now string-casts `created_at` in its entity query (`type::string(created_at)`) so the planner can read SurrealDB 3.x datetime results without failing with `Expected any, got datetime`.
 - **Registry test stability**: Removed brittle global-size assertions in registry/cancel tests and switched to UUID-scoped assertions to avoid cross-test interference from shared global registry state.
 - **Server version consistency**: `server_info.version` now reads from `env!("CARGO_PKG_VERSION")` so MCP runtime metadata stays in sync with crate version.
 - **agent_job_status robustness**: Optional `started_at`/`completed_at` values now emit `null` (not stringified `NONE`) and integration tests serialize shared DB/server access to eliminate parallel cross-test flakiness.

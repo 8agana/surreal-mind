@@ -1,6 +1,6 @@
 # SurrealMind – Consciousness Persistence MCP Server
 
-SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server that stores thoughts and knowledge in SurrealDB, injects relevant memories with orbital mechanics, and exposes 15 curated tools for continuity.
+SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server that stores thoughts and knowledge in SurrealDB, injects relevant memories with orbital mechanics, and exposes 16 curated tools for continuity.
 
 ## What It Does
 
@@ -77,10 +77,10 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
 
    ```bash
    cargo test --test tool_schemas
-   ./tests/test_mcp_comprehensive.sh
+   ./tests/test_mcp.sh
    ```
 
-## Tool Surface (15)
+## Tool Surface (16)
 
 | Tool | Description |
 |------|-------------|
@@ -91,6 +91,7 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
 | `rethink` | Revise or mark knowledge graph items for correction. Modes: `mark` (flag for review), `correct` (apply fix with provenance). |
 | `corrections`| List recent `correction_events` to inspect the learning journey of the KG. |
 | `maintain` | System maintenance: `health_check_embeddings`, `reembed`, `reembed_kg`, `embed_pending`, `list_removal_candidates`, `export_removals`, `finalize_removal`, `echo_config`, `rethink`, `populate`, `embed`, `wander`, `health`, `report`, `tasks`. |
+| `journal` | Research thread management over the KG: create threads, add entries, review dashboard state, and update thread status. |
 | `howto` | Get help for any tool. Optional: `tool`, `format` (`compact\|full`). |
 | `call_gem` | Delegate prompts to Gemini CLI. Required: `prompt`. Optional: `task_name`, `model`, `cwd`, `timeout_ms`. |
 | `call_cc` | Delegate prompts to Claude Code CLI. Required: `prompt`, `cwd`. Optional: `model`, `mode`, `resume_session_id`, `continue_latest`, `timeout_ms`. |
@@ -131,7 +132,7 @@ Run with `cargo build --release` to produce all.
 cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --all-features
-./tests/test_mcp_comprehensive.sh               # MCP end-to-end
+./tests/test_mcp.sh                             # MCP end-to-end
 ```
 
 ## Change Log Highlights
