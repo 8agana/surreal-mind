@@ -1,7 +1,7 @@
 //! kg_consolidate - Execute deterministic KG consolidation from correction events
 //!
 //! This binary resolves duplicate kg_entities flagged via correction_events by:
-//! 1) parsing merge winner IDs from reasoning text
+//! 1) reading structured merge fields from pending correction state
 //! 2) redirecting edges from loser -> winner
 //! 3) marking loser as alias of winner
 //! 4) writing non-empty new_state to the correction event
@@ -39,6 +39,7 @@ struct ConsolidationReport {
     delete_enabled: bool,
     scanned: usize,
     applied: usize,
+    ignored_non_merge: usize,
     skipped: usize,
     errors: usize,
     results: Vec<ItemResult>,
@@ -79,7 +80,7 @@ async fn main() -> Result<()> {
 
     let rows: Vec<Value> = db
         .query(
-            "SELECT meta::id(id) as id, target_id, target_table, reasoning, new_state \
+            "SELECT meta::id(id) as id, target_id, target_table, reasoning, new_state, previous_state \
              FROM correction_events \
              WHERE target_table = 'kg_entities' \
              LIMIT $limit",
@@ -94,6 +95,7 @@ async fn main() -> Result<()> {
         delete_enabled,
         scanned: 0,
         applied: 0,
+        ignored_non_merge: 0,
         skipped: 0,
         errors: 0,
         results: Vec::new(),
@@ -111,16 +113,8 @@ async fn main() -> Result<()> {
             continue;
         }
 
-        let unresolved = row
-            .get("new_state")
-            .and_then(|v| v.as_object())
-            .map(|o| o.is_empty())
-            .unwrap_or(false);
-        if !unresolved {
-            continue;
-        }
-
-        report.scanned += 1;
+        let new_state = row.get("new_state").unwrap_or(&Value::Null);
+        let previous_state = row.get("previous_state").unwrap_or(&Value::Null);
 
         let target_id_raw = row
             .get("target_id")
@@ -132,6 +126,21 @@ async fn main() -> Result<()> {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
+
+        let structured_winner_id = parse_structured_merge_target(new_state);
+        let legacy_winner_id = parse_merge_target(&reasoning);
+        if !is_unresolved_correction(new_state, previous_state) {
+            continue;
+        }
+        if structured_winner_id.is_none()
+            && legacy_winner_id.is_none()
+            && !reasoning_mentions_merge_intent(&reasoning)
+        {
+            report.ignored_non_merge += 1;
+            continue;
+        }
+
+        report.scanned += 1;
 
         let loser_id = normalize_entity_id(&target_id_raw);
         if loser_id.is_empty() {
@@ -162,7 +171,28 @@ async fn main() -> Result<()> {
             continue;
         }
 
-        let winner_id = parse_merge_target(&reasoning).unwrap_or_default();
+        if let Some(structured_loser_id) = parse_structured_entity_id(new_state, "loser_id")
+            && structured_loser_id != loser_id
+        {
+            report.skipped += 1;
+            report.results.push(ItemResult {
+                event_id,
+                loser_id: Some(loser_id),
+                winner_id: None,
+                action: "skip".to_string(),
+                redirected_edges: 0,
+                deleted: false,
+                note: format!(
+                    "Structured loser_id mismatch: new_state.loser_id={}",
+                    structured_loser_id
+                ),
+            });
+            continue;
+        }
+
+        let winner_id = structured_winner_id
+            .or(legacy_winner_id)
+            .unwrap_or_default();
         if winner_id.is_empty() {
             report.skipped += 1;
             report.results.push(ItemResult {
@@ -172,7 +202,7 @@ async fn main() -> Result<()> {
                 action: "skip".to_string(),
                 redirected_edges: 0,
                 deleted: false,
-                note: "No parseable merge target in reasoning".to_string(),
+                note: "No structured or parseable merge target".to_string(),
             });
             continue;
         }
@@ -286,11 +316,57 @@ fn sanitize_id(s: &str) -> String {
         .to_string()
 }
 
+fn is_unresolved_correction(new_state: &Value, previous_state: &Value) -> bool {
+    if new_state.is_null()
+        || (new_state.is_object() && new_state.as_object().unwrap().is_empty())
+        || (!new_state.is_null() && new_state == previous_state)
+    {
+        return true;
+    }
+
+    new_state
+        .get("status")
+        .and_then(|v| v.as_str())
+        .map(|status| matches!(status, "pending" | "planned" | "queued"))
+        .unwrap_or(false)
+}
+
+fn parse_structured_merge_target(new_state: &Value) -> Option<String> {
+    if new_state
+        .get("mode")
+        .and_then(|v| v.as_str())
+        .is_some_and(|mode| mode != "merge_alias")
+    {
+        return None;
+    }
+
+    ["winner_id", "canonical_id", "merge_target"]
+        .iter()
+        .find_map(|key| parse_structured_entity_id(new_state, key))
+}
+
+fn parse_structured_entity_id(new_state: &Value, key: &str) -> Option<String> {
+    new_state.get(key).and_then(|v| v.as_str()).and_then(|raw| {
+        let id = normalize_entity_id(raw);
+        (!id.is_empty()).then_some(id)
+    })
+}
+
 fn parse_merge_target(reasoning: &str) -> Option<String> {
     let merge_target_re = Regex::new(r"(?i)merge\s+target:\s*([A-Za-z0-9_:\-]+)").ok()?;
+    let merging_into_re = Regex::new(r"(?i)merging\s+into\s*([A-Za-z0-9_:\-]+)").ok()?;
     let bracket_re = Regex::new(r"\[([A-Za-z0-9_:\-]{8,})\]").ok()?;
 
     if let Some(c) = merge_target_re.captures(reasoning)
+        && let Some(m) = c.get(1)
+    {
+        let id = normalize_entity_id(m.as_str());
+        if !id.is_empty() {
+            return Some(id);
+        }
+    }
+
+    if let Some(c) = merging_into_re.captures(reasoning)
         && let Some(m) = c.get(1)
     {
         let id = normalize_entity_id(m.as_str());
@@ -309,6 +385,11 @@ fn parse_merge_target(reasoning: &str) -> Option<String> {
     }
 
     None
+}
+
+fn reasoning_mentions_merge_intent(reasoning: &str) -> bool {
+    let lower = reasoning.to_lowercase();
+    lower.contains("merge") || lower.contains("duplicate") || lower.contains("canonical")
 }
 
 async fn entity_exists(db: Arc<Surreal<WsClient>>, id: &str) -> Result<bool> {
@@ -408,4 +489,75 @@ async fn apply_merge(
     .await?;
 
     Ok(deleted)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unresolved_accepts_empty_equal_and_pending_states() {
+        assert!(is_unresolved_correction(&Value::Null, &json!({})));
+        assert!(is_unresolved_correction(
+            &json!({}),
+            &json!({"name": "old"})
+        ));
+        assert!(is_unresolved_correction(
+            &json!({"name": "same"}),
+            &json!({"name": "same"})
+        ));
+        assert!(is_unresolved_correction(
+            &json!({"status": "pending", "mode": "merge_alias"}),
+            &json!({"name": "old"})
+        ));
+        assert!(!is_unresolved_correction(
+            &json!({"status": "resolved", "mode": "merge_alias"}),
+            &json!({"name": "old"})
+        ));
+    }
+
+    #[test]
+    fn structured_merge_target_beats_reasoning_shape() {
+        let state = json!({
+            "status": "pending",
+            "mode": "merge_alias",
+            "loser_id": "kg_entities:loser123",
+            "winner_id": "kg_entities:winner456"
+        });
+
+        assert_eq!(
+            parse_structured_entity_id(&state, "loser_id").as_deref(),
+            Some("loser123")
+        );
+        assert_eq!(
+            parse_structured_merge_target(&state).as_deref(),
+            Some("winner456")
+        );
+    }
+
+    #[test]
+    fn legacy_reasoning_parser_still_handles_existing_events() {
+        assert_eq!(
+            parse_merge_target("Merge target: kg_entities:abc_123").as_deref(),
+            Some("abc_123")
+        );
+        assert_eq!(
+            parse_merge_target("duplicate, merging into kg_entities:def-456").as_deref(),
+            Some("def-456")
+        );
+        assert_eq!(
+            parse_merge_target("winner [kg_entities:ghi789]").as_deref(),
+            Some("ghi789")
+        );
+    }
+
+    #[test]
+    fn merge_intent_filter_ignores_general_corrections() {
+        assert!(reasoning_mentions_merge_intent(
+            "Duplicate of Task-5 project. Merge into project entity."
+        ));
+        assert!(!reasoning_mentions_merge_intent(
+            "Testing correct mode - changing test_field value"
+        ));
+    }
 }

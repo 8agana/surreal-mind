@@ -6,7 +6,8 @@
 //! corrections/enrichments can be layered on later.
 
 use anyhow::{Context, Result};
-use serde_json::json;
+use regex::Regex;
+use serde_json::{Value, json};
 use std::sync::Arc;
 use surreal_mind::config::Config;
 use surrealdb::Surreal;
@@ -107,7 +108,7 @@ async fn main() -> Result<()> {
 }
 
 async fn fetch_marks(db: Arc<Surreal<WsClient>>, limit: i64) -> Result<Vec<MarkItem>> {
-    let mut query = "SELECT meta::id(id) as rid, meta::tb(id) as table, mark_type, mark_note, marked_at, marked_by, content, name, data.name as data_name \
+    let mut query = "SELECT meta::id(id) as rid, meta::tb(id) as tb_name, mark_type, mark_note, <string>marked_at as marked_at, marked_by, content, name \
                      FROM thoughts, kg_entities, kg_observations \
                      WHERE marked_for = 'gemini' "
         .to_string();
@@ -140,9 +141,9 @@ async fn fetch_marks(db: Arc<Surreal<WsClient>>, limit: i64) -> Result<Vec<MarkI
             .ok_or_else(|| anyhow::anyhow!("row missing id"))?
             .to_string();
         let table = r
-            .get("table")
+            .get("tb_name")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("row missing table"))?
+            .ok_or_else(|| anyhow::anyhow!("row missing tb_name"))?
             .to_string();
         let mark_type = r
             .get("mark_type")
@@ -189,7 +190,12 @@ async fn handle_correction(
         return Ok(());
     }
 
-    // CorrectionEvent with previous_state/new_state identical (placeholder)
+    let reasoning = item
+        .mark_note
+        .clone()
+        .unwrap_or_else(|| "No reasoning provided".to_string());
+    let new_state = correction_new_state(item, &reasoning);
+
     let correction: Option<serde_json::Value> = db
         .query(
             "CREATE correction_events SET \
@@ -208,13 +214,8 @@ async fn handle_correction(
         .bind(("target_id", item.id.clone()))
         .bind(("target_table", item.table.clone()))
         .bind(("previous_state", item.data.clone()))
-        .bind(("new_state", item.data.clone()))
-        .bind((
-            "reasoning",
-            item.mark_note
-                .clone()
-                .unwrap_or_else(|| "No reasoning provided".to_string()),
-        ))
+        .bind(("new_state", new_state))
+        .bind(("reasoning", reasoning))
         .bind(("sources", json!(["gem_rethink"])))
         .await?
         .take(0)?;
@@ -229,6 +230,57 @@ async fn handle_correction(
 
     clear_mark(db, item).await?;
     Ok(())
+}
+
+fn correction_new_state(item: &MarkItem, reasoning: &str) -> Value {
+    if item.table != "kg_entities" {
+        return json!({});
+    }
+
+    parse_merge_target(reasoning)
+        .map(|winner_id| {
+            json!({
+                "status": "pending",
+                "mode": "merge_alias",
+                "loser_id": item.id,
+                "winner_id": winner_id
+            })
+        })
+        .unwrap_or_else(|| json!({}))
+}
+
+fn parse_merge_target(reasoning: &str) -> Option<String> {
+    let merge_target_re = Regex::new(r"(?i)merge\s+target:\s*([A-Za-z0-9_:\-]+)").ok()?;
+    let merging_into_re = Regex::new(r"(?i)merging\s+into\s*([A-Za-z0-9_:\-]+)").ok()?;
+    let bracket_re = Regex::new(r"\[([A-Za-z0-9_:\-]{8,})\]").ok()?;
+
+    for re in [&merge_target_re, &merging_into_re, &bracket_re] {
+        if let Some(captures) = re.captures(reasoning)
+            && let Some(m) = captures.get(1)
+        {
+            let id = normalize_entity_id(m.as_str());
+            if !id.is_empty() {
+                return Some(id);
+            }
+        }
+    }
+
+    None
+}
+
+fn normalize_entity_id(raw: &str) -> String {
+    let cleaned = raw.trim().trim_matches(|c: char| c == '"' || c == '\'');
+    if let Some((prefix, id)) = cleaned.split_once(':')
+        && matches!(prefix, "kg_entities" | "entity")
+    {
+        return sanitize_id(id);
+    }
+    sanitize_id(cleaned)
+}
+
+fn sanitize_id(s: &str) -> String {
+    s.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-')
+        .to_string()
 }
 
 async fn clear_mark(db: Arc<Surreal<WsClient>>, item: &MarkItem) -> Result<()> {
@@ -254,4 +306,55 @@ fn print_report(stats: &RunStats, errors: &[String]) {
         "{}",
         serde_json::to_string_pretty(&report).unwrap_or_default()
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn correction_new_state_structures_kg_merge_target() {
+        let item = MarkItem {
+            id: "loser123".to_string(),
+            table: "kg_entities".to_string(),
+            mark_type: "correction".to_string(),
+            mark_note: None,
+            data: json!({"name": "Loser"}),
+        };
+
+        let state = correction_new_state(&item, "Merge target: kg_entities:winner456");
+
+        assert_eq!(
+            state.get("status").and_then(|v| v.as_str()),
+            Some("pending")
+        );
+        assert_eq!(
+            state.get("mode").and_then(|v| v.as_str()),
+            Some("merge_alias")
+        );
+        assert_eq!(
+            state.get("loser_id").and_then(|v| v.as_str()),
+            Some("loser123")
+        );
+        assert_eq!(
+            state.get("winner_id").and_then(|v| v.as_str()),
+            Some("winner456")
+        );
+    }
+
+    #[test]
+    fn correction_new_state_stays_empty_for_non_merge_notes() {
+        let item = MarkItem {
+            id: "thing123".to_string(),
+            table: "kg_entities".to_string(),
+            mark_type: "correction".to_string(),
+            mark_note: None,
+            data: json!({"name": "Thing"}),
+        };
+
+        assert_eq!(
+            correction_new_state(&item, "No merge target here"),
+            json!({})
+        );
+    }
 }
