@@ -137,7 +137,7 @@ impl SurrealMindServer {
                     "current_thought_id": "string — optional starting thought ID",
                     "visited_ids": "array — IDs to avoid preventing loops",
                     "recency_bias": "boolean (default false) — prioritize recent memories",
-                    "for": "string — filter marks assigned to a specific member ('cc', 'sam', 'gemini', 'dt', 'gem')"
+                    "for": "string — filter marks assigned to a specific member ('cc', 'codex', 'sam', 'gemini', 'dt', 'gem')"
                 },
                 "returns": {
                     "current_node": "object — the node reached in the step",
@@ -158,7 +158,7 @@ impl SurrealMindServer {
                     "target_id": "string (required) — ID of the record (thoughts:xxx, entity:xxx, observation:xxx)",
                     "mode": "string (required) — 'mark' (flag for review) or 'correct' (apply fix)",
                     "mark_type": "string — 'correction', 'research', 'enrich', 'expand' (mark mode)",
-                    "marked_for": "string — 'cc', 'sam', 'gemini', 'dt', 'gem' (mark mode)",
+                    "marked_for": "string — 'cc', 'codex', 'sam', 'gemini', 'dt', 'gem' (mark mode)",
                     "note": "string — contextual explanation for the mark (mark mode)",
                     "reasoning": "string — why the record is being corrected (correct mode)",
                     "sources": "string[] — verification sources (correct mode)",
@@ -192,7 +192,7 @@ impl SurrealMindServer {
                     "thread": "string — thread name (required for write/read/status)",
                     "content": "string — journal entry content (required for write)",
                     "observation_type": "string — 'question', 'hypothesis', 'evidence', 'reflection', 'dead_end', 'follow_up' (required for write)",
-                    "author": "string — 'cc', 'gem', 'vibe', 'dt' (default 'cc')",
+                    "author": "string — 'cc', 'codex', 'gem', 'vibe', 'dt' (default 'cc')",
                     "tags": "string[] — optional tags (write mode)",
                     "confidence": "number (0.0-1.0) — optional confidence (write mode)",
                     "thread_status": "string — 'open', 'pursuing', 'resolved', 'abandoned' (required for status mode)",

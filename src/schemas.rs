@@ -309,7 +309,7 @@ pub fn wander_schema() -> Arc<Map<String, Value>> {
             "mode": {"type": "string", "enum": ["random", "semantic", "meta", "marks"], "description": "Traversal mode"},
             "visited_ids": {"type": "array", "items": {"type": "string"}, "description": "IDs to avoid preventing loops"},
             "recency_bias": {"type": "boolean", "default": false, "description": "Whether to prioritize recent memories"},
-            "for": {"type": "string", "enum": ["cc", "sam", "gemini", "dt", "gem"], "description": "Filter marks assigned to a specific federation member (marks mode only)"}
+            "for": {"type": "string", "enum": ["cc", "codex", "sam", "gemini", "dt", "gem"], "description": "Filter marks assigned to a specific federation member (marks mode only)"}
         },
         "required": ["mode"]
     });
@@ -351,7 +351,7 @@ pub fn journal_schema() -> Arc<Map<String, Value>> {
             },
             "author": {
                 "type": "string",
-                "enum": ["cc", "gem", "vibe", "dt"],
+                "enum": ["cc", "codex", "gem", "vibe", "dt"],
                 "default": "cc",
                 "description": "Who is writing this entry"
             },
@@ -373,7 +373,7 @@ pub fn journal_schema() -> Arc<Map<String, Value>> {
             },
             "author_filter": {
                 "type": "string",
-                "enum": ["cc", "gem", "vibe", "dt"],
+                "enum": ["cc", "codex", "gem", "vibe", "dt"],
                 "description": "Filter by author (read/threads mode)"
             },
             "type_filter": {
@@ -406,7 +406,7 @@ pub fn rethink_schema() -> Arc<Map<String, Value>> {
             "target_id": {"type": "string", "description": "ID of the record to mark (thoughts:xxx, entity:xxx, observation:xxx)"},
             "mode": {"type": "string", "enum": ["mark", "correct"], "description": "Operation mode"},
             "mark_type": {"type": "string", "enum": ["correction", "research", "enrich", "expand"], "description": "Type of mark (mark mode)"},
-            "marked_for": {"type": "string", "enum": ["cc", "sam", "gemini", "dt", "gem"], "description": "Target federation member (mark mode)"},
+            "marked_for": {"type": "string", "enum": ["cc", "codex", "sam", "gemini", "dt", "gem"], "description": "Target federation member (mark mode)"},
             "note": {"type": "string", "description": "Contextual explanation for the mark (mark mode)"},
             "reasoning": {"type": "string", "description": "Why the record is being corrected (correct mode)"},
             "sources": {"type": "array", "items": {"type": "string"}, "description": "Verification sources (correct mode)"},

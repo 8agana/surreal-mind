@@ -130,7 +130,7 @@ impl SurrealMindServer {
         if params.mode == "marks"
             && let Some(f) = &params.for_member
         {
-            let valid_targets = ["cc", "sam", "gemini", "dt", "gem"];
+            let valid_targets = ["cc", "codex", "sam", "gemini", "dt", "gem"];
             if !valid_targets.contains(&f.as_str()) {
                 return Err(SurrealMindError::Validation {
                     message: format!(

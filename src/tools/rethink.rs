@@ -58,7 +58,7 @@ impl SurrealMindServer {
                 });
             }
 
-            let valid_targets = ["cc", "sam", "gemini", "dt", "gem"];
+            let valid_targets = ["cc", "codex", "sam", "gemini", "dt", "gem"];
             let marked_for =
                 params
                     .marked_for

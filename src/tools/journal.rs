@@ -33,7 +33,7 @@ const VALID_OBS_TYPES: [&str; 6] = [
     "dead_end",
     "follow_up",
 ];
-const VALID_AUTHORS: [&str; 4] = ["cc", "gem", "vibe", "dt"];
+const VALID_AUTHORS: [&str; 5] = ["cc", "codex", "gem", "vibe", "dt"];
 const VALID_STATUSES: [&str; 4] = ["open", "pursuing", "resolved", "abandoned"];
 
 impl SurrealMindServer {
