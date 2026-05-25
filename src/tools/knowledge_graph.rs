@@ -50,18 +50,16 @@ impl SurrealMindServer {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
-                // Try upsert: find existing by name + entity_type when available
+                // Normalize entity_type: lowercase, spaces to underscores, trimmed
+                let entity_type_s = entity_type_s.map(|et| {
+                    et.to_lowercase().replace(' ', "_").trim().to_string()
+                });
+
+                // Try upsert: find existing by name only (entity_type varies too much to be reliable for dedup)
                 if upsert {
-                    let mut sql =
-                        "SELECT meta::id(id) as id FROM kg_entities WHERE name = $name".to_string();
-                    if entity_type_s.is_some() {
-                        sql.push_str(" AND data.entity_type = $etype");
-                    }
-                    sql.push_str(" LIMIT 1");
-                    let mut q = self.db.query(sql).bind(("name", name_s.clone()));
-                    if let Some(ref et) = entity_type_s {
-                        q = q.bind(("etype", et.clone()));
-                    }
+                    let sql =
+                        "SELECT meta::id(id) as id FROM kg_entities WHERE name = $name LIMIT 1".to_string();
+                    let q = self.db.query(sql).bind(("name", name_s.clone()));
                     let found: Vec<serde_json::Value> = q.await?.take(0)?;
                     if let Some(idv) = found
                         .first()

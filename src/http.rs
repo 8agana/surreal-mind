@@ -242,13 +242,13 @@ pub async fn start_http_server(server: SurrealMindServer) -> Result<()> {
         },
     );
 
-    let app = Router::new()
+    // Authenticated routes (health, info, metrics, MCP) with auth + metrics layers
+    let main_routes = Router::new()
         .route("/health", get(health_handler))
         .route("/info", get(info_handler))
         .route("/metrics", get(metrics_handler))
         .route("/db_health", get(db_health_handler))
         .nest_service(path.as_str(), mcp_service)
-        .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any))
         .layer(middleware::from_fn_with_state(
             (state.metrics.clone(), path.clone()),
             |State((metrics, base)): State<(Arc<Mutex<HttpMetrics>>, String)>,
@@ -347,6 +347,57 @@ pub async fn start_http_server(server: SurrealMindServer) -> Result<()> {
             },
         ))
         .with_state(state);
+
+    // OAuth 2.1 routes (no auth required — these are how clients GET a token).
+    // Only enabled when a bearer token is configured.
+    let app = if let Some(ref token) = server.config.runtime.bearer_token {
+        let issuer = server
+            .config
+            .runtime
+            .oauth_issuer
+            .clone()
+            .unwrap_or_else(|| format!("http://{}", server.config.runtime.http_bind));
+        // OAuth client credentials: generate defaults if not configured
+        let client_id = server
+            .config
+            .runtime
+            .oauth_client_id
+            .clone()
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let client_secret = server
+            .config
+            .runtime
+            .oauth_client_secret
+            .clone()
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        if server.config.runtime.oauth_client_id.is_none() {
+            tracing::warn!(
+                "SURR_OAUTH_CLIENT_ID not set — generated ephemeral client_id: {}",
+                client_id
+            );
+            tracing::warn!(
+                "SURR_OAUTH_CLIENT_SECRET not set — generated ephemeral secret (lost on restart)"
+            );
+        }
+        let oauth_state =
+            crate::oauth::OAuthState::new(token.clone(), issuer.clone(), client_id, client_secret);
+        tracing::info!("OAuth 2.1 endpoints enabled (issuer: {})", issuer);
+        main_routes.merge(crate::oauth::oauth_router(oauth_state))
+    } else {
+        main_routes
+    };
+
+    // CORS wraps everything (including OAuth — preflight must succeed without auth)
+    let app = app.layer(
+        CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods(Any)
+            .allow_headers(Any)
+            .expose_headers([
+                "mcp-session-id".parse().unwrap(),
+                "mcp-protocol-version".parse().unwrap(),
+            ]),
+    );
 
     // Start server
     let listener = tokio::net::TcpListener::bind(server.config.runtime.http_bind)

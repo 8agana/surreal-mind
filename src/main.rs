@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use rmcp::{ServiceExt, transport::stdio};
 mod http;
+mod oauth;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use surreal_mind::{config::Config, server::SurrealMindServer};

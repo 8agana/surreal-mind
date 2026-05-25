@@ -507,15 +507,16 @@ async fn upsert_entity(
         return Ok(false);
     }
 
-    // Create new entity
+    // Create new entity (normalize entity_type: lowercase, spaces to underscores, trimmed)
+    let normalized_etype = entity.entity_type.to_lowercase().replace(' ', "_").trim().to_string();
     let data = serde_json::json!({
-        "entity_type": entity.entity_type,
+        "entity_type": normalized_etype,
         "description": entity.description,
     });
 
     db.query("CREATE kg_entities SET created_at = time::now(), name = $name, entity_type = $etype, data = $data, source_thought_ids = $thought_ids, extraction_batch_id = $batch_id, extracted_at = time::now(), extraction_confidence = $confidence, extraction_prompt_version = $version, embedding = NONE")
         .bind(("name", entity.name))
-        .bind(("etype", entity.entity_type))
+        .bind(("etype", normalized_etype))
         .bind(("data", data))
         .bind(("thought_ids", vec![thought_id]))
         .bind(("batch_id", batch_id))

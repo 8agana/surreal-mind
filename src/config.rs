@@ -100,6 +100,10 @@ pub struct RuntimeConfig {
     pub http_request_timeout_ms: u64,
     pub http_mcp_op_timeout_ms: Option<u64>,
     pub http_metrics_mode: String,
+    // OAuth configuration
+    pub oauth_issuer: Option<String>,
+    pub oauth_client_id: Option<String>,
+    pub oauth_client_secret: Option<String>,
     // Workspace alias resolution
     pub workspace_map: crate::workspace::WorkspaceMap,
 }
@@ -143,6 +147,9 @@ impl Default for RuntimeConfig {
             http_request_timeout_ms: 10000,
             http_mcp_op_timeout_ms: None,
             http_metrics_mode: "basic".to_string(),
+            oauth_issuer: None,
+            oauth_client_id: None,
+            oauth_client_secret: None,
             workspace_map: crate::workspace::WorkspaceMap::from_env(),
         }
     }
@@ -440,6 +447,9 @@ impl RuntimeConfig {
             http_request_timeout_ms: 10000,
             http_mcp_op_timeout_ms: None,
             http_metrics_mode: "basic".to_string(),
+            oauth_issuer: None,
+            oauth_client_id: None,
+            oauth_client_secret: None,
         };
 
         // HTTP transport configuration
@@ -483,6 +493,9 @@ impl RuntimeConfig {
             .and_then(|v| v.parse::<u64>().ok());
         cfg.http_metrics_mode =
             std::env::var("SURR_HTTP_METRICS_MODE").unwrap_or_else(|_| "basic".to_string());
+        cfg.oauth_issuer = std::env::var("SURR_OAUTH_ISSUER").ok();
+        cfg.oauth_client_id = std::env::var("SURR_OAUTH_CLIENT_ID").ok();
+        cfg.oauth_client_secret = std::env::var("SURR_OAUTH_CLIENT_SECRET").ok();
 
         // Load workspace aliases from WORKSPACE_* env vars
         cfg.workspace_map = crate::workspace::WorkspaceMap::from_env();

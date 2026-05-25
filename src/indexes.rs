@@ -128,7 +128,8 @@ pub fn get_expected_indexes() -> Vec<TableIndexes> {
 /// Response from INFO FOR TABLE
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TableInfo {
-    pub name: String,
+    #[serde(default)]
+    pub name: Option<String>,
     pub indexes: HashMap<String, String>,
 }
 

@@ -830,10 +830,9 @@ impl SurrealMindServer {
         // Query thoughts with pending or failed embedding status
         // Note: SurrealDB 2.4+ requires ORDER BY fields in SELECT clause
         let query = r#"
-            SELECT meta::id(id) AS id, content, created_at
+            SELECT id, content, created_at
             FROM thoughts
             WHERE embedding_status IN ['pending', 'failed']
-            ORDER BY created_at ASC
             LIMIT $limit;
         "#;
 
