@@ -189,7 +189,7 @@ impl SurrealMindServer {
                 "description": "Research thread management tool. Create and track research threads as KG entities, add journal entries as observations. A looking glass over the existing KG — no new tables.",
                 "arguments": {
                     "mode": "string (required) — 'write', 'read', 'threads', 'status'",
-                    "thread": "string — thread name (required for write/read/status)",
+                    "thread": "string — thread name or kg_entities ID (required for write/read/status). Use ID when names are duplicated.",
                     "content": "string — journal entry content (required for write)",
                     "observation_type": "string — 'question', 'hypothesis', 'evidence', 'reflection', 'dead_end', 'follow_up' (required for write)",
                     "author": "string — 'cc', 'codex', 'gem', 'vibe', 'dt' (default 'cc')",
@@ -211,6 +211,7 @@ impl SurrealMindServer {
                     {"description": "Start a new research thread", "call": {"mode": "write", "thread": "Embedding dimension drift", "content": "Why do we see dimension mismatches after provider switches?", "observation_type": "question"}},
                     {"description": "Add evidence to a thread", "call": {"mode": "write", "thread": "Embedding dimension drift", "content": "Found 3 entities with 768-dim embeddings from old BGE provider", "observation_type": "evidence", "confidence": 0.9}},
                     {"description": "Read all entries for a thread", "call": {"mode": "read", "thread": "Embedding dimension drift"}},
+                    {"description": "Read by thread ID when names are duplicated", "call": {"mode": "read", "thread": "kg_entities:abc123"}},
                     {"description": "View all open threads", "call": {"mode": "threads", "status_filter": "open"}},
                     {"description": "Mark a thread as resolved", "call": {"mode": "status", "thread": "Embedding dimension drift", "thread_status": "resolved"}}
                 ]

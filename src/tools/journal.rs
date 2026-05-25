@@ -9,6 +9,12 @@ use crate::server::SurrealMindServer;
 use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde_json::json;
 
+struct JournalThread {
+    id: String,
+    name: String,
+    row: serde_json::Value,
+}
+
 #[derive(Debug, serde::Deserialize)]
 pub struct JournalParams {
     pub mode: String,
@@ -36,6 +42,18 @@ const VALID_OBS_TYPES: [&str; 6] = [
 const VALID_AUTHORS: [&str; 5] = ["cc", "codex", "gem", "vibe", "dt"];
 const VALID_STATUSES: [&str; 4] = ["open", "pursuing", "resolved", "abandoned"];
 
+fn strip_thread_record_prefix(thread: &str) -> Option<&str> {
+    thread.strip_prefix("kg_entities:")
+}
+
+fn looks_like_thread_id(thread: &str) -> bool {
+    let raw = strip_thread_record_prefix(thread).unwrap_or(thread);
+    raw.len() >= 10
+        && raw
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
 impl SurrealMindServer {
     /// Handle the journal tool call — routes to mode-specific handlers
     pub async fn handle_journal(&self, request: CallToolRequestParams) -> Result<CallToolResult> {
@@ -59,6 +77,71 @@ impl SurrealMindServer {
                 ),
             }),
         }
+    }
+
+    async fn find_journal_thread_by_id(&self, raw_id: &str) -> Result<Option<JournalThread>> {
+        let rows: Vec<serde_json::Value> = self
+            .db
+            .query(
+                "SELECT meta::id(id) as id, name, thread_status, type::string(created_at) as created_at \
+                 FROM kg_entities \
+                 WHERE id = type::record('kg_entities', $id) AND data.entity_type = 'research_thread' \
+                 LIMIT 1",
+            )
+            .bind(("id", raw_id.to_string()))
+            .await?
+            .take(0)?;
+
+        Ok(rows.first().and_then(thread_from_row))
+    }
+
+    async fn find_journal_threads_by_name(&self, name: &str) -> Result<Vec<JournalThread>> {
+        let rows: Vec<serde_json::Value> = self
+            .db
+            .query(
+                "SELECT meta::id(id) as id, name, thread_status, type::string(created_at) as created_at \
+                 FROM kg_entities WHERE name = $name AND data.entity_type = 'research_thread'",
+            )
+            .bind(("name", name.to_string()))
+            .await?
+            .take(0)?;
+
+        Ok(rows.iter().filter_map(thread_from_row).collect())
+    }
+
+    async fn resolve_journal_thread(&self, thread: &str) -> Result<Option<JournalThread>> {
+        // ID-looking input is resolved by ID first. This prevents a prior phantom
+        // thread named like an ID from stealing future writes intended for the
+        // canonical thread with that ID.
+        if looks_like_thread_id(thread) {
+            let raw_id = strip_thread_record_prefix(thread).unwrap_or(thread);
+            if let Some(found) = self.find_journal_thread_by_id(raw_id).await? {
+                return Ok(Some(found));
+            }
+
+            if strip_thread_record_prefix(thread).is_some() {
+                return Ok(None);
+            }
+        }
+
+        let by_name = self.find_journal_threads_by_name(thread).await?;
+        if by_name.len() > 1 {
+            let ids = by_name
+                .iter()
+                .map(|t| format!("kg_entities:{}", t.id))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(SurrealMindError::Validation {
+                message: format!(
+                    "Ambiguous thread name: {} matched {} research threads. Use one of these thread IDs: {}",
+                    thread,
+                    by_name.len(),
+                    ids
+                ),
+            });
+        }
+
+        Ok(by_name.into_iter().next())
     }
 
     /// Write mode: create/find a thread and add a journal entry as an observation
@@ -106,20 +189,10 @@ impl SurrealMindServer {
         let tags = params.tags.clone().unwrap_or_default();
 
         // 1. Find or create thread entity
-        let existing: Vec<serde_json::Value> = self
-            .db
-            .query("SELECT meta::id(id) as id, thread_status, type::string(created_at) as created_at FROM kg_entities WHERE name = $name AND data.entity_type = 'research_thread' LIMIT 1")
-            .bind(("name", thread_name.to_string()))
-            .await?
-            .take(0)?;
-
-        let (thread_id, thread_created) = if let Some(row) = existing.first() {
-            let id = row
-                .get("id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            (id, false)
+        let (thread_id, resolved_thread_name, thread_created) = if let Some(thread) =
+            self.resolve_journal_thread(thread_name).await?
+        {
+            (thread.id, thread.name, false)
         } else {
             // Create new thread entity
             let created: Vec<serde_json::Value> = self
@@ -154,7 +227,7 @@ impl SurrealMindServer {
                 }
             }
 
-            (id, true)
+            (id, thread_name.to_string(), true)
         };
 
         // 2. Create observation (journal entry) on the thread
@@ -179,7 +252,7 @@ impl SurrealMindServer {
                  observation_type = $obs_type \
                  RETURN meta::id(id) as id, type::string(created_at) as created_at",
             )
-            .bind(("name", thread_name.to_string()))
+            .bind(("name", resolved_thread_name.clone()))
             .bind(("data", obs_data.clone()))
             .bind(("conf", confidence))
             .bind(("tags", tags.clone()))
@@ -197,7 +270,7 @@ impl SurrealMindServer {
 
         // Auto-embed the observation
         if !obs_id.is_empty() {
-            let embed_name = format!("{} - {}", thread_name, obs_type);
+            let embed_name = format!("{} - {}", resolved_thread_name, obs_type);
             if let Err(e) = self
                 .ensure_kg_embedding("kg_observations", &obs_id, &embed_name, &obs_data)
                 .await
@@ -225,7 +298,7 @@ impl SurrealMindServer {
             "success": true,
             "thread": {
                 "id": thread_ref,
-                "name": thread_name,
+                "name": resolved_thread_name,
                 "created": thread_created,
             },
             "entry": {
@@ -243,35 +316,31 @@ impl SurrealMindServer {
 
     /// Read mode: return observations for a thread, chronologically
     async fn journal_read(&self, params: &JournalParams) -> Result<CallToolResult> {
-        let thread_name = params
-            .thread
-            .as_deref()
-            .ok_or_else(|| SurrealMindError::Validation {
-                message: "thread is required for read mode".into(),
-            })?;
+        let thread_ref_or_name =
+            params
+                .thread
+                .as_deref()
+                .ok_or_else(|| SurrealMindError::Validation {
+                    message: "thread is required for read mode".into(),
+                })?;
         let limit = params.limit.unwrap_or(20).min(100);
 
         // Find thread entity
-        let thread: Vec<serde_json::Value> = self
-            .db
-            .query(
-                "SELECT meta::id(id) as id, name, thread_status, type::string(created_at) as created_at \
-                 FROM kg_entities WHERE name = $name AND data.entity_type = 'research_thread' LIMIT 1",
-            )
-            .bind(("name", thread_name.to_string()))
+        let thread = self
+            .resolve_journal_thread(thread_ref_or_name)
             .await?
-            .take(0)?;
-
-        let thread_row = thread.first().ok_or_else(|| SurrealMindError::Validation {
-            message: format!("Thread not found: {}", thread_name),
-        })?;
+            .ok_or_else(|| SurrealMindError::Validation {
+                message: format!("Thread not found: {}", thread_ref_or_name),
+            })?;
+        let thread_ref = format!("kg_entities:{}", thread.id);
 
         // Fetch observations — no ORDER BY in SQL (surrealdb crate bug: ORDER BY created_at
         // causes empty results). Sort in Rust instead.
         let mut sql = String::from(
             "SELECT meta::id(id) as id, name, data, confidence, tags, author, \
              observation_type, type::string(created_at) as created_at \
-             FROM kg_observations WHERE name = $name",
+             FROM kg_observations \
+             WHERE (data.thread_id = $thread_ref OR type::string(data.thread_id) = $thread_ref)",
         );
 
         if params.author_filter.is_some() {
@@ -284,7 +353,7 @@ impl SurrealMindServer {
         // No ORDER BY — will sort in Rust. Use generous limit.
         sql.push_str(&format!(" LIMIT {}", limit));
 
-        let mut q = self.db.query(&sql).bind(("name", thread_name.to_string()));
+        let mut q = self.db.query(&sql).bind(("thread_ref", thread_ref));
         if let Some(ref author) = params.author_filter {
             q = q.bind(("author", author.clone()));
         }
@@ -302,7 +371,7 @@ impl SurrealMindServer {
         });
 
         let response = json!({
-            "thread": thread_row,
+            "thread": thread.row,
             "entries": entries,
             "count": entries.len(),
         });
@@ -334,12 +403,17 @@ impl SurrealMindServer {
         // Use name-based lookup to avoid record-link type coercion issues
         let mut enriched_threads = Vec::new();
         for thread in &threads {
-            let tname = thread.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let tid = thread.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let thread_ref = format!("kg_entities:{}", tid);
 
             let count_result: Option<i64> = self
                 .db
-                .query("RETURN count((SELECT id FROM kg_observations WHERE name = $tname AND observation_type IS NOT NONE))")
-                .bind(("tname", tname.to_string()))
+                .query(
+                    "RETURN count((SELECT id FROM kg_observations \
+                     WHERE (data.thread_id = $thread_ref OR type::string(data.thread_id) = $thread_ref) \
+                     AND observation_type IS NOT NONE))",
+                )
+                .bind(("thread_ref", thread_ref.clone()))
                 .await?
                 .take(0)?;
 
@@ -347,10 +421,12 @@ impl SurrealMindServer {
                 .db
                 .query(
                     "SELECT author, observation_type, type::string(created_at) as created_at \
-                     FROM kg_observations WHERE name = $tname AND observation_type IS NOT NONE \
+                     FROM kg_observations \
+                     WHERE (data.thread_id = $thread_ref OR type::string(data.thread_id) = $thread_ref) \
+                     AND observation_type IS NOT NONE \
                      ORDER BY created_at DESC LIMIT 1",
                 )
-                .bind(("tname", tname.to_string()))
+                .bind(("thread_ref", thread_ref))
                 .await?
                 .take(0)?;
 
@@ -375,12 +451,13 @@ impl SurrealMindServer {
 
     /// Status mode: update a thread's status
     async fn journal_status(&self, params: &JournalParams) -> Result<CallToolResult> {
-        let thread_name = params
-            .thread
-            .as_deref()
-            .ok_or_else(|| SurrealMindError::Validation {
-                message: "thread is required for status mode".into(),
-            })?;
+        let thread_ref_or_name =
+            params
+                .thread
+                .as_deref()
+                .ok_or_else(|| SurrealMindError::Validation {
+                    message: "thread is required for status mode".into(),
+                })?;
         let new_status =
             params
                 .thread_status
@@ -399,21 +476,16 @@ impl SurrealMindServer {
         }
 
         // Find thread
-        let thread: Vec<serde_json::Value> = self
-            .db
-            .query(
-                "SELECT meta::id(id) as id, name, thread_status, type::string(created_at) as created_at \
-                 FROM kg_entities WHERE name = $name AND data.entity_type = 'research_thread' LIMIT 1",
-            )
-            .bind(("name", thread_name.to_string()))
+        let thread = self
+            .resolve_journal_thread(thread_ref_or_name)
             .await?
-            .take(0)?;
-
-        let thread_row = thread.first().ok_or_else(|| SurrealMindError::Validation {
-            message: format!("Thread not found: {}", thread_name),
-        })?;
-        let thread_id = thread_row.get("id").and_then(|v| v.as_str()).unwrap_or("");
-        let current_status = thread_row
+            .ok_or_else(|| SurrealMindError::Validation {
+                message: format!("Thread not found: {}", thread_ref_or_name),
+            })?;
+        let thread_id = thread.id;
+        let thread_name = thread.name;
+        let current_status = thread
+            .row
             .get("thread_status")
             .and_then(|v| v.as_str())
             .unwrap_or("open");
@@ -446,5 +518,36 @@ impl SurrealMindServer {
         });
 
         Ok(CallToolResult::structured(response))
+    }
+}
+
+fn thread_from_row(row: &serde_json::Value) -> Option<JournalThread> {
+    let id = row.get("id")?.as_str()?.to_string();
+    let name = row.get("name")?.as_str()?.to_string();
+    Some(JournalThread {
+        id,
+        name,
+        row: row.clone(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{looks_like_thread_id, strip_thread_record_prefix};
+
+    #[test]
+    fn detects_raw_and_prefixed_thread_ids() {
+        assert!(looks_like_thread_id("iiei690vohjwi9ncu4y2"));
+        assert!(looks_like_thread_id("kg_entities:iiei690vohjwi9ncu4y2"));
+        assert_eq!(
+            strip_thread_record_prefix("kg_entities:iiei690vohjwi9ncu4y2"),
+            Some("iiei690vohjwi9ncu4y2")
+        );
+    }
+
+    #[test]
+    fn does_not_treat_short_human_names_as_ids() {
+        assert!(!looks_like_thread_id("task-5"));
+        assert!(!looks_like_thread_id("Million token context implications"));
     }
 }
