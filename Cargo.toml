@@ -47,7 +47,7 @@ sha1 = "0.10"
 sha2 = "0.10"
 strsim = "0.11"
 # SurrealDB with WebSocket client
-surrealdb = { version = "3.0", features = ["protocol-ws"] }
+surrealdb = { version = "3.1", features = ["protocol-ws"] }
 thiserror = "1.0"
 time = { version = "0.3", features = ["formatting", "parsing"] }
 
