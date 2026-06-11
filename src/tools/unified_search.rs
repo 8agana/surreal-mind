@@ -104,30 +104,25 @@ pub async fn unified_search_inner(
     let confidence_gte = params.confidence_gte.map(|v| v.clamp(0.0, 1.0));
     let confidence_lte = params.confidence_lte.map(|v| v.clamp(0.0, 1.0));
 
-    // Parse date bounds
+    // Parse date bounds into SurrealDB datetime values. The thoughts table stores
+    // created_at as datetime, so binding strings here makes the predicate fail.
     let date_from_bound = params
         .date_from
-        .as_ref()
-        .map(|d| format!("{}T00:00:00Z", d));
-    let date_to_bound = params.date_to.as_ref().map(|d| format!("{}T23:59:59Z", d));
+        .as_deref()
+        .map(|d| parse_search_date_bound(d, false, "date_from"))
+        .transpose()?;
+    let date_to_bound = params
+        .date_to
+        .as_deref()
+        .map(|d| parse_search_date_bound(d, true, "date_to"))
+        .transpose()?;
 
-    // Validate date range if both provided
-    if let (Some(df), Some(dt)) = (&params.date_from, &params.date_to) {
-        let from_date = NaiveDate::parse_from_str(df, "%Y-%m-%d").map_err(|_| {
-            SurrealMindError::Serialization {
-                message: "Invalid date_from format (expected YYYY-MM-DD)".into(),
-            }
-        })?;
-        let to_date = NaiveDate::parse_from_str(dt, "%Y-%m-%d").map_err(|_| {
-            SurrealMindError::Serialization {
-                message: "Invalid date_to format (expected YYYY-MM-DD)".into(),
-            }
-        })?;
-        if from_date > to_date {
-            return Err(SurrealMindError::Serialization {
-                message: "date_from cannot be after date_to".into(),
-            });
-        }
+    if let (Some(df), Some(dt)) = (&date_from_bound, &date_to_bound)
+        && df > dt
+    {
+        return Err(SurrealMindError::Serialization {
+            message: "date_from cannot be after date_to".into(),
+        });
     }
 
     // Build a simple name-like predicate from query if available
@@ -638,13 +633,11 @@ pub async fn unified_search_inner(
             where_clauses.push("confidence IS NOT NULL AND confidence <= $clte".to_string());
             binds.insert("clte".to_string(), json!(clte));
         }
-        if let Some(df) = &date_from_bound {
+        if date_from_bound.is_some() {
             where_clauses.push("created_at >= $from_date".to_string());
-            binds.insert("from_date".to_string(), json!(df));
         }
-        if let Some(dt) = &date_to_bound {
+        if date_to_bound.is_some() {
             where_clauses.push("created_at <= $to_date".to_string());
-            binds.insert("to_date".to_string(), json!(dt));
         }
 
         // Add similarity filter if query present
@@ -711,6 +704,12 @@ pub async fn unified_search_inner(
         for (k, v) in binds {
             query = query.bind((k, v));
         }
+        if let Some(from_date) = date_from_bound {
+            query = query.bind(("from_date", from_date));
+        }
+        if let Some(to_date) = date_to_bound {
+            query = query.bind(("to_date", to_date));
+        }
 
         let mut resp = query.await?;
 
@@ -750,6 +749,28 @@ pub async fn unified_search_inner(
     }
 
     Ok(CallToolResult::structured(serde_json::Value::Object(out)))
+}
+
+fn parse_search_date_bound(
+    value: &str,
+    end_of_day: bool,
+    label: &str,
+) -> Result<surrealdb::types::Datetime> {
+    let date = NaiveDate::parse_from_str(value, "%Y-%m-%d").map_err(|_| {
+        SurrealMindError::Serialization {
+            message: format!("Invalid {label} format (expected YYYY-MM-DD)"),
+        }
+    })?;
+    let naive = if end_of_day {
+        date.and_hms_opt(23, 59, 59)
+    } else {
+        date.and_hms_opt(0, 0, 0)
+    }
+    .ok_or_else(|| SurrealMindError::Serialization {
+        message: format!("Invalid {label} value"),
+    })?;
+
+    Ok(surrealdb::types::Datetime::from(naive.and_utc()))
 }
 
 /// Helper function to sort entities by similarity (used by both production and tests)
@@ -852,6 +873,33 @@ async fn fetch_derivatives(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn search_date_bound_start_is_typed_midnight_utc() {
+        let bound =
+            parse_search_date_bound("2026-06-08", false, "date_from").expect("valid date bound");
+
+        assert_eq!(bound.to_string(), "2026-06-08T00:00:00Z");
+    }
+
+    #[test]
+    fn search_date_bound_end_is_typed_end_of_day_utc() {
+        let bound =
+            parse_search_date_bound("2026-06-11", true, "date_to").expect("valid date bound");
+
+        assert_eq!(bound.to_string(), "2026-06-11T23:59:59Z");
+    }
+
+    #[test]
+    fn search_date_bound_rejects_bad_format() {
+        let err = parse_search_date_bound("2026/06/08", false, "date_from")
+            .expect_err("bad format should fail");
+
+        assert!(
+            err.to_string()
+                .contains("Invalid date_from format (expected YYYY-MM-DD)")
+        );
+    }
 
     #[test]
     fn test_similarity_ordering_keeps_high_similarity_old_items() {
