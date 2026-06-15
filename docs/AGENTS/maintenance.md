@@ -6,6 +6,7 @@
 - **Verify tool surface:** `curl http://127.0.0.1:8787/mcp` to see exposed tools.
 - **One-shot smoke test:** `scripts/sm_health.sh` (uses `SURR_BEARER_TOKEN`/`SURR_TOKEN` if present) or `cargo run --bin simple_db_test`.
 - **Debug Tools:** `kg_debug_tool` (KG introspection), `kg_embed` (adhoc embedding), `test_gemini` (Gemini CLI connection).
+- **Google CLI provider:** `SM_AGENT_PROVIDER=antigravity|gemini` (or `GOOGLE_CLI_PROVIDER` / `SURR_GOOGLE_CLI_PROVIDER`) selects the provider for `call_gem`, `kg_populate`, and `kg_wander`. Default is `antigravity`; set `gemini` for rollback. Antigravity unattended paths use sandbox/default permissions; `call_gem` may opt into `ANTIGRAVITY_CALL_GEM_PERMISSION_MODE=interactive_skip`.
 - **Logs:** stdout `~/Library/Logs/surreal-mind.out.log`; stderr `~/Library/Logs/surreal-mind.err.log`.
 - **Cloudflared tunnel:** service `com.legacymind.cloudflared-tunnel`; restart with `launchctl kickstart -k gui/$(id -u)/com.legacymind.cloudflared-tunnel`.
 - **SurrealDB service:** `com.legacymind.surrealdb` (bind 127.0.0.1:8000).

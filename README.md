@@ -93,7 +93,7 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
 | `maintain` | System maintenance: `health_check_embeddings`, `reembed`, `reembed_kg`, `embed_pending`, `list_removal_candidates`, `export_removals`, `finalize_removal`, `echo_config`, `rethink`, `populate`, `embed`, `wander`, `health`, `report`, `tasks`. |
 | `journal` | Research thread management over the KG: create threads, add entries, review dashboard state, and update thread status. |
 | `howto` | Get help for any tool. Optional: `tool`, `format` (`compact\|full`). |
-| `call_gem` | Delegate prompts to Gemini CLI. Required: `prompt`. Optional: `task_name`, `model`, `cwd`, `timeout_ms`. |
+| `call_gem` | Delegate prompts to the configured Google CLI provider (`SM_AGENT_PROVIDER=antigravity\|gemini`; default `antigravity`). Required: `prompt`, `cwd`. Optional: `task_name`, `model`, `timeout_ms`, `resume_session_id`, `continue_latest`. |
 | `call_cc` | Delegate prompts to Claude Code CLI. Required: `prompt`, `cwd`. Optional: `model`, `mode`, `resume_session_id`, `continue_latest`, `timeout_ms`. |
 
 | `call_vibe` | Delegate prompts to Vibe CLI. Required: `prompt`, `cwd`. Optional: `agent` (profile name), `mode`, `continue_latest`, `timeout_ms`. Supports session continuation. |
@@ -107,6 +107,7 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
 - Embeddings: `SURR_EMBED_PROVIDER=openai`, `SURR_EMBED_MODEL`, `SURR_EMBED_STRICT`, `SURR_SKIP_DIM_CHECK`, `SURR_EMBED_RETRIES`, `SURR_EMBED_DIM` (inferred), `OPENAI_API_KEY`. Primary: text-embedding-3-small (1536). Never mix dims—reembed when switching. (Note: Local Candle support has been removed).
 - Retrieval/injection: `SURR_INJECT_T1/T2/T3` (defaults 0.6/0.4/0.25), `SURR_INJECT_FLOOR` (0.15), `SURR_KG_CANDIDATES` (default 200), `SURR_RETRIEVE_CANDIDATES` (default 500), `SURR_CACHE_MAX` (5000), `SURR_CACHE_WARM` (64), `SURR_INJECT_DEBOUNCE`, `SURR_KG_GRAPH_BOOST`, `SURR_KG_MAX_NEIGHBORS`, `SURR_KG_TIMEOUT_MS`.
 - Runtime/logging: `SURR_TOOL_TIMEOUT_MS` (default 15000), `MCP_NO_LOG`, `RUST_LOG`, `SURR_WRITE_STATE=1` to emit state.json.
+- Google CLI delegation: `SM_AGENT_PROVIDER`, `GOOGLE_CLI_PROVIDER`, or `SURR_GOOGLE_CLI_PROVIDER` selects `antigravity` or `gemini` (default `antigravity`; set `gemini` for rollback). Antigravity uses `agy --print`, defaults model to `auto`, and requires auth in the same GUI/user context as the running service. `KG_POPULATE_MODEL` and `KG_WANDER_MODEL` override model per unattended binary.
 - Hypothesis verification defaults: `SURR_VERIFY_TOPK` (100), `SURR_VERIFY_MIN_SIM` (0.70), `SURR_VERIFY_EVIDENCE_LIMIT` (10), `SURR_PERSIST_VERIFICATION`.
 
 - Brain datastore: `SURR_ENABLE_BRAIN`, `SURR_BRAIN_URL/NS/DB/USER/PASS`.

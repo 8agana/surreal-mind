@@ -1,7 +1,9 @@
-//! delegate_gemini tool handler to call Gemini CLI - now synchronous
+//! call_gem compatibility handler for Gemini CLI or Antigravity CLI.
 
 use crate::clients::traits::CognitiveAgent;
-use crate::clients::{AgentError, GeminiClient};
+use crate::clients::{
+    AgentError, AntigravityClient, AntigravityPermissionMode, GeminiClient, GoogleCliProvider,
+};
 use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
 use rmcp::model::{CallToolRequestParams, CallToolResult};
@@ -45,7 +47,7 @@ pub struct DelegateGeminiParams {
 }
 
 impl SurrealMindServer {
-    /// Handle the delegate_gemini tool call - now synchronous
+    /// Handle the call_gem compatibility tool call - now synchronous
     pub async fn handle_call_gem(&self, request: CallToolRequestParams) -> Result<CallToolResult> {
         let args = request.arguments.ok_or_else(|| SurrealMindError::Mcp {
             message: "Missing parameters".into(),
@@ -93,8 +95,12 @@ impl SurrealMindServer {
                 .unwrap_or(300_000) // 5 minutes default
         });
 
-        // Execute synchronously - call GeminiClient directly
-        let result = execute_gemini_call(GeminiCallParams {
+        let provider =
+            GoogleCliProvider::from_env_or_config(Some(&self.config.system.google_cli_provider))
+                .map_err(|e| SurrealMindError::InvalidParams { message: e })?;
+
+        // Execute synchronously through the selected compatibility backend.
+        let result = execute_google_cli_call(GoogleCliCallParams {
             prompt: &prompt,
             model_override: model_override.as_deref(),
             cwd: cwd.as_deref(),
@@ -103,6 +109,7 @@ impl SurrealMindServer {
             timeout,
             tool_timeout,
             expose_stream: params.expose_stream,
+            provider,
         })
         .await;
 
@@ -121,17 +128,21 @@ impl SurrealMindServer {
                 Ok(CallToolResult::structured(result_json))
             }
             Err(e) => {
+                let provider_label = provider.label();
                 let error_msg = match e {
                     AgentError::Timeout { timeout_ms } => {
-                        format!("Gemini execution timed out after {}ms", timeout_ms)
+                        format!(
+                            "{} execution timed out after {}ms",
+                            provider_label, timeout_ms
+                        )
                     }
-                    AgentError::CliError(msg) => format!("Gemini CLI error: {}", msg),
-                    AgentError::NotFound => "Gemini CLI not found".to_string(),
+                    AgentError::CliError(msg) => format!("{} error: {}", provider_label, msg),
+                    AgentError::NotFound => format!("{} not found", provider_label),
                     AgentError::ParseError(msg) => format!("Parse error: {}", msg),
                     AgentError::StdinError(msg) => format!("Stdin error: {}", msg),
                 };
                 Err(SurrealMindError::Mcp {
-                    message: format!("Gemini execution failed: {}", error_msg),
+                    message: format!("{} execution failed: {}", provider_label, error_msg),
                 })
             }
         }
@@ -173,12 +184,24 @@ fn normalize_optional_string(value: Option<String>) -> Option<String> {
     })
 }
 
-fn default_model_name(config: Option<&crate::config::Config>) -> String {
-    std::env::var("GEMINI_MODEL").unwrap_or_else(|_| {
-        config
-            .map(|c| c.system.gemini_model.clone())
-            .unwrap_or_else(|| "auto".to_string())
-    })
+fn default_model_name(
+    provider: GoogleCliProvider,
+    config: Option<&crate::config::Config>,
+) -> String {
+    match provider {
+        GoogleCliProvider::Gemini => std::env::var("GEMINI_MODEL").unwrap_or_else(|_| {
+            config
+                .map(|c| c.system.gemini_model.clone())
+                .unwrap_or_else(|| "auto".to_string())
+        }),
+        GoogleCliProvider::Antigravity => std::env::var("ANTIGRAVITY_MODEL")
+            .or_else(|_| std::env::var("AGY_MODEL"))
+            .unwrap_or_else(|_| {
+                config
+                    .map(|c| c.system.antigravity_model.clone())
+                    .unwrap_or_else(|| "auto".to_string())
+            }),
+    }
 }
 fn gemini_timeout_ms() -> u64 {
     std::env::var("GEMINI_TIMEOUT_MS")
@@ -188,7 +211,7 @@ fn gemini_timeout_ms() -> u64 {
 }
 
 #[derive(Debug)]
-struct GeminiCallParams<'a> {
+struct GoogleCliCallParams<'a> {
     prompt: &'a str,
     model_override: Option<&'a str>,
     cwd: Option<&'a str>,
@@ -197,10 +220,11 @@ struct GeminiCallParams<'a> {
     timeout: u64,
     tool_timeout: u64,
     expose_stream: bool,
+    provider: GoogleCliProvider,
 }
 
-async fn execute_gemini_call(
-    params: GeminiCallParams<'_>,
+async fn execute_google_cli_call(
+    params: GoogleCliCallParams<'_>,
 ) -> std::result::Result<crate::clients::traits::AgentResponse, AgentError> {
     // Determine session to resume:
     // 1. Explicit resume_session_id takes priority
@@ -220,20 +244,70 @@ async fn execute_gemini_call(
     let model = params
         .model_override
         .map(|s| s.to_string())
-        .unwrap_or_else(|| default_model_name(config.as_ref()));
+        .unwrap_or_else(|| default_model_name(params.provider, config.as_ref()));
 
-    let mut gemini = GeminiClient::with_timeout_ms(model.clone(), params.timeout);
-    gemini = gemini.with_tool_timeout_ms(params.tool_timeout);
-    if let Some(dir) = params.cwd {
-        gemini = gemini.with_cwd(dir);
-    }
-    if params.expose_stream {
-        gemini = gemini.with_expose_stream(true);
-    }
+    match params.provider {
+        GoogleCliProvider::Gemini => {
+            let mut gemini = GeminiClient::with_timeout_ms(model.clone(), params.timeout);
+            gemini = gemini.with_tool_timeout_ms(params.tool_timeout);
+            if let Some(dir) = params.cwd {
+                gemini = gemini.with_cwd(dir);
+            }
+            if params.expose_stream {
+                gemini = gemini.with_expose_stream(true);
+            }
 
-    // Pass session_id to GeminiClient
-    // Empty string triggers --resume (latest), non-empty triggers --resume <id>
-    gemini.call(params.prompt, resume_session.as_deref()).await
+            // Empty string triggers --resume latest, non-empty triggers --resume <id>.
+            gemini.call(params.prompt, resume_session.as_deref()).await
+        }
+        GoogleCliProvider::Antigravity => {
+            let mut antigravity = AntigravityClient::new(Some(model))
+                .with_timeout_ms(params.timeout)
+                .with_print_timeout_ms(params.timeout)
+                .with_permission_mode(AntigravityPermissionMode::for_call_gem());
+            if let Some(dir) = params.cwd {
+                antigravity = antigravity.with_cwd(dir);
+            }
+
+            // Antigravity --print emits plain stdout; expose_stream intentionally returns None.
+            antigravity
+                .call(params.prompt, resume_session.as_deref())
+                .await
+        }
+    }
 }
 
-// Tests for synchronous call_gem would go here if needed
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn antigravity_default_model_prefers_antigravity_config() {
+        if std::env::var("ANTIGRAVITY_MODEL").is_ok() || std::env::var("AGY_MODEL").is_ok() {
+            return;
+        }
+
+        let mut config = crate::config::Config::default();
+        config.system.antigravity_model = "Gemini 3.5 Flash (Low)".to_string();
+
+        assert_eq!(
+            default_model_name(GoogleCliProvider::Antigravity, Some(&config)),
+            "Gemini 3.5 Flash (Low)"
+        );
+    }
+
+    #[test]
+    fn gemini_default_model_preserves_existing_config() {
+        if std::env::var("GEMINI_MODEL").is_ok() {
+            return;
+        }
+
+        let mut config = crate::config::Config::default();
+        config.system.gemini_model = "gemini-3-pro-preview".to_string();
+
+        assert_eq!(
+            default_model_name(GoogleCliProvider::Gemini, Some(&config)),
+            "gemini-3-pro-preview"
+        );
+    }
+}

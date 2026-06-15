@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use thiserror::Error;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -8,7 +9,7 @@ pub struct AgentResponse {
     pub response: String,
     pub exchange_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub stream_events: Option<Vec<crate::clients::gemini::GeminiStreamEvent>>,
+    pub stream_events: Option<Vec<Value>>,
 }
 
 #[derive(Debug, Error)]

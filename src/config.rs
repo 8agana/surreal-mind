@@ -23,6 +23,18 @@ pub struct SystemConfig {
     pub database_db: String,
     pub inject_debounce: u64,
     pub gemini_model: String,
+    #[serde(default = "default_google_cli_provider")]
+    pub google_cli_provider: String,
+    #[serde(default = "default_antigravity_model")]
+    pub antigravity_model: String,
+}
+
+fn default_google_cli_provider() -> String {
+    "antigravity".to_string()
+}
+
+fn default_antigravity_model() -> String {
+    "auto".to_string()
 }
 
 /// Embedding configuration snapshot for use across components
@@ -325,6 +337,8 @@ impl Default for Config {
                 database_db: "consciousness".to_string(),
                 inject_debounce: 1000,
                 gemini_model: "gemini-3-flash-preview".to_string(),
+                google_cli_provider: default_google_cli_provider(),
+                antigravity_model: default_antigravity_model(),
             },
             retrieval: RetrievalConfig {
                 max_injection_scale: 3,

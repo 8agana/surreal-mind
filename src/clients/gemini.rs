@@ -586,7 +586,12 @@ impl CognitiveAgent for GeminiClient {
             response: cleaned,
             exchange_id: None,
             stream_events: if self.expose_stream {
-                Some(stream_events)
+                Some(
+                    stream_events
+                        .into_iter()
+                        .filter_map(|event| serde_json::to_value(event).ok())
+                        .collect(),
+                )
             } else {
                 None
             },

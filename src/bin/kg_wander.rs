@@ -1,9 +1,9 @@
 //! kg_wander - Autonomous Knowledge Graph Explorer
 //!
-//! Uses Gemini (Flash) to serendipitously explore the knowledge graph via the
+//! Uses the configured Google CLI provider to serendipitously explore the knowledge graph via the
 //! `legacymind_wander` tool. It maintains a loop of:
 //! 1. Observe current node
-//! 2. Ask Gemini "Where to next?"
+//! 2. Ask the provider "Where to next?"
 //! 3. Execute wander step
 //!
 //! Run with: cargo run --bin kg_wander
@@ -13,12 +13,15 @@ use rmcp::model::CallToolRequestParams;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::io::Write;
-use surreal_mind::clients::{CognitiveAgent, GeminiClient};
+use surreal_mind::clients::{
+    AntigravityClient, AntigravityPermissionMode, CognitiveAgent, GeminiClient, GoogleCliProvider,
+};
 use surreal_mind::config::Config;
 use surreal_mind::server::SurrealMindServer;
 
 const DEFAULT_MODEL: &str = "gemini-3-flash-preview";
 const DEFAULT_MAX_STEPS: usize = 50;
+const DEFAULT_TIMEOUT_MS: u64 = 60_000;
 
 #[derive(Debug, Serialize)]
 struct AgentPrompt {
@@ -41,6 +44,42 @@ fn default_action() -> String {
     "wander".to_string()
 }
 
+enum WanderDriver {
+    Gemini(GeminiClient),
+    Antigravity(AntigravityClient),
+}
+
+impl WanderDriver {
+    async fn call(
+        &self,
+        prompt: &str,
+    ) -> std::result::Result<surreal_mind::clients::AgentResponse, surreal_mind::clients::AgentError>
+    {
+        match self {
+            Self::Gemini(client) => client.call(prompt, None).await,
+            Self::Antigravity(client) => client.call(prompt, None).await,
+        }
+    }
+}
+
+fn kg_wander_model(provider: GoogleCliProvider, config: &Config) -> String {
+    if let Ok(model) = std::env::var("KG_WANDER_MODEL") {
+        let trimmed = model.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+
+    match provider {
+        GoogleCliProvider::Gemini => {
+            std::env::var("GEMINI_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string())
+        }
+        GoogleCliProvider::Antigravity => std::env::var("ANTIGRAVITY_MODEL")
+            .or_else(|_| std::env::var("AGY_MODEL"))
+            .unwrap_or_else(|_| config.system.antigravity_model.clone()),
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Load .env
@@ -59,11 +98,28 @@ async fn main() -> Result<()> {
         .expect("Failed to start server");
     println!("✅ Connected to SurrealMind");
 
-    // Initialize Gemini (for decision making)
-    let model = std::env::var("KG_WANDER_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
-    println!("🧠 AI Driver: {}", model);
+    // Initialize configured provider for decision making. Antigravity is the
+    // default after KG quality signoff; Gemini remains available for rollback.
+    let provider = GoogleCliProvider::from_env_or_config(Some(&config.system.google_cli_provider))
+        .map_err(anyhow::Error::msg)?;
+    let model = kg_wander_model(provider, &config);
+    let timeout = std::env::var("KG_WANDER_TIMEOUT_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_TIMEOUT_MS);
+    println!("🧠 AI Driver: {} ({})", provider, model);
 
-    let gemini = GeminiClient::with_timeout_ms(model, 60_000);
+    let driver = match provider {
+        GoogleCliProvider::Gemini => {
+            WanderDriver::Gemini(GeminiClient::with_timeout_ms(model, timeout))
+        }
+        GoogleCliProvider::Antigravity => WanderDriver::Antigravity(
+            AntigravityClient::new(Some(model))
+                .with_timeout_ms(timeout)
+                .with_print_timeout_ms(timeout)
+                .with_permission_mode(AntigravityPermissionMode::for_kg()),
+        ),
+    };
 
     // State
     let mut visited_ids: Vec<String> = Vec::new();
@@ -89,7 +145,7 @@ async fn main() -> Result<()> {
         print!("\n[{}/{}] 🤔 Thinking... ", step_count, DEFAULT_MAX_STEPS);
         std::io::stdout().flush()?;
 
-        // 2. Ask Gemini
+        // 2. Ask configured provider
         let affordances = last_result["affordances"]
             .as_array()
             .unwrap_or(&vec![])
@@ -122,7 +178,7 @@ async fn main() -> Result<()> {
             serde_json::to_string_pretty(&prompt_data)?
         );
 
-        let decision_json = gemini.call(&prompt_str, None).await?.response;
+        let decision_json = driver.call(&prompt_str).await?.response;
         let decision: AgentDecision = parse_json(&decision_json).unwrap_or_else(|| {
             println!("\n⚠️ Failed to parse: {}", decision_json);
             AgentDecision {

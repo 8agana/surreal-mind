@@ -1,13 +1,16 @@
 //! kg_populate - Knowledge graph extraction orchestrator
 //!
-//! Fetches unextracted thoughts from SurrealDB, batches them to Gemini for
+//! Fetches unextracted thoughts from SurrealDB, batches them to the configured
+//! Google CLI provider for
 //! entity/relationship/observation extraction, parses JSON responses,
 //! upserts to KG tables, and marks thoughts as extracted.
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use surreal_mind::clients::{CognitiveAgent, GeminiClient};
+use surreal_mind::clients::{
+    AntigravityClient, AntigravityPermissionMode, CognitiveAgent, GeminiClient, GoogleCliProvider,
+};
 use surreal_mind::config::Config;
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::{Client as WsClient, Ws};
@@ -91,7 +94,7 @@ fn default_confidence() -> f64 {
     0.5
 }
 
-/// Full extraction response from Gemini
+/// Full extraction response from the configured extraction provider
 #[derive(Debug, Deserialize)]
 struct ExtractionResponse {
     #[serde(default)]
@@ -187,7 +190,7 @@ async fn main() -> Result<()> {
         let prompt = build_extraction_prompt(&thoughts);
 
         // Call Gemini for extraction
-        match call_gemini_extraction(&db, &prompt).await {
+        match call_google_cli_extraction(&db, &prompt).await {
             Ok(response) => {
                 // DEBUG: Log raw response
                 eprintln!("\n🔍 DEBUG: Raw Gemini response ({} chars)", response.len());
@@ -341,22 +344,52 @@ fn build_extraction_prompt(thoughts: &[ThoughtRecord]) -> String {
     prompt
 }
 
-/// Call Gemini for extraction
-async fn call_gemini_extraction(_db: &Arc<Surreal<WsClient>>, prompt: &str) -> Result<String> {
-    // Load config to get the configured model
+/// Call the configured Google CLI provider for extraction.
+async fn call_google_cli_extraction(_db: &Arc<Surreal<WsClient>>, prompt: &str) -> Result<String> {
     let config = Config::load().unwrap_or_default();
-    let model =
-        std::env::var("KG_POPULATE_MODEL").unwrap_or_else(|_| config.system.gemini_model.clone());
+    let provider = GoogleCliProvider::from_env_or_config(Some(&config.system.google_cli_provider))
+        .map_err(anyhow::Error::msg)?;
+    let model = kg_model(provider, &config);
     let timeout = std::env::var("KG_POPULATE_TIMEOUT_MS")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(DEFAULT_TIMEOUT_MS);
 
-    let gemini = GeminiClient::with_timeout_ms(model.clone(), timeout);
+    println!("🧠 Extraction provider: {} ({})", provider, model);
 
-    // Call GeminiClient directly - each extraction batch is independent, no context needed
-    let response = gemini.call(prompt, None).await?;
+    let response = match provider {
+        GoogleCliProvider::Gemini => {
+            let gemini = GeminiClient::with_timeout_ms(model, timeout);
+            gemini.call(prompt, None).await?
+        }
+        GoogleCliProvider::Antigravity => {
+            let antigravity = AntigravityClient::new(Some(model))
+                .with_timeout_ms(timeout)
+                .with_print_timeout_ms(timeout)
+                .with_permission_mode(AntigravityPermissionMode::for_kg());
+            antigravity.call(prompt, None).await?
+        }
+    };
+
     Ok(response.response)
+}
+
+fn kg_model(provider: GoogleCliProvider, config: &Config) -> String {
+    if let Ok(model) = std::env::var("KG_POPULATE_MODEL") {
+        let trimmed = model.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+
+    match provider {
+        GoogleCliProvider::Gemini => {
+            std::env::var("GEMINI_MODEL").unwrap_or_else(|_| config.system.gemini_model.clone())
+        }
+        GoogleCliProvider::Antigravity => std::env::var("ANTIGRAVITY_MODEL")
+            .or_else(|_| std::env::var("AGY_MODEL"))
+            .unwrap_or_else(|_| config.system.antigravity_model.clone()),
+    }
 }
 
 /// Parse the extraction response, handling markdown code fences and preamble text
@@ -508,7 +541,12 @@ async fn upsert_entity(
     }
 
     // Create new entity (normalize entity_type: lowercase, spaces to underscores, trimmed)
-    let normalized_etype = entity.entity_type.to_lowercase().replace(' ', "_").trim().to_string();
+    let normalized_etype = entity
+        .entity_type
+        .to_lowercase()
+        .replace(' ', "_")
+        .trim()
+        .to_string();
     let data = serde_json::json!({
         "entity_type": normalized_etype,
         "description": entity.description,

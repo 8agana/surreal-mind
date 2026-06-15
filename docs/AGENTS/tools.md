@@ -24,7 +24,7 @@ All delegation tools include federation context and support `mode: "observe"` fo
 
 | Tool | Description |
 |------|-------------|
-| `call_gem` | Delegate to Gemini CLI. Required: `prompt`, `cwd`. Optional: `model`, `resume_session_id`, `continue_latest`, `timeout_ms`, `tool_timeout_ms`, `expose_stream`, `mode` (`execute`\|`observe`), `max_response_chars` (default 100KB). |
+| `call_gem` | Compatibility delegation name for the configured Google CLI provider (`SM_AGENT_PROVIDER=antigravity\|gemini`; default `antigravity`). Required: `prompt`, `cwd`. Optional: `model`, `resume_session_id`, `continue_latest`, `timeout_ms`, `tool_timeout_ms`, `expose_stream`, `mode` (`execute`\|`observe`), `max_response_chars` (default 100KB). Antigravity `--print` returns plain stdout, so stream events are provider-dependent. |
 | `call_cc` | Delegate to Claude Code CLI. Required: `prompt`, `cwd`. Optional: `model`, `resume_session_id`, `continue_latest`, `timeout_ms`, `tool_timeout_ms`, `expose_stream`, `mode`, `max_response_chars`. |
 
 | `call_vibe` | Delegate to Vibe CLI. Required: `prompt`, `cwd`. Optional: `agent` (profile name), `mode`, `continue_latest`, `timeout_ms`, `max_response_chars`. Supports session continuation. |
@@ -47,6 +47,6 @@ All delegation tools include federation context and support `mode: "observe"` fo
 // Explore the graph
 {"tool": "wander", "arguments": {"mode": "semantic", "current_thought_id": "thoughts:abc123"}}
 
-// Delegate to Gemini
+// Delegate to configured Google CLI provider
 {"tool": "call_gem", "arguments": {"prompt": "Analyze this code...", "task_name": "code_review"}}
 ```

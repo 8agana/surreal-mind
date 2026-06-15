@@ -188,7 +188,8 @@ impl ServerHandler for SurrealMindServer {
             name: "call_gem".into(),
             title: Some("Call Gem".into()),
             description: Some(
-                "Delegate a task to Gemini CLI with full context and tracking".into(),
+                "Delegate a task to the configured Google CLI provider (Gemini or Antigravity)"
+                    .into(),
             ),
             input_schema: call_gem_schema.clone(),
             icons: None,

@@ -252,16 +252,16 @@ impl SurrealMindServer {
             }),
             "call_gem" => json!({
                 "name": "call_gem",
-                "description": "Delegate a prompt to the Gemini CLI agent. Supports session resume and observe mode.",
+                "description": "Delegate a prompt to the configured Google CLI provider. Currently supports Gemini CLI and Antigravity CLI behind the call_gem compatibility name.",
                 "arguments": {
                     "prompt": "string (required) — the prompt text",
-                    "model": "string — override model (env: GEMINI_MODEL/GEMINI_MODELS)",
+                    "model": "string — override provider model (env: ANTIGRAVITY_MODEL/AGY_MODEL or GEMINI_MODEL)",
                     "cwd": "string (required) — working directory for the agent",
-                    "resume_session_id": "string — resume a specific Gemini session",
-                    "continue_latest": "boolean (default false) — resume last Gemini session",
+                    "resume_session_id": "string — resume a specific provider conversation/session when supported",
+                    "continue_latest": "boolean (default false) — resume last provider conversation/session when supported",
                     "timeout_ms": "integer (default 60000) — outer timeout",
                     "tool_timeout_ms": "integer (default 300000) — per-tool timeout",
-                    "expose_stream": "boolean — include stream events in response",
+                    "expose_stream": "boolean — include stream events in response when the selected provider exposes them",
                     "mode": "string — 'execute' (default) or 'observe' (read-only analysis)",
                     "max_response_chars": "integer (default 100000) — max chars for response (0 = no limit)"
                 },

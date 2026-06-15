@@ -12,6 +12,8 @@ database_ns = "surreal_mind"
 database_db = "consciousness"
 inject_debounce = 1000
 gemini_model = "gemini-3-pro-preview"
+google_cli_provider = "antigravity"
+antigravity_model = "auto"
 
 [retrieval]
 # Core retrieval settings
