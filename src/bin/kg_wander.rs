@@ -121,6 +121,12 @@ async fn main() -> Result<()> {
         ),
     };
 
+    let max_steps = std::env::var("KG_WANDER_MAX_STEPS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(DEFAULT_MAX_STEPS);
+
     // State
     let mut visited_ids: Vec<String> = Vec::new();
     let mut current_thought_id: Option<String> = None;
@@ -136,13 +142,13 @@ async fn main() -> Result<()> {
     let mut last_result = initial_res;
 
     loop {
-        if step_count >= DEFAULT_MAX_STEPS {
+        if step_count >= max_steps {
             println!("🛑 Max steps reached.");
             break;
         }
 
         step_count += 1;
-        print!("\n[{}/{}] 🤔 Thinking... ", step_count, DEFAULT_MAX_STEPS);
+        print!("\n[{}/{}] 🤔 Thinking... ", step_count, max_steps);
         std::io::stdout().flush()?;
 
         // 2. Ask configured provider

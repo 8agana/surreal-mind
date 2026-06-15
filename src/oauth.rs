@@ -260,10 +260,7 @@ fn token_ok(
     )
 }
 
-fn token_err(
-    error: &str,
-    desc: &str,
-) -> (StatusCode, [(&'static str, &'static str); 1], String) {
+fn token_err(error: &str, desc: &str) -> (StatusCode, [(&'static str, &'static str); 1], String) {
     (
         StatusCode::BAD_REQUEST,
         [("content-type", "application/json")],
@@ -281,7 +278,7 @@ async fn token_handler(State(st): State<OAuthState>, body: String) -> impl IntoR
             Ok(p) => p,
             Err(_) => {
                 return token_err("invalid_request", "Could not parse request body")
-                    .into_response()
+                    .into_response();
             }
         },
     };
@@ -321,7 +318,7 @@ async fn handle_auth_code(st: &OAuthState, params: TokenRequest) -> axum::respon
         match params.code_verifier {
             Some(ref v) if verify_pkce(v, challenge) => {}
             Some(_) => {
-                return token_err("invalid_grant", "PKCE verification failed").into_response()
+                return token_err("invalid_grant", "PKCE verification failed").into_response();
             }
             None => return token_err("invalid_request", "Missing code_verifier").into_response(),
         }

@@ -48,6 +48,7 @@ We have successfully separated the *Business Logic* (Photography, Skaters, Order
 - **Tools:** Consolidated into `src/tools/`.
   - `legacymind_think`: The primary interface. Handles "Mode Routing" (Debug/Build/Plan).
   - `memories_create/moderate`: KG manipulation.
+- **Google CLI delegation:** `call_gem`, `kg_populate`, and `kg_wander` now default to Antigravity CLI (`agy`). Gemini CLI remains available as a rollback provider with `SM_AGENT_PROVIDER=gemini` or `google_cli_provider = "gemini"` plus restart.
 - **Frameworks:** `src/cognitive/` implements OODA, Socratic, etc., via static analysis.
 
 ### Known Issues / Tech Debt
@@ -103,6 +104,8 @@ We have successfully separated the *Business Logic* (Photography, Skaters, Order
 | `serena` | ✅ Enabled | ~20 | Code navigation/symbols |
 | `desktop-commander` | ✅ Enabled (10 tools) | 10 | System ops (processes, PDFs, screenshots) |
 | `backlog` | ❌ Disabled | - | **Crashes Opus.** Delegate via `call_gem` to CC instead. |
+
+Note: `call_gem` is a compatibility tool name. In this repo its default runtime backend is Antigravity CLI (`agy`), not Gemini CLI, unless the provider flag is set to `gemini` for rollback.
 
 ### Key Findings
 - **50-tool threshold**: AntiGravity warns about agent performance above 50 tools.

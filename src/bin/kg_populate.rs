@@ -151,6 +151,13 @@ async fn main() -> Result<()> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(DEFAULT_BATCH_SIZE);
     println!("📊 Batch size: {}", batch_size);
+    let max_batches = std::env::var("KG_POPULATE_MAX_BATCHES")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|v| *v > 0);
+    if let Some(max_batches) = max_batches {
+        println!("🧪 Max batches: {}", max_batches);
+    }
 
     // Connect to SurrealDB
     let db = Surreal::new::<Ws>(&config.system.database_url).await?;
@@ -166,9 +173,17 @@ async fn main() -> Result<()> {
 
     let db = Arc::new(db);
     let mut stats = ExtractionStats::default();
+    let mut batches_processed = 0usize;
 
     // Main processing loop
     loop {
+        if let Some(max_batches) = max_batches
+            && batches_processed >= max_batches
+        {
+            println!("✅ Max batch limit reached ({})", max_batches);
+            break;
+        }
+
         // Fetch unextracted thoughts
         let thoughts = fetch_unextracted_thoughts(&db, batch_size).await?;
         if thoughts.is_empty() {
@@ -177,6 +192,7 @@ async fn main() -> Result<()> {
         }
 
         stats.thoughts_fetched += thoughts.len();
+        batches_processed += 1;
         println!(
             "🔄 Processing batch of {} thoughts (total fetched: {})",
             thoughts.len(),
