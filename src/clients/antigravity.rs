@@ -291,7 +291,6 @@ fn looks_like_auth_required(input: &str) -> bool {
     let lower = input.to_ascii_lowercase();
     lower.contains("authentication required")
         || lower.contains("please sign in")
-        || lower.contains("oauth")
         || lower.contains("authorization code")
         || lower.contains("waiting for authentication")
 }
@@ -370,6 +369,13 @@ mod tests {
         ));
         assert!(looks_like_auth_required(
             "Error: Please sign in to view available models."
+        ));
+    }
+
+    #[test]
+    fn oauth_mentions_in_model_content_are_not_auth_failures() {
+        assert!(!looks_like_auth_required(
+            r#"{"summary":"Extracted OAuth project configuration details."}"#
         ));
     }
 
