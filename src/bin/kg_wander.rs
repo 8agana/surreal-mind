@@ -160,7 +160,7 @@ async fn main() -> Result<()> {
             .collect();
 
         let prompt_data = AgentPrompt {
-            current_node: last_result["current_node"].as_object().map(|o| serde_json::Value::Object(o.clone())),
+            current_node: compact_current_node(&last_result["current_node"]),
             affordances,
             visited_count: visited_ids.len(),
             mission: "You are a Knowledge Gardener. Don't just wander! Actively build connections.\n\
@@ -412,6 +412,44 @@ fn print_node(res: &serde_json::Value) {
     }
 }
 
+fn compact_current_node(node: &serde_json::Value) -> Option<serde_json::Value> {
+    let object = node.as_object()?;
+    let mut compact = serde_json::Map::new();
+
+    for key in [
+        "id",
+        "table",
+        "name",
+        "entity_type",
+        "created_at",
+        "sim",
+        "tags",
+    ] {
+        if let Some(value) = object.get(key) {
+            compact.insert(key.to_string(), value.clone());
+        }
+    }
+
+    if let Some(content) = object.get("content").and_then(|v| v.as_str()) {
+        compact.insert(
+            "content".to_string(),
+            serde_json::Value::String(truncate_chars(content, 1_500)),
+        );
+    }
+
+    Some(serde_json::Value::Object(compact))
+}
+
+fn truncate_chars(value: &str, max_chars: usize) -> String {
+    let mut chars = value.chars();
+    let truncated: String = chars.by_ref().take(max_chars).collect();
+    if chars.next().is_some() {
+        format!("{truncated}...")
+    } else {
+        truncated
+    }
+}
+
 fn parse_json(s: &str) -> Option<AgentDecision> {
     // 1. Strip markdown fences if present
     let clean = s.trim();
@@ -435,4 +473,38 @@ fn parse_json(s: &str) -> Option<AgentDecision> {
     let start = clean.find('{')?;
     let end = clean.rfind('}')?;
     serde_json::from_str(&clean[start..=end]).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn compact_current_node_drops_embedding_and_bounds_content() {
+        let node = json!({
+            "id": "thoughts:abc",
+            "table": "thoughts",
+            "content": "x".repeat(2_000),
+            "embedding": [0.1, 0.2, 0.3],
+            "data": {"large": "ignored"},
+            "tags": ["continuity"],
+            "sim": 0.82
+        });
+
+        let compact = compact_current_node(&node).expect("compact node");
+        let object = compact.as_object().expect("compact object");
+
+        assert_eq!(object.get("id"), Some(&json!("thoughts:abc")));
+        assert_eq!(object.get("tags"), Some(&json!(["continuity"])));
+        assert!(!object.contains_key("embedding"));
+        assert!(!object.contains_key("data"));
+
+        let content = object
+            .get("content")
+            .and_then(|v| v.as_str())
+            .expect("content");
+        assert_eq!(content.chars().count(), 1_503);
+        assert!(content.ends_with("..."));
+    }
 }
