@@ -3,12 +3,14 @@
 <plist version="1.0">
 <dict>
         <key>EnvironmentVariables</key>
-        <dict>
-                <key>SURR_ENV_FILE</key>
-                <string>/Users/samuelatagana/Projects/LegacyMind/surreal-mind/.env</string>
-                <key>PATH</key>
-                <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-        </dict>
+		<dict>
+			<key>SURR_ENV_FILE</key>
+			<string>/Users/samuelatagana/Projects/LegacyMind/surreal-mind/.env</string>
+			<key>ANTIGRAVITY_CLI_BIN</key>
+			<string>/Users/samuelatagana/.local/bin/agy</string>
+			<key>PATH</key>
+			<string>/Users/samuelatagana/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+		</dict>
         <key>Label</key>
         <string>dev.legacymind.nightly-shift</string>
         <key>ProgramArguments</key>

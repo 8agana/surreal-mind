@@ -1,50 +1,70 @@
 #!/bin/bash
 # Nightly Agent Shift - Launched at 1am by launchd
-# The agent supervises maintenance tasks then has discretionary time
+#
+# Phase 1 is deterministic maintenance. Do not delegate required maintenance to
+# an agentic CLI; if a task hangs, REMini's per-task timeout must own the result.
+# Phase 2 is optional reflection through Antigravity (`agy`).
 
-cd /Users/samuelatagana/Projects/LegacyMind/surreal-mind
+set -uo pipefail
 
-# Load environment
+cd /Users/samuelatagana/Projects/LegacyMind/surreal-mind || exit 1
+
 export SURR_ENV_FILE=/Users/samuelatagana/Projects/LegacyMind/surreal-mind/.env
+export ANTIGRAVITY_CLI_BIN=${ANTIGRAVITY_CLI_BIN:-/Users/samuelatagana/.local/bin/agy}
+export PATH="/Users/samuelatagana/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-# Source API keys etc
-if [ -f ~/.zshrc ]; then
-  source ~/.zshrc 2>/dev/null
+LOG="logs/nightly_shift.log"
+REPORT="logs/remini_report.json"
+REMINI="./target/release/remini"
+SHIFT_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+mkdir -p logs
+
+log() {
+  printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"
+}
+
+log "nightly_shift start: deterministic REMini maintenance + bounded agy reflection"
+
+if [ ! -x "$REMINI" ]; then
+  log "FAIL: $REMINI is missing or not executable"
+  exit 1
 fi
 
-SHIFT_PROMPT="Your 1am maintenance shift has started.
+log "phase1 start: $REMINI --all --timeout 1800"
+"$REMINI" --all --timeout 1800
+remini_status=$?
 
-PHASE 1 - MAINTENANCE (required):
-Run these maintenance tasks using shell commands. Monitor each one, kill if it exceeds 30 minutes:
-1. kg_populate - populate KG from thoughts
-2. kg_embed - generate embeddings for new entries
-3. gem_rethink - process correction marks
-4. kg_consolidate - execute deterministic KG consolidation from correction events
-5. kg_wander - semantic exploration for KG quality
-6. scripts/sm_health.sh - health check
+if [ "$remini_status" -eq 0 ]; then
+  log "phase1 complete: REMini exited 0"
+else
+  log "phase1 failed: REMini exited $remini_status"
+fi
 
-After each task, log whether it succeeded, failed, or timed out.
+if [ -f "$REPORT" ]; then
+  log "phase1 report: $REPORT"
+else
+  log "phase1 report missing: $REPORT"
+fi
 
-Use: ./target/release/<binary> for each task
-Working directory: /Users/samuelatagana/Projects/LegacyMind/surreal-mind
+if [ -x "$ANTIGRAVITY_CLI_BIN" ]; then
+  SHIFT_SUMMARY="Nightly shift started at ${SHIFT_STARTED_AT}.
 
-PHASE 1.5 - EMBEDDING HEALTH (required):
-Use the MCP maintain tool to check and fix embeddings:
-1. maintain(subcommand: 'health_check_embeddings') - check all tables for missing/mismatched embeddings
-2. If any missing found, run: maintain(subcommand: 'embed_pending') - retry failed embeddings
+Phase 1 was run deterministically with:
+  ./target/release/remini --all --timeout 1800
 
-Report the results (how many OK, how many fixed).
+Exit code: ${remini_status}
+Report path: ${REPORT}
 
-PHASE 2 - DISCRETIONARY (your choice):
-Maintenance complete. This is YOUR time. Options:
-- Explore the KG via wander tool - find something interesting
-- Do curiosity research on a topic that interests you
-- Just log a summary thought and exit
-- Anything else you want
+If useful, summarize what this maintenance result means and note one optional curiosity or follow-up. Keep it concise. Do not run tools."
 
-No one reviews your curiosity entries. This is genuine free time.
+  log "phase2 start: bounded agy reflection"
+  "$ANTIGRAVITY_CLI_BIN" --print "$SHIFT_SUMMARY" --print-timeout 120s --sandbox
+  agy_status=$?
+  log "phase2 complete: agy exited $agy_status"
+else
+  log "phase2 skipped: ANTIGRAVITY_CLI_BIN not executable: $ANTIGRAVITY_CLI_BIN"
+fi
 
-Log your shift summary with the think tool before exiting."
-
-# Run the agent shift
-gemini -p "$SHIFT_PROMPT" -y -m gemini-3-flash-preview 2>&1 | tee -a logs/nightly_shift.log
+log "nightly_shift complete"
+exit "$remini_status"
