@@ -143,7 +143,7 @@ Produce a reviewable, warning-clean rmcp 3.1.4 candidate without changing Surrea
 - `cargo check --workspace --all-targets --features db_integration --locked` — exit 0, zero warnings.
 - `cargo test --workspace --features db_integration --no-run --locked` — exit 0, all targets build (including the new `mcp_protocol.rs` and `stdio_smoke.rs` tests).
 - `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` — exit 0, zero warnings, run repeatedly after every subsequent edit (not just once).
-- `cargo test --lib --locked` — 71/71 passed, including all 10 new `http_allowed_hosts_*` tests.
+- `cargo test --lib --locked` — 71/71 passed, including all 9 new `http_allowed_hosts_*` tests (10 total `#[test]` functions in `src/config.rs`, the 10th being the pre-existing `test_config_loading`).
 - `cargo test --workspace --locked` (default features) — all non-DB-gated tests passed (`relationship_smoke`, `test_agent_job_status`, `tool_schemas`, `workspace_resolution`, `kg_wander`'s unit test, doctests); DB-gated tests correctly no-op/skip without `RUN_DB_TESTS=1`.
 - `cargo build --release --locked` — exit 0. Candidate binary SHA-256: `96d375887093f67dc05f33317ca9bc5b5008804019107126f81846ad8872bcd0` (isolated worktree only — never copied toward the live path).
 
