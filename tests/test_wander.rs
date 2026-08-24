@@ -19,20 +19,15 @@ async fn test_wander_random() {
 
     let server = create_test_server().await;
 
-    let request = CallToolRequestParams {
-        meta: None,
-        name: "legacymind_wander".into(),
-        arguments: Some(
-            json!({
-                "mode": "random",
-                "visited_ids": []
-            })
-            .as_object()
-            .unwrap()
-            .clone(),
-        ),
-        task: None,
-    };
+    let request = CallToolRequestParams::new("legacymind_wander").with_arguments(
+        json!({
+            "mode": "random",
+            "visited_ids": []
+        })
+        .as_object()
+        .unwrap()
+        .clone(),
+    );
 
     let result = server.handle_wander(request).await;
     assert!(result.is_ok(), "Wander random should succeed");
@@ -40,7 +35,7 @@ async fn test_wander_random() {
     let result = result.unwrap();
     // Verify structure
     let content = result.content.first().unwrap();
-    if let rmcp::model::RawContent::Text(text) = &content.raw {
+    if let rmcp::model::ContentBlock::Text(text) = content {
         let json: serde_json::Value = serde_json::from_str(&text.text).unwrap();
         assert!(json.get("mode_used").is_some());
         assert_eq!(json["mode_used"], "random");
@@ -56,12 +51,8 @@ async fn test_wander_visited_exclusion() {
     let server = create_test_server().await;
 
     // First wander to get an ID
-    let request1 = CallToolRequestParams {
-        meta: None,
-        name: "legacymind_wander".into(),
-        arguments: Some(json!({"mode": "random"}).as_object().unwrap().clone()),
-        task: None,
-    };
+    let request1 = CallToolRequestParams::new("legacymind_wander")
+        .with_arguments(json!({"mode": "random"}).as_object().unwrap().clone());
     let _res1 = server.handle_wander(request1).await.unwrap();
 
     // Extract ID (complex parsing, or just mock it by passing a known ID from manual query?)
@@ -70,12 +61,8 @@ async fn test_wander_visited_exclusion() {
     // CallToolResult::structured(json) puts it in content list.
 
     // Let's just verify invalid parameters for now to be safe and quick
-    let request_invalid = CallToolRequestParams {
-        meta: None,
-        name: "legacymind_wander".into(),
-        arguments: Some(json!({"mode": "unknown_mode"}).as_object().unwrap().clone()),
-        task: None,
-    };
+    let request_invalid = CallToolRequestParams::new("legacymind_wander")
+        .with_arguments(json!({"mode": "unknown_mode"}).as_object().unwrap().clone());
     let res_invalid = server.handle_wander(request_invalid).await;
     assert!(res_invalid.is_err(), "Should fail with unknown mode");
 }

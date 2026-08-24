@@ -20,6 +20,7 @@ fn test_list_tools_returns_expected_tools() {
         "think",
         "wander",
         "maintain",
+        "journal",
         "rethink",
         "corrections",
         "test_notification",
@@ -27,6 +28,7 @@ fn test_list_tools_returns_expected_tools() {
         "howto",
         "call_gem",
         "call_cc",
+        "call_vibe",
         "search",
         "call_status",
         "call_jobs",
@@ -34,8 +36,8 @@ fn test_list_tools_returns_expected_tools() {
     ];
     assert_eq!(
         expected_tools.len(),
-        14,
-        "Tool roster should list entries for all 14 tools"
+        16,
+        "Tool roster should list entries for all 16 tools"
     );
 }
 

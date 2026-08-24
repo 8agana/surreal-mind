@@ -94,19 +94,14 @@ async fn test_think_handler() {
     let server = create_test_server().await;
 
     // Test with valid params
-    let request = CallToolRequestParams {
-        meta: None,
-        name: "think".into(),
-        arguments: Some(
-            json!({
-                "content": "Test thought content"
-            })
-            .as_object()
-            .unwrap()
-            .clone(),
-        ),
-        task: None,
-    };
+    let request = CallToolRequestParams::new("think").with_arguments(
+        json!({
+            "content": "Test thought content"
+        })
+        .as_object()
+        .unwrap()
+        .clone(),
+    );
 
     // Call the internal handler directly
     let result = server.handle_legacymind_think(request).await;
@@ -127,20 +122,15 @@ async fn test_think_with_continuity() {
 
     // Test with non-existent previous_thought_id
     let non_existent_id = "non_existent_thought_id_12345";
-    let request = CallToolRequestParams {
-        meta: None,
-        name: "think".into(),
-        arguments: Some(
-            json!({
-                "content": "Test thought with non-existent previous_thought_id",
-                "previous_thought_id": non_existent_id
-            })
-            .as_object()
-            .unwrap()
-            .clone(),
-        ),
-        task: None,
-    };
+    let request = CallToolRequestParams::new("think").with_arguments(
+        json!({
+            "content": "Test thought with non-existent previous_thought_id",
+            "previous_thought_id": non_existent_id
+        })
+        .as_object()
+        .unwrap()
+        .clone(),
+    );
 
     // Call the internal handler directly
     let result = server.handle_legacymind_think(request).await;
@@ -157,8 +147,8 @@ async fn test_think_with_continuity() {
     if !result.content.is_empty()
         && let Some(first_content) = result.content.first()
     {
-        // Extract text from RawContent enum
-        if let rmcp::model::RawContent::Text(text_content) = &first_content.raw
+        // Extract text from ContentBlock enum
+        if let rmcp::model::ContentBlock::Text(text_content) = first_content
             && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text_content.text)
             && let Some(links) = parsed.get("links")
             && let Some(prev_id) = links.get("previous_thought_id")
@@ -185,19 +175,14 @@ async fn test_think_invalid_params() {
     let server = create_test_server().await;
 
     // Test with invalid params (missing required 'content' field)
-    let request = CallToolRequestParams {
-        meta: None,
-        name: "think".into(),
-        arguments: Some(
-            json!({
-                "invalid_param": "this parameter doesn't exist"
-            })
-            .as_object()
-            .unwrap()
-            .clone(),
-        ),
-        task: None,
-    };
+    let request = CallToolRequestParams::new("think").with_arguments(
+        json!({
+            "invalid_param": "this parameter doesn't exist"
+        })
+        .as_object()
+        .unwrap()
+        .clone(),
+    );
 
     // Call the internal handler directly
     let result = server.handle_legacymind_think(request).await;
