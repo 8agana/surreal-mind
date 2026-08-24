@@ -10,6 +10,7 @@
 | `wander` | Explore the knowledge graph serendipitously. Modes: `random`, `semantic`, `meta`, `marks`. Returns actionable guidance for improving KG quality. |
 | `rethink` | Revise or mark knowledge graph items for correction. Modes: `mark` (flag for review), `correct` (apply fix with provenance). |
 | `corrections`| List recent `correction_events` to inspect the learning journey of the KG. |
+| `journal` | Research thread management over the KG: create threads, add entries, review dashboard state, and update thread status. |
 
 ## Maintenance & Help
 
@@ -17,6 +18,7 @@
 |------|-------------|
 | `maintain` | System maintenance subcommands: `health_check_embeddings`, `health_check_indexes`, `reembed`, `reembed_kg`, `embed_pending`, `list_removal_candidates`, `export_removals`, `finalize_removal`, `ensure_continuity_fields`, `echo_config`, `rethink`, `populate`, `embed`, `wander`, `health`, `report`, `tasks`. |
 | `howto` | Deterministic help for any tool. Params: `tool` (optional), `format` (`compact\|full`). Without `tool`, returns full roster. |
+| `test_notification` | Diagnostic tool that sends a test logging notification to the client. Required: `message`. Optional: `level` (`debug\|info\|notice\|warning\|error\|critical\|alert\|emergency`, default `info`). |
 
 ## Agent Delegation
 
@@ -26,7 +28,6 @@ All delegation tools include federation context and support `mode: "observe"` fo
 |------|-------------|
 | `call_gem` | Compatibility delegation name for the configured Google CLI provider (`SM_AGENT_PROVIDER=antigravity\|gemini`; default `antigravity`). Required: `prompt`, `cwd`. Optional: `model`, `resume_session_id`, `continue_latest`, `timeout_ms`, `tool_timeout_ms`, `expose_stream`, `mode` (`execute`\|`observe`), `max_response_chars` (default 100KB). Antigravity `--print` returns plain stdout, so stream events are provider-dependent. |
 | `call_cc` | Delegate to Claude Code CLI. Required: `prompt`, `cwd`. Optional: `model`, `resume_session_id`, `continue_latest`, `timeout_ms`, `tool_timeout_ms`, `expose_stream`, `mode`, `max_response_chars`. |
-
 | `call_vibe` | Delegate to Vibe CLI. Required: `prompt`, `cwd`. Optional: `agent` (profile name), `mode`, `continue_latest`, `timeout_ms`, `max_response_chars`. Supports session continuation. |
 | `call_status` | Check status of a background agent job. Required: `job_id`. |
 | `call_jobs` | List active/recent agent jobs. Optional: `limit`, `status_filter`, `tool_name`. |

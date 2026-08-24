@@ -27,6 +27,7 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
   - `SURR_BEARER_TOKEN` or `~/.surr_token` (required). `SURR_ALLOW_TOKEN_IN_URL=1` enables `?access_token=` for compatibility.
   - `SURR_HTTP_SSE_KEEPALIVE_SEC` (default 15), `SURR_HTTP_SESSION_TTL_SEC` (default 900), `SURR_HTTP_REQUEST_TIMEOUT_MS` and optional `SURR_HTTP_MCP_OP_TIMEOUT_MS`.
   - `SURR_HTTP_METRICS_MODE` (`basic` default).
+  - `SURR_HTTP_ALLOWED_HOSTS` (rmcp 3.1.4+ `Host`-header allowlist, a DNS-rebinding defense): `localhost`/`127.0.0.1`/`::1` are always accepted; this is a comma-separated list of *additional* hosts that extends that loopback set — it never replaces it. A value that is set but empty, or that contains an empty entry (stray/leading/trailing comma), fails startup loudly instead of silently degrading to loopback-only or accept-all. For the public Cloudflare tunnel to reach `/mcp`, the deployed value must include `mcp.samataganaphotography.com` (set in launchd/env configuration, not this repo).
 - Endpoints:
   - `GET /health` (no auth)
   - `GET /info` (embedding + DB snapshot, auth required)
@@ -95,11 +96,11 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
 | `howto` | Get help for any tool. Optional: `tool`, `format` (`compact\|full`). |
 | `call_gem` | Delegate prompts to the configured Google CLI provider (`SM_AGENT_PROVIDER=antigravity\|gemini`; default `antigravity`). Required: `prompt`, `cwd`. Optional: `task_name`, `model`, `timeout_ms`, `resume_session_id`, `continue_latest`. |
 | `call_cc` | Delegate prompts to Claude Code CLI. Required: `prompt`, `cwd`. Optional: `model`, `mode`, `resume_session_id`, `continue_latest`, `timeout_ms`. |
-
 | `call_vibe` | Delegate prompts to Vibe CLI. Required: `prompt`, `cwd`. Optional: `agent` (profile name), `mode`, `continue_latest`, `timeout_ms`. Supports session continuation. |
 | `call_status` | Check status of a background agent job. Required: `job_id`. |
 | `call_jobs` | List active/recent agent jobs. Optional: `limit`, `status_filter`, `tool_name`. |
 | `call_cancel` | Cancel a running agent job. Required: `job_id`. |
+| `test_notification` | Send a test logging notification to the client (diagnostic). Required: `message`. Optional: `level` (`debug\|info\|notice\|warning\|error\|critical\|alert\|emergency`, default `info`). |
 
 ## Configuration Quick Reference
 
