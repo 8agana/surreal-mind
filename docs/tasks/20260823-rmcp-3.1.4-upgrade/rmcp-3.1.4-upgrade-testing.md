@@ -6,7 +6,7 @@
 
 A genuine but pre-existing (non-regression) robustness gap was discovered during this pass: `tools/list`/`tools/call` **panics** a tokio worker (not a graceful error) if `ANTHROPIC_MODELS` is unset when building `call_cc`'s input schema (`src/schemas.rs:136`, `.expect("ANTHROPIC_MODELS env var required")`). `schemas.rs` is untouched by this branch (absent from the Phase 2 diff-stat file list), so this is not an rmcp-upgrade regression, but it is a real finding: the process itself survives (tokio isolates the panic to one task) but the in-flight request never returns a response. See "Independent verification" section below for full detail and reproduction.
 **Parent:** [`rmcp-3.1.4-upgrade-impl.md`](rmcp-3.1.4-upgrade-impl.md)  
-**Depends On:** Implementation Complete (not yet reached — see impl doc Phase 8 gate)
+**Depends On:** Implementation Complete — reached at source-review HEAD `26d5990` on 2026-08-24; production acceptance remains separate
 
 ## Goal
 

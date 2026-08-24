@@ -9,6 +9,7 @@
 **Implementation:** [`rmcp-3.1.4-upgrade-impl.md`](rmcp-3.1.4-upgrade-impl.md)  
 **Testing:** [`rmcp-3.1.4-upgrade-testing.md`](rmcp-3.1.4-upgrade-testing.md)  
 **CC review:** [`rmcp-3.1.4-upgrade-cc-review.md`](rmcp-3.1.4-upgrade-cc-review.md)
+**Implementation review:** Codex accepted source HEAD `26d5990` on 2026-08-24 under Sam's directed Fable 5/Sonnet 5 Dynamic Workflow alternative; live CC was not invoked for implementation review
 
 ## Plan-review corrections (accepted 2026-08-24)
 
