@@ -112,6 +112,15 @@ pub struct RuntimeConfig {
     pub http_request_timeout_ms: u64,
     pub http_mcp_op_timeout_ms: Option<u64>,
     pub http_metrics_mode: String,
+    /// Hostnames accepted by rmcp's Streamable HTTP `Host` allowlist.
+    ///
+    /// Always seeded with the secure loopback set (`localhost`, `127.0.0.1`, `::1`).
+    /// An unset `SURR_HTTP_ALLOWED_HOSTS` uses that set alone. A valid configured
+    /// value extends and deduplicates the loopback set rather than replacing it.
+    /// A present-but-empty or malformed value fails startup loudly (see
+    /// `RuntimeConfig::load_from_env`) rather than silently falling back to
+    /// loopback-only or allow-all.
+    pub http_allowed_hosts: Vec<String>,
     // OAuth configuration
     pub oauth_issuer: Option<String>,
     pub oauth_client_id: Option<String>,
@@ -159,12 +168,57 @@ impl Default for RuntimeConfig {
             http_request_timeout_ms: 10000,
             http_mcp_op_timeout_ms: None,
             http_metrics_mode: "basic".to_string(),
+            http_allowed_hosts: default_http_allowed_hosts(),
             oauth_issuer: None,
             oauth_client_id: None,
             oauth_client_secret: None,
             workspace_map: crate::workspace::WorkspaceMap::from_env(),
         }
     }
+}
+
+/// The secure loopback hosts always retained in the HTTP `Host` allowlist.
+fn default_http_allowed_hosts() -> Vec<String> {
+    vec![
+        "localhost".to_string(),
+        "127.0.0.1".to_string(),
+        "::1".to_string(),
+    ]
+}
+
+/// Parse `SURR_HTTP_ALLOWED_HOSTS` into the effective allowlist.
+///
+/// Semantics (see `RuntimeConfig::http_allowed_hosts` doc comment and upgrade
+/// doc decision D5):
+/// - Absent: the loopback default alone.
+/// - Present and valid: loopback default, extended with the configured hosts,
+///   deduplicated (order-preserving; loopback entries always come first).
+/// - Present but empty, or containing any empty entry (stray/leading/trailing
+///   comma, whitespace-only segment): a hard startup error. This must never
+///   silently degrade to loopback-only or silently become allow-all.
+fn parse_http_allowed_hosts(raw: Option<String>) -> anyhow::Result<Vec<String>> {
+    let mut hosts = default_http_allowed_hosts();
+    let Some(raw) = raw else {
+        return Ok(hosts);
+    };
+    if raw.trim().is_empty() {
+        anyhow::bail!(
+            "SURR_HTTP_ALLOWED_HOSTS is set but empty; unset it to use the secure loopback default, or provide a comma-separated list of additional hosts"
+        );
+    }
+    for entry in raw.split(',') {
+        let trimmed = entry.trim();
+        if trimmed.is_empty() {
+            anyhow::bail!(
+                "SURR_HTTP_ALLOWED_HOSTS contains an empty entry (check for stray, leading, or trailing commas): {:?}",
+                raw
+            );
+        }
+        if !hosts.iter().any(|h| h == trimmed) {
+            hosts.push(trimmed.to_string());
+        }
+    }
+    Ok(hosts)
 }
 
 impl Config {
@@ -211,7 +265,7 @@ impl Config {
         }
 
         // Load runtime configuration from environment variables
-        config.runtime = RuntimeConfig::load_from_env();
+        config.runtime = RuntimeConfig::load_from_env()?;
 
         // Log env overrides for debugging (env-first confirmation)
         if std::env::var("SURR_DB_URL").is_ok() {
@@ -369,7 +423,7 @@ impl Default for Config {
 
 impl RuntimeConfig {
     /// Load runtime configuration from environment variables
-    pub fn load_from_env() -> Self {
+    pub fn load_from_env() -> anyhow::Result<Self> {
         let mut cfg = Self {
             database_user: std::env::var("SURR_DB_USER").unwrap_or_else(|_| "root".to_string()),
             database_pass: std::env::var("SURR_DB_PASS").unwrap_or_else(|_| "root".to_string()),
@@ -461,6 +515,7 @@ impl RuntimeConfig {
             http_request_timeout_ms: 10000,
             http_mcp_op_timeout_ms: None,
             http_metrics_mode: "basic".to_string(),
+            http_allowed_hosts: default_http_allowed_hosts(),
             oauth_issuer: None,
             oauth_client_id: None,
             oauth_client_secret: None,
@@ -507,6 +562,8 @@ impl RuntimeConfig {
             .and_then(|v| v.parse::<u64>().ok());
         cfg.http_metrics_mode =
             std::env::var("SURR_HTTP_METRICS_MODE").unwrap_or_else(|_| "basic".to_string());
+        cfg.http_allowed_hosts =
+            parse_http_allowed_hosts(std::env::var("SURR_HTTP_ALLOWED_HOSTS").ok())?;
         cfg.oauth_issuer = std::env::var("SURR_OAUTH_ISSUER").ok();
         cfg.oauth_client_id = std::env::var("SURR_OAUTH_CLIENT_ID").ok();
         cfg.oauth_client_secret = std::env::var("SURR_OAUTH_CLIENT_SECRET").ok();
@@ -514,7 +571,7 @@ impl RuntimeConfig {
         // Load workspace aliases from WORKSPACE_* env vars
         cfg.workspace_map = crate::workspace::WorkspaceMap::from_env();
 
-        cfg
+        Ok(cfg)
     }
 }
 
@@ -527,5 +584,112 @@ mod tests {
         // This test would require a test config file, but demonstrates the pattern
         let config = Config::load();
         assert!(config.is_ok() || config.is_err()); // Either way, method works
+    }
+
+    // --- SURR_HTTP_ALLOWED_HOSTS semantics (upgrade doc D5 / HTTP-01..05) ---
+
+    #[test]
+    fn http_allowed_hosts_absent_uses_loopback_default_only() {
+        let hosts = parse_http_allowed_hosts(None).expect("absent value must be valid");
+        assert_eq!(hosts, vec!["localhost", "127.0.0.1", "::1"]);
+    }
+
+    #[test]
+    fn http_allowed_hosts_configured_value_extends_loopback_default() {
+        let hosts = parse_http_allowed_hosts(Some("mcp.samataganaphotography.com".to_string()))
+            .expect("single valid host must parse");
+        assert_eq!(
+            hosts,
+            vec![
+                "localhost",
+                "127.0.0.1",
+                "::1",
+                "mcp.samataganaphotography.com"
+            ]
+        );
+        // Loopback retention: the secure defaults are never displaced by configuration.
+        assert!(hosts.contains(&"localhost".to_string()));
+        assert!(hosts.contains(&"127.0.0.1".to_string()));
+        assert!(hosts.contains(&"::1".to_string()));
+    }
+
+    #[test]
+    fn http_allowed_hosts_multiple_entries_are_trimmed_and_appended() {
+        let hosts = parse_http_allowed_hosts(Some(
+            " mcp.samataganaphotography.com , extra-host.example.com ".to_string(),
+        ))
+        .expect("whitespace-padded list must parse");
+        assert_eq!(
+            hosts,
+            vec![
+                "localhost",
+                "127.0.0.1",
+                "::1",
+                "mcp.samataganaphotography.com",
+                "extra-host.example.com"
+            ]
+        );
+    }
+
+    #[test]
+    fn http_allowed_hosts_duplicates_are_deduplicated() {
+        // A configured entry that collides with a loopback default, and a
+        // configured entry duplicated against itself, both collapse to one.
+        let hosts = parse_http_allowed_hosts(Some(
+            "localhost,mcp.samataganaphotography.com,mcp.samataganaphotography.com".to_string(),
+        ))
+        .expect("list with duplicates must still parse");
+        assert_eq!(
+            hosts,
+            vec![
+                "localhost",
+                "127.0.0.1",
+                "::1",
+                "mcp.samataganaphotography.com"
+            ]
+        );
+    }
+
+    #[test]
+    fn http_allowed_hosts_present_but_empty_fails_startup() {
+        let err = parse_http_allowed_hosts(Some(String::new()))
+            .expect_err("present-but-empty value must fail, never silently fall back");
+        assert!(err.to_string().contains("SURR_HTTP_ALLOWED_HOSTS"));
+    }
+
+    #[test]
+    fn http_allowed_hosts_whitespace_only_value_fails_startup() {
+        let err = parse_http_allowed_hosts(Some("   ".to_string()))
+            .expect_err("whitespace-only value must fail like an empty value");
+        assert!(err.to_string().contains("SURR_HTTP_ALLOWED_HOSTS"));
+    }
+
+    #[test]
+    fn http_allowed_hosts_trailing_comma_fails_startup() {
+        let err = parse_http_allowed_hosts(Some("mcp.samataganaphotography.com,".to_string()))
+            .expect_err("trailing comma yields an empty entry and must fail");
+        assert!(err.to_string().contains("empty entry"));
+    }
+
+    #[test]
+    fn http_allowed_hosts_interior_empty_entry_fails_startup() {
+        let err = parse_http_allowed_hosts(Some(
+            "mcp.samataganaphotography.com,,extra-host.example.com".to_string(),
+        ))
+        .expect_err("stray interior comma yields an empty entry and must fail");
+        assert!(err.to_string().contains("empty entry"));
+    }
+
+    #[test]
+    fn http_allowed_hosts_never_becomes_allow_all_or_loopback_only_on_malformed_input() {
+        // A malformed value must be a hard error, not a silent substitution in
+        // either direction (never allow-all, never a silent loopback-only
+        // fallback that hides an operator's intent to add a public host).
+        for malformed in ["", "   ", ",", "a,,b", "a, ,b"] {
+            assert!(
+                parse_http_allowed_hosts(Some(malformed.to_string())).is_err(),
+                "expected {malformed:?} to be rejected"
+            );
+        }
     }
 }
