@@ -33,6 +33,12 @@ pub struct MaintenanceParams {
     pub rethink_types: Option<String>,
 }
 
+fn normalize_thought_record_key(raw_id: &str) -> String {
+    let trimmed = raw_id.trim();
+    let without_table = trimmed.strip_prefix("thoughts:").unwrap_or(trimmed);
+    without_table.trim_matches('`').to_string()
+}
+
 impl SurrealMindServer {
     /// Handle health check for database indexes
     async fn handle_health_check_indexes(&self, _dry_run: bool) -> Result<CallToolResult> {
@@ -822,10 +828,12 @@ impl SurrealMindServer {
     async fn handle_embed_pending(&self, limit: usize, dry_run: bool) -> Result<CallToolResult> {
         let limit_val = if limit == 0 { 100 } else { limit };
 
-        // Query thoughts with pending or failed embedding status
+        // Query thoughts with pending or failed embedding status.
+        // Use meta::id(id) so type::record('thoughts', $id) receives only
+        // the record key, not a full thoughts:<id> value.
         // Note: SurrealDB 2.4+ requires ORDER BY fields in SELECT clause
         let query = r#"
-            SELECT id, content, created_at
+            SELECT meta::id(id) AS id, content, created_at
             FROM thoughts
             WHERE embedding_status IN ['pending', 'failed']
             LIMIT $limit;
@@ -852,13 +860,15 @@ impl SurrealMindServer {
         let mut processed = 0;
         let mut succeeded = 0;
         let mut failed = 0;
+        let (provider, model, dim) = self.get_embedding_metadata();
 
         for row in &rows {
-            let id = row
+            let raw_id = row
                 .get("id")
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string();
+            let id = normalize_thought_record_key(&raw_id);
             let content = row
                 .get("content")
                 .and_then(|v| v.as_str())
@@ -884,23 +894,54 @@ impl SurrealMindServer {
                     let update_query = r#"
                         UPDATE type::record('thoughts', $id) SET
                         embedding = $embedding,
+                        embedding_provider = $provider,
+                        embedding_model = $model,
+                        embedding_dim = $dim,
                         embedded_at = time::now(),
                         embedding_status = 'complete'
-                        RETURN NONE;
+                        RETURN meta::id(id) AS id, embedding_status, array::len(embedding) AS embedding_len;
                     "#;
 
-                    if let Err(e) = self
+                    let update_result = self
                         .db
                         .query(update_query)
                         .bind(("id", id.clone()))
                         .bind(("embedding", embedding))
-                        .await
-                    {
-                        tracing::warn!(thought_id = %id, error = %e, "Failed to update thought with embedding");
-                        failed += 1;
-                    } else {
-                        tracing::info!(thought_id = %id, "Successfully embedded pending thought");
-                        succeeded += 1;
+                        .bind(("provider", provider.clone()))
+                        .bind(("model", model.clone()))
+                        .bind(("dim", dim))
+                        .await;
+
+                    match update_result {
+                        Ok(mut response) => {
+                            let updated: Vec<serde_json::Value> = response.take(0)?;
+                            let updated_row = updated.first();
+                            let status_is_complete = updated_row
+                                .and_then(|r| r.get("embedding_status"))
+                                .and_then(|v| v.as_str())
+                                == Some("complete");
+                            let embedding_len_matches = updated_row
+                                .and_then(|r| r.get("embedding_len"))
+                                .and_then(|v| v.as_i64())
+                                == Some(dim);
+
+                            if status_is_complete && embedding_len_matches {
+                                tracing::info!(thought_id = %id, "Successfully embedded pending thought");
+                                succeeded += 1;
+                            } else {
+                                tracing::warn!(
+                                    thought_id = %id,
+                                    raw_thought_id = %raw_id,
+                                    updated_rows = updated.len(),
+                                    "Embedding update did not persist expected complete state"
+                                );
+                                failed += 1;
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!(thought_id = %id, error = %e, "Failed to update thought with embedding");
+                            failed += 1;
+                        }
                     }
                 }
                 Ok(_) => {
@@ -933,8 +974,26 @@ impl SurrealMindServer {
             "processed": processed,
             "succeeded": succeeded,
             "failed": failed,
-            "remaining": remaining.saturating_sub(succeeded),
+            "remaining": remaining,
             "dry_run": dry_run
         })))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_thought_record_key;
+
+    #[test]
+    fn normalize_thought_record_key_accepts_plain_meta_id() {
+        assert_eq!(normalize_thought_record_key("0f7ce74b"), "0f7ce74b");
+    }
+
+    #[test]
+    fn normalize_thought_record_key_strips_table_prefix_and_backticks() {
+        assert_eq!(
+            normalize_thought_record_key("thoughts:`0f7ce74b`"),
+            "0f7ce74b"
+        );
     }
 }

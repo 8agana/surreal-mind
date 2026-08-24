@@ -32,6 +32,7 @@ Branch `codex/rmcp-3.1.4`, isolated worktree cut from `874d229c8a4cd7494d452b9d4
 
 ### Fixed
 
+- **`maintain embed_pending` persistence accounting**: Fixed pending-thought retries so they select plain `meta::id(id)` record keys before `type::record('thoughts', $id)` updates, verify that each update actually persisted a complete embedding with the expected dimension before counting success, refresh embedding metadata on retry, and report the real post-run pending count instead of subtracting successful attempts from an already-updated count.
 - **Codex federation identity support**: Added `codex` as a valid `journal` author and `wander`/`rethink` attention-routing target so Codex-authored KG work preserves its own provenance instead of defaulting to `cc`.
 - **REMini KG consolidation planning**: `gem_rethink` now writes structured pending merge state (`mode`, `loser_id`, `winner_id`) when it can identify a merge target, and `kg_consolidate` consumes that structure before falling back to legacy reasoning-text parsing. `kg_consolidate` also ignores unresolved non-merge correction history instead of reporting it as failed dedup work.
 - **KG dedupe planner alias awareness**: `kg_dedupe_plan` now excludes entities already marked as aliases/canonicalized from candidate queries, so post-apply duplicate-group counts reflect remaining real work instead of re-counting already-merged losers.

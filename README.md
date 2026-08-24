@@ -10,7 +10,7 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
 - **Curiosity-driven exploration** (`wander`) for discovering connections.
 - **Operations and introspection** (`maintain`, `howto`).
 - **Agent delegation** (`call_gem`, `call_cc`, `call_vibe`, `call_status`, `call_jobs`, `call_cancel`).
-- Transports: stdio by default or streamable HTTP with SSE and bearer auth.
+- Transports: stdio by default or streamable HTTP with SSE, bearer auth, and an OAuth 2.1 endpoint set for remote MCP clients.
 
 ## Transports
 
@@ -28,12 +28,25 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
   - `SURR_HTTP_SSE_KEEPALIVE_SEC` (default 15), `SURR_HTTP_SESSION_TTL_SEC` (default 900), `SURR_HTTP_REQUEST_TIMEOUT_MS` and optional `SURR_HTTP_MCP_OP_TIMEOUT_MS`.
   - `SURR_HTTP_METRICS_MODE` (`basic` default).
   - `SURR_HTTP_ALLOWED_HOSTS` (rmcp 3.1.4+ `Host`-header allowlist, a DNS-rebinding defense): `localhost`/`127.0.0.1`/`::1` are always accepted; this is a comma-separated list of *additional* hosts that extends that loopback set — it never replaces it. A value that is set but empty, or that contains an empty entry (stray/leading/trailing comma), fails startup loudly instead of silently degrading to loopback-only or accept-all. For the public Cloudflare tunnel to reach `/mcp`, the deployed value must include `mcp.samataganaphotography.com` (set in launchd/env configuration, not this repo). This allowlist applies only to the nested `/mcp` Streamable HTTP route; `/health`, `/info`, `/metrics`, and `/db_health` are plain routes and are not Host-validated by this mechanism.
+  - `SURR_OAUTH_ISSUER` (default `http://${SURR_HTTP_BIND}`), `SURR_OAUTH_CLIENT_ID`, `SURR_OAUTH_CLIENT_SECRET`.
 - Endpoints:
-  - `GET /health` (no auth)
+  - `GET /health` (no auth — the **only** path exempt from the bearer middleware)
   - `GET /info` (embedding + DB snapshot, auth required)
   - `GET /metrics` (counts, p95 latency, top tools, auth required)
-  - `GET /db_health` (optional DB ping/counts when `SURR_DB_STATS=1`, auth required)
+  - `GET /db_health` (DB ping plus thought/entity counts when reachable, auth required)
 - MCP entrypoint mounted at `${SURR_HTTP_PATH}` with SSE keepalive.
+
+### OAuth 2.1 (remote MCP clients)
+
+- Mounted automatically whenever a bearer token is configured — i.e. on every HTTP launch. Implements the OAuth 2.1 subset the MCP spec requires (RFC 8414 metadata, RFC 7591 dynamic registration, PKCE) so claude.ai's MCP connector proxy can attach.
+- Single-user server: `/authorize` auto-approves every request. No consent screen, no per-user identity.
+- **These four routes deliberately require no bearer auth — they are how a client obtains one:**
+  - `GET /.well-known/oauth-authorization-server` (RFC 8414 metadata)
+  - `GET /authorize` (auto-approves, redirects with code; PKCE `S256`)
+  - `POST /token` (grants `authorization_code`, `refresh_token`, `client_credentials`; returns the configured bearer token)
+  - `POST /register` (RFC 7591; returns the pre-configured client rather than minting a new one)
+- Envs: `SURR_OAUTH_ISSUER` (defaults to `http://${SURR_HTTP_BIND}`), `SURR_OAUTH_CLIENT_ID`, `SURR_OAUTH_CLIENT_SECRET`. If the id/secret are unset the server generates ephemeral UUIDs at startup, logs a warning, and loses them on restart — set both for any persistent remote client.
+- Because `/token` hands out the server's bearer token to a caller presenting valid client credentials, treat the client secret as equal in sensitivity to `~/.surr_token`, and do not expose the bind address beyond a trusted proxy.
 
 ## Quick Start
 
@@ -45,7 +58,7 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
    cd surreal-mind
    cp .env.example .env
    export OPENAI_API_KEY=sk-...
-   export SURR_DB_URL=ws://127.0.0.1:8000
+   export SURR_DB_URL=127.0.0.1:8000   # host:port only, no scheme
    export SURR_DB_USER=root SURR_DB_PASS=root
    ```
 
@@ -94,6 +107,7 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
 | `maintain` | System maintenance: `health_check_embeddings`, `reembed`, `reembed_kg`, `embed_pending`, `list_removal_candidates`, `export_removals`, `finalize_removal`, `echo_config`, `rethink`, `populate`, `embed`, `wander`, `health`, `report`, `tasks`. |
 | `journal` | Research thread management over the KG: create threads, add entries, review dashboard state, and update thread status. |
 | `howto` | Get help for any tool. Optional: `tool`, `format` (`compact\|full`). |
+| `test_notification` | Emit an MCP logging notification to the connected client. Required: `message`. Optional: `level` (`debug\|info\|notice\|warning\|error\|critical\|alert\|emergency`, default `info`). |
 | `call_gem` | Delegate prompts to the configured Google CLI provider (`SM_AGENT_PROVIDER=antigravity\|gemini`; default `antigravity`). Required: `prompt`, `cwd`. Optional: `task_name`, `model`, `timeout_ms`, `resume_session_id`, `continue_latest`. |
 | `call_cc` | Delegate prompts to Claude Code CLI. Required: `prompt`, `cwd`. Optional: `model`, `mode`, `resume_session_id`, `continue_latest`, `timeout_ms`. |
 | `call_vibe` | Delegate prompts to Vibe CLI. Required: `prompt`, `cwd`. Optional: `agent` (profile name), `mode`, `continue_latest`, `timeout_ms`. Supports session continuation. |
@@ -104,15 +118,13 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
 
 ## Configuration Quick Reference
 
-- Database: `SURR_DB_URL` (ws/wss/http/https), `SURR_DB_NS`, `SURR_DB_DB`, `SURR_DB_USER`, `SURR_DB_PASS`, `SURR_DB_TIMEOUT_MS`, `SURR_DB_SERIAL` (serialize queries), `SURR_DB_RECONNECT`.
-- Embeddings: `SURR_EMBED_PROVIDER=openai`, `SURR_EMBED_MODEL`, `SURR_EMBED_STRICT`, `SURR_SKIP_DIM_CHECK`, `SURR_EMBED_RETRIES`, `SURR_EMBED_DIM` (inferred), `OPENAI_API_KEY`. Primary: text-embedding-3-small (1536). Never mix dims—reembed when switching. (Note: Local Candle support has been removed).
+- Database: `SURR_DB_URL` (host:port only — no scheme; the WebSocket engine prepends `ws://` and appends `/rpc` itself), `SURR_DB_NS`, `SURR_DB_DB`, `SURR_DB_USER`, `SURR_DB_PASS`, `SURR_DB_RECONNECT` (`1`/`true` retries the initial connection up to 5 times; off by default). HTTP ping tuning: `SURR_DB_PING_TTL_MS` (default 1500, caches the `/info` ping result), `SURR_DB_PING_TIMEOUT_MS` (default 250). A `ws://`/`wss://`/`http://`/`https://` prefix is stripped by the MCP server but passed through verbatim by the auxiliary binaries (`kg_populate`, `reembed`, `gem_rethink`, `admin`), where it produces a malformed endpoint and the connection fails. `wss://` does **not** enable TLS — the connection is plaintext WebSocket either way. Note that the committed `surreal_mind.toml:10` still carries the scheme'd form (`ws://127.0.0.1:8000`); `SURR_DB_URL` in `.env` overrides it.
+- Embeddings: `SURR_EMBED_STRICT`, `SURR_SKIP_DIM_CHECK`, `SURR_EMBED_RETRIES` (default 3), `SURR_RETRY_DELAY_MS` (default 500), `SURR_EMBED_RPS` (default 1.0), `OPENAI_API_KEY`. Provider, model, and dimensions are **not** env-configurable — they come from `surreal_mind.toml` `[system]` (`embedding_provider`, `embedding_model`, `embedding_dimensions`); only DB URL/NS/DB have env overrides. `SURR_EMBED_DIM` is referenced in a code comment only and is read by nothing. Primary: text-embedding-3-small (1536); `openai` is the only supported provider. Never mix dims—reembed when switching. (Note: Local Candle support has been removed).
 - Retrieval/injection: `SURR_INJECT_T1/T2/T3` (defaults 0.6/0.4/0.25), `SURR_INJECT_FLOOR` (0.15), `SURR_KG_CANDIDATES` (default 200), `SURR_RETRIEVE_CANDIDATES` (default 500), `SURR_CACHE_MAX` (5000), `SURR_CACHE_WARM` (64), `SURR_INJECT_DEBOUNCE`, `SURR_KG_GRAPH_BOOST`, `SURR_KG_MAX_NEIGHBORS`, `SURR_KG_TIMEOUT_MS`.
 - Runtime/logging: `SURR_TOOL_TIMEOUT_MS` (default 15000), `MCP_NO_LOG`, `RUST_LOG`, `SURR_WRITE_STATE=1` to emit state.json.
 - Google CLI delegation: `SM_AGENT_PROVIDER`, `GOOGLE_CLI_PROVIDER`, or `SURR_GOOGLE_CLI_PROVIDER` selects `antigravity` or `gemini` (default `antigravity`; set `gemini` for rollback). Antigravity uses `agy --print`, defaults model to `auto`, and requires auth in the same GUI/user context as the running service. `KG_POPULATE_MODEL` and `KG_WANDER_MODEL` override model per unattended binary.
 - Hypothesis verification defaults: `SURR_VERIFY_TOPK` (100), `SURR_VERIFY_MIN_SIM` (0.70), `SURR_VERIFY_EVIDENCE_LIMIT` (10), `SURR_PERSIST_VERIFICATION`.
-
-- Brain datastore: `SURR_ENABLE_BRAIN`, `SURR_BRAIN_URL/NS/DB/USER/PASS`.
-- HTTP transport: `SURR_TRANSPORT`, `SURR_HTTP_BIND`, `SURR_HTTP_PATH`, `SURR_BEARER_TOKEN` or `~/.surr_token`, `SURR_ALLOW_TOKEN_IN_URL`, `SURR_HTTP_SSE_KEEPALIVE_SEC`, `SURR_HTTP_SESSION_TTL_SEC`, `SURR_HTTP_REQUEST_TIMEOUT_MS`, `SURR_HTTP_MCP_OP_TIMEOUT_MS`, `SURR_HTTP_METRICS_MODE`.
+- HTTP transport: `SURR_TRANSPORT`, `SURR_HTTP_BIND`, `SURR_HTTP_PATH`, `SURR_BEARER_TOKEN` or `~/.surr_token`, `SURR_ALLOW_TOKEN_IN_URL`, `SURR_HTTP_SSE_KEEPALIVE_SEC`, `SURR_HTTP_SESSION_TTL_SEC`, `SURR_HTTP_REQUEST_TIMEOUT_MS`, `SURR_HTTP_MCP_OP_TIMEOUT_MS`, `SURR_HTTP_METRICS_MODE`, `SURR_OAUTH_ISSUER`, `SURR_OAUTH_CLIENT_ID`, `SURR_OAUTH_CLIENT_SECRET`.
 
 ## Memory Model
 
@@ -139,7 +151,9 @@ cargo test --workspace --all-features
 
 ## Change Log Highlights
 
+- 2026-05-25: OAuth 2.1 endpoints added for remote MCP clients (`d20a3cc`).
 - 2026-01-06: Tool rename (v0.7.5): `think`, `search`, `remember`, `wander`, `maintain`, `howto`, `call_*`. Dead code cleanup (~220 lines removed).
+- 2025-12-12: `brain_store` tool removed along with its schema, router entry, and `SURR_ENABLE_BRAIN` / `SURR_BRAIN_*` configuration (`3dd589e`).
 - 2026-01-02: Documentation synced with codebase; added agent job tools.
 - 2025-11-29: Cognitive kernel cleanup; legacy photography binaries removed.
 - 2025-11-24: Photography split finalized; all photo MCP tools removed (now in photography-mind).
