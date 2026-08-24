@@ -32,6 +32,7 @@ impl SurrealMindServer {
                     json!({"name": "call_jobs", "one_liner": "List async agent jobs", "key_params": ["limit", "status_filter", "tool_name"]}),
                     json!({"name": "call_cancel", "one_liner": "Cancel a running or queued job", "key_params": ["job_id"]}),
                     json!({"name": "howto", "one_liner": "Get help for a specific tool or list all tools", "key_params": ["tool", "format"]}),
+                    json!({"name": "test_notification", "one_liner": "Send a test logging notification to the client", "key_params": ["message", "level"]}),
                     json!({"name": "wander", "one_liner": "Explore the knowledge graph for curiosity-driven discovery", "key_params": ["mode", "current_thought_id", "visited_ids", "recency_bias", "for"]}),
                     json!({"name": "rethink", "one_liner": "Revise or mark knowledge graph items for correction", "key_params": ["target_id", "mode", "mark_type", "marked_for"]}),
                     json!({"name": "journal", "one_liner": "Research thread management — create threads, add entries, view dashboard", "key_params": ["mode", "thread", "content", "observation_type", "author"]}),

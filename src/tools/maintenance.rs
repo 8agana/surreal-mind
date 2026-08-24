@@ -274,12 +274,7 @@ impl SurrealMindServer {
         if let Some(tid) = target_id {
             map.insert("target_id".into(), json!(tid));
         }
-        let req = CallToolRequestParams {
-            meta: None,
-            name: "corrections".into(),
-            arguments: Some(map),
-            task: None,
-        };
+        let req = CallToolRequestParams::new("corrections").with_arguments(map);
         self.handle_corrections(req).await
     }
 

@@ -3,9 +3,8 @@ use rmcp::{
     ErrorData as McpError,
     handler::server::ServerHandler,
     model::{
-        CallToolRequestParams, CallToolResult, Implementation, InitializeRequestParams,
-        InitializeResult, ListToolsResult, PaginatedRequestParams, ProtocolVersion,
-        ServerCapabilities, ServerInfo, ToolsCapability,
+        CallToolRequestParams, CallToolResponse, CallToolResult, Implementation, ListToolsResult,
+        PaginatedRequestParams, ServerCapabilities, ServerInfo, ToolsCapability,
     },
     service::{RequestContext, RoleServer},
 };
@@ -13,35 +12,31 @@ use tracing::info;
 
 impl ServerHandler for SurrealMindServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            protocol_version: ProtocolVersion::LATEST,
-            capabilities: ServerCapabilities {
-                tools: Some(ToolsCapability {
-                    list_changed: Some(false),
-                }),
-                ..Default::default()
-            },
-            server_info: Implementation {
-                name: "surreal-mind".to_string(),
-                title: Some("Surreal Mind".to_string()),
-                version: env!("CARGO_PKG_VERSION").to_string(),
-                description: Some("Persistent cognition kernel for LegacyMind".to_string()),
-                website_url: Some("https://github.com/8agana/surreal-mind".to_string()),
-                icons: None,
-            },
-            ..Default::default()
-        }
+        // D4: preserve `tools.listChanged = false` explicitly rather than
+        // letting it become absent on the wire. `ToolsCapability` is
+        // `#[non_exhaustive]`, so it is built via `Default` and mutated
+        // (field assignment on a non-exhaustive struct is legal; only
+        // struct-literal construction is banned) rather than constructed
+        // with a struct literal.
+        let mut tools_capability = ToolsCapability::default();
+        tools_capability.list_changed = Some(false);
+        let capabilities = ServerCapabilities::builder()
+            .enable_tools_with(tools_capability)
+            .build();
+        let server_info = Implementation::new("surreal-mind", env!("CARGO_PKG_VERSION"))
+            .with_title("Surreal Mind")
+            .with_description("Persistent cognition kernel for LegacyMind")
+            .with_website_url("https://github.com/8agana/surreal-mind");
+        ServerInfo::new(capabilities).with_server_info(server_info)
     }
 
-    async fn initialize(
-        &self,
-        request: InitializeRequestParams,
-        _context: RequestContext<RoleServer>,
-    ) -> std::result::Result<InitializeResult, McpError> {
-        let mut info = self.get_info();
-        info.protocol_version = request.protocol_version.clone();
-        Ok(info)
-    }
+    // D3: no `initialize` override. rmcp's default implementation negotiates
+    // the response `protocol_version` against `supported_protocol_versions()`
+    // instead of echoing whatever the client claims (which is what the
+    // previous override did via `info.protocol_version =
+    // request.protocol_version.clone()`). Narrowing
+    // `supported_protocol_versions()` is deferred until protocol tests prove
+    // it is required.
 
     async fn list_tools(
         &self,
@@ -78,200 +73,126 @@ impl ServerHandler for SurrealMindServer {
         // Output schemas removed as they are no longer used or needed for simple tool defs
 
         let mut tools = vec![
-            Tool {
-                name: "think".into(),
-                title: Some("Think".into()),
-                description: Some("Unified thinking tool with automatic mode routing (Plan, Build, Debug, Stuck)".into()),
-                input_schema: think_schema_map.clone(),
-                icons: None,
-                annotations: None,
-                output_schema: None,
-                execution: None,
-                meta: None,
-            },
-            Tool {
-                name: "wander".into(),
-                title: Some("Wander".into()),
-                description: Some("Explore the knowledge graph to form new connections, provide context, and verify information. Use this for curiosity-driven exploration, not goal-directed search.".into()),
-                input_schema: wander_schema_map,
-                icons: None,
-                annotations: None,
-                output_schema: None,
-                execution: None,
-                meta: None,
-            },
-            Tool {
-                name: "maintain".into(),
-                title: Some("Maintain".into()),
-                description: Some("Maintenance operations for archival, cleanup, and health checks".into()),
-                input_schema: maintain_schema_map,
-                icons: None,
-                annotations: None,
-                output_schema: None,
-                execution: None,
-                meta: None,
-            },
-            Tool {
-                name: "journal".into(),
-                title: Some("Journal".into()),
-                description: Some(
-                    "Research thread management — create threads, add entries, view dashboard, update status. A looking glass over the KG for structured research."
-                        .into(),
-                ),
-                input_schema: journal_schema_map,
-                icons: None,
-                annotations: None,
-                output_schema: None,
-                execution: None,
-                meta: None,
-            },
-            Tool {
-                name: "rethink".into(),
-                title: Some("Rethink".into()),
-                description: Some("Mark records for revision or correction by federation members".into()),
-                input_schema: rethink_schema_map,
-                icons: None,
-                annotations: None,
-                output_schema: None,
-                execution: None,
-                meta: None,
-            },
-            Tool {
-                name: "corrections".into(),
-                title: Some("Corrections".into()),
-                description: Some("List correction events with optional target filter".into()),
-                input_schema: corrections_schema_map,
-                icons: None,
-                annotations: None,
-                output_schema: None,
-                execution: None,
-                meta: None,
-            },
-            Tool {
-                name: "test_notification".into(),
-                title: Some("Test Notification".into()),
-                description: Some("Send a test logging notification to the client".into()),
-                input_schema: test_notification_schema_map,
-                icons: None,
-                annotations: None,
-                output_schema: None,
-                execution: None,
-                meta: None,
-            },
+            Tool::new(
+                "think",
+                "Unified thinking tool with automatic mode routing (Plan, Build, Debug, Stuck)",
+                think_schema_map,
+            )
+            .with_title("Think"),
+            Tool::new(
+                "wander",
+                "Explore the knowledge graph to form new connections, provide context, and verify information. Use this for curiosity-driven exploration, not goal-directed search.",
+                wander_schema_map,
+            )
+            .with_title("Wander"),
+            Tool::new(
+                "maintain",
+                "Maintenance operations for archival, cleanup, and health checks",
+                maintain_schema_map,
+            )
+            .with_title("Maintain"),
+            Tool::new(
+                "journal",
+                "Research thread management — create threads, add entries, view dashboard, update status. A looking glass over the KG for structured research.",
+                journal_schema_map,
+            )
+            .with_title("Journal"),
+            Tool::new(
+                "rethink",
+                "Mark records for revision or correction by federation members",
+                rethink_schema_map,
+            )
+            .with_title("Rethink"),
+            Tool::new(
+                "corrections",
+                "List correction events with optional target filter",
+                corrections_schema_map,
+            )
+            .with_title("Corrections"),
+            Tool::new(
+                "test_notification",
+                "Send a test logging notification to the client",
+                test_notification_schema_map,
+            )
+            .with_title("Test Notification"),
             // (legacy think_search removed — use legacymind_search)
-            Tool {
-                name: "remember".into(),
-                title: Some("Remember".into()),
-                description: Some("Create entities, relationships, or observations in the knowledge graph".into()),
-                input_schema: remember_schema_map,
-                icons: None,
-                annotations: None,
-                output_schema: None,
-                execution: None,
-                meta: None,
-            },
+            Tool::new(
+                "remember",
+                "Create entities, relationships, or observations in the knowledge graph",
+                remember_schema_map,
+            )
+            .with_title("Remember"),
             // (legacy memories_search removed — use legacymind_search)
-            Tool {
-                name: "howto".into(),
-                title: Some("How To".into()),
-                description: Some("Get detailed help and usage examples for available tools".into()),
-                input_schema: howto_schema_map,
-                icons: None,
-                annotations: None,
-                output_schema: None,
-                execution: None,
-                meta: None,
-            },
+            Tool::new(
+                "howto",
+                "Get detailed help and usage examples for available tools",
+                howto_schema_map,
+            )
+            .with_title("How To"),
         ];
 
-        tools.push(Tool {
-            name: "call_gem".into(),
-            title: Some("Call Gem".into()),
-            description: Some(
-                "Delegate a task to the configured Google CLI provider (Gemini or Antigravity)"
-                    .into(),
-            ),
-            input_schema: call_gem_schema.clone(),
-            icons: None,
-            annotations: None,
-            output_schema: None,
-            execution: None,
-            meta: None,
-        });
+        tools.push(
+            Tool::new(
+                "call_gem",
+                "Delegate a task to the configured Google CLI provider (Gemini or Antigravity)",
+                call_gem_schema,
+            )
+            .with_title("Call Gem"),
+        );
 
-        tools.push(Tool {
-            name: "call_cc".into(),
-            title: Some("Call Claude Code".into()),
-            description: Some(
-                "Delegate a task to Claude Code CLI with full context and tracking".into(),
-            ),
-            input_schema: call_cc_schema.clone(),
-            icons: None,
-            annotations: None,
-            output_schema: None,
-            execution: None,
-            meta: None,
-        });
+        tools.push(
+            Tool::new(
+                "call_cc",
+                "Delegate a task to Claude Code CLI with full context and tracking",
+                call_cc_schema,
+            )
+            .with_title("Call Claude Code"),
+        );
 
-        tools.push(Tool {
-            name: "call_vibe".into(),
-            title: Some("Call Vibe".into()),
-            description: Some("Delegate a task to Vibe CLI with full context and tracking".into()),
-            input_schema: call_vibe_schema.clone(),
-            icons: None,
-            annotations: None,
-            output_schema: None,
-            execution: None,
-            meta: None,
-        });
+        tools.push(
+            Tool::new(
+                "call_vibe",
+                "Delegate a task to Vibe CLI with full context and tracking",
+                call_vibe_schema,
+            )
+            .with_title("Call Vibe"),
+        );
 
-        tools.push(Tool {
-            name: "search".into(),
-            title: Some("Search".into()),
-            description: Some("Unified search for entities, observations, and thoughts".into()),
-            input_schema: search_schema_map,
-            icons: None,
-            annotations: None,
-            output_schema: None,
-            execution: None,
-            meta: None,
-        });
+        tools.push(
+            Tool::new(
+                "search",
+                "Unified search for entities, observations, and thoughts",
+                search_schema_map,
+            )
+            .with_title("Search"),
+        );
 
-        tools.push(Tool {
-            name: "call_status".into(),
-            title: Some("Call Status".into()),
-            description: Some("Check the status and results of a delegated agent job".into()),
-            input_schema: call_status_schema.clone(),
-            icons: None,
-            annotations: None,
-            output_schema: None,
-            execution: None,
-            meta: None,
-        });
+        tools.push(
+            Tool::new(
+                "call_status",
+                "Check the status and results of a delegated agent job",
+                call_status_schema,
+            )
+            .with_title("Call Status"),
+        );
 
-        tools.push(Tool {
-            name: "call_jobs".into(),
-            title: Some("Call Jobs".into()),
-            description: Some("List active or completed delegated agent jobs".into()),
-            input_schema: call_jobs_schema.clone(),
-            icons: None,
-            annotations: None,
-            output_schema: None,
-            execution: None,
-            meta: None,
-        });
+        tools.push(
+            Tool::new(
+                "call_jobs",
+                "List active or completed delegated agent jobs",
+                call_jobs_schema,
+            )
+            .with_title("Call Jobs"),
+        );
 
-        tools.push(Tool {
-            name: "call_cancel".into(),
-            title: Some("Call Cancel".into()),
-            description: Some("Cancel an active delegated agent job".into()),
-            input_schema: call_cancel_schema.clone(),
-            icons: None,
-            annotations: None,
-            output_schema: None,
-            execution: None,
-            meta: None,
-        });
+        tools.push(
+            Tool::new(
+                "call_cancel",
+                "Cancel an active delegated agent job",
+                call_cancel_schema,
+            )
+            .with_title("Call Cancel"),
+        );
 
         // (photography tools removed from this server)
 
@@ -285,9 +206,11 @@ impl ServerHandler for SurrealMindServer {
         &self,
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
-    ) -> std::result::Result<CallToolResult, McpError> {
-        // Route to appropriate tool handler
-        match request.name.as_ref() {
+    ) -> std::result::Result<CallToolResponse, McpError> {
+        // D2: handler modules keep returning `CallToolResult`; convert to the
+        // wire-level `CallToolResponse` exactly once, here at the router
+        // boundary, rather than widening every handler's return type.
+        let result: std::result::Result<CallToolResult, McpError> = match request.name.as_ref() {
             // Unified thinking tool
             "think" => self
                 .handle_legacymind_think(request)
@@ -343,6 +266,7 @@ impl ServerHandler for SurrealMindServer {
                 message: format!("Unknown tool: {}", request.name).into(),
                 data: None,
             }),
-        }
+        };
+        result.map(Into::into)
     }
 }

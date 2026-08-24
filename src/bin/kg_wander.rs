@@ -221,12 +221,8 @@ async fn main() -> Result<()> {
                                 "rel_type": rel_type
                             }
                         });
-                        let req = CallToolRequestParams {
-                            meta: None,
-                            name: "memories_create".into(),
-                            arguments: Some(args.as_object().unwrap().clone()),
-                            task: None,
-                        };
+                        let req = CallToolRequestParams::new("memories_create")
+                            .with_arguments(args.as_object().unwrap().clone());
                         match server.handle_knowledgegraph_create(req).await {
                             Ok(_) => println!("✅ Connected!"),
                             Err(e) => println!("❌ Connect failed: {}", e),
@@ -253,12 +249,8 @@ async fn main() -> Result<()> {
                             "entity_type": etype
                         }
                     });
-                    let req = CallToolRequestParams {
-                        meta: None,
-                        name: "memories_create".into(),
-                        arguments: Some(args.as_object().unwrap().clone()),
-                        task: None,
-                    };
+                    let req = CallToolRequestParams::new("memories_create")
+                        .with_arguments(args.as_object().unwrap().clone());
                     match server.handle_knowledgegraph_create(req).await {
                         Ok(_) => println!("✅ Created."),
                         Err(e) => println!("❌ Create failed: {}", e),
@@ -283,12 +275,8 @@ async fn main() -> Result<()> {
                             "content": content
                         }
                     });
-                    let req = CallToolRequestParams {
-                        meta: None,
-                        name: "memories_create".into(),
-                        arguments: Some(args.as_object().unwrap().clone()),
-                        task: None,
-                    };
+                    let req = CallToolRequestParams::new("memories_create")
+                        .with_arguments(args.as_object().unwrap().clone());
                     match server.handle_knowledgegraph_create(req).await {
                         Ok(_) => println!("✅ Observed."),
                         Err(e) => println!("❌ Observe failed: {}", e),
@@ -353,18 +341,14 @@ async fn execute_wander(
         "recency_bias": false
     });
 
-    let req = CallToolRequestParams {
-        meta: None,
-        name: "legacymind_wander".into(),
-        arguments: Some(params.as_object().unwrap().clone()),
-        task: None,
-    };
+    let req = CallToolRequestParams::new("legacymind_wander")
+        .with_arguments(params.as_object().unwrap().clone());
 
     let result = server.handle_wander(req).await?;
 
     // Extract JSON content
     if let Some(content) = result.content.first() {
-        if let rmcp::model::RawContent::Text(text) = &content.raw {
+        if let rmcp::model::ContentBlock::Text(text) = content {
             let val: serde_json::Value = serde_json::from_str(&text.text)?;
             Ok(val)
         } else {

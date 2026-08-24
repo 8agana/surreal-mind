@@ -232,14 +232,27 @@ pub async fn start_http_server(server: SurrealMindServer) -> Result<()> {
     let path = server.config.runtime.http_path.clone();
     let keepalive = Duration::from_secs(server.config.runtime.http_sse_keepalive_sec);
     let server_factory = server.clone();
+    // D5/D6: `StreamableHttpServerConfig` is `#[non_exhaustive]`, so it is
+    // built via `Default` plus its builder methods rather than a struct
+    // literal. Legacy-session mode and SSE keepalive are set explicitly
+    // (D6, preserving prior `stateful_mode: true` behavior — legacy session
+    // mode is the closest 3.1.4 equivalent and is also rmcp's own default).
+    // `allowed_hosts` carries the runtime-configured Host allowlist (D5);
+    // `json_response`, `session_store`, and
+    // `stateless_protocol_metadata_required` are left at their explicit
+    // defaults (false / absent / false) per D6. Origin validation
+    // (`allowed_origins`) is left at rmcp's empty/disabled default per the
+    // separate, explicit D7 decision.
+    let http_config = StreamableHttpServerConfig::default()
+        .with_legacy_session_mode(true)
+        .with_sse_keep_alive(Some(keepalive))
+        .with_json_response(false)
+        .with_allowed_hosts(server.config.runtime.http_allowed_hosts.clone())
+        .with_stateless_protocol_metadata_required(false);
     let mcp_service: StreamableHttpService<SurrealMindServer, _> = StreamableHttpService::new(
         move || Ok(server_factory.clone()),
         session_mgr.clone(),
-        StreamableHttpServerConfig {
-            stateful_mode: true,
-            sse_keep_alive: Some(keepalive),
-            ..Default::default()
-        },
+        http_config,
     );
 
     // Authenticated routes (health, info, metrics, MCP) with auth + metrics layers
