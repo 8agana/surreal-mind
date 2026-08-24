@@ -10,6 +10,20 @@
 **Testing:** [`rmcp-3.1.4-upgrade-testing.md`](rmcp-3.1.4-upgrade-testing.md)  
 **CC review:** [`rmcp-3.1.4-upgrade-cc-review.md`](rmcp-3.1.4-upgrade-cc-review.md)
 
+## Plan-review corrections (accepted 2026-08-24)
+
+Landed against the isolated worktree created from `874d229`, not against the still-dirty Studio main worktree. Each item below points to where the correction actually lives; this list is a map, not the specification.
+
+| ID | Correction | Landed in |
+|---|---|---|
+| R1 | stdio is the default transport (`SURR_TRANSPORT` defaults to `"stdio"` in `config.rs`; `main.rs` wires `rmcp::transport::stdio`) — add a minimal stdio `initialize`/`tools/list` smoke test rather than leaving stdio at compile-only coverage | New `STDIO-01` row, testing doc |
+| R2 | RUN-01 (candidate on an alternate port) must execute before every TOOL, PROTO, and HTTP runtime case; those cases must never target the live PID | Isolated runtime tests preamble + RUN-01 row, testing doc |
+| R3 | HTTP-03's unlisted-Host control must be evaluated against the same production allowlist as HTTP-01/02, using a control Host with no shared suffix/substring against any allowed entry | HTTP-03 row, testing doc |
+| R4 | Add an explicit pre-merge reconciliation task for `src/tools/maintenance.rs` and the pre-existing dirty documentation files; do not import those live edits into this branch now | New Phase 8 task, impl doc |
+| R5 | The exact deployed `SURR_HTTP_ALLOWED_HOSTS` value must appear in implementation-review evidence even though the launchd/env destination is unversioned | Phase 8 gate + D5 note, this doc |
+
+Also folded in as cheap, non-blocking corrections: `howto.rs`'s hardcoded tool roster (`src/tools/howto.rs:23`) added to the stale-roster check; `--locked` (or a post-run lockfile re-diff) required on every compiler/build command in the testing doc; intentional warning enforcement stated explicitly rather than assumed; untracked transcript/JSON scratch files (`output.json`, `query_result*.json`, `scratch_query*.json`) named as out-of-scope and never swept into a commit; the `Cargo.toml` package-version decision (stay at `0.8.2` unless explicitly bumped) recorded rather than left to change silently.
+
 ## Goal
 
 Upgrade SurrealMind from `rmcp = 0.16.0` to exactly `rmcp = 3.1.4` while preserving its 16-tool public surface, existing legacy-session behavior, public Cloudflare-tunneled endpoint, and rollback path. The migration is complete only when compiler, protocol, local-runtime, public-tunnel, and external-client witnesses all pass.
@@ -47,6 +61,8 @@ The probe also compiler-confirmed that `rmcp::ErrorData` is still re-exported at
 5. Preserve the 16 tool names and schemas unless a separately recorded compatibility decision explicitly says otherwise.
 6. Warnings fail the gate. Any temporary deprecation allowance must be narrow, justified, and separately tracked for removal.
 7. The current release binary is hashed and copied to a rollback archive before the live path changes.
+8. Untracked transcript/scratch JSON files in the source worktree (e.g. `output.json`, `query_result*.json`, `scratch_query*.json`) are out of scope for this upgrade. Never `git add -A`, sweep, or otherwise include them in an upgrade commit or build-evidence diff.
+9. The package version in `Cargo.toml` (`0.8.2`) is not changed as a side effect of the dependency bump. If a version bump is warranted, it is a recorded decision with its own rationale, not a silent diff line.
 
 ## Decisions
 
@@ -74,6 +90,8 @@ CC resolved the pre-edit measurement with an out-of-band origin witness: one req
 
 Configuration semantics are explicit: the secure loopback set (`localhost`, `127.0.0.1`, `::1`) is always retained. An **unset** `SURR_HTTP_ALLOWED_HOSTS` uses that set alone; a valid configured value **extends and deduplicates** it rather than replacing it. A **present but empty or malformed** value fails startup loudly. It must never silently become loopback-only after an operator attempted to add a public host, remove local MCP access, or become allow-all.
 
+**R5:** Because the deployed value lives in the launchd environment or a canonical environment file — neither of which is versioned in this repository — the exact string configured for `SURR_HTTP_ALLOWED_HOSTS` at deploy time must still be captured as evidence in the Phase 8 implementation review (see impl doc). Evidence rules do not relax merely because the value's storage location is outside git.
+
 ### D6 — Preserve non-security HTTP semantics unless the upgrade forces otherwise
 
 Set legacy-session mode and SSE keepalive explicitly. Keep JSON-response preference false, the session store absent, and stateless-protocol metadata enforcement false for this migration. Record the 4 MiB body cap and verify existing payload sizes fit with margin; add a separate configuration field only if measurement shows a real need.
@@ -89,6 +107,14 @@ Do not delete a public tool during a dependency upgrade. Port its non-exhaustive
 ### D9 — Exclude optional rmcp 3.x redesigns
 
 No `#[tool_router]` conversion, output-schema project, native rmcp task-manager adoption, persistent sessions, progress notifications, input-required workflow, dependency unification, or agent-job redesign belongs in this branch. Each may be valuable. None helps answer whether the four-major upgrade works.
+
+### D10 — Stdio gets a runtime smoke test, not compile-only coverage (R1)
+
+`SURR_TRANSPORT` defaults to `"stdio"` (`config.rs`) and `main.rs` starts the server over `rmcp::transport::stdio` whenever no transport is configured — stdio is the default production path, not a secondary one. A candidate that only compiles under stdio and is never exercised at runtime could still ship a stdio-specific regression (e.g. a stray non-protocol byte on stdout, or a negotiation mismatch) undetected. The testing doc adds a minimal `STDIO-01` smoke test: launch the candidate over stdio on a disposable config, send `initialize` then `tools/list`, and assert a clean response with no extraneous stdout bytes before the process is torn down. Compile-only coverage is accepted only if a future codebase change makes runtime stdio execution unsafe to script (e.g. a hard TTY dependency) — no such evidence exists today.
+
+### D11 — Pre-merge reconciliation task for pre-existing dirty state (R4)
+
+The source Studio worktree carries pre-existing modifications to `src/tools/maintenance.rs` and several documentation files (see Constraint 1) that predate this upgrade and are unrelated to it. This branch does not import those live edits — the isolated worktree was created from the recorded commit `874d229c8a4cd7494d452b9d44fa6d56c2e85ffb`, which does not contain them, and they stay that way for the duration of this upgrade. A dedicated pre-merge reconciliation task (Phase 8) records what those edits are, whether they conflict with the upgrade's own changes to `maintenance.rs`, and how they get reviewed and landed separately before or alongside this branch merges back to `master`.
 
 ## Risk register
 

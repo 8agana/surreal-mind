@@ -15,17 +15,20 @@ Prove that the candidate compiles without warnings, preserves the tool contract,
 - A clean zero needs a positive control: Host rejection tests include an allowed Host; tool absence checks include an exact known tool; feature-test enumeration records the test binaries built.
 - Do not run database-writing tests against the production namespace. `RUN_DB_TESTS=1` requires a verified disposable namespace/database and cleanup authority.
 - No failed or uncertain write/tool call is retried automatically.
+- **Lockfile discipline:** the lockfile is treated as established once CMP-01's first `cargo check --message-format=short` run completes (impl doc, Phase 2). Every compiler/build/lint command after that point runs with `--locked`; where a subcommand has no `--locked` flag, it is immediately followed by `git diff Cargo.lock` to prove zero drift. A command that silently moved the lockfile is not valid evidence for its own row.
+- **Warning enforcement is a command-line policy, not a source-level guarantee.** Nothing in this repository declares `#![deny(warnings)]`; a plain `cargo check` without `-D warnings` will not fail on lint. CMP-02 and CMP-05 are therefore the load-bearing warning gates, and they must be run exactly as specified (with `-D warnings` on the clippy invocation) — a warning-free `cargo build` alone is not sufficient evidence of the gate passing.
+- No isolated-runtime, tool-contract, protocol, or HTTP test (TOOL-*, PROTO-*, HTTP-*, STDIO-*) may target the live PID or port `8787` — the live PID at execution time is whatever Phase 0 of the implementation plan records at that moment, not any value captured during planning. RUN-01 (candidate startup on an alternate port, disposable config) must execute first and its own PID/port/config identity must be recorded and referenced by every test that follows in this document.
 
 ## Compiler and static checks
 
 | ID | Test | Command / method | Expected result |
 |---|---|---|---|
 | CMP-01 | Exact dependency resolution | `cargo tree --locked -i rmcp` and pre-existing lockfile diff | Exit 0 without modifying the lockfile; one direct rmcp 3.1.4 edge; expected transitive changes only |
-| CMP-02 | Library and binaries | `cargo check --workspace --all-targets` | Exit 0, zero warnings |
-| CMP-03 | Feature-gated surface | `cargo test --workspace --features db_integration --no-run` | Exit 0; feature-gated protocol tests compile |
+| CMP-02 | Library and binaries | `cargo check --workspace --all-targets --locked` | Exit 0, zero warnings, lockfile unchanged |
+| CMP-03 | Feature-gated surface | `cargo test --workspace --features db_integration --no-run --locked` | Exit 0; feature-gated protocol tests compile; lockfile unchanged |
 | CMP-04 | Formatting | `cargo fmt --all -- --check` | Exit 0, no diff |
-| CMP-05 | Lints | `cargo clippy --workspace --all-targets --all-features -- -D warnings` | Exit 0, no warnings or broad deprecation suppression |
-| CMP-06 | Release build | `cargo build --release` | Exit 0; candidate hash and mode recorded |
+| CMP-05 | Lints | `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` | Exit 0, no warnings or broad deprecation suppression; lockfile unchanged |
+| CMP-06 | Release build | `cargo build --release --locked` | Exit 0; candidate hash and mode recorded; lockfile unchanged |
 
 ## Tool-contract tests
 
@@ -37,6 +40,14 @@ Prove that the candidate compiles without warnings, preserves the tool contract,
 | TOOL-04 | Unknown tool | Method-not-found code and message remain correct |
 | TOOL-05 | Text content extraction | `kg_wander` decodes `ContentBlock::Text`; non-text and empty cases fail explicitly |
 | TOOL-06 | Notification bridge | `test_notification` remains listed and produces a client-observable notification without workspace warnings |
+
+## Stdio smoke test
+
+Stdio is SurrealMind's default transport (`SURR_TRANSPORT` defaults to `"stdio"`; `main.rs` wires `rmcp::transport::stdio` whenever no other transport is configured), so it gets a runtime witness rather than compile-only coverage (upgrade doc D10). This runs after RUN-01 establishes an isolated candidate identity, using a disposable config and never the live process.
+
+| ID | Test | Expected result |
+|---|---|---|
+| STDIO-01 | Minimal stdio `initialize`/`tools/list` smoke test | Candidate launched over stdio with a disposable config (never `MCP_NO_LOG` production settings pointed at the live database); send `initialize` then `tools/list` over the pipe; response negotiates a supported protocol version, lists the exact 16-tool contract, and no extraneous (non-protocol) bytes appear on stdout before the process is torn down |
 
 ## Protocol tests
 
@@ -54,7 +65,7 @@ Prove that the candidate compiles without warnings, preserves the tool contract,
 |---|---|---|
 | HTTP-01 | Loopback Host under the production allowlist | Accepted; configured public hosts do not replace the secure loopback baseline |
 | HTTP-02 | Measured Cloudflare Host under the same production allowlist | Accepted |
-| HTTP-03 | Unlisted Host control | 403 `Host header is not allowed` |
+| HTTP-03 | Unlisted Host control, evaluated against the **same production allowlist as HTTP-01/02** (not a stripped-down or hypothetical one), using a control Host that shares **no suffix or substring** with any allowed entry — e.g. `evil-mcp.samataganaphotography.com` is a bad control against a `mcp.samataganaphotography.com`-inclusive allowlist because a naive suffix/substring match could wrongly accept it; a domain such as `unlisted-host.example.invalid` is required instead | 403 `Host header is not allowed` |
 | HTTP-04 | Explicitly empty allowed-host env | Startup exits nonzero before binding; no listener exists |
 | HTTP-05 | Unset allowed-host env | Secure loopback defaults apply and no public hostname is accepted |
 | HTTP-06 | Existing CORS behavior | Existing allowed browser/client path remains functional; Origin validation remains explicitly deferred |
@@ -64,9 +75,11 @@ Prove that the candidate compiles without warnings, preserves the tool contract,
 
 ## Isolated runtime tests
 
+**RUN-01 runs before every other TOOL-*, PROTO-*, HTTP-*, and STDIO-* case that exercises a running process.** Its job is to establish the candidate's identity — PID, port, and config path/hash — and record that identity so every later test in this document targets it explicitly rather than assuming "the server" means the live one. TOOL-*/PROTO-*/HTTP-* rows above are written test-shape-first; when actually executed they run in RUN-01's aftermath, against RUN-01's candidate, never against the live PID or port 8787.
+
 | ID | Test | Expected result |
 |---|---|---|
-| RUN-01 | Candidate startup on alternate port | Starts without touching live PID or port 8787 |
+| RUN-01 | Candidate startup on alternate port, disposable config | Starts without touching live PID or port 8787; **record the candidate PID, the alternate port, and the disposable config path/identity (hash or distinguishing content) as evidence** — every subsequent TOOL/PROTO/HTTP/STDIO/RUN case cites this recorded identity rather than re-discovering or assuming it |
 | RUN-02 | Health and DB health | Healthy against disposable namespace/database |
 | RUN-03 | Read tool | `search` returns a valid structured result |
 | RUN-04 | Write tool | One uniquely tagged `think` call creates exactly one record in disposable state |

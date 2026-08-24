@@ -35,8 +35,9 @@ Produce a reviewable, warning-clean rmcp 3.1.4 candidate without changing Surrea
 
 ## Phase 2 — Dependency bump and compiler inventory
 
-- [ ] Change only `rmcp` from `0.16.0` to exact `3.1.4`; keep all four feature flags.
-- [ ] Run `cargo check --message-format=short` and save the complete error inventory in the testing document.
+- [ ] Change only `rmcp` from `0.16.0` to exact `3.1.4`; keep all four feature flags. Do not change the `version` field in `Cargo.toml` as a side effect — record that decision explicitly rather than letting it drift (see upgrade doc Constraint 9).
+- [ ] Run `cargo check --message-format=short` and save the complete error inventory in the testing document. This first run is expected to move the lockfile; treat that as the one authorized mutation.
+- [ ] From this point forward, every subsequent compiler/build/lint command runs with `--locked` (or, where a flag is unavailable, is immediately followed by `git diff Cargo.lock` to confirm zero unexpected drift). The lockfile is established once this step completes; nothing after it should move it again.
 - [ ] Run `cargo check --all-targets --features db_integration --message-format=short` after the library reaches a compilable state, so binary and feature-gated failures cannot hide.
 - [ ] Record lockfile changes and verify they are limited to the expected rmcp/rmcp-macros/sse-stream and transitive additions or upgrades; use `cargo tree --locked` for post-update dependency evidence.
 
@@ -95,11 +96,13 @@ Produce a reviewable, warning-clean rmcp 3.1.4 candidate without changing Surrea
 
 - [ ] Update `CHANGELOG.md` with the dependency, compatibility decisions, Host allowlist requirement, protocol negotiation correction, and rollback note.
 - [ ] Update README/AGENTS material for new environment configuration and acceptance commands.
-- [ ] Correct the stale startup log that says 15 tools and omits `journal`, or derive the count/list from the authoritative registry if that is a bounded change.
+- [ ] Correct the stale startup log that says 15 tools and omits `journal`, or derive the count/list from the authoritative registry if that is a bounded change. **Also check `src/tools/howto.rs`'s overview-mode roster (the hardcoded `tools` vec around line 23, "Canonical tools roster") for the same staleness** — it is a second hand-maintained list of tool names/one-liners independent of the startup log, and nothing keeps the two in sync automatically.
+- [ ] **Pre-merge reconciliation task (R4):** `src/tools/maintenance.rs` and the documentation files already modified in the source Studio worktree at branch-cut time (`CHANGELOG.md`, `GEMINI.md`, `README.md`, `docs/AGENTS.md`, `docs/AGENTS/arch.md`, `docs/AGENTS/connections.md`, `docs/AGENTS/maintenance.md`, plus `.serena/memories/code_conventions.md`, `.serena/project.yml`, `history.txt`, `src/bin/kg_debug_tool.rs` — see `git status` recorded at Phase 0) predate this upgrade and are excluded from it per Constraint 1. Before this branch merges to `master`, diff those live paths against this branch's own edits to the same files (principally `maintenance.rs`, which this upgrade's Phase 3/4 router-boundary work also touches), identify overlap, and land the reconciliation as its own reviewed change — not folded silently into the upgrade commit.
+- [ ] **Deployed Host-allowlist evidence (R5):** record the exact string configured for `SURR_HTTP_ALLOWED_HOSTS` at deploy time (launchd plist or canonical env file — whichever is authoritative) verbatim in the implementation-review evidence, even though that destination is not versioned in this repository.
 - [ ] Record implementation notes and exact changed paths here.
 - [ ] Request CC implementation review before production build/install.
 
-**Gate:** Source review approved; implementation status may become `Implementation Complete`. Testing remains separate.
+**Gate:** Source review approved; implementation status may become `Implementation Complete`. Testing remains separate. The pre-merge reconciliation task and the deployed-allowlist evidence are both required inputs to that review, not optional follow-ups.
 
 ## Phase 9 — Release and deployment gate
 
