@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-fn git_output(manifest_dir: &Path, args: &[&str]) -> Option<String> {
+fn git_output_including_empty(manifest_dir: &Path, args: &[&str]) -> Option<String> {
     let output = Command::new("git")
         .arg("-C")
         .arg(manifest_dir)
@@ -20,8 +20,12 @@ fn git_output(manifest_dir: &Path, args: &[&str]) -> Option<String> {
         return None;
     }
     let stdout = String::from_utf8(output.stdout).ok()?;
-    let value = stdout.trim();
-    (!value.is_empty()).then(|| value.to_string())
+    Some(stdout.trim().to_string())
+}
+
+fn git_output(manifest_dir: &Path, args: &[&str]) -> Option<String> {
+    let value = git_output_including_empty(manifest_dir, args)?;
+    (!value.is_empty()).then_some(value)
 }
 
 /// Git commands invoked from a source archive nested in another repository
@@ -124,7 +128,7 @@ fn main() {
     // Commit and dirty state are independent observations. A status failure
     // must not turn a valid commit into an apparently clean identity.
     let commit = git_output(&manifest_dir, &["rev-parse", "--short=7", "HEAD"]);
-    let dirty = git_output(
+    let dirty = git_output_including_empty(
         &manifest_dir,
         &["status", "--porcelain", "--untracked-files=no"],
     )
