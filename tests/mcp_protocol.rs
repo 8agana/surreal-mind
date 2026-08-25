@@ -199,6 +199,32 @@ async fn test_list_tools_protocol() {
                             "tools/list must return exactly the 16-tool contract, in order"
                         );
 
+                        // N-4 (protocol delta review): the router.rs unit test
+                        // (list_tools_result_serializes_required_sep2549_fields)
+                        // asserts these fields on the `ListToolsResult` value
+                        // directly but never drives the real
+                        // ServerHandler::list_tools -> JSON-RPC serialization
+                        // path; this test drives that real path but, until now,
+                        // never checked these fields. Asserting them HERE closes
+                        // that gap: a revert of router.rs's `list_tools_result()`
+                        // helper back to `ListToolsResult { tools, ..Default::default() }`
+                        // would fail this assertion (the fields would be absent
+                        // from `result_json` entirely, since rmcp's
+                        // `paginated_result!` marks both
+                        // `#[serde(skip_serializing_if = "Option::is_none")]`),
+                        // exactly reproducing the Claude Code 2.1.241
+                        // "tools fetch failed" regression this upgrade fixed.
+                        assert_eq!(
+                            result_json.get("ttlMs").and_then(|v| v.as_u64()),
+                            Some(300_000),
+                            "tools/list must carry ttlMs on the wire (SEP-2549); its absence is exactly the Claude Code 2.1.241 'tools fetch failed' regression"
+                        );
+                        assert_eq!(
+                            result_json.get("cacheScope").and_then(|v| v.as_str()),
+                            Some("public"),
+                            "tools/list must carry cacheScope on the wire (SEP-2549)"
+                        );
+
                         // TOOL-02: spot-check titles/descriptions/input
                         // schemas survived the `Tool::new(...).with_title(...)`
                         // migration for a representative sample of tools.
