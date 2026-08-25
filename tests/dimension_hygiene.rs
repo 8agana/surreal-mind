@@ -1,14 +1,36 @@
 #![cfg(feature = "db_integration")]
 
 use anyhow::Result;
-use std::sync::OnceLock;
 use surreal_mind::{
     config::Config,
     embeddings::{create_embedder, ensure_generated_embedding_dimension},
 };
-use tokio::sync::Mutex;
 
-static SURR_SKIP_DIM_CHECK_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+const SCHEMA_DIM_CHILD_ENV: &str = "SURR_SCHEMA_DIMENSION_TEST_CHILD";
+
+struct EnvRestore {
+    name: &'static str,
+    previous: Option<std::ffi::OsString>,
+}
+
+impl EnvRestore {
+    fn unset(name: &'static str) -> Self {
+        let previous = std::env::var_os(name);
+        unsafe { std::env::remove_var(name) };
+        Self { name, previous }
+    }
+}
+
+impl Drop for EnvRestore {
+    fn drop(&mut self) {
+        unsafe {
+            match self.previous.as_ref() {
+                Some(value) => std::env::set_var(self.name, value),
+                None => std::env::remove_var(self.name),
+            }
+        }
+    }
+}
 
 /// Test that dimension hygiene is maintained in the database
 #[tokio::test]
@@ -86,6 +108,20 @@ async fn test_schema_dimension_mismatch_requires_or_honors_emergency_bypass() ->
         return Ok(());
     }
 
+    if std::env::var_os(SCHEMA_DIM_CHILD_ENV).is_none() {
+        let status = std::process::Command::new(std::env::current_exe()?)
+            .arg("--exact")
+            .arg("test_schema_dimension_mismatch_requires_or_honors_emergency_bypass")
+            .arg("--nocapture")
+            .env(SCHEMA_DIM_CHILD_ENV, "1")
+            .status()?;
+        assert!(
+            status.success(),
+            "isolated schema dimension child test failed with {status}"
+        );
+        return Ok(());
+    }
+
     let config = Config::load()?;
     assert!(
         !matches!(
@@ -96,19 +132,10 @@ async fn test_schema_dimension_mismatch_requires_or_honors_emergency_bypass() ->
         config.system.database_ns
     );
 
-    // `SURR_SKIP_DIM_CHECK` is process-global. The test runner may execute
-    // feature-gated database tests concurrently, so serialize this mutation
-    // even though the closure receipt runs the disposable suite serially.
-    let _env_guard = SURR_SKIP_DIM_CHECK_ENV_LOCK
-        .get_or_init(|| Mutex::new(()))
-        .lock()
-        .await;
-
-    let previous_skip = std::env::var_os("SURR_SKIP_DIM_CHECK");
-
     // Bootstrap the disposable schema at its normal dimension, then replace
-    // just this index with a real wrong-dimension definition.
-    unsafe { std::env::remove_var("SURR_SKIP_DIM_CHECK") };
+    // just this index with a real wrong-dimension definition. The parent test
+    // never mutates this process-global variable; this child has RAII restore.
+    let _skip_restore = EnvRestore::unset("SURR_SKIP_DIM_CHECK");
     let bootstrap = surreal_mind::server::SurrealMindServer::new(&config).await?;
     bootstrap
         .db
@@ -130,12 +157,6 @@ async fn test_schema_dimension_mismatch_requires_or_honors_emergency_bypass() ->
 
     unsafe { std::env::set_var("SURR_SKIP_DIM_CHECK", "1") };
     let bypassed = surreal_mind::server::SurrealMindServer::new(&config).await;
-    unsafe {
-        match previous_skip {
-            Some(value) => std::env::set_var("SURR_SKIP_DIM_CHECK", value),
-            None => std::env::remove_var("SURR_SKIP_DIM_CHECK"),
-        }
-    }
     let bypassed = match bypassed {
         Ok(server) => server,
         Err(error) => anyhow::bail!(

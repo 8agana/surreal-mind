@@ -1402,6 +1402,48 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
 mod tests {
     use super::{EmbeddingUpdateOutcome, classify_embedding_update_rows, execute_embedding_update};
 
+    fn function_body<'a>(source: &'a str, signature: &str) -> &'a str {
+        let start = source
+            .find(signature)
+            .unwrap_or_else(|| panic!("missing function signature: {signature}"));
+        let opening = source[start..]
+            .find('{')
+            .map(|offset| start + offset)
+            .expect("function must have an opening brace");
+        let mut depth = 0usize;
+        for (offset, character) in source[opening..].char_indices() {
+            match character {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return &source[opening..=opening + offset];
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("function body never closed: {signature}");
+    }
+
+    #[test]
+    fn every_kg_batch_writer_uses_the_shared_update_executor() {
+        let source = include_str!("reembed.rs");
+        let reembed_kg = function_body(source, "pub async fn run_reembed_kg");
+        let kg_embed = function_body(source, "pub async fn run_kg_embed");
+
+        assert_eq!(
+            reembed_kg.matches("execute_embedding_update(").count(),
+            3,
+            "run_reembed_kg must route entities, observations, and edges through the shared executor"
+        );
+        assert_eq!(
+            kg_embed.matches("execute_embedding_update(").count(),
+            3,
+            "run_kg_embed must route entities, observations, and edges through the shared executor"
+        );
+    }
+
     #[tokio::test]
     async fn update_result_classifier_distinguishes_all_outcomes() {
         assert_eq!(

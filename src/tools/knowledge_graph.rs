@@ -539,12 +539,21 @@ mod tests {
 
         let normal = SurrealMindServer::new(&config).await?;
         let marker = "__rmcp-sol-kg-wrong-dimension__";
-        normal
+        let mut created_response = normal
             .db
-            .query("CREATE kg_entities SET name = $name, data = {}, embedding = NONE")
+            .query(
+                "CREATE kg_entities SET name = $name, data = {}, embedding = NONE \
+                 RETURN meta::id(id) AS id",
+            )
             .bind(("name", marker.to_string()))
-            .await?
-            .check()?;
+            .await?;
+        let created: Vec<serde_json::Value> = created_response.take(0)?;
+        let record_id = created
+            .first()
+            .and_then(|row| row.get("id"))
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| anyhow::anyhow!("fixture CREATE did not return meta::id(id)"))?
+            .to_string();
 
         let guarded = SurrealMindServer {
             db: normal.db.clone(),
@@ -554,7 +563,7 @@ mod tests {
             job_semaphore: normal.job_semaphore.clone(),
         };
         let write_result = guarded
-            .ensure_kg_embedding("kg_entities", marker, marker, &serde_json::json!({}))
+            .ensure_kg_embedding("kg_entities", &record_id, marker, &serde_json::json!({}))
             .await;
 
         let after: Vec<serde_json::Value> = normal

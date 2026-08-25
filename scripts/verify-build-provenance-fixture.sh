@@ -65,15 +65,36 @@ mkdir -p "$git_unavailable"
 printf '#!/usr/bin/env sh\nexit 127\n' > "$git_unavailable/git"
 chmod +x "$git_unavailable/git"
 PATH="$git_unavailable:$PATH" \
-    build_and_expect "$clean_tree" "$shared_target" "$package_version+unknown-dirty-unknown"
+    build_and_expect \
+    "$clean_tree" \
+    "$fixture_root/target-git-unavailable" \
+    "$package_version+unknown-dirty-unknown"
 
-# 6. A genuine source archive has no .git metadata and must say so explicitly.
+# 6. A status-only failure must preserve the known commit while marking its
+# dirty state unknown. Use a fresh target so Cargo cannot reuse a prior
+# build-script output merely because PATH changed.
+real_git=$(command -v git)
+git_status_unavailable="$fixture_root/git-status-unavailable"
+mkdir -p "$git_status_unavailable"
+printf '%s\n' '#!/usr/bin/env sh' > "$git_status_unavailable/git"
+printf '%s\n' 'for arg in "$@"; do' >> "$git_status_unavailable/git"
+printf '%s\n' '    if [ "$arg" = "status" ]; then exit 127; fi' >> "$git_status_unavailable/git"
+printf '%s\n' 'done' >> "$git_status_unavailable/git"
+printf '%s\n' 'exec "${REAL_GIT:?}" "$@"' >> "$git_status_unavailable/git"
+chmod +x "$git_status_unavailable/git"
+PATH="$git_status_unavailable:$PATH" REAL_GIT="$real_git" \
+    build_and_expect \
+    "$clean_tree" \
+    "$fixture_root/target-status-unavailable" \
+    "$package_version+$clean_commit-dirty-unknown"
+
+# 7. A genuine source archive has no .git metadata and must say so explicitly.
 archive_tree="$fixture_root/source-archive"
 mkdir -p "$archive_tree"
 git -C "$repo_root" archive --format=tar HEAD | tar -x -C "$archive_tree"
 build_and_expect "$archive_tree" "$shared_target" "$package_version+unknown-dirty-unknown"
 
-# 7. A source archive nested inside some unrelated Git repository must not
+# 8. A source archive nested inside some unrelated Git repository must not
 # borrow its ancestor's identity.
 outer_repo="$fixture_root/unrelated-ancestor"
 mkdir -p "$outer_repo/vendor/surreal-mind"
