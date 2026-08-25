@@ -45,6 +45,7 @@ jobs:
 
   db-protocol:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       RUN_DB_TESTS: "1"
       REEMBED_TEST_CONFIRM_DISPOSABLE_NS: "1"
@@ -89,20 +90,32 @@ jobs:
       - name: Compile db-integration targets
         run: cargo check --workspace --all-targets --features db_integration --locked
 
-      - name: Run deterministic database/protocol regressions
-        shell: bash
+      - name: Run protocol regressions
+        timeout-minutes: 10
         run: |
-          set -euo pipefail
-          run_test() {
-            cargo test --locked --features db_integration "$@" -- \
-              --exact --nocapture --test-threads=1
-          }
+          cargo test --locked --features db_integration \
+            --test mcp_protocol -- \
+            --skip test_call_tool_continuity_fallback_protocol \
+            --nocapture --test-threads=1
 
-          run_test --test mcp_protocol test_list_tools_protocol
-          run_test --test mcp_protocol test_call_tool_protocol_invalid_params
-          run_test --test mcp_protocol test_initialize_protocol_negotiation
-          run_test --test mcp_protocol test_notification_protocol_bridge
-          run_test --test stdio_smoke stdio01_initialize_and_list_tools_smoke
-          run_test --test dimension_hygiene test_group_all_required_for_accurate_count
-          run_test --test dimension_hygiene \
-            test_schema_dimension_mismatch_requires_or_honors_emergency_bypass
+      - name: Run stdio smoke
+        timeout-minutes: 10
+        run: |
+          cargo test --locked --features db_integration \
+            --test stdio_smoke stdio01_initialize_and_list_tools_smoke -- \
+            --exact --nocapture --test-threads=1
+
+      - name: Run GROUP ALL count regression
+        timeout-minutes: 10
+        run: |
+          cargo test --locked --features db_integration \
+            --test dimension_hygiene test_group_all_required_for_accurate_count -- \
+            --exact --nocapture --test-threads=1
+
+      - name: Run schema dimension and bypass regression
+        timeout-minutes: 10
+        run: |
+          cargo test --locked --features db_integration \
+            --test dimension_hygiene \
+            test_schema_dimension_mismatch_requires_or_honors_emergency_bypass -- \
+            --exact --nocapture --test-threads=1

@@ -45,6 +45,6 @@ pub(crate) fn top_keywords(s: &str, n: usize) -> Vec<String> {
         *freq.entry(w).or_insert(0) += 1;
     }
     let mut v: Vec<(String, usize)> = freq.into_iter().collect();
-    v.sort_by(|a, b| b.1.cmp(&a.1));
+    v.sort_by_key(|a| std::cmp::Reverse(a.1));
     v.into_iter().take(n).map(|(k, _)| k).collect()
 }

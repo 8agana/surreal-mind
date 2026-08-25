@@ -376,7 +376,7 @@ impl CognitiveAgent for GeminiClient {
                                             stream_events.push(event.clone());
                                         }
                                     }
-                                    GeminiStreamEvent::ToolResult { status: _, .. } => {
+                                    GeminiStreamEvent::ToolResult { .. } => {
                                         // Try to extract tool name from context (simplified)
                                         if let Some(last_event) = stream_events.last()
                                             && let GeminiStreamEvent::ToolUse { tool_name, .. } = last_event {
@@ -656,14 +656,12 @@ fn extract_json_candidates(text: &str) -> Vec<String> {
                 }
                 depth += 1;
             }
-            '}' => {
-                if depth > 0 {
-                    depth -= 1;
-                    if depth == 0
-                        && let Some(s) = start.take()
-                    {
-                        candidates.push(text[s..idx + 1].to_string());
-                    }
+            '}' if depth > 0 => {
+                depth -= 1;
+                if depth == 0
+                    && let Some(s) = start.take()
+                {
+                    candidates.push(text[s..idx + 1].to_string());
                 }
             }
             _ => {}
