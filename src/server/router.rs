@@ -1,11 +1,13 @@
+use std::borrow::Cow;
+
 use crate::server::SurrealMindServer;
 use rmcp::{
     ErrorData as McpError,
     handler::server::ServerHandler,
     model::{
         CacheScope, CallToolRequestParams, CallToolResponse, CallToolResult, Implementation,
-        ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerInfo, Tool,
-        ToolsCapability,
+        ListToolsResult, PaginatedRequestParams, ProtocolVersion, ServerCapabilities, ServerInfo,
+        Tool, ToolsCapability,
     },
     service::{RequestContext, RoleServer},
 };
@@ -18,15 +20,30 @@ use tracing::info;
 /// and avoids clients re-fetching on every turn.
 const TOOLS_LIST_TTL_MS: u64 = 300_000; // 5 minutes
 
+/// Protocol revisions SurrealMind implements completely.
+///
+/// rmcp 3.1.4 knows the draft `2026-07-28` revision, but its default empty
+/// `resources/list`, `resources/templates/list`, and `prompts/list` responses
+/// omit cache metadata that the draft requires. Advertising every revision the
+/// SDK knows therefore overstates this server's contract. Keep negotiation at
+/// the latest fully implemented revision until the whole draft surface is
+/// covered, rather than patching one response at a time.
+const SUPPORTED_PROTOCOL_VERSIONS: &[ProtocolVersion] = &[
+    ProtocolVersion::V_2024_11_05,
+    ProtocolVersion::V_2025_03_26,
+    ProtocolVersion::V_2025_06_18,
+    ProtocolVersion::V_2025_11_25,
+];
+
 /// Build the `tools/list` result with SEP-2549 cache metadata populated.
 ///
 /// rmcp 3.1.4's `ListToolsResult::default()` leaves `ttl_ms`/`cache_scope`
 /// as `None`, which `serde` then omits from the wire entirely
 /// (`skip_serializing_if = "Option::is_none"`). That is valid per rmcp's own
 /// backward-compat contract for peers on protocol versions older than
-/// `2026-07-28`, but this server does not narrow
-/// `supported_protocol_versions()`, so it negotiates `2026-07-28` with any
-/// client that offers it. Claude Code 2.1.241 is one such client, and its
+/// `2026-07-28`. Before SurrealMind narrowed `supported_protocol_versions()`,
+/// it negotiated `2026-07-28` with any client that offered it. Claude Code
+/// 2.1.241 is one such client, and its
 /// `tools/list` response schema for that protocol version treats `ttlMs`
 /// and `cacheScope` as *required* — stricter than rmcp's own leniency —
 /// so an omitted field fails client-side validation with "tools fetch
@@ -46,6 +63,10 @@ fn list_tools_result(tools: Vec<Tool>) -> ListToolsResult {
 }
 
 impl ServerHandler for SurrealMindServer {
+    fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
+        Cow::Borrowed(SUPPORTED_PROTOCOL_VERSIONS)
+    }
+
     fn get_info(&self) -> ServerInfo {
         // D4: preserve `tools.listChanged = false` explicitly rather than
         // letting it become absent on the wire. `ToolsCapability` is
@@ -69,9 +90,9 @@ impl ServerHandler for SurrealMindServer {
     // the response `protocol_version` against `supported_protocol_versions()`
     // instead of echoing whatever the client claims (which is what the
     // previous override did via `info.protocol_version =
-    // request.protocol_version.clone()`). Narrowing
-    // `supported_protocol_versions()` is deferred until protocol tests prove
-    // it is required.
+    // request.protocol_version.clone()`). `supported_protocol_versions()` is
+    // intentionally narrowed above: the server negotiates only revisions it
+    // implements across every method.
 
     async fn list_tools(
         &self,

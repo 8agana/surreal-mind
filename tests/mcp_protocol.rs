@@ -416,9 +416,10 @@ async fn test_call_tool_continuity_fallback_protocol() {
 // echoing whatever the client claims (upgrade doc D3 — the previous
 // `initialize` override did the latter). This test drives real `initialize`
 // requests through the protocol harness for a supported legacy version, the
-// current latest supported version, and an unsupported future version, and
-// also asserts `tools.listChanged` still serializes as explicit `false`
-// (D4/PROTO-05) rather than becoming absent.
+// current latest supported version, the SDK-known but intentionally excluded
+// 2026-07-28 draft, and an unsupported future version. It also asserts
+// `tools.listChanged` still serializes as explicit `false` (D4/PROTO-05)
+// rather than becoming absent.
 #[tokio::test]
 async fn test_initialize_protocol_negotiation() {
     if std::env::var("RUN_DB_TESTS").is_err() {
@@ -480,6 +481,17 @@ async fn test_initialize_protocol_negotiation() {
         Some(ProtocolVersion::LATEST.as_str()),
     );
 
+    // N-3: rmcp knows the 2026-07-28 draft, but SurrealMind does not yet
+    // implement its required cache metadata on every list surface. The server
+    // must therefore negotiate down instead of advertising partial support.
+    let draft_result =
+        initialize_and_get_result(ProtocolVersion::V_2026_07_28, "test-init-excluded-draft").await;
+    assert_eq!(
+        draft_result.get("protocolVersion").and_then(|v| v.as_str()),
+        Some(ProtocolVersion::LATEST.as_str()),
+        "The partially implemented 2026-07-28 draft must negotiate down"
+    );
+
     // PROTO-03: an unsupported future version must never be echoed back as
     // accepted (that was the previous override's bug — D3). rmcp's default
     // negotiation falls back to its own preferred version instead.
@@ -499,7 +511,12 @@ async fn test_initialize_protocol_negotiation() {
 
     // PROTO-05: `tools.listChanged` must remain an explicit `false` in every
     // negotiated response, not become absent.
-    for result in [&legacy_result, &latest_result, &future_result] {
+    for result in [
+        &legacy_result,
+        &latest_result,
+        &draft_result,
+        &future_result,
+    ] {
         assert_eq!(
             result
                 .get("capabilities")
