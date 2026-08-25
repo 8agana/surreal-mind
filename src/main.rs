@@ -9,6 +9,20 @@ use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // --version/-V: metadata-only, deliberately placed before Config::load()
+    // so it works with no SURR_DB_URL/config present at all. No clap struct
+    // added for this single flag — matches this binary's existing
+    // zero-arg-parsing style (admin.rs/remini.rs use clap for their own
+    // multi-subcommand surfaces; that's unnecessary weight for one flag on
+    // the always-running MCP server binary).
+    if matches!(
+        std::env::args().nth(1).as_deref(),
+        Some("--version") | Some("-V")
+    ) {
+        println!("surreal-mind {}", surreal_mind::version::identity());
+        return Ok(());
+    }
+
     // Respect MCP_NO_LOG early to avoid any non‑protocol bytes on stdio
     let no_log = std::env::var("MCP_NO_LOG")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
