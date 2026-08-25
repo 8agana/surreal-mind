@@ -1,10 +1,14 @@
 #![cfg(feature = "db_integration")]
 
 use anyhow::Result;
+use std::sync::OnceLock;
 use surreal_mind::{
     config::Config,
     embeddings::{create_embedder, ensure_generated_embedding_dimension},
 };
+use tokio::sync::Mutex;
+
+static SURR_SKIP_DIM_CHECK_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 /// Test that dimension hygiene is maintained in the database
 #[tokio::test]
@@ -92,11 +96,19 @@ async fn test_schema_dimension_mismatch_requires_or_honors_emergency_bypass() ->
         config.system.database_ns
     );
 
+    // `SURR_SKIP_DIM_CHECK` is process-global. The test runner may execute
+    // feature-gated database tests concurrently, so serialize this mutation
+    // even though the closure receipt runs the disposable suite serially.
+    let _env_guard = SURR_SKIP_DIM_CHECK_ENV_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .await;
+
+    let previous_skip = std::env::var_os("SURR_SKIP_DIM_CHECK");
+
     // Bootstrap the disposable schema at its normal dimension, then replace
     // just this index with a real wrong-dimension definition.
-    unsafe {
-        std::env::remove_var("SURR_SKIP_DIM_CHECK");
-    }
+    unsafe { std::env::remove_var("SURR_SKIP_DIM_CHECK") };
     let bootstrap = surreal_mind::server::SurrealMindServer::new(&config).await?;
     bootstrap
         .db
@@ -116,12 +128,13 @@ async fn test_schema_dimension_mismatch_requires_or_honors_emergency_bypass() ->
         "normal startup must fail specifically on the stale index dimension: {normal_error}"
     );
 
-    unsafe {
-        std::env::set_var("SURR_SKIP_DIM_CHECK", "1");
-    }
+    unsafe { std::env::set_var("SURR_SKIP_DIM_CHECK", "1") };
     let bypassed = surreal_mind::server::SurrealMindServer::new(&config).await;
     unsafe {
-        std::env::remove_var("SURR_SKIP_DIM_CHECK");
+        match previous_skip {
+            Some(value) => std::env::set_var("SURR_SKIP_DIM_CHECK", value),
+            None => std::env::remove_var("SURR_SKIP_DIM_CHECK"),
+        }
     }
     let bypassed = match bypassed {
         Ok(server) => server,

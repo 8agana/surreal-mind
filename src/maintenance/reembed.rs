@@ -5,6 +5,7 @@
 //! (via run_reembed_kg), and missing-only embedding (via run_kg_embed).
 
 use anyhow::Result;
+use std::future::IntoFuture;
 
 /// The result of examining an UPDATE statement's `RETURN` rows. SurrealDB can
 /// return a transport-successful response that contains a statement error, so
@@ -13,6 +14,7 @@ use anyhow::Result;
 enum EmbeddingUpdateOutcome {
     Updated,
     NoMatch,
+    TransportError(String),
     StatementError(String),
 }
 
@@ -23,6 +25,22 @@ fn classify_embedding_update_rows<T, E: std::fmt::Display>(
         Ok(rows) if rows.is_empty() => EmbeddingUpdateOutcome::NoMatch,
         Ok(_) => EmbeddingUpdateOutcome::Updated,
         Err(error) => EmbeddingUpdateOutcome::StatementError(error.to_string()),
+    }
+}
+
+/// Execute and classify one generated-vector UPDATE. All six KG batch paths
+/// use this helper so a future edit cannot quietly reintroduce the old
+/// `await?`/`take(0)?` abort semantics in just one table variant.
+async fn execute_embedding_update<F, E>(update: F) -> EmbeddingUpdateOutcome
+where
+    F: IntoFuture<Output = std::result::Result<surrealdb::IndexedResults, E>>,
+    E: std::fmt::Display,
+{
+    match update.into_future().await {
+        Ok(mut response) => {
+            classify_embedding_update_rows(response.take::<Vec<serde_json::Value>>(0))
+        }
+        Err(error) => EmbeddingUpdateOutcome::TransportError(error.to_string()),
     }
 }
 
@@ -479,32 +497,30 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
                     "UPDATE kg_entities:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts RETURN meta::id(id) AS id",
                     id
                 );
-                let mut response = match db
-                    .query(q)
-                    .bind(("emb", emb))
-                    .bind(("prov", prov.clone()))
-                    .bind(("model", model.clone()))
-                    .bind(("dim", dims as i64))
-                    .bind(("ts", ts))
-                    .await
+                match execute_embedding_update(
+                    db.query(q)
+                        .bind(("emb", emb))
+                        .bind(("prov", prov.clone()))
+                        .bind(("model", model.clone()))
+                        .bind(("dim", dims as i64))
+                        .bind(("ts", ts)),
+                )
+                .await
                 {
-                    Ok(response) => response,
-                    Err(error) => {
-                        failed_entities += 1;
-                        eprintln!(
-                            "  ⚠️  reembed_kg: UPDATE transport failed for kg_entities:{}: {}",
-                            id, error
-                        );
-                        continue;
-                    }
-                };
-                match classify_embedding_update_rows(response.take::<Vec<Value>>(0)) {
                     EmbeddingUpdateOutcome::Updated => {}
                     EmbeddingUpdateOutcome::NoMatch => {
                         no_match_entities += 1;
                         eprintln!(
                             "  ⚠️  reembed_kg: UPDATE for kg_entities:{} matched 0 rows; not counted as updated",
                             id
+                        );
+                        continue;
+                    }
+                    EmbeddingUpdateOutcome::TransportError(error) => {
+                        failed_entities += 1;
+                        eprintln!(
+                            "  ⚠️  reembed_kg: UPDATE transport failed for kg_entities:{}: {}",
+                            id, error
                         );
                         continue;
                     }
@@ -603,32 +619,30 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
                     "UPDATE kg_observations:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts RETURN meta::id(id) AS id",
                     id
                 );
-                let mut response = match db
-                    .query(q)
-                    .bind(("emb", emb))
-                    .bind(("prov", prov.clone()))
-                    .bind(("model", model.clone()))
-                    .bind(("dim", dims as i64))
-                    .bind(("ts", ts))
-                    .await
+                match execute_embedding_update(
+                    db.query(q)
+                        .bind(("emb", emb))
+                        .bind(("prov", prov.clone()))
+                        .bind(("model", model.clone()))
+                        .bind(("dim", dims as i64))
+                        .bind(("ts", ts)),
+                )
+                .await
                 {
-                    Ok(response) => response,
-                    Err(error) => {
-                        failed_obs += 1;
-                        eprintln!(
-                            "  ⚠️  reembed_kg: UPDATE transport failed for kg_observations:{}: {}",
-                            id, error
-                        );
-                        continue;
-                    }
-                };
-                match classify_embedding_update_rows(response.take::<Vec<Value>>(0)) {
                     EmbeddingUpdateOutcome::Updated => {}
                     EmbeddingUpdateOutcome::NoMatch => {
                         no_match_obs += 1;
                         eprintln!(
                             "  ⚠️  reembed_kg: UPDATE for kg_observations:{} matched 0 rows; not counted as updated",
                             id
+                        );
+                        continue;
+                    }
+                    EmbeddingUpdateOutcome::TransportError(error) => {
+                        failed_obs += 1;
+                        eprintln!(
+                            "  ⚠️  reembed_kg: UPDATE transport failed for kg_observations:{}: {}",
+                            id, error
                         );
                         continue;
                     }
@@ -735,32 +749,30 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
                     "UPDATE kg_edges:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts RETURN meta::id(id) AS id",
                     id
                 );
-                let mut response = match db
-                    .query(q)
-                    .bind(("emb", emb))
-                    .bind(("prov", prov.clone()))
-                    .bind(("model", model.clone()))
-                    .bind(("dim", dims as i64))
-                    .bind(("ts", ts))
-                    .await
+                match execute_embedding_update(
+                    db.query(q)
+                        .bind(("emb", emb))
+                        .bind(("prov", prov.clone()))
+                        .bind(("model", model.clone()))
+                        .bind(("dim", dims as i64))
+                        .bind(("ts", ts)),
+                )
+                .await
                 {
-                    Ok(response) => response,
-                    Err(error) => {
-                        failed_edges += 1;
-                        eprintln!(
-                            "  ⚠️  reembed_kg: UPDATE transport failed for kg_edges:{}: {}",
-                            id, error
-                        );
-                        continue;
-                    }
-                };
-                match classify_embedding_update_rows(response.take::<Vec<Value>>(0)) {
                     EmbeddingUpdateOutcome::Updated => {}
                     EmbeddingUpdateOutcome::NoMatch => {
                         no_match_edges += 1;
                         eprintln!(
                             "  ⚠️  reembed_kg: UPDATE for kg_edges:{} matched 0 rows; not counted as updated",
                             id
+                        );
+                        continue;
+                    }
+                    EmbeddingUpdateOutcome::TransportError(error) => {
+                        failed_edges += 1;
+                        eprintln!(
+                            "  ⚠️  reembed_kg: UPDATE transport failed for kg_edges:{}: {}",
+                            id, error
                         );
                         continue;
                     }
@@ -995,33 +1007,29 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
                  WHERE (embedding IS NULL OR embedding IS NONE OR (type::is_array(embedding) AND array::len(embedding) = 0)) RETURN meta::id(id) AS id",
                 id
             );
-            let mut response = match db
-                .query(q)
-                .bind(("emb", emb))
-                .bind(("prov", prov.clone()))
-                .bind(("model", model.clone()))
-                .bind(("dim", dims as i64))
-                .bind(("ts", ts))
-                .await
+            match execute_embedding_update(
+                db.query(q)
+                    .bind(("emb", emb))
+                    .bind(("prov", prov.clone()))
+                    .bind(("model", model.clone()))
+                    .bind(("dim", dims as i64))
+                    .bind(("ts", ts)),
+            )
+            .await
             {
-                Ok(response) => response,
-                Err(error) => {
-                    entities_failed += 1;
-                    eprintln!(
-                        "  ⚠️  kg_embed: UPDATE transport failed for kg_entities:{}: {}",
-                        id, error
-                    );
-                    entity_remaining = entity_remaining.saturating_sub(1);
-                    continue;
-                }
-            };
-            match classify_embedding_update_rows(response.take::<Vec<Value>>(0)) {
                 EmbeddingUpdateOutcome::Updated => entities_updated += 1,
                 EmbeddingUpdateOutcome::NoMatch => {
                     entities_no_match += 1;
                     eprintln!(
                         "  ⚠️  kg_embed: UPDATE for kg_entities:{} matched 0 rows; not counted as updated",
                         id
+                    );
+                }
+                EmbeddingUpdateOutcome::TransportError(error) => {
+                    entities_failed += 1;
+                    eprintln!(
+                        "  ⚠️  kg_embed: UPDATE transport failed for kg_entities:{}: {}",
+                        id, error
                     );
                 }
                 EmbeddingUpdateOutcome::StatementError(error) => {
@@ -1154,33 +1162,29 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
                  WHERE (embedding IS NOT DEFINED OR embedding IS NULL OR embedding IS NONE OR (type::is_array(embedding) AND array::len(embedding) = 0)) RETURN meta::id(id) AS id",
                 id
             );
-            let mut response = match db
-                .query(q)
-                .bind(("emb", emb))
-                .bind(("prov", prov.clone()))
-                .bind(("model", model.clone()))
-                .bind(("dim", dims as i64))
-                .bind(("ts", ts))
-                .await
+            match execute_embedding_update(
+                db.query(q)
+                    .bind(("emb", emb))
+                    .bind(("prov", prov.clone()))
+                    .bind(("model", model.clone()))
+                    .bind(("dim", dims as i64))
+                    .bind(("ts", ts)),
+            )
+            .await
             {
-                Ok(response) => response,
-                Err(error) => {
-                    observations_failed += 1;
-                    eprintln!(
-                        "  ⚠️  kg_embed: UPDATE transport failed for kg_observations:{}: {}",
-                        id, error
-                    );
-                    obs_remaining = obs_remaining.saturating_sub(1);
-                    continue;
-                }
-            };
-            match classify_embedding_update_rows(response.take::<Vec<Value>>(0)) {
                 EmbeddingUpdateOutcome::Updated => observations_updated += 1,
                 EmbeddingUpdateOutcome::NoMatch => {
                     observations_no_match += 1;
                     eprintln!(
                         "  ⚠️  kg_embed: UPDATE for kg_observations:{} matched 0 rows; not counted as updated",
                         id
+                    );
+                }
+                EmbeddingUpdateOutcome::TransportError(error) => {
+                    observations_failed += 1;
+                    eprintln!(
+                        "  ⚠️  kg_embed: UPDATE transport failed for kg_observations:{}: {}",
+                        id, error
                     );
                 }
                 EmbeddingUpdateOutcome::StatementError(error) => {
@@ -1329,33 +1333,29 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
                  WHERE (embedding IS NOT DEFINED OR embedding IS NULL OR embedding IS NONE OR (type::is_array(embedding) AND array::len(embedding) = 0)) RETURN meta::id(id) AS id",
                 id
             );
-            let mut response = match db
-                .query(q)
-                .bind(("emb", emb))
-                .bind(("prov", prov.clone()))
-                .bind(("model", model.clone()))
-                .bind(("dim", dims as i64))
-                .bind(("ts", ts))
-                .await
+            match execute_embedding_update(
+                db.query(q)
+                    .bind(("emb", emb))
+                    .bind(("prov", prov.clone()))
+                    .bind(("model", model.clone()))
+                    .bind(("dim", dims as i64))
+                    .bind(("ts", ts)),
+            )
+            .await
             {
-                Ok(response) => response,
-                Err(error) => {
-                    edges_failed += 1;
-                    eprintln!(
-                        "  ⚠️  kg_embed: UPDATE transport failed for kg_edges:{}: {}",
-                        id, error
-                    );
-                    edge_remaining = edge_remaining.saturating_sub(1);
-                    continue;
-                }
-            };
-            match classify_embedding_update_rows(response.take::<Vec<Value>>(0)) {
                 EmbeddingUpdateOutcome::Updated => edges_updated += 1,
                 EmbeddingUpdateOutcome::NoMatch => {
                     edges_no_match += 1;
                     eprintln!(
                         "  ⚠️  kg_embed: UPDATE for kg_edges:{} matched 0 rows; not counted as updated",
                         id
+                    );
+                }
+                EmbeddingUpdateOutcome::TransportError(error) => {
+                    edges_failed += 1;
+                    eprintln!(
+                        "  ⚠️  kg_embed: UPDATE transport failed for kg_edges:{}: {}",
+                        id, error
                     );
                 }
                 EmbeddingUpdateOutcome::StatementError(error) => {
@@ -1400,10 +1400,10 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
 
 #[cfg(test)]
 mod tests {
-    use super::{EmbeddingUpdateOutcome, classify_embedding_update_rows};
+    use super::{EmbeddingUpdateOutcome, classify_embedding_update_rows, execute_embedding_update};
 
-    #[test]
-    fn update_result_classifier_distinguishes_success_no_match_and_statement_error() {
+    #[tokio::test]
+    async fn update_result_classifier_distinguishes_all_outcomes() {
         assert_eq!(
             classify_embedding_update_rows::<(), &str>(Ok(vec![()])),
             EmbeddingUpdateOutcome::Updated
@@ -1415,6 +1415,13 @@ mod tests {
         assert_eq!(
             classify_embedding_update_rows::<(), _>(Err("synthetic statement failure")),
             EmbeddingUpdateOutcome::StatementError("synthetic statement failure".to_string())
+        );
+        assert_eq!(
+            execute_embedding_update(async {
+                Err::<surrealdb::IndexedResults, _>("synthetic transport failure")
+            })
+            .await,
+            EmbeddingUpdateOutcome::TransportError("synthetic transport failure".to_string())
         );
     }
 
@@ -1456,44 +1463,40 @@ mod tests {
             .await?
             .check()?;
 
-        let mut statement_error = server
-            .db
-            .query(
-                "UPDATE thoughts SET access_count = 'not-an-int' \
+        let statement_error = execute_embedding_update(
+            server
+                .db
+                .query(
+                    "UPDATE thoughts SET access_count = 'not-an-int' \
                  WHERE content = $marker RETURN meta::id(id) AS id",
-            )
-            .bind(("marker", marker.to_string()))
-            .await?;
+                )
+                .bind(("marker", marker.to_string())),
+        )
+        .await;
         assert!(matches!(
-            classify_embedding_update_rows(statement_error.take::<Vec<serde_json::Value>>(0)),
+            statement_error,
             EmbeddingUpdateOutcome::StatementError(_)
         ));
 
-        let mut no_match = server
-            .db
-            .query(
-                "UPDATE thoughts SET access_count = 1 \
+        let no_match = execute_embedding_update(server.db.query(
+            "UPDATE thoughts SET access_count = 1 \
                  WHERE content = '__rmcp-sol-update-classifier-absent__' \
                  RETURN meta::id(id) AS id",
-            )
-            .await?;
-        assert_eq!(
-            classify_embedding_update_rows(no_match.take::<Vec<serde_json::Value>>(0)),
-            EmbeddingUpdateOutcome::NoMatch
-        );
+        ))
+        .await;
+        assert_eq!(no_match, EmbeddingUpdateOutcome::NoMatch);
 
-        let mut subsequent_success = server
-            .db
-            .query(
-                "UPDATE thoughts SET access_count = 1 \
+        let subsequent_success = execute_embedding_update(
+            server
+                .db
+                .query(
+                    "UPDATE thoughts SET access_count = 1 \
                  WHERE content = $marker RETURN meta::id(id) AS id",
-            )
-            .bind(("marker", marker.to_string()))
-            .await?;
-        assert_eq!(
-            classify_embedding_update_rows(subsequent_success.take::<Vec<serde_json::Value>>(0)),
-            EmbeddingUpdateOutcome::Updated
-        );
+                )
+                .bind(("marker", marker.to_string())),
+        )
+        .await;
+        assert_eq!(subsequent_success, EmbeddingUpdateOutcome::Updated);
 
         server
             .db

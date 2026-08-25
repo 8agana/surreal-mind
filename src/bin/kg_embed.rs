@@ -6,6 +6,26 @@ fn bool_env(name: &str, default: bool) -> bool {
         .unwrap_or(default)
 }
 
+fn summary(stats: &surreal_mind::KgEmbedStats) -> String {
+    format!(
+        "Entities: updated={}, skipped={}, no_match={}, failed={}\n\
+         Observations: updated={}, skipped={}, no_match={}, failed={}\n\
+         Edges: updated={}, skipped={}, no_match={}, failed={}",
+        stats.entities_updated,
+        stats.entities_skipped,
+        stats.entities_no_match,
+        stats.entities_failed,
+        stats.observations_updated,
+        stats.observations_skipped,
+        stats.observations_no_match,
+        stats.observations_failed,
+        stats.edges_updated,
+        stats.edges_skipped,
+        stats.edges_no_match,
+        stats.edges_failed,
+    )
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let _ = dotenvy::dotenv();
@@ -29,18 +49,7 @@ async fn main() -> Result<()> {
 
     println!();
     println!("===== KG EMBEDDING SUMMARY =====");
-    println!(
-        "Entities:     updated={}, skipped={}, no_match={}",
-        stats.entities_updated, stats.entities_skipped, stats.entities_no_match
-    );
-    println!(
-        "Observations: updated={}, skipped={}, no_match={}",
-        stats.observations_updated, stats.observations_skipped, stats.observations_no_match
-    );
-    println!(
-        "Edges:        updated={}, skipped={}, no_match={}",
-        stats.edges_updated, stats.edges_skipped, stats.edges_no_match
-    );
+    println!("{}", summary(&stats));
     println!();
     println!(
         "Provider: {} | Model: {} | Dims: {}",
@@ -51,4 +60,36 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::summary;
+    use surreal_mind::KgEmbedStats;
+
+    #[test]
+    fn summary_includes_every_failure_counter() {
+        let stats = KgEmbedStats {
+            expected_dim: 1,
+            provider: "fixture".to_string(),
+            model: "fixture".to_string(),
+            dry_run: false,
+            entities_updated: 0,
+            entities_skipped: 0,
+            observations_updated: 0,
+            observations_skipped: 0,
+            edges_updated: 0,
+            edges_skipped: 0,
+            entities_no_match: 0,
+            observations_no_match: 0,
+            edges_no_match: 0,
+            entities_failed: 1,
+            observations_failed: 2,
+            edges_failed: 3,
+        };
+        let summary = summary(&stats);
+        assert!(summary.contains("failed=1"));
+        assert!(summary.contains("failed=2"));
+        assert!(summary.contains("failed=3"));
+    }
 }

@@ -493,3 +493,98 @@ impl SurrealMindServer {
         Ok(None)
     }
 }
+
+#[cfg(all(test, feature = "db_integration"))]
+mod tests {
+    use super::*;
+    use crate::embeddings::Embedder;
+    use async_trait::async_trait;
+    use std::sync::Arc;
+
+    struct WrongDimensionEmbedder;
+
+    #[async_trait]
+    impl Embedder for WrongDimensionEmbedder {
+        async fn embed(&self, _text: &str) -> anyhow::Result<Vec<f32>> {
+            Ok(vec![0.0; 3])
+        }
+
+        fn dimensions(&self) -> usize {
+            4
+        }
+    }
+
+    /// Actual active-write-path regression guard: if
+    /// `ensure_kg_embedding` ever stops calling the shared dimension guard,
+    /// this fake embedder will persist a three-element vector and this test
+    /// fails. The record is cleaned up before the assertions run.
+    #[tokio::test]
+    async fn ensure_kg_embedding_rejects_wrong_dimension_before_mutation() -> anyhow::Result<()> {
+        if std::env::var("RUN_DB_TESTS").is_err()
+            || std::env::var("REEMBED_TEST_CONFIRM_DISPOSABLE_NS").is_err()
+        {
+            return Ok(());
+        }
+
+        let config = crate::config::Config::load()?;
+        if matches!(
+            config.system.database_ns.as_str(),
+            "surreal_mind" | "surreal-mind"
+        ) {
+            anyhow::bail!(
+                "KG dimension guard test requires a disposable namespace, not {:?}",
+                config.system.database_ns
+            );
+        }
+
+        let normal = SurrealMindServer::new(&config).await?;
+        let marker = "__rmcp-sol-kg-wrong-dimension__";
+        normal
+            .db
+            .query("CREATE kg_entities SET name = $name, data = {}, embedding = NONE")
+            .bind(("name", marker.to_string()))
+            .await?
+            .check()?;
+
+        let guarded = SurrealMindServer {
+            db: normal.db.clone(),
+            thoughts: normal.thoughts.clone(),
+            embedder: Arc::new(WrongDimensionEmbedder),
+            config: normal.config.clone(),
+            job_semaphore: normal.job_semaphore.clone(),
+        };
+        let write_result = guarded
+            .ensure_kg_embedding("kg_entities", marker, marker, &serde_json::json!({}))
+            .await;
+
+        let after: Vec<serde_json::Value> = normal
+            .db
+            .query(
+                "SELECT (IF type::is_array(embedding) THEN array::len(embedding) ELSE 0 END) \
+                 AS embedding_len FROM kg_entities WHERE name = $name",
+            )
+            .bind(("name", marker.to_string()))
+            .await?
+            .take(0)?;
+        normal
+            .db
+            .query("DELETE kg_entities WHERE name = $name")
+            .bind(("name", marker.to_string()))
+            .await?
+            .check()?;
+
+        assert!(
+            write_result.is_err(),
+            "wrong-dimension vector reached ensure_kg_embedding's UPDATE instead of being rejected"
+        );
+        assert_eq!(
+            after
+                .first()
+                .and_then(|row| row.get("embedding_len"))
+                .and_then(|value| value.as_i64()),
+            Some(0),
+            "wrong-dimension vector must not mutate the KG record"
+        );
+        Ok(())
+    }
+}

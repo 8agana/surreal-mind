@@ -39,6 +39,55 @@ fn normalize_thought_record_key(raw_id: &str) -> String {
     without_table.trim_matches('`').to_string()
 }
 
+fn reembed_stats_json(stats: &crate::ReembedStats, dry_run: bool) -> serde_json::Value {
+    json!({
+        "expected_dim": stats.expected_dim,
+        "batch_size": stats.batch_size,
+        "processed": stats.processed,
+        "updated": stats.updated,
+        "skipped": stats.skipped,
+        "missing": stats.missing,
+        "mismatched": stats.mismatched,
+        "no_match": stats.no_match,
+        "failed": stats.failed,
+        "dry_run": dry_run
+    })
+}
+
+fn reembed_kg_stats_json(stats: &crate::ReembedKgStats, dry_run: bool) -> serde_json::Value {
+    json!({
+        "message": "KG reembed completed",
+        "expected_dim": stats.expected_dim,
+        "provider": stats.provider,
+        "model": stats.model,
+        "entities": {
+            "updated": stats.entities_updated,
+            "skipped": stats.entities_skipped,
+            "missing": stats.entities_missing,
+            "mismatched": stats.entities_mismatched,
+            "no_match": stats.entities_no_match,
+            "failed": stats.entities_failed
+        },
+        "observations": {
+            "updated": stats.observations_updated,
+            "skipped": stats.observations_skipped,
+            "missing": stats.observations_missing,
+            "mismatched": stats.observations_mismatched,
+            "no_match": stats.observations_no_match,
+            "failed": stats.observations_failed
+        },
+        "edges": {
+            "updated": stats.edges_updated,
+            "skipped": stats.edges_skipped,
+            "missing": stats.edges_missing,
+            "mismatched": stats.edges_mismatched,
+            "no_match": stats.edges_no_match,
+            "failed": stats.edges_failed
+        },
+        "dry_run": dry_run
+    })
+}
+
 /// True only when `embedding`'s length exactly matches the configured embedding
 /// dimension. Used to gate embed_pending writes so a wrong-dimension embedding
 /// (e.g. a mid-migration provider mismatch) is never persisted as `complete`.
@@ -783,17 +832,7 @@ impl SurrealMindServer {
         // Call the reembed function from lib.rs
         let batch_size = 100; // Default batch size
         let stats = crate::run_reembed(batch_size, Some(limit), false, dry_run).await?;
-        let result = json!({
-            "expected_dim": stats.expected_dim,
-            "batch_size": stats.batch_size,
-            "processed": stats.processed,
-            "updated": stats.updated,
-            "skipped": stats.skipped,
-            "missing": stats.missing,
-            "mismatched": stats.mismatched,
-            "no_match": stats.no_match,
-            "dry_run": dry_run
-        });
+        let result = reembed_stats_json(&stats, dry_run);
         Ok(CallToolResult::structured(result))
     }
 
@@ -806,27 +845,7 @@ impl SurrealMindServer {
                 message: format!("KG reembed failed: {}", e),
             })?;
 
-        let result = json!({
-            "message": "KG reembed completed",
-            "expected_dim": stats.expected_dim,
-            "provider": stats.provider,
-            "model": stats.model,
-            "entities": {
-                "updated": stats.entities_updated,
-                "skipped": stats.entities_skipped,
-                "missing": stats.entities_missing,
-                "mismatched": stats.entities_mismatched,
-                "no_match": stats.entities_no_match
-            },
-            "observations": {
-                "updated": stats.observations_updated,
-                "skipped": stats.observations_skipped,
-                "missing": stats.observations_missing,
-                "mismatched": stats.observations_mismatched,
-                "no_match": stats.observations_no_match
-            },
-            "dry_run": dry_run
-        });
+        let result = reembed_kg_stats_json(&stats, dry_run);
         Ok(CallToolResult::structured(result))
     }
 
@@ -1019,7 +1038,8 @@ impl SurrealMindServer {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_thought_record_key;
+    use super::{normalize_thought_record_key, reembed_kg_stats_json, reembed_stats_json};
+    use crate::{ReembedKgStats, ReembedStats};
 
     #[test]
     fn normalize_thought_record_key_accepts_plain_meta_id() {
@@ -1032,5 +1052,55 @@ mod tests {
             normalize_thought_record_key("thoughts:`0f7ce74b`"),
             "0f7ce74b"
         );
+    }
+
+    #[test]
+    fn reembed_json_surfaces_failed_count() {
+        let stats = ReembedStats {
+            expected_dim: 3,
+            batch_size: 10,
+            dry_run: false,
+            missing_only: false,
+            processed: 2,
+            updated: 1,
+            skipped: 0,
+            missing: 1,
+            mismatched: 0,
+            no_match: 0,
+            failed: 1,
+        };
+        assert_eq!(reembed_stats_json(&stats, false)["failed"], 1);
+    }
+
+    #[test]
+    fn reembed_kg_json_surfaces_failed_counts_for_every_table() {
+        let stats = ReembedKgStats {
+            expected_dim: 3,
+            provider: "fixture".to_string(),
+            model: "fixture".to_string(),
+            dry_run: false,
+            entities_updated: 0,
+            entities_skipped: 0,
+            entities_missing: 0,
+            entities_mismatched: 0,
+            observations_updated: 0,
+            observations_skipped: 0,
+            observations_missing: 0,
+            observations_mismatched: 0,
+            edges_updated: 0,
+            edges_skipped: 0,
+            edges_missing: 0,
+            edges_mismatched: 0,
+            entities_no_match: 0,
+            observations_no_match: 0,
+            edges_no_match: 0,
+            entities_failed: 1,
+            observations_failed: 2,
+            edges_failed: 3,
+        };
+        let result = reembed_kg_stats_json(&stats, false);
+        assert_eq!(result["entities"]["failed"], 1);
+        assert_eq!(result["observations"]["failed"], 2);
+        assert_eq!(result["edges"]["failed"], 3);
     }
 }
