@@ -669,7 +669,7 @@ async fn fix_dims() -> Result<()> {
     println!("\n🔍 Verifying dimension corrections...");
     let final_check: Vec<serde_json::Value> = db
         .query(
-            "SELECT count() as remaining_wrong FROM thoughts WHERE embedding_dim != $target_dims",
+            "SELECT count() as remaining_wrong FROM thoughts WHERE embedding_dim != $target_dims GROUP ALL",
         )
         .bind(("target_dims", target_dims as i64))
         .await?
