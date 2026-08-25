@@ -18,7 +18,9 @@ use rmcp::{
     model::{
         CallToolRequest, CallToolRequestParams, ClientCapabilities, ClientRequest, ErrorCode,
         Implementation, InitializeRequest, InitializeRequestParams, JsonRpcRequest,
-        JsonRpcVersion2_0, ListToolsRequest, ListToolsRequestMethod, NumberOrString,
+        JsonRpcVersion2_0, ListPromptsRequest, ListPromptsRequestMethod,
+        ListResourceTemplatesRequest, ListResourceTemplatesRequestMethod, ListResourcesRequest,
+        ListResourcesRequestMethod, ListToolsRequest, ListToolsRequestMethod, NumberOrString,
         ProtocolVersion, RequestOptionalParam,
     },
     service::{RxJsonRpcMessage, TxJsonRpcMessage, serve_directly},
@@ -79,6 +81,33 @@ fn make_list_tools_request() -> ClientRequest {
         extensions: Default::default(),
     };
     ClientRequest::ListToolsRequest(list_tools_req)
+}
+
+fn make_list_resources_request() -> ClientRequest {
+    let request: ListResourcesRequest = RequestOptionalParam {
+        method: ListResourcesRequestMethod,
+        params: None,
+        extensions: Default::default(),
+    };
+    ClientRequest::ListResourcesRequest(request)
+}
+
+fn make_list_resource_templates_request() -> ClientRequest {
+    let request: ListResourceTemplatesRequest = RequestOptionalParam {
+        method: ListResourceTemplatesRequestMethod,
+        params: None,
+        extensions: Default::default(),
+    };
+    ClientRequest::ListResourceTemplatesRequest(request)
+}
+
+fn make_list_prompts_request() -> ClientRequest {
+    let request: ListPromptsRequest = RequestOptionalParam {
+        method: ListPromptsRequestMethod,
+        params: None,
+        extensions: Default::default(),
+    };
+    ClientRequest::ListPromptsRequest(request)
 }
 
 // Helper: construct a CallTool ClientRequest
@@ -199,31 +228,16 @@ async fn test_list_tools_protocol() {
                             "tools/list must return exactly the 16-tool contract, in order"
                         );
 
-                        // N-4 (protocol delta review): the router.rs unit test
-                        // (list_tools_result_serializes_required_sep2549_fields)
-                        // asserts these fields on the `ListToolsResult` value
-                        // directly but never drives the real
-                        // ServerHandler::list_tools -> JSON-RPC serialization
-                        // path; this test drives that real path but, until now,
-                        // never checked these fields. Asserting them HERE closes
-                        // that gap: a revert of router.rs's `list_tools_result()`
-                        // helper back to `ListToolsResult { tools, ..Default::default() }`
-                        // would fail this assertion (the fields would be absent
-                        // from `result_json` entirely, since rmcp's
-                        // `paginated_result!` marks both
-                        // `#[serde(skip_serializing_if = "Option::is_none")]`),
-                        // exactly reproducing the Claude Code 2.1.241
-                        // "tools fetch failed" regression this upgrade fixed.
-                        assert_eq!(
-                            result_json.get("ttlMs").and_then(|v| v.as_u64()),
-                            Some(300_000),
-                            "tools/list must carry ttlMs on the wire (SEP-2549); its absence is exactly the Claude Code 2.1.241 'tools fetch failed' regression"
-                        );
-                        assert_eq!(
-                            result_json.get("cacheScope").and_then(|v| v.as_str()),
-                            Some("public"),
-                            "tools/list must carry cacheScope on the wire (SEP-2549)"
-                        );
+                        // N-3: SurrealMind deliberately stops at the 2025-11-25
+                        // protocol. Draft-era pagination/cache fields must not
+                        // leak into a 2025 response; strict clients reject that
+                        // mixed wire shape.
+                        for draft_field in ["resultType", "ttlMs", "cacheScope"] {
+                            assert!(
+                                result_json.get(draft_field).is_none(),
+                                "pre-2026 tools/list must omit draft field {draft_field}"
+                            );
+                        }
 
                         // TOOL-02: spot-check titles/descriptions/input
                         // schemas survived the `Tool::new(...).with_title(...)`
@@ -491,6 +505,107 @@ async fn test_initialize_protocol_negotiation() {
         Some(ProtocolVersion::LATEST.as_str()),
         "The partially implemented 2026-07-28 draft must negotiate down"
     );
+
+    // Same-connection wire regression: the downgrade and the following
+    // tools/list response must agree on one protocol era. This catches a
+    // candidate that negotiates 2025 correctly but still emits 2026-only
+    // pagination/cache fields afterward.
+    let config = Config::load().expect("Failed to load config");
+    let server = SurrealMindServer::new(&config)
+        .await
+        .expect("Failed to create server");
+    with_direct_service(server, |client_tx, mut client_rx| async move {
+        client_tx
+            .send(build_jsonrpc_request(
+                make_initialize_request(ProtocolVersion::V_2026_07_28),
+                "test-init-then-list",
+            ))
+            .await
+            .unwrap();
+
+        let initialize_wire = match client_rx.recv().await {
+            Some(TxJsonRpcMessage::<RoleServer>::Response(response)) => {
+                serde_json::to_value(&response.result).expect("initialize result must serialize")
+            }
+            other => panic!("Expected initialize Response, got {other:?}"),
+        };
+        assert_eq!(
+            initialize_wire
+                .get("protocolVersion")
+                .and_then(|v| v.as_str()),
+            Some(ProtocolVersion::LATEST.as_str())
+        );
+
+        client_tx
+            .send(build_jsonrpc_request(
+                make_list_tools_request(),
+                "test-list-after-downgrade",
+            ))
+            .await
+            .unwrap();
+
+        let list_wire = match client_rx.recv().await {
+            Some(TxJsonRpcMessage::<RoleServer>::Response(response)) => {
+                serde_json::to_value(&response.result).expect("tools/list result must serialize")
+            }
+            other => panic!("Expected tools/list Response, got {other:?}"),
+        };
+        let tool_names: Vec<_> = list_wire["tools"]
+            .as_array()
+            .expect("tools/list must return an array")
+            .iter()
+            .filter_map(|tool| tool["name"].as_str())
+            .collect();
+        assert_eq!(tool_names, EXPECTED_TOOL_NAMES);
+        for draft_field in ["resultType", "ttlMs", "cacheScope"] {
+            assert!(
+                list_wire.get(draft_field).is_none(),
+                "downgraded tools/list must omit draft field {draft_field}"
+            );
+        }
+
+        for (request, id, collection) in [
+            (
+                make_list_resources_request(),
+                "test-resources-after-downgrade",
+                "resources",
+            ),
+            (
+                make_list_resource_templates_request(),
+                "test-resource-templates-after-downgrade",
+                "resourceTemplates",
+            ),
+            (
+                make_list_prompts_request(),
+                "test-prompts-after-downgrade",
+                "prompts",
+            ),
+        ] {
+            client_tx
+                .send(build_jsonrpc_request(request, id))
+                .await
+                .unwrap();
+            let wire = match client_rx.recv().await {
+                Some(TxJsonRpcMessage::<RoleServer>::Response(response)) => {
+                    serde_json::to_value(&response.result)
+                        .expect("downgraded list result must serialize")
+                }
+                other => panic!("Expected {id} Response, got {other:?}"),
+            };
+            assert_eq!(
+                wire[collection].as_array().map(Vec::len),
+                Some(0),
+                "{id} must preserve the empty list contract"
+            );
+            for draft_field in ["resultType", "ttlMs", "cacheScope"] {
+                assert!(
+                    wire.get(draft_field).is_none(),
+                    "{id} must omit draft field {draft_field}"
+                );
+            }
+        }
+    })
+    .await;
 
     // PROTO-03: an unsupported future version must never be echoed back as
     // accepted (that was the previous override's bug — D3). rmcp's default

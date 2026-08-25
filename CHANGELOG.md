@@ -46,8 +46,8 @@ the rmcp regression suite as failed.
   protocol revisions to `2025-11-25` and earlier. Production tracing proved that
   rmcp's default `resources/list`, `resources/templates/list`, and `prompts/list`
   handlers omitted draft-required cache metadata while the server still
-  negotiated `2026-07-28`; those clients now negotiate down to the latest
-  revision the server implements across every method.
+  negotiated `2026-07-28`; those clients now negotiate down to `2025-11-25`,
+  and `tools/list` likewise omits draft-only fields on that 2025 wire.
 - **Generated-vector and update-result correctness:** one shared `ensure_generated_embedding_dimension` guard now runs before every active thought/KG/admin/re-embed vector write. The `think`, `ensure_kg_embedding`, admin, and re-embed paths inspect `RETURN` rows before reporting success; a wrong-length vector, statement error, or zero-row update cannot be represented as completion.
 - **N-2 recurrence in the six KG batch writers:** `run_reembed_kg` and `run_kg_embed` now classify transport failure, statement error, zero match, and success independently. Per-record failures continue the batch and are returned separately from `*_no_match` counters.
 - **Emergency dimension bypass at the real startup boundary:** `SURR_SKIP_DIM_CHECK` now bypasses only the schema index-dimension check inside `SurrealMindServer::new()`, which occurs before `main`'s existing preflight. Normal startup remains strict. The db-integration test for the actual stale-index/bypass sequence is intentionally gated on a disposable namespace.
