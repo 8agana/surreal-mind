@@ -257,7 +257,9 @@ impl SurrealMindServer {
         // "already exists" error (not the dimension-drift error this was
         // meant to catch) and fail every restart. Making the DDL itself
         // idempotent (OVERWRITE/IF NOT EXISTS) is the correct fix for that,
-        // and is explicitly out of scope for this patch (see do_not_change).
+        // and is explicitly out of scope for this patch because rebuilding a
+        // live HNSW index is a deliberate operational migration, not a
+        // restart-time side effect.
         // So this call is left as-is; the visibility this task actually
         // asked for (a stale-dimension thoughts_embedding_idx going
         // unnoticed) is provided by the explicit post-init verification
@@ -288,7 +290,7 @@ impl SurrealMindServer {
     /// dimension while every other signal claims schema init succeeded.
     /// Deliberately read-only: it reports the drift as an error rather than
     /// auto-remediating (rebuilding a live HNSW index is a real design
-    /// decision — see do_not_change).
+    /// decision, not a restart-time side effect).
     async fn verify_embedding_index_dimension(
         &self,
         expected_dim: usize,
