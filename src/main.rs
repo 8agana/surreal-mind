@@ -67,9 +67,7 @@ async fn main() -> Result<()> {
         })?;
 
     // Optional startup dim-hygiene preflight (bypassed by SURR_SKIP_DIM_CHECK)
-    let skip_dim_check = std::env::var("SURR_SKIP_DIM_CHECK")
-        .map(|v| v == "1" || v == "true")
-        .unwrap_or(false);
+    let skip_dim_check = surreal_mind::server::schema::skip_dimension_check_requested();
 
     if !skip_dim_check
         && (config.runtime.embed_strict

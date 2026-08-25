@@ -2,6 +2,33 @@ use crate::server::SurrealMindServer;
 use rmcp::ErrorData as McpError;
 use tracing::info;
 
+/// Emergency escape hatch for an already-known dimension mismatch. This is
+/// intentionally narrow: it bypasses only dimension verification, never the
+/// schema initialization itself. It must be available during
+/// `SurrealMindServer::new()`, before `main` reaches its later preflight.
+fn skip_dimension_check_value(value: Option<&str>) -> bool {
+    matches!(value, Some("1")) || value.is_some_and(|value| value.eq_ignore_ascii_case("true"))
+}
+
+pub fn skip_dimension_check_requested() -> bool {
+    skip_dimension_check_value(std::env::var("SURR_SKIP_DIM_CHECK").ok().as_deref())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::skip_dimension_check_value;
+
+    #[test]
+    fn skip_dimension_check_flag_accepts_only_documented_truthy_values() {
+        assert!(skip_dimension_check_value(Some("1")));
+        assert!(skip_dimension_check_value(Some("true")));
+        assert!(skip_dimension_check_value(Some("TRUE")));
+        assert!(!skip_dimension_check_value(None));
+        assert!(!skip_dimension_check_value(Some("0")));
+        assert!(!skip_dimension_check_value(Some("false")));
+    }
+}
+
 impl SurrealMindServer {
     /// Initialize the database schema
     pub async fn initialize_schema(&self) -> std::result::Result<(), McpError> {
@@ -256,7 +283,13 @@ impl SurrealMindServer {
             data: None,
         })?;
 
-        self.verify_embedding_index_dimension(dim).await?;
+        if skip_dimension_check_requested() {
+            info!(
+                "SURR_SKIP_DIM_CHECK is set; bypassing thoughts_embedding_idx dimension verification"
+            );
+        } else {
+            self.verify_embedding_index_dimension(dim).await?;
+        }
 
         Ok(())
     }

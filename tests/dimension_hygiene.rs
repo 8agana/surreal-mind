@@ -1,7 +1,10 @@
 #![cfg(feature = "db_integration")]
 
 use anyhow::Result;
-use surreal_mind::{config::Config, embeddings::create_embedder};
+use surreal_mind::{
+    config::Config,
+    embeddings::{create_embedder, ensure_generated_embedding_dimension},
+};
 
 /// Test that dimension hygiene is maintained in the database
 #[tokio::test]
@@ -38,38 +41,95 @@ fn test_vector_dimension_validation() {
     let v2: Vec<f32> = vec![0.0; 384]; // BGE size
     let v3: Vec<f32> = vec![0.0; 768]; // Wrong size
 
-    // Test dimension validation helper
-    fn validate_dims(vec: &[f32], expected: usize) -> bool {
-        vec.len() == expected
-    }
-
     // OpenAI dims
     assert!(
-        validate_dims(&v1, 1536),
+        ensure_generated_embedding_dimension(&v1, 1536).is_ok(),
         "1536-dim vector should validate for OpenAI"
     );
     assert!(
-        !validate_dims(&v2, 1536),
+        ensure_generated_embedding_dimension(&v2, 1536).is_err(),
         "384-dim vector should not validate for OpenAI"
     );
     assert!(
-        !validate_dims(&v3, 1536),
+        ensure_generated_embedding_dimension(&v3, 1536).is_err(),
         "768-dim vector should not validate for OpenAI"
     );
 
     // BGE dims
     assert!(
-        validate_dims(&v2, 384),
+        ensure_generated_embedding_dimension(&v2, 384).is_ok(),
         "384-dim vector should validate for BGE"
     );
     assert!(
-        !validate_dims(&v1, 384),
+        ensure_generated_embedding_dimension(&v1, 384).is_err(),
         "1536-dim vector should not validate for BGE"
     );
     assert!(
-        !validate_dims(&v3, 384),
+        ensure_generated_embedding_dimension(&v3, 384).is_err(),
         "768-dim vector should not validate for BGE"
     );
+}
+
+/// Startup must reject a genuinely stale HNSW dimension unless the documented
+/// emergency bypass is set *before* `SurrealMindServer::new()` invokes schema
+/// verification. This test only runs under the existing explicit disposable
+/// namespace opt-in because it deliberately replaces the scratch index.
+#[tokio::test]
+async fn test_schema_dimension_mismatch_requires_or_honors_emergency_bypass() -> Result<()> {
+    if std::env::var("RUN_DB_TESTS").is_err()
+        || std::env::var("REEMBED_TEST_CONFIRM_DISPOSABLE_NS").is_err()
+    {
+        return Ok(());
+    }
+
+    let config = Config::load()?;
+    assert!(
+        !matches!(
+            config.system.database_ns.as_str(),
+            "surreal_mind" | "surreal-mind"
+        ),
+        "schema bypass test requires a disposable namespace, not {:?}",
+        config.system.database_ns
+    );
+
+    // Bootstrap the disposable schema at its normal dimension, then replace
+    // just this index with a real wrong-dimension definition.
+    unsafe {
+        std::env::remove_var("SURR_SKIP_DIM_CHECK");
+    }
+    let bootstrap = surreal_mind::server::SurrealMindServer::new(&config).await?;
+    bootstrap
+        .db
+        .query(
+            "REMOVE INDEX thoughts_embedding_idx ON TABLE thoughts; \
+             DEFINE INDEX thoughts_embedding_idx ON TABLE thoughts FIELDS embedding HNSW DIMENSION 1;",
+        )
+        .await?
+        .check()?;
+
+    let normal_error = match surreal_mind::server::SurrealMindServer::new(&config).await {
+        Ok(_) => anyhow::bail!("normal startup accepted a stale thoughts_embedding_idx dimension"),
+        Err(error) => error,
+    };
+    assert!(
+        normal_error.to_string().contains("thoughts_embedding_idx"),
+        "normal startup must fail specifically on the stale index dimension: {normal_error}"
+    );
+
+    unsafe {
+        std::env::set_var("SURR_SKIP_DIM_CHECK", "1");
+    }
+    let bypassed = surreal_mind::server::SurrealMindServer::new(&config).await;
+    unsafe {
+        std::env::remove_var("SURR_SKIP_DIM_CHECK");
+    }
+    if let Err(error) = bypassed {
+        anyhow::bail!(
+            "SURR_SKIP_DIM_CHECK must bypass only the known index-dimension verification: {error}"
+        );
+    }
+
+    Ok(())
 }
 
 /// Test that reembed reports dimension mismatches accurately

@@ -1417,4 +1417,90 @@ mod tests {
             EmbeddingUpdateOutcome::StatementError("synthetic statement failure".to_string())
         );
     }
+
+    /// Real-driver negative witness for the shared classifier used by all six
+    /// KG batch writers. A statement error must be surfaced without ending
+    /// subsequent update classification, while a successful statement that
+    /// matches no row remains distinct from failure.
+    #[cfg(feature = "db_integration")]
+    #[tokio::test]
+    async fn update_result_classifier_continues_after_real_statement_error() -> anyhow::Result<()> {
+        if std::env::var("RUN_DB_TESTS").is_err()
+            || std::env::var("REEMBED_TEST_CONFIRM_DISPOSABLE_NS").is_err()
+        {
+            return Ok(());
+        }
+
+        let config = crate::config::Config::load()?;
+        if matches!(
+            config.system.database_ns.as_str(),
+            "surreal_mind" | "surreal-mind"
+        ) {
+            anyhow::bail!(
+                "update classifier db test requires a disposable namespace, not {:?}",
+                config.system.database_ns
+            );
+        }
+        let server = crate::server::SurrealMindServer::new(&config).await?;
+        let marker = "__rmcp-sol-update-classifier-negative__";
+
+        server
+            .db
+            .query(
+                "CREATE thoughts SET content = $marker, embedding = NONE, \
+                 embedding_provider = 'fixture', embedding_model = 'fixture', embedding_dim = 0, \
+                 embedding_status = 'pending', created_at = time::now(), injected_memories = [], \
+                 injection_scale = 0, significance = 0.0, access_count = 0",
+            )
+            .bind(("marker", marker.to_string()))
+            .await?
+            .check()?;
+
+        let mut statement_error = server
+            .db
+            .query(
+                "UPDATE thoughts SET access_count = 'not-an-int' \
+                 WHERE content = $marker RETURN meta::id(id) AS id",
+            )
+            .bind(("marker", marker.to_string()))
+            .await?;
+        assert!(matches!(
+            classify_embedding_update_rows(statement_error.take::<Vec<serde_json::Value>>(0)),
+            EmbeddingUpdateOutcome::StatementError(_)
+        ));
+
+        let mut no_match = server
+            .db
+            .query(
+                "UPDATE thoughts SET access_count = 1 \
+                 WHERE content = '__rmcp-sol-update-classifier-absent__' \
+                 RETURN meta::id(id) AS id",
+            )
+            .await?;
+        assert_eq!(
+            classify_embedding_update_rows(no_match.take::<Vec<serde_json::Value>>(0)),
+            EmbeddingUpdateOutcome::NoMatch
+        );
+
+        let mut subsequent_success = server
+            .db
+            .query(
+                "UPDATE thoughts SET access_count = 1 \
+                 WHERE content = $marker RETURN meta::id(id) AS id",
+            )
+            .bind(("marker", marker.to_string()))
+            .await?;
+        assert_eq!(
+            classify_embedding_update_rows(subsequent_success.take::<Vec<serde_json::Value>>(0)),
+            EmbeddingUpdateOutcome::Updated
+        );
+
+        server
+            .db
+            .query("DELETE thoughts WHERE content = $marker")
+            .bind(("marker", marker.to_string()))
+            .await?
+            .check()?;
+        Ok(())
+    }
 }
