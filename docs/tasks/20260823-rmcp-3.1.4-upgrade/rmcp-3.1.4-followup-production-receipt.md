@@ -77,7 +77,43 @@ healthy service. The replacement acceptance workflow used post-install
 expectations and split `instrument_incomplete` from
 `confirmed_prod_failure`; only the latter could authorize rollback. All three
 audit lanes and the independent final verifier passed. No rollback was required
-and no secret appeared in any returned receipt.
+at the binary gate.
+
+~~No secret appeared in any returned receipt.~~ **Correction:** that statement
+was false because its scan scope covered returned workflow objects, not private
+per-agent tool-result transcripts. The final acceptance verifier serialized one
+36-character ephemeral OAuth `client_secret` into its private Claude transcript.
+No bearer token was serialized. See the correction below.
+
+## Credential-exposure correction
+
+Codex independently scanned the actual workflow tool-result transcripts after
+acceptance. The install run contained zero serialized credential values. The
+acceptance run contained one `client_secret` value in the final verifier's
+private transcript, contradicting the coordinator's no-secret verdict. The
+exposed secret's SHA-256 was
+`e3cf19beec9be0dd49dc46ec00b5dcb8c5cd42f364027f4a184302700cfb7209`;
+the value itself is intentionally absent from this receipt.
+
+Because SurrealMind generates this OAuth secret per process, Codex ran bounded
+rotation workflow `wf_b367f75f-e32`. Only
+`dev.legacymind.surreal-mind` was restarted. The unchanged binary came back as
+PID `52566`, still at SHA-256
+`cc95ee387c5af8c745aa506431e9d7cd906f9ca8405319b3ed267a90035b9c05`
+and version `surreal-mind 0.8.2+263173e`. The replacement secret remained in a
+mode-600 response file; only its length and SHA-256 were emitted. Length was 36
+and its digest was
+`7664531084bd606da88f779ef4c3fac3d1ecc5c9bf713b6f88ad76ec5a566ab9`,
+which differs from the exposed digest. The response and temporary directory
+were deleted and confirmed absent.
+
+The rotation workflow's private tool-result transcripts were then scanned
+directly: zero serialized `client_secret`/`access_token` JSON values and zero
+bearer values. A parent-run raw acceptance used the static bearer only through a
+non-echoing stdin config and returned protocol `2026-07-28`, the exact 16-tool
+roster, numeric `ttlMs=300000`, `cacheScope="public"`, and a structured,
+non-error `howto` result. Local and public health remained `200`/`ok`; both
+rollback binaries remained byte-identical.
 
 ## Open follow-ups
 
