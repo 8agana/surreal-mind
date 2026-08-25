@@ -2,7 +2,7 @@
 
 **Reviewer/implementer:** Codex Sol closure worker  
 **Branch/worktree:** `codex/rmcp-3.1.4-followup` / isolated Studio worktree only  
-**Status:** implementation and closure verification complete; final clean release candidate identity is recorded after the final build below
+**Status:** implementation and closure verification complete. The final clean release-candidate identity belongs in the external closure receipt: committing a hash into this file would create a different commit and therefore a different embedded identity.
 
 ## Blocking disposition
 
