@@ -1,6 +1,6 @@
 # SurrealMind rmcp 3.1.4 — Implementation Plan
 
-**Status:** Implementation Complete — source candidate `26d5990` accepted by Codex on 2026-08-24 under Sam's directed alternate review path: a resumable Fable 5 Dynamic Workflow with Sonnet 5 implementation/audit workers, followed by Codex's independent artifact and runtime grade. Compiler, lint, release-build, tool, protocol, stdio, HTTP, body-limit, notification, and disposable write/reconciliation gates pass. The absence of committed in-process HTTP regression tests remains a tracked automation gap, not an unmeasured current behavior. R4 pre-merge reconciliation, R5 deployed allowlist evidence, RB-02/RB-03, and LIVE-01..08 remain open at their merge/deployment gates. Production install/restart NOT performed.
+**Status:** Complete and deployed — final deployment HEAD `e5c33ad` includes the R4 live-change reconciliation, R5 Host declaration, and the measured Claude Code 2.1.241 SEP-2549 compatibility fix. Studio-native compiler/test/Clippy/release gates and local/public/Codex/Claude live acceptance pass. Production PID `75567` serves binary hash `3fd8e01afaa2841bc2678e769e8a8c5e68e95743482704098b2ad5e5ccb29a67`; rollback hash `0f7fbccb693e5fbec5402403c831546013b825929c11eec52bf6d6faf5911c5c` remains preserved.
 **Parent:** [`rmcp-3.1.4-upgrade.md`](rmcp-3.1.4-upgrade.md)  
 **Depends On:** CC plan approval  
 **Testing:** [`rmcp-3.1.4-upgrade-testing.md`](rmcp-3.1.4-upgrade-testing.md)

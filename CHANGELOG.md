@@ -1,6 +1,8 @@
-## [Unreleased] - rmcp 3.1.4 upgrade (implementation candidate, not yet installed)
+## [Unreleased] - rmcp 3.1.4 upgrade (deployed 2026-08-24)
 
 Branch `codex/rmcp-3.1.4`, isolated worktree cut from `874d229c8a4cd7494d452b9d44fa6d56c2e85ffb`. Full design, decisions (D1-D11), and risk register: `docs/tasks/20260823-rmcp-3.1.4-upgrade/`. **Package version intentionally left at `0.8.2`** — a dependency-only major bump is not, on its own, a recorded reason to change the crate version (see the upgrade doc's Constraint 9); a version bump remains available as its own decision at the deployment gate.
+
+Production deploy HEAD `e5c33ad` serves binary SHA-256 `3fd8e01afaa2841bc2678e769e8a8c5e68e95743482704098b2ad5e5ccb29a67` with `SURR_HTTP_ALLOWED_HOSTS=mcp.samataganaphotography.com`. Local/public/Codex/Claude acceptance passed. An earlier `f4869de` install was rolled back cleanly after Claude Code 2.1.241 rejected missing SEP-2549 list metadata; the fixed deployment retains the original `0f7fbccb...5911c5c` rollback artifact.
 
 ### Changed
 

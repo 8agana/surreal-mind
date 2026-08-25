@@ -1,6 +1,6 @@
 # SurrealMind rmcp 0.16.0 to 3.1.4
 
-**Status:** Planning Complete — CC approved 2026-08-23  
+**Status:** Complete — rmcp 3.1.4 deployed and live acceptance passed 2026-08-24
 **Owner:** Codex  
 **Reviewer:** CC  
 **Repository:** `/Users/samuelatagana/Projects/LegacyMind/surreal-mind` on Studio  
@@ -9,7 +9,11 @@
 **Implementation:** [`rmcp-3.1.4-upgrade-impl.md`](rmcp-3.1.4-upgrade-impl.md)  
 **Testing:** [`rmcp-3.1.4-upgrade-testing.md`](rmcp-3.1.4-upgrade-testing.md)  
 **CC review:** [`rmcp-3.1.4-upgrade-cc-review.md`](rmcp-3.1.4-upgrade-cc-review.md)
-**Implementation review:** Codex accepted source HEAD `26d5990` on 2026-08-24 under Sam's directed Fable 5/Sonnet 5 Dynamic Workflow alternative; live CC was not invoked for implementation review
+**Implementation review:** Codex accepted source HEAD `26d5990` on 2026-08-24 under Sam's directed Fable 5/Sonnet 5 Dynamic Workflow alternative; deployment reconciliation and Claude compatibility continued through final deploy HEAD `e5c33ad`
+
+## Production outcome (2026-08-24)
+
+Deployment branch `codex/rmcp-3.1.4-deploy` reconciled the pre-existing live `embed_pending` and documentation changes at `f4869de`, then fixed a measured Claude Code 2.1.241 SEP-2549 compatibility failure at `e5c33ad`. The first install was rolled back when Claude rejected omitted `ttlMs`/`cacheScope`; the fixed candidate was rebuilt and redeployed. Final live binary SHA-256 is `3fd8e01afaa2841bc2678e769e8a8c5e68e95743482704098b2ad5e5ccb29a67`, launchd runs PID `75567`, and `SURR_HTTP_ALLOWED_HOSTS=mcp.samataganaphotography.com` is declared in the live plist. Local/public initialize, 16-tool list, structured read, Codex MCP, and fresh Claude/Sonnet MCP acceptance passed. The preserved rmcp 0.16.0 rollback binary remains `0f7fbccb693e5fbec5402403c831546013b825929c11eec52bf6d6faf5911c5c`.
 
 ## Plan-review corrections (accepted 2026-08-24)
 
