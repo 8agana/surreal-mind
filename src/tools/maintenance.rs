@@ -39,6 +39,13 @@ fn normalize_thought_record_key(raw_id: &str) -> String {
     without_table.trim_matches('`').to_string()
 }
 
+/// True only when `embedding`'s length exactly matches the configured embedding
+/// dimension. Used to gate embed_pending writes so a wrong-dimension embedding
+/// (e.g. a mid-migration provider mismatch) is never persisted as `complete`.
+fn embedding_matches_dim(embedding: &[f32], dim: i64) -> bool {
+    !embedding.is_empty() && embedding.len() as i64 == dim
+}
+
 impl SurrealMindServer {
     /// Handle health check for database indexes
     async fn handle_health_check_indexes(&self, _dry_run: bool) -> Result<CallToolResult> {
@@ -788,6 +795,7 @@ impl SurrealMindServer {
             "skipped": stats.skipped,
             "missing": stats.missing,
             "mismatched": stats.mismatched,
+            "no_match": stats.no_match,
             "dry_run": dry_run
         });
         Ok(CallToolResult::structured(result))
@@ -831,11 +839,17 @@ impl SurrealMindServer {
         // Query thoughts with pending or failed embedding status.
         // Use meta::id(id) so type::record('thoughts', $id) receives only
         // the record key, not a full thoughts:<id> value.
-        // Note: SurrealDB 2.4+ requires ORDER BY fields in SELECT clause
+        // Note: SurrealDB 2.4+ requires ORDER BY fields in SELECT clause.
+        // ORDER BY created_at ASC makes selection deterministic across runs: a row
+        // that always errors (e.g. a persistent per-row statement error under N-2)
+        // sorts to the same position every time instead of reshuffling, so it can
+        // never wedge the whole backlog at zero progress by rotating in front of
+        // rows behind it.
         let query = r#"
             SELECT meta::id(id) AS id, content, created_at
             FROM thoughts
             WHERE embedding_status IN ['pending', 'failed']
+            ORDER BY created_at ASC
             LIMIT $limit;
         "#;
 
@@ -889,7 +903,7 @@ impl SurrealMindServer {
 
             // Attempt embedding
             match self.embedder.embed(&content).await {
-                Ok(embedding) if !embedding.is_empty() => {
+                Ok(embedding) if embedding_matches_dim(&embedding, dim) => {
                     // Update thought with embedding
                     let update_query = r#"
                         UPDATE type::record('thoughts', $id) SET
@@ -914,28 +928,39 @@ impl SurrealMindServer {
 
                     match update_result {
                         Ok(mut response) => {
-                            let updated: Vec<serde_json::Value> = response.take(0)?;
-                            let updated_row = updated.first();
-                            let status_is_complete = updated_row
-                                .and_then(|r| r.get("embedding_status"))
-                                .and_then(|v| v.as_str())
-                                == Some("complete");
-                            let embedding_len_matches = updated_row
-                                .and_then(|r| r.get("embedding_len"))
-                                .and_then(|v| v.as_i64())
-                                == Some(dim);
+                            // N-2 fix: take(0) surfaces per-statement errors (e.g. a
+                            // SCHEMAFULL type violation) that `query().await` itself
+                            // does not report. Matching instead of `?` keeps a single
+                            // poisoned row from aborting the whole embed_pending call.
+                            match response.take::<Vec<serde_json::Value>>(0) {
+                                Ok(updated) => {
+                                    let updated_row = updated.first();
+                                    let status_is_complete = updated_row
+                                        .and_then(|r| r.get("embedding_status"))
+                                        .and_then(|v| v.as_str())
+                                        == Some("complete");
+                                    let embedding_len_matches = updated_row
+                                        .and_then(|r| r.get("embedding_len"))
+                                        .and_then(|v| v.as_i64())
+                                        == Some(dim);
 
-                            if status_is_complete && embedding_len_matches {
-                                tracing::info!(thought_id = %id, "Successfully embedded pending thought");
-                                succeeded += 1;
-                            } else {
-                                tracing::warn!(
-                                    thought_id = %id,
-                                    raw_thought_id = %raw_id,
-                                    updated_rows = updated.len(),
-                                    "Embedding update did not persist expected complete state"
-                                );
-                                failed += 1;
+                                    if status_is_complete && embedding_len_matches {
+                                        tracing::info!(thought_id = %id, "Successfully embedded pending thought");
+                                        succeeded += 1;
+                                    } else {
+                                        tracing::warn!(
+                                            thought_id = %id,
+                                            raw_thought_id = %raw_id,
+                                            updated_rows = updated.len(),
+                                            "Embedding update did not persist expected complete state"
+                                        );
+                                        failed += 1;
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!(thought_id = %id, error = %e, "Statement error verifying embedding update");
+                                    failed += 1;
+                                }
                             }
                         }
                         Err(e) => {
@@ -944,8 +969,17 @@ impl SurrealMindServer {
                         }
                     }
                 }
-                Ok(_) => {
-                    tracing::warn!(thought_id = %id, "Embedding returned empty vector");
+                Ok(embedding) => {
+                    // M-1 fix: never write a dimension-mismatched embedding as
+                    // 'complete'. Leaving embedding_status untouched keeps the row
+                    // selectable by the next embed_pending run instead of silently
+                    // corrupting the vector index's dimension invariant.
+                    tracing::warn!(
+                        thought_id = %id,
+                        expected_dim = dim,
+                        got_dim = embedding.len(),
+                        "Embedding dimension mismatch; not writing, row stays pending/failed for retry"
+                    );
                     failed += 1;
                 }
                 Err(e) => {
@@ -955,11 +989,15 @@ impl SurrealMindServer {
             }
         }
 
-        // Count remaining pending
+        // Count remaining pending.
+        // GROUP ALL is required: SurrealDB 3.1's zero-arg count() returns a
+        // hardcoded 1 per matched row without it, so this would report N=3
+        // matching rows as three separate {cnt:1} rows instead of one {cnt:3}.
         let count_query = r#"
             SELECT count() AS cnt
             FROM thoughts
-            WHERE embedding_status IN ['pending', 'failed'];
+            WHERE embedding_status IN ['pending', 'failed']
+            GROUP ALL;
         "#;
         let mut count_response = self.db.query(count_query).await?;
         let count_rows: Vec<serde_json::Value> = count_response.take(0)?;
@@ -982,7 +1020,7 @@ impl SurrealMindServer {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_thought_record_key;
+    use super::{embedding_matches_dim, normalize_thought_record_key};
 
     #[test]
     fn normalize_thought_record_key_accepts_plain_meta_id() {
@@ -995,5 +1033,33 @@ mod tests {
             normalize_thought_record_key("thoughts:`0f7ce74b`"),
             "0f7ce74b"
         );
+    }
+
+    // M-1 regression guard: before this fix, embed_pending's write gate was only
+    // `!embedding.is_empty()`, so a wrong-dimension embedding (e.g. 384 from a BGE
+    // fallback landing in a 1536-dim collection) would still be written and marked
+    // 'complete'. These assert the gate that replaced it.
+    #[test]
+    fn embedding_matches_dim_true_when_len_equals_dim() {
+        let v = vec![0.0f32; 1536];
+        assert!(embedding_matches_dim(&v, 1536));
+    }
+
+    #[test]
+    fn embedding_matches_dim_false_when_len_less_than_dim() {
+        let v = vec![0.0f32; 384];
+        assert!(!embedding_matches_dim(&v, 1536));
+    }
+
+    #[test]
+    fn embedding_matches_dim_false_when_len_greater_than_dim() {
+        let v = vec![0.0f32; 3072];
+        assert!(!embedding_matches_dim(&v, 1536));
+    }
+
+    #[test]
+    fn embedding_matches_dim_false_when_empty() {
+        let v: Vec<f32> = vec![];
+        assert!(!embedding_matches_dim(&v, 1536));
     }
 }
