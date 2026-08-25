@@ -19,6 +19,12 @@ actually invoke the external embedding API are intentionally not mislabeled as
 CI-covered; they retain their independently recorded disposable-Studio
 evidence until a dedicated CI credential is provisioned.
 
+The malformed duplicate `.github/workflows/rust.yml` was removed in the same
+closure. Its broken `on:` indentation produced an immediate zero-job failure on
+every branch push, while its jobs duplicated `ci.yml`; its rmcp check also ran
+`cargo update -p rmcp` immediately before a `--locked` check. `ci.yml` is now the
+single workflow owner for this repository's Rust gates.
+
 ### Fixed (Sol closure)
 
 - **Generated-vector and update-result correctness:** one shared `ensure_generated_embedding_dimension` guard now runs before every active thought/KG/admin/re-embed vector write. The `think`, `ensure_kg_embedding`, admin, and re-embed paths inspect `RETURN` rows before reporting success; a wrong-length vector, statement error, or zero-row update cannot be represented as completion.
