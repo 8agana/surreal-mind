@@ -17,6 +17,10 @@ pub struct ReembedStats {
     pub skipped: usize,
     pub missing: usize,
     pub mismatched: usize,
+    /// N-5: count of per-row UPDATE statements that returned HTTP success but
+    /// matched zero rows (e.g. an identity mismatch between the WHERE clause and
+    /// the stored record id). These are NOT counted in `updated`.
+    pub no_match: usize,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -84,6 +88,7 @@ pub async fn run_reembed(
     let mut skipped: usize = 0;
     let mut mismatched: usize = 0;
     let mut missing: usize = 0;
+    let mut no_match: usize = 0;
     let limit_total = limit.unwrap_or(usize::MAX);
 
     loop {
@@ -159,8 +164,14 @@ pub async fn run_reembed(
                 );
             }
             let emb_json = serde_json::to_string(&new_emb)?;
+            // N-5 fix: `id = '{}'` compared a bare string against a Thing and
+            // never matched (measured live: 0 rows affected). type::record()
+            // reconstructs the typed record identity from the meta::id() key
+            // returned by the SELECT above. RETURN meta::id(id) AS id (instead
+            // of RETURN NONE) makes the match observable so a 0-row match no
+            // longer gets silently counted as a success.
             let update_sql = format!(
-                "USE NS {} DB {}; UPDATE thoughts SET embedding = {}, embedding_provider = '{}', embedding_model = '{}', embedding_dim = {}, embedded_at = time::now() WHERE id = '{}' RETURN NONE;",
+                "USE NS {} DB {}; UPDATE thoughts SET embedding = {}, embedding_provider = '{}', embedding_model = '{}', embedding_dim = {}, embedded_at = time::now() WHERE id = type::record('thoughts', '{}') RETURN meta::id(id) AS id;",
                 ns, dbname, emb_json, provider, model, expected_dim, id_raw
             );
             let uresp = http
@@ -177,12 +188,42 @@ pub async fn run_reembed(
                     uresp.text().await.unwrap_or_default()
                 );
             }
-            if cur_len == 0 {
-                missing += 1;
-            } else if cur_len != expected_dim {
-                mismatched += 1;
+            // A per-statement error can still ride back inside an HTTP 200 body
+            // (SurrealDB's /sql endpoint), and a WHERE clause that matches zero
+            // rows returns success with an empty result array either way. Only
+            // count `updated` when the UPDATE's own result block is a non-empty
+            // array of rows.
+            let update_blocks: serde_json::Value = uresp.json().await?;
+            let update_result = update_blocks.as_array().and_then(|arr| {
+                arr.iter()
+                    .find_map(|b| b.get("result").and_then(|r| r.as_array()).cloned())
+            });
+            let update_status_ok = update_blocks
+                .as_array()
+                .and_then(|arr| arr.last())
+                .and_then(|b| b.get("status"))
+                .and_then(|s| s.as_str())
+                == Some("OK");
+            let matched = update_status_ok
+                && update_result
+                    .as_ref()
+                    .map(|rows| !rows.is_empty())
+                    .unwrap_or(false);
+
+            if matched {
+                if cur_len == 0 {
+                    missing += 1;
+                } else if cur_len != expected_dim {
+                    mismatched += 1;
+                }
+                updated += 1;
+            } else {
+                no_match += 1;
+                eprintln!(
+                    "  ⚠️  reembed: UPDATE for id={} matched 0 rows or returned a non-OK status; not counted as updated",
+                    id_raw
+                );
             }
-            updated += 1;
             processed += 1;
         }
 
@@ -199,6 +240,7 @@ pub async fn run_reembed(
         skipped,
         missing,
         mismatched,
+        no_match,
     })
 }
 

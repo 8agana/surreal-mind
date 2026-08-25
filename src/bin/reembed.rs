@@ -129,16 +129,37 @@ async fn main() -> Result<()> {
                     .bind(("dims", embed_dims as i64))
                     .await
                 {
-                    Ok(response) => {
-                        success_count += 1;
-                        if i < 3 {
-                            eprintln!(
-                                "  ✅ Updated {} with provider={}, model={}, dims={}",
-                                thought_id, provider, model, embed_dims
-                            );
-                            eprintln!("     Response: {:?}", response);
+                    // `Ok(response)` from `.query().await` only means the driver
+                    // received a response, not that this UPDATE matched a row —
+                    // same per-statement-error semantics as N-2/N-5. Only count a
+                    // success when `.take(0)` yields a non-empty result array for
+                    // the RETURN clause above.
+                    Ok(mut response) => match response.take::<Vec<serde_json::Value>>(0) {
+                        Ok(rows) if !rows.is_empty() => {
+                            success_count += 1;
+                            if i < 3 {
+                                eprintln!(
+                                    "  ✅ Updated {} with provider={}, model={}, dims={}",
+                                    thought_id, provider, model, embed_dims
+                                );
+                                eprintln!("     Rows: {:?}", rows);
+                            }
                         }
-                    }
+                        Ok(_) => {
+                            error_count += 1;
+                            eprintln!(
+                                "  ⚠️  Update for {} matched 0 rows; not counted as success",
+                                thought_id
+                            );
+                        }
+                        Err(e) => {
+                            error_count += 1;
+                            eprintln!(
+                                "  ⚠️  Statement error verifying update for {}: {}",
+                                thought_id, e
+                            );
+                        }
+                    },
                     Err(e) => {
                         error_count += 1;
                         eprintln!("  ⚠️  Failed to update {}: {}", thought_id, e);
