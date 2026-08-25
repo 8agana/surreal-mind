@@ -21,7 +21,7 @@ use rmcp::{
         JsonRpcVersion2_0, ListPromptsRequest, ListPromptsRequestMethod,
         ListResourceTemplatesRequest, ListResourceTemplatesRequestMethod, ListResourcesRequest,
         ListResourcesRequestMethod, ListToolsRequest, ListToolsRequestMethod, NumberOrString,
-        ProtocolVersion, RequestOptionalParam,
+        PaginatedRequestParams, ProtocolVersion, RequestMetaObject, RequestOptionalParam,
     },
     service::{RxJsonRpcMessage, TxJsonRpcMessage, serve_directly},
     transport::sink_stream::SinkStreamTransport,
@@ -105,6 +105,52 @@ fn make_list_prompts_request() -> ClientRequest {
     let request: ListPromptsRequest = RequestOptionalParam {
         method: ListPromptsRequestMethod,
         params: None,
+        extensions: Default::default(),
+    };
+    ClientRequest::ListPromptsRequest(request)
+}
+
+fn paginated_params_for(version: ProtocolVersion) -> PaginatedRequestParams {
+    let mut params = PaginatedRequestParams::default();
+    params.meta = Some(RequestMetaObject::with_client_context(
+        version,
+        Implementation::new("mcp-protocol-test", "0.0.0"),
+        ClientCapabilities::default(),
+    ));
+    params
+}
+
+fn make_list_tools_request_for(version: ProtocolVersion) -> ClientRequest {
+    let request: ListToolsRequest = RequestOptionalParam {
+        method: ListToolsRequestMethod,
+        params: Some(paginated_params_for(version)),
+        extensions: Default::default(),
+    };
+    ClientRequest::ListToolsRequest(request)
+}
+
+fn make_list_resources_request_for(version: ProtocolVersion) -> ClientRequest {
+    let request: ListResourcesRequest = RequestOptionalParam {
+        method: ListResourcesRequestMethod,
+        params: Some(paginated_params_for(version)),
+        extensions: Default::default(),
+    };
+    ClientRequest::ListResourcesRequest(request)
+}
+
+fn make_list_resource_templates_request_for(version: ProtocolVersion) -> ClientRequest {
+    let request: ListResourceTemplatesRequest = RequestOptionalParam {
+        method: ListResourceTemplatesRequestMethod,
+        params: Some(paginated_params_for(version)),
+        extensions: Default::default(),
+    };
+    ClientRequest::ListResourceTemplatesRequest(request)
+}
+
+fn make_list_prompts_request_for(version: ProtocolVersion) -> ClientRequest {
+    let request: ListPromptsRequest = RequestOptionalParam {
+        method: ListPromptsRequestMethod,
+        params: Some(paginated_params_for(version)),
         extensions: Default::default(),
     };
     ClientRequest::ListPromptsRequest(request)
@@ -430,8 +476,8 @@ async fn test_call_tool_continuity_fallback_protocol() {
 // echoing whatever the client claims (upgrade doc D3 — the previous
 // `initialize` override did the latter). This test drives real `initialize`
 // requests through the protocol harness for a supported legacy version, the
-// current latest supported version, the SDK-known but intentionally excluded
-// 2026-07-28 draft, and an unsupported future version. It also asserts
+// current latest supported version, the 2026-07-28 draft, and an unsupported
+// future version. It also asserts
 // `tools.listChanged` still serializes as explicit `false` (D4/PROTO-05)
 // rather than becoming absent.
 #[tokio::test]
@@ -495,21 +541,17 @@ async fn test_initialize_protocol_negotiation() {
         Some(ProtocolVersion::LATEST.as_str()),
     );
 
-    // N-3: rmcp knows the 2026-07-28 draft, but SurrealMind does not yet
-    // implement its required cache metadata on every list surface. The server
-    // must therefore negotiate down instead of advertising partial support.
+    // N-3: SurrealMind supports the draft for inline Claude Code clients and
+    // varies every list result by the request's actual protocol version.
     let draft_result =
-        initialize_and_get_result(ProtocolVersion::V_2026_07_28, "test-init-excluded-draft").await;
+        initialize_and_get_result(ProtocolVersion::V_2026_07_28, "test-init-draft").await;
     assert_eq!(
         draft_result.get("protocolVersion").and_then(|v| v.as_str()),
-        Some(ProtocolVersion::LATEST.as_str()),
-        "The partially implemented 2026-07-28 draft must negotiate down"
+        Some(ProtocolVersion::V_2026_07_28.as_str())
     );
 
-    // Same-connection wire regression: the downgrade and the following
-    // tools/list response must agree on one protocol era. This catches a
-    // candidate that negotiates 2025 correctly but still emits 2026-only
-    // pagination/cache fields afterward.
+    // Same-connection 2026 regression: inline requests must remain accepted
+    // and every list surface must carry the draft-required fields.
     let config = Config::load().expect("Failed to load config");
     let server = SurrealMindServer::new(&config)
         .await
@@ -533,13 +575,13 @@ async fn test_initialize_protocol_negotiation() {
             initialize_wire
                 .get("protocolVersion")
                 .and_then(|v| v.as_str()),
-            Some(ProtocolVersion::LATEST.as_str())
+            Some(ProtocolVersion::V_2026_07_28.as_str())
         );
 
         client_tx
             .send(build_jsonrpc_request(
-                make_list_tools_request(),
-                "test-list-after-downgrade",
+                make_list_tools_request_for(ProtocolVersion::V_2026_07_28),
+                "test-list-draft",
             ))
             .await
             .unwrap();
@@ -557,27 +599,24 @@ async fn test_initialize_protocol_negotiation() {
             .filter_map(|tool| tool["name"].as_str())
             .collect();
         assert_eq!(tool_names, EXPECTED_TOOL_NAMES);
-        for draft_field in ["resultType", "ttlMs", "cacheScope"] {
-            assert!(
-                list_wire.get(draft_field).is_none(),
-                "downgraded tools/list must omit draft field {draft_field}"
-            );
-        }
+        assert_eq!(list_wire["resultType"], json!("complete"));
+        assert_eq!(list_wire["ttlMs"], json!(300_000));
+        assert_eq!(list_wire["cacheScope"], json!("public"));
 
         for (request, id, collection) in [
             (
-                make_list_resources_request(),
-                "test-resources-after-downgrade",
+                make_list_resources_request_for(ProtocolVersion::V_2026_07_28),
+                "test-resources-draft",
                 "resources",
             ),
             (
-                make_list_resource_templates_request(),
-                "test-resource-templates-after-downgrade",
+                make_list_resource_templates_request_for(ProtocolVersion::V_2026_07_28),
+                "test-resource-templates-draft",
                 "resourceTemplates",
             ),
             (
-                make_list_prompts_request(),
-                "test-prompts-after-downgrade",
+                make_list_prompts_request_for(ProtocolVersion::V_2026_07_28),
+                "test-prompts-draft",
                 "prompts",
             ),
         ] {
@@ -596,6 +635,81 @@ async fn test_initialize_protocol_negotiation() {
                 wire[collection].as_array().map(Vec::len),
                 Some(0),
                 "{id} must preserve the empty list contract"
+            );
+            assert_eq!(wire["resultType"], json!("complete"));
+            assert_eq!(wire["ttlMs"], json!(300_000));
+            assert_eq!(wire["cacheScope"], json!("public"));
+        }
+    })
+    .await;
+
+    // Same-connection 2025 regression: session clients retain the legacy wire
+    // shape and must not receive draft-only list fields.
+    let config = Config::load().expect("Failed to load config");
+    let server = SurrealMindServer::new(&config)
+        .await
+        .expect("Failed to create server");
+    with_direct_service(server, |client_tx, mut client_rx| async move {
+        client_tx
+            .send(build_jsonrpc_request(
+                make_initialize_request(ProtocolVersion::LATEST),
+                "test-init-legacy-list-shape",
+            ))
+            .await
+            .unwrap();
+        match client_rx.recv().await {
+            Some(TxJsonRpcMessage::<RoleServer>::Response(response)) => {
+                let wire = serde_json::to_value(&response.result)
+                    .expect("initialize result must serialize");
+                assert_eq!(
+                    wire.get("protocolVersion").and_then(|v| v.as_str()),
+                    Some(ProtocolVersion::LATEST.as_str())
+                );
+            }
+            other => panic!("Expected legacy initialize Response, got {other:?}"),
+        }
+
+        for (request, id, collection, expected_len) in [
+            (
+                make_list_tools_request(),
+                "test-tools-legacy-shape",
+                "tools",
+                EXPECTED_TOOL_NAMES.len(),
+            ),
+            (
+                make_list_resources_request(),
+                "test-resources-legacy-shape",
+                "resources",
+                0,
+            ),
+            (
+                make_list_resource_templates_request(),
+                "test-resource-templates-legacy-shape",
+                "resourceTemplates",
+                0,
+            ),
+            (
+                make_list_prompts_request(),
+                "test-prompts-legacy-shape",
+                "prompts",
+                0,
+            ),
+        ] {
+            client_tx
+                .send(build_jsonrpc_request(request, id))
+                .await
+                .unwrap();
+            let wire = match client_rx.recv().await {
+                Some(TxJsonRpcMessage::<RoleServer>::Response(response)) => {
+                    serde_json::to_value(&response.result)
+                        .expect("legacy list result must serialize")
+                }
+                other => panic!("Expected {id} Response, got {other:?}"),
+            };
+            assert_eq!(
+                wire[collection].as_array().map(Vec::len),
+                Some(expected_len),
+                "{id} must preserve its list contract"
             );
             for draft_field in ["resultType", "ttlMs", "cacheScope"] {
                 assert!(

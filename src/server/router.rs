@@ -1,52 +1,55 @@
-use std::borrow::Cow;
-
 use crate::server::SurrealMindServer;
 use rmcp::{
     ErrorData as McpError,
     handler::server::ServerHandler,
     model::{
-        CallToolRequestParams, CallToolResponse, CallToolResult, Implementation, ListPromptsResult,
-        ListResourceTemplatesResult, ListResourcesResult, ListToolsResult, PaginatedRequestParams,
-        ProtocolVersion, ServerCapabilities, ServerInfo, Tool, ToolsCapability,
+        CacheScope, CallToolRequestParams, CallToolResponse, CallToolResult, Implementation,
+        ListPromptsResult, ListResourceTemplatesResult, ListResourcesResult, ListToolsResult,
+        PaginatedRequestParams, ProtocolVersion, ResultType, ServerCapabilities, ServerInfo, Tool,
+        ToolsCapability,
     },
     service::{RequestContext, RoleServer},
 };
 use tracing::info;
 
-/// Protocol revisions SurrealMind deliberately supports.
-///
-/// rmcp 3.1.4 knows the draft `2026-07-28` revision, but its default empty
-/// `resources/list`, `resources/templates/list`, and `prompts/list` responses
-/// omit cache metadata that the draft requires. Advertising every revision the
-/// SDK knows therefore overstates this server's contract. Keep negotiation at
-/// the latest fully implemented revision until the whole draft surface is
-/// covered, rather than patching one response at a time.
-const SUPPORTED_PROTOCOL_VERSIONS: &[ProtocolVersion] = &[
-    ProtocolVersion::V_2024_11_05,
-    ProtocolVersion::V_2025_03_26,
-    ProtocolVersion::V_2025_06_18,
-    ProtocolVersion::V_2025_11_25,
-];
+const LIST_TTL_MS: u64 = 300_000;
 
-/// Build the pre-2026 `tools/list` result.
+fn uses_2026_list_shape(context: &RequestContext<RoleServer>) -> bool {
+    context
+        .protocol_version()
+        .is_some_and(|version| version >= ProtocolVersion::V_2026_07_28)
+}
+
+fn list_shape_fields(draft_2026: bool) -> (Option<ResultType>, Option<u64>, Option<CacheScope>) {
+    if draft_2026 {
+        (
+            Some(ResultType::COMPLETE),
+            Some(LIST_TTL_MS),
+            Some(CacheScope::Public),
+        )
+    } else {
+        (None, None, None)
+    }
+}
+
+/// Serialize list results in the protocol era the request actually uses.
 ///
-/// `ttlMs`, `cacheScope`, and `resultType` belong to the excluded 2026-07-28
-/// draft. Emitting them after negotiating a 2025-era protocol can make strict
-/// clients reject an otherwise valid response, so all three stay absent until
-/// SurrealMind implements and advertises that draft comprehensively.
-fn list_tools_result(tools: Vec<Tool>) -> ListToolsResult {
+/// Claude Code's inline client declares `2026-07-28` on every request and
+/// requires `resultType`, `ttlMs`, and `cacheScope`. Older session clients can
+/// reject those same fields as unknown. The request context is therefore the
+/// type marker; one unconditional wire shape cannot serve both eras safely.
+fn list_tools_result(tools: Vec<Tool>, draft_2026: bool) -> ListToolsResult {
+    let (result_type, ttl_ms, cache_scope) = list_shape_fields(draft_2026);
     ListToolsResult {
-        result_type: None,
+        result_type,
+        ttl_ms,
+        cache_scope,
         tools,
         ..Default::default()
     }
 }
 
 impl ServerHandler for SurrealMindServer {
-    fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
-        Cow::Borrowed(SUPPORTED_PROTOCOL_VERSIONS)
-    }
-
     fn get_info(&self) -> ServerInfo {
         // D4: preserve `tools.listChanged = false` explicitly rather than
         // letting it become absent on the wire. `ToolsCapability` is
@@ -70,17 +73,18 @@ impl ServerHandler for SurrealMindServer {
     // the response `protocol_version` against `supported_protocol_versions()`
     // instead of echoing whatever the client claims (which is what the
     // previous override did via `info.protocol_version =
-    // request.protocol_version.clone()`). `supported_protocol_versions()` is
-    // intentionally narrowed above: the server negotiates only revisions it
-    // implements across every method.
+    // request.protocol_version.clone()`).
 
     async fn list_resources(
         &self,
         _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> std::result::Result<ListResourcesResult, McpError> {
+        let (result_type, ttl_ms, cache_scope) = list_shape_fields(uses_2026_list_shape(&context));
         Ok(ListResourcesResult {
-            result_type: None,
+            result_type,
+            ttl_ms,
+            cache_scope,
             ..Default::default()
         })
     }
@@ -88,10 +92,13 @@ impl ServerHandler for SurrealMindServer {
     async fn list_resource_templates(
         &self,
         _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> std::result::Result<ListResourceTemplatesResult, McpError> {
+        let (result_type, ttl_ms, cache_scope) = list_shape_fields(uses_2026_list_shape(&context));
         Ok(ListResourceTemplatesResult {
-            result_type: None,
+            result_type,
+            ttl_ms,
+            cache_scope,
             ..Default::default()
         })
     }
@@ -99,10 +106,13 @@ impl ServerHandler for SurrealMindServer {
     async fn list_prompts(
         &self,
         _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> std::result::Result<ListPromptsResult, McpError> {
+        let (result_type, ttl_ms, cache_scope) = list_shape_fields(uses_2026_list_shape(&context));
         Ok(ListPromptsResult {
-            result_type: None,
+            result_type,
+            ttl_ms,
+            cache_scope,
             ..Default::default()
         })
     }
@@ -110,7 +120,7 @@ impl ServerHandler for SurrealMindServer {
     async fn list_tools(
         &self,
         _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> std::result::Result<ListToolsResult, McpError> {
         info!("tools/list requested");
 
@@ -263,7 +273,7 @@ impl ServerHandler for SurrealMindServer {
 
         // (photography tools removed from this server)
 
-        Ok(list_tools_result(tools))
+        Ok(list_tools_result(tools, uses_2026_list_shape(&context)))
     }
 
     async fn call_tool(
@@ -339,28 +349,34 @@ impl ServerHandler for SurrealMindServer {
 mod list_tools_result_tests {
     use super::*;
 
-    /// After narrowing negotiation to pre-2026 revisions, a `tools/list`
-    /// response must not mix draft-era pagination/cache fields into the 2025
-    /// wire shape.
     #[test]
-    fn list_tools_result_omits_2026_draft_fields() {
+    fn list_tools_result_matches_protocol_era() {
         let tool = Tool::new(
             "probe",
             "probe tool for protocol-era regression coverage",
             std::sync::Arc::new(serde_json::Map::new()),
         );
-        let result = list_tools_result(vec![tool]);
+        let legacy = list_tools_result(vec![tool.clone()], false);
 
-        assert_eq!(result.ttl_ms, None);
-        assert_eq!(result.cache_scope, None);
-        assert_eq!(result.result_type, None);
+        assert_eq!(legacy.ttl_ms, None);
+        assert_eq!(legacy.cache_scope, None);
+        assert_eq!(legacy.result_type, None);
 
-        let wire = serde_json::to_value(&result).expect("ListToolsResult must serialize");
+        let wire = serde_json::to_value(&legacy).expect("ListToolsResult must serialize");
         for draft_field in ["resultType", "ttlMs", "cacheScope"] {
             assert!(
                 wire.get(draft_field).is_none(),
                 "pre-2026 tools/list must omit draft field {draft_field}"
             );
         }
+
+        let draft = list_tools_result(vec![tool], true);
+        assert_eq!(draft.result_type, Some(ResultType::COMPLETE));
+        assert_eq!(draft.ttl_ms, Some(LIST_TTL_MS));
+        assert_eq!(draft.cache_scope, Some(CacheScope::Public));
+        let wire = serde_json::to_value(&draft).expect("ListToolsResult must serialize");
+        assert_eq!(wire["resultType"], serde_json::json!("complete"));
+        assert_eq!(wire["ttlMs"], serde_json::json!(LIST_TTL_MS));
+        assert_eq!(wire["cacheScope"], serde_json::json!("public"));
     }
 }
