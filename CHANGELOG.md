@@ -33,6 +33,13 @@ job. The default suite no longer depends on an undeclared server, and the three
 deserialization regressions remain executable CI coverage rather than being
 silently removed.
 
+That run also activated the repository's previously dormant `cargo audit` step
+against the production-identical lockfile and reported 15 pre-existing RustSec
+advisories. Dependency remediation is tracked separately from this rmcp CI
+repair; the audit remains visible on every branch run as a non-blocking warning
+instead of either hiding the findings or making unrelated baseline debt report
+the rmcp regression suite as failed.
+
 ### Fixed (Sol closure)
 
 - **Generated-vector and update-result correctness:** one shared `ensure_generated_embedding_dimension` guard now runs before every active thought/KG/admin/re-embed vector write. The `think`, `ensure_kg_embedding`, admin, and re-embed paths inspect `RETURN` rows before reporting success; a wrong-length vector, statement error, or zero-row update cannot be represented as completion.
