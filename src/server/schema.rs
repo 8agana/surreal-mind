@@ -232,12 +232,108 @@ impl SurrealMindServer {
         "#
         );
 
+        // NOTE on `.check()`: measured live during this pass, adding
+        // `.check()` to this call breaks re-initialization of an
+        // ALREADY-INITIALIZED schema. None of these DDL statements carry
+        // OVERWRITE or IF NOT EXISTS, so SurrealDB 3.1.2 errors on every
+        // redefinition (even byte-identical ones) with e.g. "The table
+        // 'thoughts' already exists" — and `initialize_schema()` runs on
+        // every `SurrealMindServer::new()`, i.e. every server restart
+        // against a live namespace. Production currently depends on
+        // `.query().await` NOT inspecting per-statement results to make
+        // repeated startup idempotent. `.check()` would surface that first
+        // "already exists" error (not the dimension-drift error this was
+        // meant to catch) and fail every restart. Making the DDL itself
+        // idempotent (OVERWRITE/IF NOT EXISTS) is the correct fix for that,
+        // and is explicitly out of scope for this patch (see do_not_change).
+        // So this call is left as-is; the visibility this task actually
+        // asked for (a stale-dimension thoughts_embedding_idx going
+        // unnoticed) is provided by the explicit post-init verification
+        // below instead, which does not touch DDL error-swallowing at all.
         self.db.query(schema_sql).await.map_err(|e| McpError {
             code: rmcp::model::ErrorCode::INTERNAL_ERROR,
             message: format!("Schema init failed: {}", e).into(),
             data: None,
         })?;
 
+        self.verify_embedding_index_dimension(dim).await?;
+
         Ok(())
+    }
+
+    /// Read back `thoughts_embedding_idx`'s live DIMENSION via `INFO FOR
+    /// TABLE thoughts` and compare it against the currently configured
+    /// embedder dimension. This is the visibility fix for the scenario the
+    /// postdeploy review named directly: a `DEFINE INDEX ... HNSW DIMENSION
+    /// {dim}` redefinition at a different dimension silently no-ops (per the
+    /// note above) instead of erroring, so the index keeps serving the OLD
+    /// dimension while every other signal claims schema init succeeded.
+    /// Deliberately read-only: it reports the drift as an error rather than
+    /// auto-remediating (rebuilding a live HNSW index is a real design
+    /// decision — see do_not_change).
+    async fn verify_embedding_index_dimension(
+        &self,
+        expected_dim: usize,
+    ) -> std::result::Result<(), McpError> {
+        let info: Vec<serde_json::Value> = self
+            .db
+            .query("INFO FOR TABLE thoughts")
+            .await
+            .map_err(|e| McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!("Failed to read back thoughts table info: {}", e).into(),
+                data: None,
+            })?
+            .take(0)
+            .map_err(|e| McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!("Failed to parse thoughts table info: {}", e).into(),
+                data: None,
+            })?;
+
+        let index_def = info
+            .first()
+            .and_then(|v| v.get("indexes"))
+            .and_then(|v| v.get("thoughts_embedding_idx"))
+            .and_then(|v| v.as_str());
+
+        let Some(index_def) = index_def else {
+            // No index at all is a startup-order anomaly (the DEFINE INDEX
+            // statement above should have created it), not a dimension
+            // mismatch. Leave detecting that class of failure to the
+            // existing health_check_indexes maintenance tool rather than
+            // failing server startup here.
+            return Ok(());
+        };
+
+        // `index_def` is raw DDL text, e.g.
+        // "DEFINE INDEX thoughts_embedding_idx ON thoughts FIELDS embedding HNSW DIMENSION 1536 ...".
+        // Extract the integer following "DIMENSION".
+        let live_dim = index_def
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .windows(2)
+            .find(|w| w[0].eq_ignore_ascii_case("DIMENSION"))
+            .and_then(|w| {
+                w[1].trim_matches(|c: char| !c.is_ascii_digit())
+                    .parse::<usize>()
+                    .ok()
+            });
+
+        match live_dim {
+            Some(live_dim) if live_dim != expected_dim => Err(McpError {
+                code: rmcp::model::ErrorCode::INTERNAL_ERROR,
+                message: format!(
+                    "thoughts_embedding_idx is defined at DIMENSION {} but the configured embedder expects {}. \
+                     The DEFINE INDEX statement in initialize_schema() does not carry OVERWRITE, so a dimension \
+                     change silently no-ops instead of rebuilding the index (see the note in initialize_schema()). \
+                     This requires a deliberate index rebuild, not automatic remediation: {:?}",
+                    live_dim, expected_dim, index_def
+                )
+                .into(),
+                data: None,
+            }),
+            _ => Ok(()),
+        }
     }
 }
