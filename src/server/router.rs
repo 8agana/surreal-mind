@@ -3,12 +3,47 @@ use rmcp::{
     ErrorData as McpError,
     handler::server::ServerHandler,
     model::{
-        CallToolRequestParams, CallToolResponse, CallToolResult, Implementation, ListToolsResult,
-        PaginatedRequestParams, ServerCapabilities, ServerInfo, ToolsCapability,
+        CacheScope, CallToolRequestParams, CallToolResponse, CallToolResult, Implementation,
+        ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerInfo, Tool,
+        ToolsCapability,
     },
     service::{RequestContext, RoleServer},
 };
 use tracing::info;
+
+/// How long clients may treat a `tools/list` response as fresh (SEP-2549).
+///
+/// The tool roster is fixed for the life of the process — `get_info()`
+/// advertises `tools.listChanged = false` — so a short, non-zero TTL is safe
+/// and avoids clients re-fetching on every turn.
+const TOOLS_LIST_TTL_MS: u64 = 300_000; // 5 minutes
+
+/// Build the `tools/list` result with SEP-2549 cache metadata populated.
+///
+/// rmcp 3.1.4's `ListToolsResult::default()` leaves `ttl_ms`/`cache_scope`
+/// as `None`, which `serde` then omits from the wire entirely
+/// (`skip_serializing_if = "Option::is_none"`). That is valid per rmcp's own
+/// backward-compat contract for peers on protocol versions older than
+/// `2026-07-28`, but this server does not narrow
+/// `supported_protocol_versions()`, so it negotiates `2026-07-28` with any
+/// client that offers it. Claude Code 2.1.241 is one such client, and its
+/// `tools/list` response schema for that protocol version treats `ttlMs`
+/// and `cacheScope` as *required* — stricter than rmcp's own leniency —
+/// so an omitted field fails client-side validation with "tools fetch
+/// failed" and the server never connects (measured 2026-08-24; rmcp 0.16.0
+/// predates SEP-2549 and protocol `2026-07-28` entirely, so it never offered
+/// that version and never hit this). The tool roster is identical for every
+/// caller of this single-tenant server, so `CacheScope::Public` is correct
+/// per the SEP-2549 semantics ("any client or intermediary may cache and
+/// serve the response to any user").
+fn list_tools_result(tools: Vec<Tool>) -> ListToolsResult {
+    ListToolsResult {
+        tools,
+        ..Default::default()
+    }
+    .with_ttl_ms(TOOLS_LIST_TTL_MS)
+    .with_cache_scope(CacheScope::Public)
+}
 
 impl ServerHandler for SurrealMindServer {
     fn get_info(&self) -> ServerInfo {
@@ -47,8 +82,6 @@ impl ServerHandler for SurrealMindServer {
 
         // use crate::tools::unified_search::SearchQuery; // Removed as likely internal or unused in this scope
         // use crate::tools::unified_search::UnifiedSearchParams; // Unused
-
-        use rmcp::model::Tool;
 
         // Input schemas
         let think_schema_map = crate::schemas::think_schema();
@@ -196,10 +229,7 @@ impl ServerHandler for SurrealMindServer {
 
         // (photography tools removed from this server)
 
-        Ok(ListToolsResult {
-            tools,
-            ..Default::default()
-        })
+        Ok(list_tools_result(tools))
     }
 
     async fn call_tool(
@@ -268,5 +298,50 @@ impl ServerHandler for SurrealMindServer {
             }),
         };
         result.map(Into::into)
+    }
+}
+
+#[cfg(test)]
+mod list_tools_result_tests {
+    use super::*;
+
+    /// Regression test for the 2026-08-24 Claude Code 2.1.241 compatibility
+    /// break: a `tools/list` response must serialize `ttlMs` as a JSON
+    /// number and `cacheScope` as `"public"`/`"private"`, never omit them.
+    /// Prior to the fix, `ListToolsResult { tools, ..Default::default() }`
+    /// left both `None`, which serde drops from the wire entirely, and
+    /// Claude Code's schema for the negotiated `2026-07-28` protocol version
+    /// rejects that as `expected number at path ttlMs (received undefined)`.
+    #[test]
+    fn list_tools_result_serializes_required_sep2549_fields() {
+        let tool = Tool::new(
+            "probe",
+            "probe tool for cache-metadata regression coverage",
+            std::sync::Arc::new(serde_json::Map::new()),
+        );
+        let result = list_tools_result(vec![tool]);
+
+        assert_eq!(
+            result.ttl_ms,
+            Some(TOOLS_LIST_TTL_MS),
+            "ttl_ms must be populated, not left at the None default"
+        );
+        assert_eq!(
+            result.cache_scope,
+            Some(CacheScope::Public),
+            "cache_scope must be populated, not left at the None default"
+        );
+
+        let wire = serde_json::to_value(&result).expect("ListToolsResult must serialize");
+        assert_eq!(
+            wire["ttlMs"],
+            serde_json::json!(TOOLS_LIST_TTL_MS),
+            "ttlMs must be a JSON number on the wire, never absent"
+        );
+        assert_eq!(
+            wire["cacheScope"],
+            serde_json::json!("public"),
+            "cacheScope must be the string \"public\" on the wire, never absent"
+        );
     }
 }
