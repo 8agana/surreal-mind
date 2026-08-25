@@ -2,18 +2,18 @@
 
 **Reviewer/implementer:** Codex Sol closure worker
 **Branch/worktree:** `codex/rmcp-3.1.4-followup` / isolated Studio worktree only
-**Status:** re-review implementation and full verification complete. The final clean release-candidate identity belongs in the external closure receipt: committing a hash into this file would create a different commit and therefore a different embedded identity.
+**Status:** third-review implementation complete; final verification follows this documentation commit. The final clean release-candidate identity belongs in the external closure receipt: committing a hash into this file would create a different commit and therefore a different embedded identity.
 
 ## Blocking disposition
 
 | Group | Disposition | Implemented boundary |
 |---|---|---|
 | N-2 recurrence | Closed | Every one of the six KG batch UPDATE sites calls the same `execute_embedding_update` helper, which owns transport, statement, zero-match, and success classification. Per-row continuation and `*_failed`/`*_no_match` accounting are therefore one tested path. |
-| Generated-vector correctness | Closed | `ensure_generated_embedding_dimension` is the sole pre-mutation guard used by thought, KG, pending, admin, and re-embed writers. A fake-embedder disposable test invokes the active `ensure_kg_embedding` write path, proves wrong length returns an error, and proves its record remains unmodified. |
+| Generated-vector correctness | Closed | The fake-embedder disposable test captures the fixture's exact `meta::id(id)` from `CREATE`, passes that exact ID to active `ensure_kg_embedding`, proves wrong length returns an error, and proves the identified record remains unmodified. Removing that guard would persist the three-element vector and make both assertions fail. |
 | Negative tests | Closed | Pure guard/identity/classifier tests cover wrong length, dirty-state serialization, transport, statement error, and zero match. The real-driver classifier continuation and active KG wrong-dimension tests passed in `sol_rereview_paths_20260825`, which was removed and absent from `INFO FOR ROOT` afterward. |
-| Provenance | Closed | `build.rs` watches every tracked file as well as refs, accepts Git metadata only when canonical Git top-level equals `CARGO_MANIFEST_DIR`, and serializes clean, dirty, dirty-unknown, and unknown commit explicitly. The passing fixture covers source and non-source dirty/cleared changes, unavailable Git, source archive, and nested ancestor archive. |
+| Provenance | Closed | `build.rs` watches every tracked file as well as refs, accepts Git metadata only when canonical Git top-level equals `CARGO_MANIFEST_DIR`, and serializes clean, dirty, dirty-unknown, and unknown commit explicitly. The fixture forces fresh target directories for unavailable-Git and status-only-failure shims, in addition to source/non-source dirty/cleared, archive, and nested-ancestor cases. |
 | Failure reporting | Closed | `failed` reaches MCP `reembed`, every `reembed_kg` MCP table block, and both KG CLI summaries. Pure summary tests fail if any failure field is omitted. |
-| Emergency bypass | Closed | `SURR_SKIP_DIM_CHECK` now gates the schema index-dimension verification inside `SurrealMindServer::new()` as well as main's later preflight. Normal startup still rejects a real stale HNSW dimension; the test serializes its process-global environment mutation. |
+| Emergency bypass | Closed | `SURR_SKIP_DIM_CHECK` now gates the schema index-dimension verification inside `SurrealMindServer::new()` as well as main's later preflight. The mismatch/bypass mutation runs in a child test process with RAII restoration, so the parent test process and sibling server-construction tests never observe it. |
 
 ## Provenance boundary
 

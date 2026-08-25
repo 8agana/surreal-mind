@@ -11,6 +11,7 @@ Isolated worktree `surreal-mind-rmcp-3.1.4-followup`, based on the deployed bran
 - **Generated-vector and update-result correctness:** one shared `ensure_generated_embedding_dimension` guard now runs before every active thought/KG/admin/re-embed vector write. The `think`, `ensure_kg_embedding`, admin, and re-embed paths inspect `RETURN` rows before reporting success; a wrong-length vector, statement error, or zero-row update cannot be represented as completion.
 - **N-2 recurrence in the six KG batch writers:** `run_reembed_kg` and `run_kg_embed` now classify transport failure, statement error, zero match, and success independently. Per-record failures continue the batch and are returned separately from `*_no_match` counters.
 - **Emergency dimension bypass at the real startup boundary:** `SURR_SKIP_DIM_CHECK` now bypasses only the schema index-dimension check inside `SurrealMindServer::new()`, which occurs before `main`'s existing preflight. Normal startup remains strict. The db-integration test for the actual stale-index/bypass sequence is intentionally gated on a disposable namespace.
+- **KG `edges` MCP reporting correction:** a later Sol repair added the complete `edges` block to `maintain(action:"reembed_kg")`, including `updated`, `skipped`, `missing`, `mismatched`, `no_match`, and `failed`. Any earlier statement in this changelog that says the MCP result omits edges is historical and superseded.
 
 ### Deferred (Sol closure)
 
