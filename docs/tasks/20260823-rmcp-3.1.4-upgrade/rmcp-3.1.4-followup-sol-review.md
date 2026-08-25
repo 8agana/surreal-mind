@@ -2,7 +2,7 @@
 
 **Reviewer/implementer:** Codex Sol closure worker
 **Branch/worktree:** `codex/rmcp-3.1.4-followup` / isolated Studio worktree only
-**Status:** third-review implementation complete; final verification follows this documentation commit. The final clean release-candidate identity belongs in the external closure receipt: committing a hash into this file would create a different commit and therefore a different embedded identity.
+**Status:** third-review implementation and full verification complete. The final clean release-candidate identity belongs in the external closure receipt: committing a hash into this file would create a different commit and therefore a different embedded identity.
 
 ## Blocking disposition
 
