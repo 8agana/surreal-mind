@@ -123,11 +123,24 @@ async fn test_schema_dimension_mismatch_requires_or_honors_emergency_bypass() ->
     unsafe {
         std::env::remove_var("SURR_SKIP_DIM_CHECK");
     }
-    if let Err(error) = bypassed {
-        anyhow::bail!(
+    let bypassed = match bypassed {
+        Ok(server) => server,
+        Err(error) => anyhow::bail!(
             "SURR_SKIP_DIM_CHECK must bypass only the known index-dimension verification: {error}"
-        );
-    }
+        ),
+    };
+
+    // Restore the normal fixture index so this test is safe to run in the
+    // same single-threaded disposable suite as the other hygiene tests.
+    bypassed
+        .db
+        .query(format!(
+            "REMOVE INDEX thoughts_embedding_idx ON TABLE thoughts; \
+             DEFINE INDEX thoughts_embedding_idx ON TABLE thoughts FIELDS embedding HNSW DIMENSION {};",
+            config.system.embedding_dimensions
+        ))
+        .await?
+        .check()?;
 
     Ok(())
 }

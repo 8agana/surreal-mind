@@ -14,21 +14,6 @@ pub fn skip_dimension_check_requested() -> bool {
     skip_dimension_check_value(std::env::var("SURR_SKIP_DIM_CHECK").ok().as_deref())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::skip_dimension_check_value;
-
-    #[test]
-    fn skip_dimension_check_flag_accepts_only_documented_truthy_values() {
-        assert!(skip_dimension_check_value(Some("1")));
-        assert!(skip_dimension_check_value(Some("true")));
-        assert!(skip_dimension_check_value(Some("TRUE")));
-        assert!(!skip_dimension_check_value(None));
-        assert!(!skip_dimension_check_value(Some("0")));
-        assert!(!skip_dimension_check_value(Some("false")));
-    }
-}
-
 impl SurrealMindServer {
     /// Initialize the database schema
     pub async fn initialize_schema(&self) -> std::result::Result<(), McpError> {
@@ -368,5 +353,20 @@ impl SurrealMindServer {
             }),
             _ => Ok(()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::skip_dimension_check_value;
+
+    #[test]
+    fn skip_dimension_check_flag_accepts_only_documented_truthy_values() {
+        assert!(skip_dimension_check_value(Some("1")));
+        assert!(skip_dimension_check_value(Some("true")));
+        assert!(skip_dimension_check_value(Some("TRUE")));
+        assert!(!skip_dimension_check_value(None));
+        assert!(!skip_dimension_check_value(Some("0")));
+        assert!(!skip_dimension_check_value(Some("false")));
     }
 }
