@@ -50,13 +50,30 @@ build_and_expect "$clean_tree" "$shared_target" "$package_version+$clean_commit-
 mv "$clean_tree/src/version.rs.fixture-clean" "$clean_tree/src/version.rs"
 build_and_expect "$clean_tree" "$shared_target" "$package_version+$clean_commit"
 
-# 4. A genuine source archive has no .git metadata and must say so explicitly.
+# 4. The dirty query covers every tracked file, so a non-source document edit
+# must also invalidate build.rs instead of producing a false-clean identity.
+cp "$clean_tree/CHANGELOG.md" "$clean_tree/CHANGELOG.md.fixture-clean"
+printf '\n<!-- provenance fixture: tracked documentation made dirty -->\n' >> "$clean_tree/CHANGELOG.md"
+build_and_expect "$clean_tree" "$shared_target" "$package_version+$clean_commit-dirty"
+mv "$clean_tree/CHANGELOG.md.fixture-clean" "$clean_tree/CHANGELOG.md"
+build_and_expect "$clean_tree" "$shared_target" "$package_version+$clean_commit"
+
+# 5. A canonical checkout with Git lookup forced unavailable must not look
+# clean. Cargo and rustc stay on PATH; only `git` is shadowed by this shim.
+git_unavailable="$fixture_root/git-unavailable"
+mkdir -p "$git_unavailable"
+printf '#!/usr/bin/env sh\nexit 127\n' > "$git_unavailable/git"
+chmod +x "$git_unavailable/git"
+PATH="$git_unavailable:$PATH" \
+    build_and_expect "$clean_tree" "$shared_target" "$package_version+unknown-dirty-unknown"
+
+# 6. A genuine source archive has no .git metadata and must say so explicitly.
 archive_tree="$fixture_root/source-archive"
 mkdir -p "$archive_tree"
 git -C "$repo_root" archive --format=tar HEAD | tar -x -C "$archive_tree"
 build_and_expect "$archive_tree" "$shared_target" "$package_version+unknown-dirty-unknown"
 
-# 5. A source archive nested inside some unrelated Git repository must not
+# 7. A source archive nested inside some unrelated Git repository must not
 # borrow its ancestor's identity.
 outer_repo="$fixture_root/unrelated-ancestor"
 mkdir -p "$outer_repo/vendor/surreal-mind"

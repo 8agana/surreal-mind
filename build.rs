@@ -61,23 +61,11 @@ fn emit_source_tree_reruns(path: &Path) {
 }
 
 /// Cargo switches from its default broad build-script invalidation to only the
-/// explicit paths printed here. Therefore Git ref watches alone are
-/// insufficient: a tracked `src/**/*.rs` change can make a tree dirty while
-/// leaving HEAD unchanged. Emit every relevant tracked compile/source input so
-/// a normal source edit re-runs this script and refreshes the dirty state.
+/// explicit paths printed here. The dirty observation below covers every
+/// tracked file, so the invalidation set must do the same: otherwise a change
+/// to a tracked document could leave a false-clean identity behind.
 fn emit_tracked_input_reruns(manifest_dir: &Path) {
-    let Some(files) = git_output(
-        manifest_dir,
-        &[
-            "ls-files",
-            "--cached",
-            "--",
-            "Cargo.toml",
-            "Cargo.lock",
-            "build.rs",
-            "src",
-        ],
-    ) else {
+    let Some(files) = git_output(manifest_dir, &["ls-files", "--cached"]) else {
         for name in ["Cargo.toml", "Cargo.lock", "build.rs"] {
             emit_rerun_if_changed(&manifest_dir.join(name));
         }
