@@ -6,6 +6,19 @@ Isolated worktree `surreal-mind-rmcp-3.1.4-followup`, based on the deployed bran
 
 **Sol closure correction (2026-08-25):** the initial provenance implementation still treated a tracked-file edit as invisible unless a Git ref changed, accepted an ancestor repository when a source archive was nested inside one, and serialized unknown commit metadata as a bare package version. Those claims are superseded: `build.rs` now watches every tracked file, requires canonical Git top-level equality with `CARGO_MANIFEST_DIR`, and emits explicit `+unknown` / `-dirty-unknown` identities. This remains build metadata only; it is neither reproducible binary hashing nor a deployment assertion. A measured artifact SHA-256 plus an external deployment receipt is the binding witness. See `rmcp-3.1.4-followup-sol-review.md` and `scripts/verify-build-provenance-fixture.sh`.
 
+**N-4 CI wiring (2026-08-25):** CI now runs Clippy with the same locked,
+all-features, warnings-as-errors boundary used for the production candidate and
+adds a separate disposable SurrealDB 3.2.3 job for the deterministic
+database/protocol slice. That job executes the real handler/wire
+`tools/list`/SEP-2549 assertion, protocol negotiation, invalid-parameter and
+notification paths, stdio smoke, `GROUP ALL` count regression, and stale-index
+dimension/bypass regression under `RUN_DB_TESTS=1`. The slice was first run
+locally against an in-memory SurrealDB on port 18000: all seven tests passed,
+`Cargo.lock` stayed unchanged, and the worktree remained clean. Tests that
+actually invoke the external embedding API are intentionally not mislabeled as
+CI-covered; they retain their independently recorded disposable-Studio
+evidence until a dedicated CI credential is provisioned.
+
 ### Fixed (Sol closure)
 
 - **Generated-vector and update-result correctness:** one shared `ensure_generated_embedding_dimension` guard now runs before every active thought/KG/admin/re-embed vector write. The `think`, `ensure_kg_embedding`, admin, and re-embed paths inspect `RETURN` rows before reporting success; a wrong-length vector, statement error, or zero-row update cannot be represented as completion.

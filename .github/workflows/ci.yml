@@ -30,7 +30,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
       - name: Tests
         run: cargo test --workspace --locked
@@ -42,3 +42,67 @@ jobs:
 
       - name: Security audit (cargo-audit)
         run: cargo audit
+
+  db-protocol:
+    runs-on: ubuntu-latest
+    env:
+      RUN_DB_TESTS: "1"
+      REEMBED_TEST_CONFIRM_DISPOSABLE_NS: "1"
+      SURR_DB_URL: ws://127.0.0.1:8000
+      SURR_DB_USER: root
+      SURR_DB_PASS: root
+      SURR_DB_NS: surreal_mind_ci
+      SURR_DB_DB: ci
+      # These tests construct the provider clients and tool schemas but never
+      # call an external model API. A non-secret placeholder is intentional.
+      OPENAI_API_KEY: ci-not-used
+      ANTHROPIC_MODELS: claude-sonnet-5
+      ANTHROPIC_MODEL: claude-sonnet-5
+      MCP_NO_LOG: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes protobuf-compiler
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Start disposable SurrealDB
+        uses: surrealdb/setup-surreal@v2
+        with:
+          # Match the production engine used for the accepted candidate.
+          surrealdb_version: v3.2.3
+          surrealdb_port: 8000
+          surrealdb_username: root
+          surrealdb_password: root
+          surrealdb_auth: true
+          surrealdb_log: warn
+          surrealdb_retry_count: 30
+
+      - name: Compile db-integration targets
+        run: cargo check --workspace --all-targets --features db_integration --locked
+
+      - name: Run deterministic database/protocol regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_test() {
+            cargo test --locked --features db_integration "$@" -- \
+              --exact --nocapture --test-threads=1
+          }
+
+          run_test --test mcp_protocol test_list_tools_protocol
+          run_test --test mcp_protocol test_call_tool_protocol_invalid_params
+          run_test --test mcp_protocol test_initialize_protocol_negotiation
+          run_test --test mcp_protocol test_notification_protocol_bridge
+          run_test --test stdio_smoke stdio01_initialize_and_list_tools_smoke
+          run_test --test dimension_hygiene test_group_all_required_for_accurate_count
+          run_test --test dimension_hygiene \
+            test_schema_dimension_mismatch_requires_or_honors_emergency_bypass
