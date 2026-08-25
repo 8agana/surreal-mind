@@ -29,11 +29,15 @@
 //! gap. What remains a deliberate, documented limitation (not a bug): the
 //! DIRTY flag still reflects working-tree state as of the most recent
 //! build.rs invocation, not the exact instant `--version` runs, if files are
-//! edited without triggering *any* rerun-if-changed path in between — see
-//! the design doc
-//! (docs/tasks/20260823-rmcp-3.1.4-upgrade/rmcp-3.1.4-version-provenance-design.md)
-//! for the broader alternative (rerun-if-changed over the whole tree) this
-//! deliberately does not take.
+//! edited without triggering *any* rerun-if-changed path in between. The
+//! broader alternative — `cargo:rerun-if-changed` over the whole working
+//! tree, so every file edit forces a rebuild — is deliberately not taken
+//! here: it would make every `cargo build`/`cargo check` re-run this script
+//! on any source edit, which is a real, measurable build-latency cost for a
+//! provenance flag that is already `git status`-observable by any caller who
+//! needs it precisely. No separate design document exists for this
+//! trade-off; it is recorded here in full, in this comment, as the only
+//! copy.
 
 use std::process::Command;
 

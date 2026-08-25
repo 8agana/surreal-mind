@@ -819,13 +819,15 @@ impl SurrealMindServer {
                 "updated": stats.entities_updated,
                 "skipped": stats.entities_skipped,
                 "missing": stats.entities_missing,
-                "mismatched": stats.entities_mismatched
+                "mismatched": stats.entities_mismatched,
+                "no_match": stats.entities_no_match
             },
             "observations": {
                 "updated": stats.observations_updated,
                 "skipped": stats.observations_skipped,
                 "missing": stats.observations_missing,
-                "mismatched": stats.observations_mismatched
+                "mismatched": stats.observations_mismatched,
+                "no_match": stats.observations_no_match
             },
             "dry_run": dry_run
         });

@@ -30,16 +30,16 @@ async fn main() -> Result<()> {
     println!();
     println!("===== KG EMBEDDING SUMMARY =====");
     println!(
-        "Entities:     updated={}, skipped={}",
-        stats.entities_updated, stats.entities_skipped
+        "Entities:     updated={}, skipped={}, no_match={}",
+        stats.entities_updated, stats.entities_skipped, stats.entities_no_match
     );
     println!(
-        "Observations: updated={}, skipped={}",
-        stats.observations_updated, stats.observations_skipped
+        "Observations: updated={}, skipped={}, no_match={}",
+        stats.observations_updated, stats.observations_skipped, stats.observations_no_match
     );
     println!(
-        "Edges:        updated={}, skipped={}",
-        stats.edges_updated, stats.edges_skipped
+        "Edges:        updated={}, skipped={}, no_match={}",
+        stats.edges_updated, stats.edges_skipped, stats.edges_no_match
     );
     println!();
     println!(

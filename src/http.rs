@@ -520,26 +520,130 @@ async fn get_db_counts_params(
         return (None, None);
     }
 
+    // N-1: SurrealDB 3.1's zero-arg count() without GROUP ALL returns one
+    // {c:1} row per matched row, not a single aggregate. Without GROUP ALL,
+    // `.take::<Option<u64>>(0)` errors on any table with >1 row (a Vec of
+    // len>1 hits the "Tried to take only a single result" arm) and fails to
+    // deserialize a `{c:1}` object as a bare u64 on exactly 1 row, so counts
+    // silently came back as None regardless of actual table size. GROUP ALL
+    // collapses to a single aggregate row, matching the pattern already used
+    // elsewhere in this codebase (src/tools/maintenance.rs, src/bin/admin.rs),
+    // none of which carry a LIMIT. The pre-fix query's `LIMIT 100000` is
+    // dropped rather than reordered: SurrealQL clause order is
+    // `... GROUP ... ORDER BY ... LIMIT ...`, so `LIMIT` always applies
+    // AFTER aggregation, not to the scanned input — `GROUP ALL ... LIMIT n`
+    // would be a no-op (there is only ever 1 output row to limit), and
+    // `... LIMIT n GROUP ALL` is a parse error (confirmed live: "Unexpected
+    // token `GROUP`, expected Eof"). The existing 500ms `tokio::time::timeout`
+    // around this query is this endpoint's actual bound on slow-query cost.
     let thoughts_query = tokio::time::timeout(
         timeout,
-        client.query("SELECT count() FROM thoughts LIMIT 100000"),
+        client.query("SELECT count() AS c FROM thoughts GROUP ALL"),
     )
     .await;
     let recalls_query = tokio::time::timeout(
         timeout,
-        client.query("SELECT count() FROM kg_entities LIMIT 100000"),
+        client.query("SELECT count() AS c FROM kg_entities GROUP ALL"),
     )
     .await;
 
     let thoughts_count = if let Ok(Ok(mut resp)) = thoughts_query {
-        resp.take::<Option<u64>>(0).ok().flatten()
+        resp.take::<Vec<serde_json::Value>>(0)
+            .ok()
+            .and_then(|rows| {
+                rows.first()
+                    .and_then(|v| v.get("c"))
+                    .and_then(|v| v.as_u64())
+            })
     } else {
         None
     };
     let recalls_count = if let Ok(Ok(mut resp)) = recalls_query {
-        resp.take::<Option<u64>>(0).ok().flatten()
+        resp.take::<Vec<serde_json::Value>>(0)
+            .ok()
+            .and_then(|rows| {
+                rows.first()
+                    .and_then(|v| v.get("c"))
+                    .and_then(|v| v.as_u64())
+            })
     } else {
         None
     };
     (thoughts_count, recalls_count)
+}
+
+#[cfg(all(test, feature = "db_integration"))]
+mod tests {
+    use super::*;
+
+    /// N-1 regression guard for `get_db_counts_params` (the `SURR_DB_STATS=1`
+    /// `/health` endpoint's count path). Before this fix the query lacked
+    /// `GROUP ALL`, and unlike the sibling sites in maintenance.rs/admin.rs
+    /// (which read `.first()` off a `Vec<Value>` and merely truncated to 1),
+    /// this call site deserialized straight into `Option<u64>` — on
+    /// SurrealDB 3.x that fails outright for any table with >=1 matching row
+    /// (an explicit "Tried to take only a single result" error for >1 rows,
+    /// or a failed object-to-u64 cast for exactly 1), so `thoughts_count`
+    /// silently reported `None` regardless of true table size. Creates 3
+    /// synthetic scratch thoughts in a disposable namespace, calls the real
+    /// (private) function directly, and asserts the returned count is
+    /// `Some` and reflects at least those 3 rows.
+    #[tokio::test]
+    async fn test_get_db_counts_reports_true_total() {
+        if std::env::var("RUN_DB_TESTS").is_err() {
+            return;
+        }
+
+        let config = Config::load().expect("config load");
+        // Bootstraps the schema in a fresh disposable namespace, same as the
+        // dimension_hygiene.rs tests.
+        let server = SurrealMindServer::new(&config)
+            .await
+            .expect("server init (schema bootstrap)");
+        let marker = "__rmcp-followup-http-N1-count-regression__";
+
+        for i in 0..3 {
+            server
+                .db
+                .query(
+                    "CREATE thoughts SET content = $content, embedding_status = 'pending', \
+                     created_at = time::now(), injected_memories = [], injection_scale = 0, \
+                     significance = 0.0, access_count = 0",
+                )
+                .bind(("content", format!("{} row {}", marker, i)))
+                .await
+                .expect("create scratch row")
+                .check()
+                .expect("create scratch row status");
+        }
+
+        let (thoughts_count, _recalls_count) = get_db_counts_params(
+            &config.system.database_url,
+            &config.system.database_ns,
+            &config.system.database_db,
+            &config.runtime.database_user,
+            &config.runtime.database_pass,
+        )
+        .await;
+
+        assert!(
+            thoughts_count.is_some(),
+            "get_db_counts_params must return Some(n) when thoughts has matching rows \
+             (pre-fix: None/error on any table with >=1 row)"
+        );
+        assert!(
+            thoughts_count.unwrap() >= 3,
+            "count must reflect at least the 3 synthetic scratch rows created; got {:?}",
+            thoughts_count
+        );
+
+        server
+            .db
+            .query("DELETE thoughts WHERE content CONTAINS $marker")
+            .bind(("marker", marker))
+            .await
+            .expect("cleanup query")
+            .check()
+            .expect("cleanup status");
+    }
 }

@@ -372,3 +372,174 @@ async fn test_run_reembed_actually_updates_matched_row() -> Result<()> {
 
     Ok(())
 }
+
+/// N-5-class regression guard for `run_kg_embed` (the missing-only KG
+/// embedder used by the `kgembed` CLI shortcut). Before this fix, the
+/// idempotent per-row UPDATE used `RETURN NONE`, giving nothing to verify a
+/// zero-row match against, so every attempted row was counted as updated
+/// regardless of whether the UPDATE actually touched it. This creates one
+/// synthetic `kg_entities` scratch row with `embedding = NONE`, runs the
+/// real `run_kg_embed` end-to-end, and asserts both that the row's
+/// embedding was actually written (not just that the counter incremented)
+/// and that `entities_no_match` is 0 for this freshly-created, definitely-
+/// matching row. Same whole-table-scan safety gate as
+/// `test_run_reembed_actually_updates_matched_row` above: `run_kg_embed`
+/// walks the WHOLE `kg_entities`/`kg_observations`/`kg_edges` tables in the
+/// configured namespace, not just this test's scratch row.
+#[tokio::test]
+async fn test_kg_embed_actually_updates_matched_row() -> Result<()> {
+    if std::env::var("RUN_DB_TESTS").is_err() {
+        return Ok(());
+    }
+
+    let config = Config::load()?;
+    let confirmed_disposable = std::env::var("REEMBED_TEST_CONFIRM_DISPOSABLE_NS").is_ok();
+    let looks_like_production_ns = matches!(
+        config.system.database_ns.as_str(),
+        "surreal_mind" | "surreal-mind"
+    );
+    if !confirmed_disposable || looks_like_production_ns {
+        eprintln!(
+            "Skipping test_kg_embed_actually_updates_matched_row: set \
+             REEMBED_TEST_CONFIRM_DISPOSABLE_NS=1 and point SURR_DB_NS/SURR_DB_DB at a \
+             genuinely disposable namespace (current ns={:?}). This test calls run_kg_embed, \
+             which walks the WHOLE kg_entities/kg_observations/kg_edges tables in the \
+             configured namespace, not just its own scratch row.",
+            config.system.database_ns
+        );
+        return Ok(());
+    }
+
+    let marker = "__rmcp-followup-kgembed-falsesuccess-regression__";
+    let server = surreal_mind::server::SurrealMindServer::new(&config).await?;
+    server
+        .db
+        .query("CREATE kg_entities SET name = $name, entity_type = 'test', data = {}, embedding = NONE")
+        .bind(("name", marker.to_string()))
+        .await?
+        .check()?;
+
+    let stats = surreal_mind::run_kg_embed(Some(1), false).await?;
+
+    let after: Vec<serde_json::Value> = server
+        .db
+        .query(
+            "SELECT (IF type::is_array(embedding) THEN array::len(embedding) ELSE 0 END) AS elen \
+             FROM kg_entities WHERE name = $name",
+        )
+        .bind(("name", marker.to_string()))
+        .await?
+        .take(0)?;
+    let elen = after
+        .first()
+        .and_then(|r| r.get("elen"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    assert!(
+        elen > 0,
+        "the scratch kg_entities row's embedding must actually be set after run_kg_embed; \
+         elen={} (pre-fix RETURN NONE gave nothing to verify a 0-row match against, so a \
+         never-written row could still be counted as updated)",
+        elen
+    );
+    assert_eq!(
+        stats.entities_no_match, 0,
+        "a freshly-created scratch row must match the idempotent UPDATE's WHERE clause \
+         (embedding IS NULL/NONE); a no_match here means the RETURN-verification wiring \
+         itself is broken, not the row. Full stats: {:?}",
+        stats
+    );
+
+    server
+        .db
+        .query("DELETE kg_entities WHERE name = $name")
+        .bind(("name", marker.to_string()))
+        .await?
+        .check()?;
+
+    Ok(())
+}
+
+/// N-5-class regression guard for `run_reembed_kg` (the `maintain(action:
+/// "reembed_kg")` MCP tool and `reembed_kg` CLI binary, which re-embeds
+/// EVERY kg_entities/kg_observations/kg_edges row regardless of current
+/// embedding state). Before this fix, all three tables' per-row UPDATEs
+/// called `.await?` with no `.take()`/verification and incremented their
+/// `*_updated` counter unconditionally. This creates one synthetic
+/// `kg_entities` scratch row, runs the real `run_reembed_kg` end-to-end
+/// scoped with `limit=1` (bounding the whole-table scan to the first row
+/// found), and asserts the row's embedding was actually written and that
+/// `entities_no_match` is 0. Same whole-table-scan safety gate as the two
+/// tests above.
+#[tokio::test]
+async fn test_reembed_kg_actually_updates_matched_row() -> Result<()> {
+    if std::env::var("RUN_DB_TESTS").is_err() {
+        return Ok(());
+    }
+
+    let config = Config::load()?;
+    let confirmed_disposable = std::env::var("REEMBED_TEST_CONFIRM_DISPOSABLE_NS").is_ok();
+    let looks_like_production_ns = matches!(
+        config.system.database_ns.as_str(),
+        "surreal_mind" | "surreal-mind"
+    );
+    if !confirmed_disposable || looks_like_production_ns {
+        eprintln!(
+            "Skipping test_reembed_kg_actually_updates_matched_row: set \
+             REEMBED_TEST_CONFIRM_DISPOSABLE_NS=1 and point SURR_DB_NS/SURR_DB_DB at a \
+             genuinely disposable namespace (current ns={:?}). This test calls \
+             run_reembed_kg, which walks the WHOLE kg_entities table in the configured \
+             namespace, not just its own scratch row.",
+            config.system.database_ns
+        );
+        return Ok(());
+    }
+
+    let marker = "__rmcp-followup-reembedkg-falsesuccess-regression__";
+    let server = surreal_mind::server::SurrealMindServer::new(&config).await?;
+    server
+        .db
+        .query("CREATE kg_entities SET name = $name, entity_type = 'test', data = {}, embedding = NONE")
+        .bind(("name", marker.to_string()))
+        .await?
+        .check()?;
+
+    let stats = surreal_mind::run_reembed_kg(Some(1), false).await?;
+
+    let after: Vec<serde_json::Value> = server
+        .db
+        .query(
+            "SELECT (IF type::is_array(embedding) THEN array::len(embedding) ELSE 0 END) AS elen \
+             FROM kg_entities WHERE name = $name",
+        )
+        .bind(("name", marker.to_string()))
+        .await?
+        .take(0)?;
+    let elen = after
+        .first()
+        .and_then(|r| r.get("elen"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    assert!(
+        elen > 0,
+        "the scratch kg_entities row's embedding must actually be set after run_reembed_kg; \
+         elen={} (pre-fix: the UPDATE result was never checked, so a never-written row could \
+         still be counted as updated)",
+        elen
+    );
+    assert_eq!(
+        stats.entities_no_match, 0,
+        "a freshly-created scratch row's direct-by-id UPDATE should match; a no_match here \
+         means the RETURN-verification wiring itself is broken, not the row. Full stats: {:?}",
+        stats
+    );
+
+    server
+        .db
+        .query("DELETE kg_entities WHERE name = $name")
+        .bind(("name", marker.to_string()))
+        .await?
+        .check()?;
+
+    Ok(())
+}

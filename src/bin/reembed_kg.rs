@@ -25,22 +25,28 @@ async fn main() -> Result<()> {
 
     println!("\n===== KG RE-EMBED SUMMARY =====");
     println!(
-        "Entities: updated={}, skipped={}, mismatched={}, missing={}",
+        "Entities: updated={}, skipped={}, mismatched={}, missing={}, no_match={}",
         stats.entities_updated,
         stats.entities_skipped,
         stats.entities_mismatched,
-        stats.entities_missing
+        stats.entities_missing,
+        stats.entities_no_match
     );
     println!(
-        "Observations: updated={}, skipped={}, mismatched={}, missing={}",
+        "Observations: updated={}, skipped={}, mismatched={}, missing={}, no_match={}",
         stats.observations_updated,
         stats.observations_skipped,
         stats.observations_mismatched,
-        stats.observations_missing
+        stats.observations_missing,
+        stats.observations_no_match
     );
     println!(
-        "Edges: updated={}, skipped={}, mismatched={}, missing={}",
-        stats.edges_updated, stats.edges_skipped, stats.edges_mismatched, stats.edges_missing
+        "Edges: updated={}, skipped={}, mismatched={}, missing={}, no_match={}",
+        stats.edges_updated,
+        stats.edges_skipped,
+        stats.edges_mismatched,
+        stats.edges_missing,
+        stats.edges_no_match
     );
     println!(
         "Provider/model: {} / {} ({} dims)",

@@ -41,6 +41,13 @@ pub struct ReembedKgStats {
     pub edges_skipped: usize,
     pub edges_missing: usize,
     pub edges_mismatched: usize,
+    /// Same false-success class as ReembedStats::no_match (N-5): a per-record
+    /// UPDATE that returned HTTP/driver success but matched zero rows (e.g.
+    /// the record was deleted between the SELECT and the UPDATE). NOT counted
+    /// in the corresponding `*_updated` field.
+    pub entities_no_match: usize,
+    pub observations_no_match: usize,
+    pub edges_no_match: usize,
 }
 
 /// Stats for kg_embed binary - embeds ONLY records with NULL embeddings
@@ -56,6 +63,13 @@ pub struct KgEmbedStats {
     pub observations_skipped: usize,
     pub edges_updated: usize,
     pub edges_skipped: usize,
+    /// Same false-success class as ReembedStats::no_match (N-5): the idempotent
+    /// WHERE-gated UPDATE returned success but matched zero rows (e.g. a
+    /// concurrent writer already cleared the NULL/NONE condition). NOT
+    /// counted in the corresponding `*_updated` field.
+    pub entities_no_match: usize,
+    pub observations_no_match: usize,
+    pub edges_no_match: usize,
 }
 
 pub async fn run_reembed(
@@ -278,14 +292,17 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
     let mut skipped_entities = 0usize;
     let mut mismatched_entities = 0usize;
     let mut missing_entities = 0usize;
+    let mut no_match_entities = 0usize;
     let mut updated_obs = 0usize;
     let mut skipped_obs = 0usize;
     let mut mismatched_obs = 0usize;
     let mut missing_obs = 0usize;
+    let mut no_match_obs = 0usize;
     let mut updated_edges = 0usize;
     let mut skipped_edges = 0usize;
     let mut mismatched_edges = 0usize;
     let mut missing_edges = 0usize;
+    let mut no_match_edges = 0usize;
 
     // Entities
     {
@@ -352,17 +369,31 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
             let emb = embedder.embed(&text).await?;
             if !dry_run {
                 let ts = Utc::now().to_rfc3339();
+                // Same false-success class as N-5 in run_reembed above: verify
+                // the UPDATE actually matched the record instead of trusting
+                // driver-level success alone (the record may have been deleted
+                // between the SELECT and this UPDATE).
                 let q = format!(
-                    "UPDATE kg_entities:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts",
+                    "UPDATE kg_entities:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts RETURN meta::id(id) AS id",
                     id
                 );
-                db.query(q)
+                let update_rows: Vec<Value> = db
+                    .query(q)
                     .bind(("emb", emb))
                     .bind(("prov", prov.clone()))
                     .bind(("model", model.clone()))
                     .bind(("dim", dims as i64))
                     .bind(("ts", ts))
-                    .await?;
+                    .await?
+                    .take(0)?;
+                if update_rows.is_empty() {
+                    no_match_entities += 1;
+                    eprintln!(
+                        "  ⚠️  reembed_kg: UPDATE for kg_entities:{} matched 0 rows; not counted as updated",
+                        id
+                    );
+                    continue;
+                }
             }
             updated_entities += 1;
         }
@@ -427,16 +458,26 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
             if !dry_run {
                 let ts = Utc::now().to_rfc3339();
                 let q = format!(
-                    "UPDATE kg_observations:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts",
+                    "UPDATE kg_observations:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts RETURN meta::id(id) AS id",
                     id
                 );
-                db.query(q)
+                let update_rows: Vec<Value> = db
+                    .query(q)
                     .bind(("emb", emb))
                     .bind(("prov", prov.clone()))
                     .bind(("model", model.clone()))
                     .bind(("dim", dims as i64))
                     .bind(("ts", ts))
-                    .await?;
+                    .await?
+                    .take(0)?;
+                if update_rows.is_empty() {
+                    no_match_obs += 1;
+                    eprintln!(
+                        "  ⚠️  reembed_kg: UPDATE for kg_observations:{} matched 0 rows; not counted as updated",
+                        id
+                    );
+                    continue;
+                }
             }
             updated_obs += 1;
         }
@@ -509,16 +550,26 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
             if !dry_run {
                 let ts = Utc::now().to_rfc3339();
                 let q = format!(
-                    "UPDATE kg_edges:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts",
+                    "UPDATE kg_edges:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts RETURN meta::id(id) AS id",
                     id
                 );
-                db.query(q)
+                let update_rows: Vec<Value> = db
+                    .query(q)
                     .bind(("emb", emb))
                     .bind(("prov", prov.clone()))
                     .bind(("model", model.clone()))
                     .bind(("dim", dims as i64))
                     .bind(("ts", ts))
-                    .await?;
+                    .await?
+                    .take(0)?;
+                if update_rows.is_empty() {
+                    no_match_edges += 1;
+                    eprintln!(
+                        "  ⚠️  reembed_kg: UPDATE for kg_edges:{} matched 0 rows; not counted as updated",
+                        id
+                    );
+                    continue;
+                }
             }
             updated_edges += 1;
         }
@@ -533,14 +584,17 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
         entities_skipped: skipped_entities,
         entities_missing: missing_entities,
         entities_mismatched: mismatched_entities,
+        entities_no_match: no_match_entities,
         observations_updated: updated_obs,
         observations_skipped: skipped_obs,
         observations_missing: missing_obs,
         observations_mismatched: mismatched_obs,
+        observations_no_match: no_match_obs,
         edges_updated: updated_edges,
         edges_skipped: skipped_edges,
         edges_missing: missing_edges,
         edges_mismatched: mismatched_edges,
+        edges_no_match: no_match_edges,
     })
 }
 
@@ -595,10 +649,13 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
 
     let mut entities_updated = 0usize;
     let entities_skipped = 0usize;
+    let mut entities_no_match = 0usize;
     let mut observations_updated = 0usize;
     let observations_skipped = 0usize;
+    let mut observations_no_match = 0usize;
     let mut edges_updated = 0usize;
     let edges_skipped = 0usize;
+    let mut edges_no_match = 0usize;
 
     let mut entities_missing_null = 0usize;
     let mut entities_missing_none = 0usize;
@@ -697,20 +754,35 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
             let emb = embedder.embed(&text).await?;
             let ts = Utc::now().to_rfc3339();
 
-            // Idempotent update: only update if embedding is still NULL
+            // Idempotent update: only update if embedding is still NULL.
+            // Same false-success class as N-5/run_reembed_kg: RETURN NONE gave
+            // nothing to verify a zero-row match against (e.g. a concurrent
+            // writer already cleared the NULL/NONE condition between the
+            // SELECT and this UPDATE), so the row was always counted as
+            // updated even when it wasn't touched.
             let q = format!(
                 "UPDATE kg_entities:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts \
-                 WHERE (embedding IS NULL OR embedding IS NONE OR (type::is_array(embedding) AND array::len(embedding) = 0)) RETURN NONE",
+                 WHERE (embedding IS NULL OR embedding IS NONE OR (type::is_array(embedding) AND array::len(embedding) = 0)) RETURN meta::id(id) AS id",
                 id
             );
-            db.query(q)
+            let update_rows: Vec<Value> = db
+                .query(q)
                 .bind(("emb", emb))
                 .bind(("prov", prov.clone()))
                 .bind(("model", model.clone()))
                 .bind(("dim", dims as i64))
                 .bind(("ts", ts))
-                .await?;
-            entities_updated += 1;
+                .await?
+                .take(0)?;
+            if update_rows.is_empty() {
+                entities_no_match += 1;
+                eprintln!(
+                    "  ⚠️  kg_embed: UPDATE for kg_entities:{} matched 0 rows; not counted as updated",
+                    id
+                );
+            } else {
+                entities_updated += 1;
+            }
             entity_remaining = entity_remaining.saturating_sub(1);
         }
 
@@ -809,17 +881,27 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
 
             let q = format!(
                 "UPDATE kg_observations:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts \
-                 WHERE (embedding IS NOT DEFINED OR embedding IS NULL OR embedding IS NONE OR (type::is_array(embedding) AND array::len(embedding) = 0)) RETURN NONE",
+                 WHERE (embedding IS NOT DEFINED OR embedding IS NULL OR embedding IS NONE OR (type::is_array(embedding) AND array::len(embedding) = 0)) RETURN meta::id(id) AS id",
                 id
             );
-            db.query(q)
+            let update_rows: Vec<Value> = db
+                .query(q)
                 .bind(("emb", emb))
                 .bind(("prov", prov.clone()))
                 .bind(("model", model.clone()))
                 .bind(("dim", dims as i64))
                 .bind(("ts", ts))
-                .await?;
-            observations_updated += 1;
+                .await?
+                .take(0)?;
+            if update_rows.is_empty() {
+                observations_no_match += 1;
+                eprintln!(
+                    "  ⚠️  kg_embed: UPDATE for kg_observations:{} matched 0 rows; not counted as updated",
+                    id
+                );
+            } else {
+                observations_updated += 1;
+            }
             obs_remaining = obs_remaining.saturating_sub(1);
         }
 
@@ -934,17 +1016,27 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
 
             let q = format!(
                 "UPDATE kg_edges:`{}` SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = $ts \
-                 WHERE (embedding IS NOT DEFINED OR embedding IS NULL OR embedding IS NONE OR (type::is_array(embedding) AND array::len(embedding) = 0)) RETURN NONE",
+                 WHERE (embedding IS NOT DEFINED OR embedding IS NULL OR embedding IS NONE OR (type::is_array(embedding) AND array::len(embedding) = 0)) RETURN meta::id(id) AS id",
                 id
             );
-            db.query(q)
+            let update_rows: Vec<Value> = db
+                .query(q)
                 .bind(("emb", emb))
                 .bind(("prov", prov.clone()))
                 .bind(("model", model.clone()))
                 .bind(("dim", dims as i64))
                 .bind(("ts", ts))
-                .await?;
-            edges_updated += 1;
+                .await?
+                .take(0)?;
+            if update_rows.is_empty() {
+                edges_no_match += 1;
+                eprintln!(
+                    "  ⚠️  kg_embed: UPDATE for kg_edges:{} matched 0 rows; not counted as updated",
+                    id
+                );
+            } else {
+                edges_updated += 1;
+            }
             edge_remaining = edge_remaining.saturating_sub(1);
         }
 
@@ -964,9 +1056,12 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
         dry_run,
         entities_updated,
         entities_skipped,
+        entities_no_match,
         observations_updated,
         observations_skipped,
+        observations_no_match,
         edges_updated,
         edges_skipped,
+        edges_no_match,
     })
 }
