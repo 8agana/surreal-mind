@@ -15,25 +15,26 @@ const GIT_COMMIT: &str = env!("SURR_GIT_COMMIT");
 /// clean, or `"unknown"` if git metadata was unavailable at build time.
 const GIT_DIRTY: &str = env!("SURR_GIT_DIRTY");
 
-/// Self-attesting version identity string.
-///
-/// Shape mirrors `comm`'s proven `0.1.0+0bc53d0` format, with an added
-/// `-dirty` suffix:
-///   - `"{PKG_VERSION}+{commit}-dirty"` when the commit is known and the tree
-///     was dirty at build time.
-///   - `"{PKG_VERSION}+{commit}"` when the commit is known and the tree was
-///     clean (or dirty-state itself could not be determined).
-///   - bare `PKG_VERSION` when no commit could be determined at all (e.g. a
-///     source-archive build with no `.git` directory).
+/// Serialize build metadata without collapsing an uncertain observation into a
+/// clean-looking identity. `dirty-unknown` means Git supplied a commit but its
+/// dirty-state query failed; it is intentionally distinct from both clean and
+/// dirty. `+unknown` is equally explicit when no commit was available.
+fn identity_from_metadata(package_version: &str, commit: &str, dirty: &str) -> String {
+    match (commit, dirty) {
+        ("unknown", "0") => format!("{}+unknown", package_version),
+        ("unknown", "1") => format!("{}+unknown-dirty", package_version),
+        ("unknown", _) => format!("{}+unknown-dirty-unknown", package_version),
+        (commit, "0") => format!("{}+{}", package_version, commit),
+        (commit, "1") => format!("{}+{}-dirty", package_version, commit),
+        (commit, _) => format!("{}+{}-dirty-unknown", package_version, commit),
+    }
+}
+
+/// Build identity string. This is a build-time self-attestation, not a binary
+/// hash or deployment proof; an external measured artifact receipt binds a
+/// commit to a deployed SHA-256.
 pub fn identity() -> String {
-    if GIT_COMMIT == "unknown" {
-        return PKG_VERSION.to_string();
-    }
-    if GIT_DIRTY == "1" {
-        format!("{}+{}-dirty", PKG_VERSION, GIT_COMMIT)
-    } else {
-        format!("{}+{}", PKG_VERSION, GIT_COMMIT)
-    }
+    identity_from_metadata(PKG_VERSION, GIT_COMMIT, GIT_DIRTY)
 }
 
 #[cfg(test)]
@@ -52,5 +53,28 @@ mod tests {
     fn identity_has_no_trailing_or_leading_whitespace() {
         let id = identity();
         assert_eq!(id.trim(), id);
+    }
+
+    #[test]
+    fn identity_serializes_clean_dirty_and_dirty_unknown_as_distinct_states() {
+        let clean = identity_from_metadata("1.2.3", "abcdef0", "0");
+        let dirty = identity_from_metadata("1.2.3", "abcdef0", "1");
+        let dirty_unknown = identity_from_metadata("1.2.3", "abcdef0", "unknown");
+
+        assert_eq!(clean, "1.2.3+abcdef0");
+        assert_eq!(dirty, "1.2.3+abcdef0-dirty");
+        assert_eq!(dirty_unknown, "1.2.3+abcdef0-dirty-unknown");
+        assert_ne!(clean, dirty);
+        assert_ne!(clean, dirty_unknown);
+        assert_ne!(dirty, dirty_unknown);
+    }
+
+    #[test]
+    fn identity_makes_unknown_commit_explicit() {
+        assert_eq!(
+            identity_from_metadata("1.2.3", "unknown", "unknown"),
+            "1.2.3+unknown-dirty-unknown"
+        );
+        assert_ne!(identity_from_metadata("1.2.3", "unknown", "0"), "1.2.3");
     }
 }

@@ -1,47 +1,15 @@
-//! Build-time provenance embedding.
+//! Build-time provenance for `surreal-mind --version`.
 //!
-//! Embeds the git short commit hash and a dirty-tree flag into the binary via
-//! `cargo:rustc-env`, consumed by `src/version.rs`. Mirrors the shape of
-//! `comm`'s (federation-cli) provenance build.rs, with two deliberate
-//! differences documented inline below:
-//!
-//!   1. No `.expect()`/`panic!` anywhere. A build with no `git` on PATH, or run
-//!      from a source archive with no `.git` directory (e.g. `cargo package`,
-//!      a minimal container `COPY src/` stage), must still SUCCEED. On any
-//!      failure this falls back to `unknown` and emits a single
-//!      `cargo:warning` explaining why, rather than failing the build or
-//!      fabricating a value.
-//!   2. Dirty-tree detection, which `comm`'s build.rs does not do at all.
-//!
-//! Rerun-if-changed: narrowly watches git ref state (`.git/HEAD`, the
-//! resolved branch ref file e.g. `.git/refs/heads/<branch>`, and
-//! `.git/packed-refs`), added only when a commit was actually found.
-//! **Correctness note, measured live during implementation**: watching
-//! `.git/HEAD` ALONE is not sufficient — `HEAD` is a symbolic ref
-//! (`ref: refs/heads/<branch>`) whose file contents don't change on an
-//! ordinary commit; only the branch's own ref file does. An earlier version
-//! of this build.rs watched only `.git/HEAD` and, measured live, produced a
-//! STALE embedded commit hash after committing new work with no full
-//! rebuild in between (cargo correctly saw no rerun-if-changed trigger and
-//! skipped build.rs entirely) — not just a stale dirty flag, but an
-//! actively wrong commit hash. Watching the resolved branch ref file (and
-//! packed-refs, in case the ref is packed rather than loose) closes that
-//! gap. What remains a deliberate, documented limitation (not a bug): the
-//! DIRTY flag still reflects working-tree state as of the most recent
-//! build.rs invocation, not the exact instant `--version` runs, if files are
-//! edited without triggering *any* rerun-if-changed path in between. The
-//! broader alternative — `cargo:rerun-if-changed` over the whole working
-//! tree, so every file edit forces a rebuild — is deliberately not taken
-//! here: it would make every `cargo build`/`cargo check` re-run this script
-//! on any source edit, which is a real, measurable build-latency cost for a
-//! provenance flag that is already `git status`-observable by any caller who
-//! needs it precisely. No separate design document exists for this
-//! trade-off; it is recorded here in full, in this comment, as the only
-//! copy.
+//! The embedded identity is deliberately an observation of this build, not a
+//! binary hash or a deployment receipt. A measured artifact SHA-256 and an
+//! external deployment receipt are what bind a specific commit to a deployed
+//! binary. See `scripts/verify-build-provenance-fixture.sh` for the bounded
+//! executable witness of the state transitions below.
 
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
-fn git_output(manifest_dir: &str, args: &[&str]) -> Option<String> {
+fn git_output(manifest_dir: &Path, args: &[&str]) -> Option<String> {
     let output = Command::new("git")
         .arg("-C")
         .arg(manifest_dir)
@@ -51,60 +19,126 @@ fn git_output(manifest_dir: &str, args: &[&str]) -> Option<String> {
     if !output.status.success() {
         return None;
     }
-    let s = String::from_utf8(output.stdout).ok()?;
-    let s = s.trim();
-    if s.is_empty() {
-        None
-    } else {
-        Some(s.to_string())
+    let stdout = String::from_utf8(output.stdout).ok()?;
+    let value = stdout.trim();
+    (!value.is_empty()).then(|| value.to_string())
+}
+
+/// Git commands invoked from a source archive nested in another repository
+/// resolve to that ancestor repository. That ancestor is not this crate's
+/// source identity, so metadata is accepted only when Git's top-level path is
+/// exactly this package's canonical manifest directory.
+fn canonical_git_root(manifest_dir: &Path) -> Option<PathBuf> {
+    let top_level = git_output(manifest_dir, &["rev-parse", "--show-toplevel"])?;
+    let manifest_dir = std::fs::canonicalize(manifest_dir).ok()?;
+    let top_level = std::fs::canonicalize(top_level).ok()?;
+    (top_level == manifest_dir).then_some(top_level)
+}
+
+fn emit_rerun_if_changed(path: &Path) {
+    println!("cargo:rerun-if-changed={}", path.display());
+}
+
+/// Source-archive fallback for when no canonical Git checkout exists. It keeps
+/// provenance reactive to the same relevant Rust/source inputs without trying
+/// to infer an identity from an unrelated ancestor repository.
+fn emit_source_tree_reruns(path: &Path) {
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            emit_source_tree_reruns(&path);
+        } else if path.is_file() {
+            emit_rerun_if_changed(&path);
+        }
+    }
+}
+
+/// Cargo switches from its default broad build-script invalidation to only the
+/// explicit paths printed here. Therefore Git ref watches alone are
+/// insufficient: a tracked `src/**/*.rs` change can make a tree dirty while
+/// leaving HEAD unchanged. Emit every relevant tracked compile/source input so
+/// a normal source edit re-runs this script and refreshes the dirty state.
+fn emit_tracked_input_reruns(manifest_dir: &Path) {
+    let Some(files) = git_output(
+        manifest_dir,
+        &[
+            "ls-files",
+            "--cached",
+            "--",
+            "Cargo.toml",
+            "Cargo.lock",
+            "build.rs",
+            "src",
+        ],
+    ) else {
+        for name in ["Cargo.toml", "Cargo.lock", "build.rs"] {
+            emit_rerun_if_changed(&manifest_dir.join(name));
+        }
+        emit_source_tree_reruns(&manifest_dir.join("src"));
+        return;
+    };
+
+    for file in files.lines() {
+        emit_rerun_if_changed(&manifest_dir.join(file));
+    }
+}
+
+fn emit_git_ref_reruns(manifest_dir: &Path) {
+    if let Some(head_path) = git_output(manifest_dir, &["rev-parse", "--git-path", "HEAD"]) {
+        emit_rerun_if_changed(Path::new(&head_path));
+    }
+    if let Some(symbolic_ref) = git_output(manifest_dir, &["symbolic-ref", "-q", "HEAD"])
+        && let Some(ref_path) = git_output(
+            manifest_dir,
+            &["rev-parse", "--git-path", symbolic_ref.as_str()],
+        )
+    {
+        emit_rerun_if_changed(Path::new(&ref_path));
+    }
+    if let Some(packed_refs) = git_output(manifest_dir, &["rev-parse", "--git-path", "packed-refs"])
+    {
+        emit_rerun_if_changed(Path::new(&packed_refs));
     }
 }
 
 fn main() {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
+    let manifest_dir = std::env::var_os("CARGO_MANIFEST_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
 
-    // Commit hash and dirty-tree state are independent lookups: a `git status`
-    // failure after a successful `rev-parse` must not discard a valid commit
-    // hash by falling through a coupled match arm.
+    let canonical_checkout = canonical_git_root(&manifest_dir).is_some();
+    emit_tracked_input_reruns(&manifest_dir);
+
+    if !canonical_checkout {
+        println!("cargo:rustc-env=SURR_GIT_COMMIT=unknown");
+        println!("cargo:rustc-env=SURR_GIT_DIRTY=unknown");
+        println!(
+            "cargo:warning=surreal-mind: no Git checkout rooted exactly at CARGO_MANIFEST_DIR; --version will report explicit unknown provenance"
+        );
+        return;
+    }
+
+    // Commit and dirty state are independent observations. A status failure
+    // must not turn a valid commit into an apparently clean identity.
     let commit = git_output(&manifest_dir, &["rev-parse", "--short=7", "HEAD"]);
-
     let dirty = git_output(
         &manifest_dir,
         &["status", "--porcelain", "--untracked-files=no"],
     )
-    .map(|s| !s.is_empty());
+    .map(|status| !status.is_empty());
 
-    match &commit {
-        Some(sha) => {
-            println!("cargo:rustc-env=SURR_GIT_COMMIT={}", sha);
-            // Narrow rerun-if-changed: only watch git ref state, only once we
-            // know we're in a git checkout at all.
-            if let Some(head_path) = git_output(&manifest_dir, &["rev-parse", "--git-path", "HEAD"])
-            {
-                println!("cargo:rerun-if-changed={}", head_path);
-            }
-            // HEAD's own file content only changes on `checkout`/detached-HEAD
-            // moves, not on an ordinary commit — watch the resolved branch ref
-            // file too, so a new commit on the current branch actually
-            // triggers a rerun (see the module-level doc comment above).
-            if let Some(symbolic_ref) = git_output(&manifest_dir, &["symbolic-ref", "-q", "HEAD"])
-                && let Some(ref_path) =
-                    git_output(&manifest_dir, &["rev-parse", "--git-path", &symbolic_ref])
-            {
-                println!("cargo:rerun-if-changed={}", ref_path);
-            }
-            // Also watch packed-refs, in case the branch ref has been packed
-            // (e.g. by `git gc`) rather than left as a loose ref file.
-            if let Some(packed_refs) =
-                git_output(&manifest_dir, &["rev-parse", "--git-path", "packed-refs"])
-            {
-                println!("cargo:rerun-if-changed={}", packed_refs);
-            }
+    match commit {
+        Some(commit) => {
+            println!("cargo:rustc-env=SURR_GIT_COMMIT={commit}");
+            emit_git_ref_reruns(&manifest_dir);
         }
         None => {
             println!("cargo:rustc-env=SURR_GIT_COMMIT=unknown");
             println!(
-                "cargo:warning=surreal-mind: could not determine git commit (git missing from PATH, or no .git directory present — e.g. a source-archive build); --version will report a bare package version with no commit suffix"
+                "cargo:warning=surreal-mind: canonical Git checkout found but HEAD was unreadable; --version will report explicit unknown provenance"
             );
         }
     }
