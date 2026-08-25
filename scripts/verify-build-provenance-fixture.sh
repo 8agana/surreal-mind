@@ -8,6 +8,7 @@ repo_root=$(git rev-parse --show-toplevel)
 package_version=$(awk -F '"' '/^version = / { print $2; exit }' "$repo_root/Cargo.toml")
 fixture_root=$(mktemp -d "${TMPDIR:-/tmp}/surreal-mind-provenance.XXXXXX")
 trap 'rm -rf "$fixture_root"' EXIT
+shared_target="$fixture_root/target"
 
 build_and_expect() {
     local tree=$1
@@ -37,23 +38,23 @@ make_git_fixture() {
 clean_tree="$fixture_root/clean"
 make_git_fixture "$clean_tree"
 clean_commit=$(git -C "$clean_tree" rev-parse --short=7 HEAD)
-build_and_expect "$clean_tree" "$fixture_root/target-clean" "$package_version+$clean_commit"
+build_and_expect "$clean_tree" "$shared_target" "$package_version+$clean_commit"
 
 # 2. A tracked source edit must re-run build.rs and serialize as dirty.
 cp "$clean_tree/src/version.rs" "$clean_tree/src/version.rs.fixture-clean"
 printf '\n// provenance fixture: tracked source made dirty\n' >> "$clean_tree/src/version.rs"
-build_and_expect "$clean_tree" "$fixture_root/target-clean" "$package_version+$clean_commit-dirty"
+build_and_expect "$clean_tree" "$shared_target" "$package_version+$clean_commit-dirty"
 
 # 3. Restore the exact tracked source and prove the same target directory
 # refreshes back to clean, rather than retaining stale dirty metadata.
 mv "$clean_tree/src/version.rs.fixture-clean" "$clean_tree/src/version.rs"
-build_and_expect "$clean_tree" "$fixture_root/target-clean" "$package_version+$clean_commit"
+build_and_expect "$clean_tree" "$shared_target" "$package_version+$clean_commit"
 
 # 4. A genuine source archive has no .git metadata and must say so explicitly.
 archive_tree="$fixture_root/source-archive"
 mkdir -p "$archive_tree"
 git -C "$repo_root" archive --format=tar HEAD | tar -x -C "$archive_tree"
-build_and_expect "$archive_tree" "$fixture_root/target-archive" "$package_version+unknown-dirty-unknown"
+build_and_expect "$archive_tree" "$shared_target" "$package_version+unknown-dirty-unknown"
 
 # 5. A source archive nested inside some unrelated Git repository must not
 # borrow its ancestor's identity.
@@ -68,7 +69,7 @@ git -C "$outer_repo" commit --quiet -m unrelated
 git -C "$repo_root" archive --format=tar HEAD | tar -x -C "$outer_repo/vendor/surreal-mind"
 build_and_expect \
     "$outer_repo/vendor/surreal-mind" \
-    "$fixture_root/target-nested-archive" \
+    "$shared_target" \
     "$package_version+unknown-dirty-unknown"
 
 printf 'build provenance fixture passed\n'
