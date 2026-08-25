@@ -17,11 +17,11 @@ use rmcp::{
     RoleServer,
     model::{
         CallToolRequest, CallToolRequestParams, ClientCapabilities, ClientRequest, ErrorCode,
-        Implementation, InitializeRequest, InitializeRequestParams, JsonRpcRequest,
+        GetMeta, Implementation, InitializeRequest, InitializeRequestParams, JsonRpcRequest,
         JsonRpcVersion2_0, ListPromptsRequest, ListPromptsRequestMethod,
         ListResourceTemplatesRequest, ListResourceTemplatesRequestMethod, ListResourcesRequest,
         ListResourcesRequestMethod, ListToolsRequest, ListToolsRequestMethod, NumberOrString,
-        PaginatedRequestParams, ProtocolVersion, RequestMetaObject, RequestOptionalParam,
+        ProtocolVersion, RequestMetaObject, RequestOptionalParam,
     },
     service::{RxJsonRpcMessage, TxJsonRpcMessage, serve_directly},
     transport::sink_stream::SinkStreamTransport,
@@ -110,50 +110,56 @@ fn make_list_prompts_request() -> ClientRequest {
     ClientRequest::ListPromptsRequest(request)
 }
 
-fn paginated_params_for(version: ProtocolVersion) -> PaginatedRequestParams {
-    let mut params = PaginatedRequestParams::default();
-    params.meta = Some(RequestMetaObject::with_client_context(
+fn inline_client_meta(version: ProtocolVersion) -> RequestMetaObject {
+    RequestMetaObject::with_client_context(
         version,
         Implementation::new("mcp-protocol-test", "0.0.0"),
         ClientCapabilities::default(),
-    ));
-    params
+    )
 }
 
 fn make_list_tools_request_for(version: ProtocolVersion) -> ClientRequest {
     let request: ListToolsRequest = RequestOptionalParam {
         method: ListToolsRequestMethod,
-        params: Some(paginated_params_for(version)),
+        params: Some(Default::default()),
         extensions: Default::default(),
     };
-    ClientRequest::ListToolsRequest(request)
+    let mut request = ClientRequest::ListToolsRequest(request);
+    *request.get_meta_mut() = inline_client_meta(version);
+    request
 }
 
 fn make_list_resources_request_for(version: ProtocolVersion) -> ClientRequest {
     let request: ListResourcesRequest = RequestOptionalParam {
         method: ListResourcesRequestMethod,
-        params: Some(paginated_params_for(version)),
+        params: Some(Default::default()),
         extensions: Default::default(),
     };
-    ClientRequest::ListResourcesRequest(request)
+    let mut request = ClientRequest::ListResourcesRequest(request);
+    *request.get_meta_mut() = inline_client_meta(version);
+    request
 }
 
 fn make_list_resource_templates_request_for(version: ProtocolVersion) -> ClientRequest {
     let request: ListResourceTemplatesRequest = RequestOptionalParam {
         method: ListResourceTemplatesRequestMethod,
-        params: Some(paginated_params_for(version)),
+        params: Some(Default::default()),
         extensions: Default::default(),
     };
-    ClientRequest::ListResourceTemplatesRequest(request)
+    let mut request = ClientRequest::ListResourceTemplatesRequest(request);
+    *request.get_meta_mut() = inline_client_meta(version);
+    request
 }
 
 fn make_list_prompts_request_for(version: ProtocolVersion) -> ClientRequest {
     let request: ListPromptsRequest = RequestOptionalParam {
         method: ListPromptsRequestMethod,
-        params: Some(paginated_params_for(version)),
+        params: Some(Default::default()),
         extensions: Default::default(),
     };
-    ClientRequest::ListPromptsRequest(request)
+    let mut request = ClientRequest::ListPromptsRequest(request);
+    *request.get_meta_mut() = inline_client_meta(version);
+    request
 }
 
 // Helper: construct a CallTool ClientRequest
@@ -550,8 +556,11 @@ async fn test_initialize_protocol_negotiation() {
         Some(ProtocolVersion::V_2026_07_28.as_str())
     );
 
-    // Same-connection 2026 regression: inline requests must remain accepted
-    // and every list surface must carry the draft-required fields.
+    // Mixed-lifecycle regression from the failed 7614fff deployment: initialize
+    // the peer at 2025, then send complete inline 2026 metadata on each list
+    // request. Request metadata must take precedence over peer/session state;
+    // otherwise this emits the legacy shape (or rejects the request) exactly as
+    // the real Claude Code client did in production.
     let config = Config::load().expect("Failed to load config");
     let server = SurrealMindServer::new(&config)
         .await
@@ -559,8 +568,8 @@ async fn test_initialize_protocol_negotiation() {
     with_direct_service(server, |client_tx, mut client_rx| async move {
         client_tx
             .send(build_jsonrpc_request(
-                make_initialize_request(ProtocolVersion::V_2026_07_28),
-                "test-init-then-list",
+                make_initialize_request(ProtocolVersion::LATEST),
+                "test-init-legacy-peer-then-inline-draft",
             ))
             .await
             .unwrap();
@@ -575,12 +584,20 @@ async fn test_initialize_protocol_negotiation() {
             initialize_wire
                 .get("protocolVersion")
                 .and_then(|v| v.as_str()),
-            Some(ProtocolVersion::V_2026_07_28.as_str())
+            Some(ProtocolVersion::LATEST.as_str())
         );
 
+        let inline_tools_request = make_list_tools_request_for(ProtocolVersion::V_2026_07_28);
+        let inline_tools_wire = serde_json::to_value(&inline_tools_request)
+            .expect("inline tools/list request must serialize");
+        assert_eq!(
+            inline_tools_wire["params"]["_meta"]["io.modelcontextprotocol/protocolVersion"],
+            json!("2026-07-28"),
+            "the typed request helper must carry inline protocol metadata"
+        );
         client_tx
             .send(build_jsonrpc_request(
-                make_list_tools_request_for(ProtocolVersion::V_2026_07_28),
+                inline_tools_request,
                 "test-list-draft",
             ))
             .await
