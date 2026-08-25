@@ -15,6 +15,34 @@ pub trait Embedder: Send + Sync {
     fn dimensions(&self) -> usize;
 }
 
+/// Reject an embedding that cannot be stored under the active vector-index
+/// dimension. Generated vectors must pass this guard *before* any database
+/// mutation claims or attempts to persist them.
+///
+/// Keeping this in the embeddings module makes the invariant shared by the
+/// interactive thought/KG writers and every maintenance/admin re-embed path;
+/// those paths must not grow subtly different "non-empty is good enough"
+/// checks during a provider or dimension migration.
+pub fn ensure_generated_embedding_dimension(
+    embedding: &[f32],
+    expected_dimension: usize,
+) -> Result<()> {
+    if expected_dimension == 0 {
+        anyhow::bail!(
+            "Configured embedding dimension must be greater than zero; refusing generated vector of length {}",
+            embedding.len()
+        );
+    }
+    if embedding.len() != expected_dimension {
+        anyhow::bail!(
+            "Generated embedding dimension mismatch: expected {}, got {}",
+            expected_dimension,
+            embedding.len()
+        );
+    }
+    Ok(())
+}
+
 // OpenAI API implementation
 pub struct OpenAIEmbedder {
     client: reqwest::Client,
@@ -256,6 +284,27 @@ pub async fn create_embedder(config: &crate::config::Config) -> Result<Arc<dyn E
 
 #[cfg(test)]
 mod tests {
+    use super::ensure_generated_embedding_dimension;
+
+    #[test]
+    fn generated_embedding_dimension_guard_rejects_wrong_lengths() {
+        let short = vec![0.0f32; 3];
+        let long = vec![0.0f32; 5];
+
+        assert!(ensure_generated_embedding_dimension(&short, 4).is_err());
+        assert!(ensure_generated_embedding_dimension(&long, 4).is_err());
+    }
+
+    #[test]
+    fn generated_embedding_dimension_guard_rejects_zero_expected_dimension() {
+        assert!(ensure_generated_embedding_dimension(&[], 0).is_err());
+    }
+
+    #[test]
+    fn generated_embedding_dimension_guard_accepts_exact_length() {
+        assert!(ensure_generated_embedding_dimension(&[0.0f32; 4], 4).is_ok());
+    }
+
     #[tokio::test]
     async fn test_rate_limiter_no_sleep_when_elapsed() {
         let interval = 1000u64;

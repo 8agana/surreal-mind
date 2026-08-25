@@ -390,19 +390,41 @@ impl SurrealMindServer {
 
         // Generate embedding
         let embedding = self.embedder.embed(&text).await?;
+        crate::embeddings::ensure_generated_embedding_dimension(
+            &embedding,
+            self.embedder.dimensions(),
+        )?;
 
-        // Update record with embedding metadata
-        self.db
+        // Update record with embedding metadata. Do not report this helper as
+        // successful merely because the request reached SurrealDB: statement
+        // errors and a missing/deleted record both appear only in the result.
+        let mut response = self
+            .db
             .query(
-                "UPDATE type::record($tb, $id) SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = time::now()",
+                "UPDATE type::record($tb, $id) SET embedding = $emb, embedding_provider = $prov, embedding_model = $model, embedding_dim = $dim, embedded_at = time::now() RETURN meta::id(id) AS id, array::len(embedding) AS embedding_len",
             )
             .bind(("tb", table.to_string()))
             .bind(("id", id.to_string()))
-            .bind(("emb", embedding))
+            .bind(("emb", embedding.clone()))
             .bind(("prov", provider))
             .bind(("model", model))
             .bind(("dim", dim))
             .await?;
+        let updated: Vec<serde_json::Value> = response.take(0)?;
+        let write_verified = updated.first().is_some_and(|row| {
+            row.get("embedding_len").and_then(|value| value.as_i64())
+                == Some(embedding.len() as i64)
+        });
+        if !write_verified {
+            return Err(SurrealMindError::Internal {
+                message: format!(
+                    "KG embedding UPDATE for {}:{} returned no matching row at dimension {}",
+                    table,
+                    id,
+                    embedding.len()
+                ),
+            });
+        }
         Ok(())
     }
 

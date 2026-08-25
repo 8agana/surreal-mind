@@ -631,6 +631,17 @@ async fn fix_dims() -> Result<()> {
         // Generate new embedding
         match embedder.embed(&content).await {
             Ok(new_embedding) => {
+                if let Err(e) = surreal_mind::embeddings::ensure_generated_embedding_dimension(
+                    &new_embedding,
+                    target_dims,
+                ) {
+                    error_count += 1;
+                    eprintln!(
+                        "  ⚠️  Refusing wrong-dimension embedding for {}: {}",
+                        thought_id, e
+                    );
+                    continue;
+                }
                 // Update thought with corrected embedding and metadata
                 let provider = config.system.embedding_provider.clone();
                 let model = config.system.embedding_model.clone();
@@ -645,12 +656,30 @@ async fn fix_dims() -> Result<()> {
                     .bind(("dims", target_dims as i64))
                     .await
                 {
-                    Ok(_update_response) => {
-                        success_count += 1;
-                        println!(
-                            "  ✅ Fixed {} ({} → {} dims)",
-                            thought_id, old_dims, target_dims
-                        );
+                    Ok(mut update_response) => {
+                        match update_response.take::<Vec<serde_json::Value>>(0) {
+                            Ok(updated) if !updated.is_empty() => {
+                                success_count += 1;
+                                println!(
+                                    "  ✅ Fixed {} ({} → {} dims)",
+                                    thought_id, old_dims, target_dims
+                                );
+                            }
+                            Ok(_) => {
+                                error_count += 1;
+                                eprintln!(
+                                    "  ⚠️  UPDATE for {} matched 0 rows; not counted as fixed",
+                                    thought_id
+                                );
+                            }
+                            Err(e) => {
+                                error_count += 1;
+                                eprintln!(
+                                    "  ⚠️  UPDATE statement failed for {}: {}",
+                                    thought_id, e
+                                );
+                            }
+                        }
                     }
                     Err(e) => {
                         error_count += 1;

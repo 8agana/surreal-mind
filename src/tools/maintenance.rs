@@ -42,10 +42,6 @@ fn normalize_thought_record_key(raw_id: &str) -> String {
 /// True only when `embedding`'s length exactly matches the configured embedding
 /// dimension. Used to gate embed_pending writes so a wrong-dimension embedding
 /// (e.g. a mid-migration provider mismatch) is never persisted as `complete`.
-fn embedding_matches_dim(embedding: &[f32], dim: i64) -> bool {
-    !embedding.is_empty() && embedding.len() as i64 == dim
-}
-
 impl SurrealMindServer {
     /// Handle health check for database indexes
     async fn handle_health_check_indexes(&self, _dry_run: bool) -> Result<CallToolResult> {
@@ -905,7 +901,21 @@ impl SurrealMindServer {
 
             // Attempt embedding
             match self.embedder.embed(&content).await {
-                Ok(embedding) if embedding_matches_dim(&embedding, dim) => {
+                Ok(embedding) => {
+                    if let Err(e) = crate::embeddings::ensure_generated_embedding_dimension(
+                        &embedding,
+                        dim as usize,
+                    ) {
+                        tracing::warn!(
+                            thought_id = %id,
+                            expected_dim = dim,
+                            got_dim = embedding.len(),
+                            error = %e,
+                            "Embedding dimension mismatch; not writing, row stays pending/failed for retry"
+                        );
+                        failed += 1;
+                        continue;
+                    }
                     // Update thought with embedding
                     let update_query = r#"
                         UPDATE type::record('thoughts', $id) SET
@@ -971,19 +981,6 @@ impl SurrealMindServer {
                         }
                     }
                 }
-                Ok(embedding) => {
-                    // M-1 fix: never write a dimension-mismatched embedding as
-                    // 'complete'. Leaving embedding_status untouched keeps the row
-                    // selectable by the next embed_pending run instead of silently
-                    // corrupting the vector index's dimension invariant.
-                    tracing::warn!(
-                        thought_id = %id,
-                        expected_dim = dim,
-                        got_dim = embedding.len(),
-                        "Embedding dimension mismatch; not writing, row stays pending/failed for retry"
-                    );
-                    failed += 1;
-                }
                 Err(e) => {
                     tracing::warn!(thought_id = %id, error = %e, "Embedding failed");
                     failed += 1;
@@ -1022,7 +1019,7 @@ impl SurrealMindServer {
 
 #[cfg(test)]
 mod tests {
-    use super::{embedding_matches_dim, normalize_thought_record_key};
+    use super::normalize_thought_record_key;
 
     #[test]
     fn normalize_thought_record_key_accepts_plain_meta_id() {
@@ -1035,33 +1032,5 @@ mod tests {
             normalize_thought_record_key("thoughts:`0f7ce74b`"),
             "0f7ce74b"
         );
-    }
-
-    // M-1 regression guard: before this fix, embed_pending's write gate was only
-    // `!embedding.is_empty()`, so a wrong-dimension embedding (e.g. 384 from a BGE
-    // fallback landing in a 1536-dim collection) would still be written and marked
-    // 'complete'. These assert the gate that replaced it.
-    #[test]
-    fn embedding_matches_dim_true_when_len_equals_dim() {
-        let v = vec![0.0f32; 1536];
-        assert!(embedding_matches_dim(&v, 1536));
-    }
-
-    #[test]
-    fn embedding_matches_dim_false_when_len_less_than_dim() {
-        let v = vec![0.0f32; 384];
-        assert!(!embedding_matches_dim(&v, 1536));
-    }
-
-    #[test]
-    fn embedding_matches_dim_false_when_len_greater_than_dim() {
-        let v = vec![0.0f32; 3072];
-        assert!(!embedding_matches_dim(&v, 1536));
-    }
-
-    #[test]
-    fn embedding_matches_dim_false_when_empty() {
-        let v: Vec<f32> = vec![];
-        assert!(!embedding_matches_dim(&v, 1536));
     }
 }

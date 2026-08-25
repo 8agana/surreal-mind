@@ -85,6 +85,35 @@ impl<'a> ThoughtBuilder<'a> {
         self
     }
 
+    /// Mark a persisted thought as failed only after the UPDATE itself has
+    /// returned the expected row. A driver-level `Ok(Response)` can still
+    /// contain a per-statement error or a zero-row result.
+    async fn mark_embedding_failed(server: &SurrealMindServer, thought_id: &str) -> Result<()> {
+        let mut response = server
+            .db
+            .query(
+                "UPDATE type::record('thoughts', $id) SET \
+                 embedding_status = 'failed' \
+                 RETURN meta::id(id) AS id, embedding_status;",
+            )
+            .bind(("id", thought_id.to_string()))
+            .await?;
+        let updated: Vec<serde_json::Value> = response.take(0)?;
+        let marked_failed = updated.first().and_then(|row| {
+            (row.get("embedding_status").and_then(|value| value.as_str()) == Some("failed"))
+                .then_some(())
+        });
+        if marked_failed.is_none() {
+            return Err(SurrealMindError::Internal {
+                message: format!(
+                    "Thought {} failed-status UPDATE returned no matching failed row",
+                    thought_id
+                ),
+            });
+        }
+        Ok(())
+    }
+
     pub fn continuity(
         mut self,
         session_id: Option<String>,
@@ -105,6 +134,7 @@ impl<'a> ThoughtBuilder<'a> {
     /// Returns (thought_id, embedding, continuity, embedding_status)
     /// embedding_status is "complete", "pending", or "failed"
     pub async fn execute(self) -> Result<(String, Vec<f32>, ContinuityResult, String)> {
+        let server = self.server;
         let thought_id = uuid::Uuid::new_v4().to_string();
         let (provider, model, dim) = self.server.get_embedding_metadata();
         tracing::info!(thought_id = %thought_id, "think.execute.start");
@@ -203,7 +233,7 @@ impl<'a> ThoughtBuilder<'a> {
         // NOW attempt embedding - failure won't lose the thought
         let embed_start = std::time::Instant::now();
         tracing::info!(thought_id = %thought_id, "think.execute.embed.start");
-        let embed_result = self.server.embedder.embed(&self.content).await;
+        let embed_result = server.embedder.embed(&self.content).await;
         tracing::info!(
             thought_id = %thought_id,
             elapsed_ms = embed_start.elapsed().as_millis(),
@@ -211,22 +241,62 @@ impl<'a> ThoughtBuilder<'a> {
         );
 
         match embed_result {
-            Ok(embedding) if !embedding.is_empty() => {
+            Ok(embedding) => {
+                if let Err(e) = crate::embeddings::ensure_generated_embedding_dimension(
+                    &embedding,
+                    server.embedder.dimensions(),
+                ) {
+                    tracing::warn!(
+                        thought_id = %thought_id,
+                        expected_dim = server.embedder.dimensions(),
+                        got_dim = embedding.len(),
+                        error = %e,
+                        "Generated embedding failed dimension guard; thought saved as failed"
+                    );
+                    let fail_start = std::time::Instant::now();
+                    Self::mark_embedding_failed(server, &thought_id).await?;
+                    tracing::info!(
+                        thought_id = %thought_id,
+                        elapsed_ms = fail_start.elapsed().as_millis(),
+                        "think.execute.mark_failed.done"
+                    );
+                    return Ok((
+                        thought_id,
+                        vec![],
+                        resolved_continuity,
+                        "failed".to_string(),
+                    ));
+                }
                 // Success - update with embedding and mark complete
                 let update_start = std::time::Instant::now();
                 tracing::info!(thought_id = %thought_id, "think.execute.update_embedding.start");
-                self.server
+                let mut update_response = server
                     .db
                     .query(
                         "UPDATE type::record('thoughts', $id) SET
                         embedding = $embedding,
                         embedded_at = time::now(),
                         embedding_status = 'complete'
-                        RETURN NONE;",
+                        RETURN meta::id(id) AS id, embedding_status, array::len(embedding) AS embedding_len;",
                     )
                     .bind(("id", thought_id.clone()))
                     .bind(("embedding", embedding.clone()))
                     .await?;
+                let updated: Vec<serde_json::Value> = update_response.take(0)?;
+                let write_verified = updated.first().is_some_and(|row| {
+                    row.get("embedding_status").and_then(|value| value.as_str()) == Some("complete")
+                        && row.get("embedding_len").and_then(|value| value.as_i64())
+                            == Some(embedding.len() as i64)
+                });
+                if !write_verified {
+                    return Err(SurrealMindError::Internal {
+                        message: format!(
+                            "Thought {} embedding UPDATE returned no matching complete row at dimension {}",
+                            thought_id,
+                            embedding.len()
+                        ),
+                    });
+                }
                 tracing::info!(
                     thought_id = %thought_id,
                     elapsed_ms = update_start.elapsed().as_millis(),
@@ -239,35 +309,6 @@ impl<'a> ThoughtBuilder<'a> {
                     embedding,
                     resolved_continuity,
                     "complete".to_string(),
-                ))
-            }
-            Ok(_) => {
-                // Empty embedding - mark as failed
-                tracing::warn!(
-                    thought_id = %thought_id,
-                    "Embedding returned empty vector, thought saved with pending status"
-                );
-                let fail_start = std::time::Instant::now();
-                self.server
-                    .db
-                    .query(
-                        "UPDATE type::record('thoughts', $id) SET
-                        embedding_status = 'failed'
-                        RETURN NONE;",
-                    )
-                    .bind(("id", thought_id.clone()))
-                    .await?;
-                tracing::info!(
-                    thought_id = %thought_id,
-                    elapsed_ms = fail_start.elapsed().as_millis(),
-                    "think.execute.mark_failed.done"
-                );
-
-                Ok((
-                    thought_id,
-                    vec![],
-                    resolved_continuity,
-                    "failed".to_string(),
                 ))
             }
             Err(e) => {

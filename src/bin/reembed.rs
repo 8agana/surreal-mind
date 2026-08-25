@@ -113,6 +113,17 @@ async fn main() -> Result<()> {
         // Generate new embedding
         match embedder.embed(&content).await {
             Ok(new_embedding) => {
+                if let Err(e) = surreal_mind::embeddings::ensure_generated_embedding_dimension(
+                    &new_embedding,
+                    embed_dims,
+                ) {
+                    error_count += 1;
+                    eprintln!(
+                        "  ⚠️  Refusing wrong-dimension embedding for {}: {}",
+                        thought_id, e
+                    );
+                    continue;
+                }
                 // Update thought with new embedding and metadata
                 let (provider, model) = (
                     config.system.embedding_provider.clone(),
