@@ -2,6 +2,7 @@
 
 - **Restart (launchd):** `launchctl kickstart -k gui/$(id -u)/dev.legacymind.surreal-mind`
 - **Build+restart cycle:** `cargo build --release && launchctl kickstart -k gui/$(id -u)/dev.legacymind.surreal-mind`
+- **Binary replacement does not refresh stdio clients:** launchd restarts only the HTTP production process. A long-lived ChatGPT/Codex app child that spawned `surreal-mind` over stdio keeps its original executable inode after an atomic binary rename and may continue serving older code against the same database. After every binary deploy, compare each `surreal-mind` PID's `lsof -a -p <pid> -d txt` inode with the on-disk binary. Exercise a freshly spawned stdio client against the new image; restart a host app or its MCP connection only as a separate, attended action when eliminating live version skew is required.
 - **Health checks:** curl `http://127.0.0.1:8787/health`; for DB `http://127.0.0.1:8787/db_health` (auth). Port check: `lsof -nPi tcp:8787`.
 - **Verify tool surface:** `curl http://127.0.0.1:8787/mcp` to see exposed tools.
 - **One-shot smoke test:** `scripts/sm_health.sh` (uses `SURR_BEARER_TOKEN`/`SURR_TOKEN` if present) or `cargo run --bin simple_db_test`.
