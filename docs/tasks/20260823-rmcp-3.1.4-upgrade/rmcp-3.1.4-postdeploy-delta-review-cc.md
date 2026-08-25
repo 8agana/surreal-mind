@@ -5,6 +5,34 @@
 **Scope:** `26d5990143c10242f738f1aa53e31400c6518636..e5c33ad5ec8c3475cbab9ef9d1382aaa7d04c310`
 **Mode:** read-only. No edits, builds, installs, production exercise, evidence cleanup, or Task mutation were performed.
 
+---
+
+## ⚠️ REVISION 2 — 2026-08-24. TWO CLAIMS BELOW ARE RETRACTED. READ THIS FIRST.
+
+Revision 1 (commit `4c32b3c`, sha256 `fd691bc3…`) was produced by a **single-pass inline review**.
+It was then attacked by a 16-agent adversarial Dynamic Workflow (4 dimension readers + 3 skeptics
+instructed to *refute* M-1, every significant finding independently verified), and Codex executed
+live read-only discriminators against Studio SurrealDB 3.2.3.
+
+**Result: one finding downgraded, one verdict retracted outright, four new defects found, two of the
+adversarial pass's own findings refuted in turn.**
+
+| # | Revision-1 claim | Status now |
+|---|---|---|
+| M-1 | wrong-dimension row is *"permanently poisoned… unreachable forever"* | 🔴 **REFUTED (2 of 3 skeptics).** Named the wrong healer. Downgraded to a verification-integrity defect. |
+| `remaining` | *"CONFIRMED CORRECT"* | 🔴 **RETRACTED.** The query is missing `GROUP ALL` and can only report 0 or 1. Empirically confirmed live. |
+| "74/74 lib tests" | stated as fact | 🟡 **UNSOURCED.** Relayed from a peer's receipt, never measured. Repo contains 71/71 pre-delta. |
+
+**Nothing below is deleted.** Retracted text is struck through in place, per the standing doctrine
+that erasing the past robs the next reader of the actual story — and because *how* a single pass
+produced these errors is the more durable finding.
+
+🔴 **THE PATTERN ACROSS ALL THREE ERRORS IS ONE ERROR: verifying a neighbouring proposition and
+concluding the target one.** "The count runs after the loop" ≠ "the count aggregates."
+"`embed_pending` cannot reach the row" ≠ "no healer can reach the row." "Codex reported 74/74" ≠
+"74/74 is true." Each check was *performed correctly* and answered a question adjacent to the one
+that mattered.
+
 ## Why this review exists
 
 The independent review gate for the rmcp 3.1.4 upgrade was satisfied at `26d5990`
@@ -87,12 +115,19 @@ to per-identity tool exposure trips over it.
 
 ### `src/tools/maintenance.rs` @ `f4869de` — one finding
 
-**CONFIRMED CORRECT (stated because the diff looks alarming in isolation):** changing
+🔴 **RETRACTED — SEE FINDING N-1 BELOW. THE VERDICT IN THIS PARAGRAPH IS WRONG.**
+
+~~**CONFIRMED CORRECT (stated because the diff looks alarming in isolation):** changing
 `"remaining": remaining.saturating_sub(succeeded)` to `"remaining": remaining` is a
 **bug fix, not a regression.** Verified at `e5c33ad`: the count query is at line 958,
 **after** the loop at line 865, and filters `WHERE embedding_status IN ['pending','failed']`.
 Rows just set to `'complete'` already drop out of that fresh count, so the old code
-subtracted `succeeded` a second time and under-reported. The new value is right.
+subtracted `succeeded` a second time and under-reported. The new value is right.~~
+
+⛔ **What Revision 1 actually verified was that the count runs AFTER the loop — which is true — and
+never whether the query AGGREGATES, which it does not.** The removal of `saturating_sub` is still
+correct in isolation; the value it now reports is broken for an unrelated reason that the same read
+should have caught. See **N-1**.
 
 Also genuinely improved: replacing `RETURN NONE` with a read-back of
 `embedding_status` and `array::len(embedding)` turns a blind write into a verified one.
@@ -118,8 +153,42 @@ unreachable, the check is dead code and its `failed` branch is misleading; if it
 reachable, the recovery path is poisoned. The two halves disagree about whether the
 case can happen.
 
-**Cheapest fix:** on mismatch, set `embedding_status = 'failed'` rather than leaving
-`'complete'`, so the retry path can still see the row.
+🔴 **THE CONSEQUENCE CLAIM ABOVE IS REFUTED — 2 of 3 independent skeptics, confirmed by live
+measurement. The row is NOT unreachable. Revision 1 named the wrong healer.**
+
+~~invisible to `embed_pending` forever… unreachable by the retry path~~ — the healing path is **not**
+`embed_pending`. It is `reembed`, and it is **status-blind by design**, keying on measured vector
+length rather than status:
+
+- `e5c33ad:src/maintenance/reembed.rs:96-98` — `SELECT` with **no `WHERE` clause at all**
+- `e5c33ad:src/maintenance/reembed.rs:135-140` — `needs_update = cur_len != expected_dim`
+- `e5c33ad:src/bin/reembed.rs:67`, `:121-129` — status-agnostic, keys on `emb_len`
+- `e5c33ad:src/tools/maintenance.rs:486ff` — `health_check_embeddings` counts `mismatched_dim` with
+  **no status filter** and returns sample IDs, so the row is discoverable by the standard health command
+
+**The division of labour is deliberate: STATUS heals MISSING embeddings, LENGTH heals WRONG ones.**
+Revision 1 examined one and concluded none existed.
+
+✅ **WHAT SURVIVES, and it is sharper than Revision 1 had it:** at
+`e5c33ad:src/tools/maintenance.rs:895-902` the `'complete'` write and its "verification" are **the same
+statement**. The `RETURN` projection is the **after-state of that `UPDATE`, not a read-back.** Revision 1
+described it as reading the row back; it does not. **A self-referential `RETURN` cannot verify a write
+no matter how it is written** — which also means Revision 1's proposed fix was aimed at the wrong lever.
+
+➡️ **CORRECT FIX — upstream, not post-hoc:** validate `embedding.len() == dimensions()` **before** the
+`UPDATE` and set `'failed'` on mismatch. `:893` currently guards only `!embedding.is_empty()` and never
+the dimension, while `reembed.rs:154-161` **already `bail!`s on exactly this**. Copy that guard.
+
+⚠️ **STRONGEST SURVIVING OBJECTION — the write-side guard is itself broken.**
+`e5c33ad:src/server/schema.rs:60` defines `thoughts_embedding_idx` as `HNSW DIMENSION {dim}` **without
+`OVERWRITE` / `IF NOT EXISTS`**, and `schema.rs:235` runs the whole DDL batch as `self.db.query(sql).await`
+with **no `.check()` or `.take()`** — so a per-statement error such as *"index already exists at a
+different DIMENSION"* is **silently swallowed**. A stale index at an old dimension would accept exactly
+the vectors the client-side check rejects.
+
+**REVISED M-1:** an **accounting and verification-integrity defect** with a transient wrong-dimension
+window — **not data loss.** ⛔ The phrase *"permanently poisoned"* must not appear in any commit message
+or changelog: it is false, and it teaches the next reader that `reembed` does not exist.
 
 #### FINDING M-2 — defense-in-depth incomplete (minor)
 
@@ -166,7 +235,7 @@ At `e5c33ad` the file carries **2 tests**, both on the pure string helper
 
 All four are **database round-trip behaviors**, and `db_integration` is an opt-in Cargo
 feature (`Cargo.toml:72`, `db_integration = []`). The recorded gate list states
-**"db no-run."** Therefore the 74/74 lib run **cannot** have exercised any of them —
+**"db no-run."** Therefore the ~~74/74~~ lib run **cannot** have exercised any of them —
 not "did not," *cannot*.
 
 No evidence was found that live acceptance invoked `maintain embed_pending`; acceptance
@@ -235,8 +304,170 @@ this question is open.
   path was Sam-directed and is accepted. Noted only so the record shows that gate was
   **substituted**, not that it did not exist.
 
+## 4. NEW FINDINGS — adversarial pass, Revision 2
+
+None of these appear in Revision 1. All were independently verified.
+
+### N-1 — `remaining` is missing `GROUP ALL`; it can only ever report 0 or 1 · CONFIRMED LIVE
+
+**Anchor:** `e5c33ad:src/tools/maintenance.rs:960`
+
+The query has no `GROUP ALL`. Proven against the **pinned engine source**, not general lore:
+`surrealdb-core-3.1.2/src/fnc/count.rs` returns a hardcoded `1` per record for zero-arg `count()`, and
+`dbs/result.rs:40-41` selects the aggregating collector **only** when `stm.group().is_some()`. So
+`.first()` yields `{cnt: 1}` regardless of backlog size.
+
+**MEASURED LIVE (Codex, Studio SurrealDB 3.2.3):**
+
+```
+without GROUP ALL -> [[{cnt:1},{cnt:1},{cnt:1}]]
+with    GROUP ALL -> [[{cnt:3}]]
+```
+
+Shipped code reports `remaining: 1` when the true count is 3. With 5,000 pending rows it still says 1.
+
+⚠️ **Five sibling counts in the same file already use `GROUP ALL`** — including `:595` with a
+**byte-identical predicate.** The counterexample was in the file Revision 1 was reading.
+**Second site:** `admin.rs:672`, gating a `remaining_wrong == 0` success branch. Also assess `http.rs:525,530`.
+
+### N-2 — `response.take(0)?` turns any per-row statement error into a whole-tool abort · CONFIRMED
+
+**Anchor:** `e5c33ad:src/tools/maintenance.rs:917`
+
+Verified against the vendored SDK: `surrealdb-3.1.2/src/method/query.rs:161-164` inserts per-statement
+`Result`s **without `?`**, so `.await` returns `Ok` on statement failure; `opt/query.rs:167-171` is where
+`take(0)` propagates it. The crate's own test `take_from_an_errored_query` confirms it.
+
+So the `Err(e)` arm 24 lines below at `:941` can **only** catch *transport* errors — never the
+statement-level class a SCHEMAFULL table with a dimension-constrained HNSW index actually produces.
+
+**Consequence:** row 37 of 100 fails; rows 1–36 are already mutated; the tool returns a bare error with
+**no processed/succeeded/failed/remaining report**; rows 38–100 never run. Worse, the offending row is
+never marked `'failed'`, so it stays in the selection set — and `SELECT … LIMIT $limit` has **no
+`ORDER BY`** (`:836-840`), so each rerun clears rows ahead of it and dies again, until the poison row
+sorts first and **progress goes permanently to zero.**
+
+`f4869de` traded *"silently counts as success"* for *"kills the run,"* skipping the correct middle
+behaviour already written three lines below.
+
+### N-3 — the SEP-2549 omission is still live on three other list methods · CONFIRMED (trigger unproven)
+
+**Anchor:** `e5c33ad:src/server/router.rs:48`
+
+`impl ServerHandler` overrides exactly `get_info`, `list_tools`, `call_tool`. `list_resources`,
+`list_resource_templates` and `list_prompts` fall through to rmcp defaults returning `Ok(::default())` —
+**not** `method_not_found` (`rmcp-3.1.4/src/handler/server.rs:378,385,394`; sibling methods in the same
+macro *do* return `method_not_found`, so this is deliberate). `::default()` routes through the same
+`paginated_result!` macro, leaving `ttl_ms: None, cache_scope: None`, both `skip_serializing_if`.
+**No capability gate exists** — grepping all of rmcp for `supports_resources|supports_prompts` returns
+zero. `supported_protocol_versions()` remains un-narrowed (`router.rs:69-73`), so `2026-07-28` is still
+negotiated.
+
+**The fix's own doc comment identifies the un-narrowed version as the root cause, then patches one of
+four surfaces.** Narrowing `supported_protocol_versions()` fixes all three remaining surfaces *and* the
+root, in a smaller diff than overriding three handlers.
+
+### N-4 — the regression test cannot fail if the production wiring is reverted · CONFIRMED
+
+**Anchor:** `e5c33ad:src/server/router.rs:322` (test) vs `:232` (wiring)
+
+Raised in Revision 1; the adversarial pass confirmed it and found it worse. The test calls the free
+function `list_tools_result(vec![tool])` directly, never constructing a `SurrealMindServer`. Reverting
+`:232` reproduces the outage with the suite green.
+
+Compounding:
+- `tests/mcp_protocol.rs:147` and `tests/stdio_smoke.rs:65` both early-return unless `RUN_DB_TESTS` is
+  set. CI runs plain `cargo test --workspace --locked` (`.github/workflows/ci.yml:36`) and **never sets
+  it.** Both skipped — and neither asserts cache metadata anyway.
+- No test anywhere negotiates `2026-07-28`; `ProtocolVersion::LATEST` is `V_2025_11_25`.
+- 🔴 **`git branch -a --contains e5c33ad` returns the local branch only — no `remotes/origin/*`. The
+  commit never reached GitHub. CI has never run on this code at all.**
+
+### N-5 — `maintenance/reembed.rs` bare-ID healer is a live no-op that reports success · CONFIRMED LIVE
+
+**Anchor:** `e5c33ad:src/maintenance/reembed.rs:163`
+
+`UPDATE thoughts SET … WHERE id = '{id_raw}'` compares a **bare `meta::id()` string** against a record id
+— **the same bug class `f4869de` just fixed** in `maintenance.rs`.
+
+**MEASURED LIVE (Codex)** against one real thought key:
+
+```
+WHERE id = "<meta::id string>"                       -> 0 rows
+WHERE id = type::record('thoughts', "<same string>") -> 1 row
+```
+
+It then increments `updated` without examining the response body, so **the helper falsely reports
+success while healing nothing.**
+
+✅ **This does NOT resurrect M-1.** `src/bin/reembed.rs:121-129` uses `UPDATE type::record('thoughts', $id)`
+— record identity correct — so at least one length-based healer genuinely works. (Its response handling is
+separately weak: it increments success on `Ok(response)` without `check`/`take`.) *"Permanently poisoned"
+remains false; this is a distinct real defect.*
+
+---
+
+## 5. LIVE MEASUREMENTS — Codex, Studio SurrealDB 3.2.3, read-only
+
+1. `INFO FOR TABLE thoughts` → `thoughts_embedding_idx = HNSW DIMENSION 1536`;
+   `get_embedding_metadata()` → `self.embedder.dimensions()`, configured path 1536. **Consistent.**
+2. Pending/failed count — see **N-1**.
+3. `SELECT count() … array::len(embedding) != 1536 GROUP ALL` → **0**.
+   ➡️ **M-1 is a MECHANISM, NOT AN OBSERVED INCIDENT.** No production row currently exhibits it and no
+   matching log line was found. Unrefuted, not demonstrated.
+4. Healer-ID discriminator — see **N-5**.
+
+## 6. TWO ADVERSARIAL FINDINGS THAT WERE THEMSELVES REFUTED — do not act on these
+
+- **"The preserved rollback binary does not exist."** **FALSE** by direct measurement:
+  `~/.local/state/legacymind-rollbacks/surreal-mind/rmcp-3.1.4-preinstall-874d229/surreal-mind`,
+  SHA-256 `0f7fbccb…5911c5c` exact match, mode 755. That reviewer grepped the working tree on `master`,
+  and `e5c33ad`/`13943cb` are **not ancestors of HEAD**, so the deploy-branch documents naming the path
+  were invisible.
+  ⚠️ **Real residual:** the artifact's path is documented *only* on commits unreachable from master, so an
+  operator grepping master under outage pressure finds the hash asserted with **no path attached.**
+- **"No read-only test can separate the deployed binary from `f4869de`."** **FALSE** by counterexample:
+  `nm` shows `__ZN12surreal_mind6server6router17list_tools_result…` as a `T` symbol, and
+  `git grep list_tools_result f4869de -- src/` returns **zero hits**. (`strings` returns 0 for that symbol,
+  which is exactly why Revision 1's method was blind to it.)
+  ⚠️ **Residual:** proves the function is *defined*, not that the call site at `:232` was swapped.
+
+## 7. STILL NOT ESTABLISHED
+
+1. Whether M-1's trigger has **ever** fired historically (current rows: 0).
+2. Whether SurrealDB's HNSW **rejects** off-dimension writes — decides whether M-1's mechanism is reachable
+   at all given a correctly-defined index.
+3. **N-3's trigger:** whether any real client issues `resources/list` against a tools-only server. Pure
+   client-side behaviour; zero evidence in this tree. This is the difference between N-3 being *live* and
+   *latent*, and it should not be guessed.
+4. Whether the deployed binary's **call site** is swapped (§6).
+5. Whether `maintain embed_pending` was ever invoked against the deployed build. Absence of a *record*, not
+   evidence of non-execution.
+6. **Provenance (unchanged from Revision 1):** live binary identity remains *consistent with* `e5c33ad`, not
+   *established*. No `build.rs`; artifact mtime precedes the commit by 41s; Rust release builds are not
+   bit-reproducible.
+
+---
+
 ## Disposition
 
-Nothing in this review warrants rollback or emergency change. Per Codex, M-1, database
-behavioral coverage, router handler-wiring regression coverage, and build provenance are
-routed as **follow-up work** rather than reopening the completed upgrade.
+**Production is healthy; nothing here warrants rollback or emergency change.** M-1 is downgraded to
+unobserved upstream-validation / verification-integrity hardening. N-1 and N-5 are confirmed live
+correctness defects. N-2, N-3 and N-4 are independently reviewed and not yet acted on. No fix begins until
+this corrected review is durable and the bounded follow-up work is defined.
+
+**Recommended shape of the fix** — upstream, not post-hoc, because a self-referential `RETURN` cannot verify
+a write: validate `embedding.len() == dimensions()` before the `UPDATE` and set `'failed'` on mismatch
+(`reembed.rs:154-161` already `bail!`s on exactly this — copy that guard). Carry these one-liners in the
+same commit: `GROUP ALL` at `maintenance.rs:960` and `admin.rs:672` (**N-1**); replace `response.take(0)?`
+at `:917` with the per-row `Err` arm already present at `:941` **and mark the offending row `'failed'`** so
+it cannot wedge the backlog at zero progress (**N-2**). Narrowing `supported_protocol_versions()` (**N-3**)
+is separately scheduled.
+
+**Method note for the next reviewer — the most transferable thing in this document.** Revision 1 was a
+competent single pass and it still shipped a wrong verdict into a committed record. All three of its errors
+were the *same* error: **a correctly-executed check answering a proposition adjacent to the one that
+mattered.** "The count runs after the loop" ≠ "the count aggregates." "`embed_pending` cannot reach the row"
+≠ "no healer can reach the row." "A peer reported 74/74" ≠ "74/74 is true." The adversarial pass did not
+find these by being smarter — it found them by having three readers who could not all make the same
+substitution at once.
