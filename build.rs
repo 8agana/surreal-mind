@@ -13,14 +13,27 @@
 //!      fabricating a value.
 //!   2. Dirty-tree detection, which `comm`'s build.rs does not do at all.
 //!
-//! Rerun-if-changed: narrowly watches `.git/HEAD` and the resolved ref path
-//! (added only when a commit was actually found), matching `comm`'s pattern.
-//! This means the embedded dirty flag reflects git state as of the most
-//! recent FULL/FORCED build, not necessarily the instant `--version` runs —
-//! see the design doc
+//! Rerun-if-changed: narrowly watches git ref state (`.git/HEAD`, the
+//! resolved branch ref file e.g. `.git/refs/heads/<branch>`, and
+//! `.git/packed-refs`), added only when a commit was actually found.
+//! **Correctness note, measured live during implementation**: watching
+//! `.git/HEAD` ALONE is not sufficient — `HEAD` is a symbolic ref
+//! (`ref: refs/heads/<branch>`) whose file contents don't change on an
+//! ordinary commit; only the branch's own ref file does. An earlier version
+//! of this build.rs watched only `.git/HEAD` and, measured live, produced a
+//! STALE embedded commit hash after committing new work with no full
+//! rebuild in between (cargo correctly saw no rerun-if-changed trigger and
+//! skipped build.rs entirely) — not just a stale dirty flag, but an
+//! actively wrong commit hash. Watching the resolved branch ref file (and
+//! packed-refs, in case the ref is packed rather than loose) closes that
+//! gap. What remains a deliberate, documented limitation (not a bug): the
+//! DIRTY flag still reflects working-tree state as of the most recent
+//! build.rs invocation, not the exact instant `--version` runs, if files are
+//! edited without triggering *any* rerun-if-changed path in between — see
+//! the design doc
 //! (docs/tasks/20260823-rmcp-3.1.4-upgrade/rmcp-3.1.4-version-provenance-design.md)
-//! for the alternative (broad rerun-if-changed over the whole tree) and why
-//! this is the deliberately chosen default, not an oversight.
+//! for the broader alternative (rerun-if-changed over the whole tree) this
+//! deliberately does not take.
 
 use std::process::Command;
 
@@ -62,8 +75,26 @@ fn main() {
             println!("cargo:rustc-env=SURR_GIT_COMMIT={}", sha);
             // Narrow rerun-if-changed: only watch git ref state, only once we
             // know we're in a git checkout at all.
-            if let Some(git_dir) = git_output(&manifest_dir, &["rev-parse", "--git-path", "HEAD"]) {
-                println!("cargo:rerun-if-changed={}", git_dir);
+            if let Some(head_path) = git_output(&manifest_dir, &["rev-parse", "--git-path", "HEAD"])
+            {
+                println!("cargo:rerun-if-changed={}", head_path);
+            }
+            // HEAD's own file content only changes on `checkout`/detached-HEAD
+            // moves, not on an ordinary commit — watch the resolved branch ref
+            // file too, so a new commit on the current branch actually
+            // triggers a rerun (see the module-level doc comment above).
+            if let Some(symbolic_ref) = git_output(&manifest_dir, &["symbolic-ref", "-q", "HEAD"])
+                && let Some(ref_path) =
+                    git_output(&manifest_dir, &["rev-parse", "--git-path", &symbolic_ref])
+            {
+                println!("cargo:rerun-if-changed={}", ref_path);
+            }
+            // Also watch packed-refs, in case the branch ref has been packed
+            // (e.g. by `git gc`) rather than left as a loose ref file.
+            if let Some(packed_refs) =
+                git_output(&manifest_dir, &["rev-parse", "--git-path", "packed-refs"])
+            {
+                println!("cargo:rerun-if-changed={}", packed_refs);
             }
         }
         None => {
