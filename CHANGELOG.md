@@ -25,6 +25,14 @@ every branch push, while its jobs duplicated `ci.yml`; its rmcp check also ran
 `cargo update -p rmcp` immediately before a `--locked` check. `ci.yml` is now the
 single workflow owner for this repository's Rust gates.
 
+The first real GitHub run also exposed that `tests/test_agent_job_status.rs`
+created/deleted SurrealDB rows while living in the default, database-free test
+suite. It is now feature-gated with `db_integration`, skips unless
+`RUN_DB_TESTS=1`, and executes as its own named step in the disposable database
+job. The default suite no longer depends on an undeclared server, and the three
+deserialization regressions remain executable CI coverage rather than being
+silently removed.
+
 ### Fixed (Sol closure)
 
 - **Generated-vector and update-result correctness:** one shared `ensure_generated_embedding_dimension` guard now runs before every active thought/KG/admin/re-embed vector write. The `think`, `ensure_kg_embedding`, admin, and re-embed paths inspect `RETURN` rows before reporting success; a wrong-length vector, statement error, or zero-row update cannot be represented as completion.

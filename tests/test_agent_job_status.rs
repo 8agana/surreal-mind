@@ -3,6 +3,8 @@
 //! These tests verify that the agent_job_status tool can properly deserialize
 //! job records from SurrealDB without encountering enum serialization errors.
 
+#![cfg(feature = "db_integration")]
+
 use serde_json::Value;
 use surreal_mind::config::Config;
 use surreal_mind::error::Result;
@@ -13,8 +15,19 @@ async fn get_server() -> Result<SurrealMindServer> {
     SurrealMindServer::new(&config).await
 }
 
+fn db_tests_enabled() -> bool {
+    if std::env::var("RUN_DB_TESTS").is_err() {
+        eprintln!("Skipping agent_job_status database test - set RUN_DB_TESTS=1 to run");
+        return false;
+    }
+    true
+}
+
 #[tokio::test]
 async fn test_agent_job_status_deserialization() {
+    if !db_tests_enabled() {
+        return;
+    }
     let server = get_server().await.expect("Failed to initialize server");
 
     // Create a test job record directly in the database
@@ -97,6 +110,9 @@ async fn test_agent_job_status_deserialization() {
 
 #[tokio::test]
 async fn test_agent_job_status_with_exchange_id() {
+    if !db_tests_enabled() {
+        return;
+    }
     let server = get_server().await.expect("Failed to initialize server");
 
     // Create a test exchange and get its ID
@@ -182,6 +198,9 @@ async fn test_agent_job_status_with_exchange_id() {
 
 #[tokio::test]
 async fn test_agent_job_status_running_job_with_none_values() {
+    if !db_tests_enabled() {
+        return;
+    }
     let server = get_server().await.expect("Failed to initialize server");
 
     // Create a test job record with NONE values (simulating a running job)

@@ -9,6 +9,7 @@ on:
 jobs:
   rust:
     runs-on: macos-latest
+    timeout-minutes: 30
     env:
       PROTOC: /opt/homebrew/bin/protoc
     steps:
@@ -119,3 +120,10 @@ jobs:
             --test dimension_hygiene \
             test_schema_dimension_mismatch_requires_or_honors_emergency_bypass -- \
             --exact --nocapture --test-threads=1
+
+      - name: Run agent job status database regressions
+        timeout-minutes: 10
+        run: |
+          cargo test --locked --features db_integration \
+            --test test_agent_job_status -- \
+            --nocapture --test-threads=1
