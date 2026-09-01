@@ -8,7 +8,7 @@
 
 ## Architectural Rules
 - **Lobotomy:** No business logic (photography, etc.) in this repo. It must remain purely cognitive.
-- **Structured Thinking:** All major AI thoughts must pass through `legacymind_think` to be graphed.
+- **Structured Thinking:** All major AI thoughts must pass through the MCP `think` tool to be graphed. The internal Rust handler remains `handle_legacymind_think`; that implementation name is not a callable tool name.
 - **Deterministic Cognition:** The `src/cognitive/` module uses static analysis (regex/keywords), not LLM calls, for speed.
 - **Embedding Hygiene:** Strictly use 1536 dimensions. Reembed if providers or models change.
 

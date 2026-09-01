@@ -12,7 +12,7 @@
 This repository implements the "Brain" — the `surreal-mind` MCP server. It is responsible for:
 
 1. **Memory:** Storing thoughts (`thoughts` table) and semantic knowledge (`kg_*` tables) in SurrealDB.
-2. **Cognition:** providing the `legacymind_think` tool that routes intent (Plan, Debug, Build) to specific cognitive frameworks.
+2. **Cognition:** providing the `think` tool that routes intent (Plan, Debug, Build) to specific cognitive frameworks. The internal Rust handler remains `handle_legacymind_think`; that implementation name is not a callable tool name.
 3. **Continuity:** Maintaining chains of thought via `session_id`, `chain_id`, and `previous_thought_id`.
 
 **"The Lobotomy":**
@@ -30,12 +30,12 @@ We have successfully separated the *Business Logic* (Photography, Skaters, Order
 - **Linting:** `cargo clippy` must pass. Treat warnings as errors.
 - **Testing:** `cargo test` is mandatory for logic changes.
   - Use `cargo test --test tool_schemas` for API contract validation.
-  - Use `./tests/test_mcp_comprehensive.sh` for end-to-end smoke tests.
+  - Use `./tests/test_mcp.sh` for the end-to-end stdio handshake and `tools/list` smoke test.
 
 ### Architectural Mandates
 
 1. **Dependency-Free Cognition:** The `src/cognitive/` module uses deterministic heuristics (regex/keywords), NOT internal LLM calls. This ensures speed and predictability.
-2. **Thinking is Structured:** All major thoughts must go through `legacymind_think` to be captured in the graph.
+2. **Thinking is Structured:** All major thoughts must go through `think` to be captured in the graph.
 3. **Tooling over Text:** Use `write_file`, `replace`, etc., rather than just describing changes.
 
 ---
@@ -45,17 +45,17 @@ We have successfully separated the *Business Logic* (Photography, Skaters, Order
 ### Active Architecture
 
 - **Server:** Modular `rmcp` implementation in `src/server/`.
-- **Tools:** Consolidated into `src/tools/`.
-  - `legacymind_think`: The primary interface. Handles "Mode Routing" (Debug/Build/Plan).
-  - `memories_create/moderate`: KG manipulation.
+- **Tools:** Consolidated into `src/tools/`. The 16 public wire names are `think`, `search`, `remember`, `wander`, `rethink`, `corrections`, `maintain`, `journal`, `howto`, `test_notification`, `call_gem`, `call_cc`, `call_vibe`, `call_status`, `call_jobs`, and `call_cancel`. Other names return `METHOD_NOT_FOUND` at the router boundary.
+  - `think`: The primary interface. Handles Mode Routing (Debug/Build/Plan).
+  - `remember`: KG manipulation for entities, relationships, and observations. It replaced the retired `memories_create` surface; `memories_moderate` has no public replacement.
 - **Google CLI delegation:** `call_gem`, `kg_populate`, and `kg_wander` now default to Antigravity CLI (`agy`). Gemini CLI remains available as a rollback provider with `SM_AGENT_PROVIDER=gemini` or `google_cli_provider = "gemini"` plus restart.
 - **Frameworks:** `src/cognitive/` implements OODA, Socratic, etc., via static analysis.
 
 ### Known Issues / Tech Debt
 
-- **Legacy Artifacts:** `src/bin/` contains photography-specific binaries (`cleanup_pony_edges.rs`, `count_all_skaters.rs`) that violate the separation of concerns. These need to be archived or moved.
-- **Config Hallucination:** `surreal_mind.toml` contains a bizarre, infinite list of timeout parameters (likely an LLM generation error).
-- **Dead Code:** Legacy tools `think_convo`, `think_plan` etc., are aliased but the code might still be lingering in `src/tools/`.
+- ~~**Legacy Artifacts:** `src/bin/` contains photography-specific binaries.~~ **Resolved.** The current binary targets are cognitive, KG, migration, maintenance, and REMini surfaces only.
+- ~~**Config Hallucination:** `surreal_mind.toml` contains an unbounded timeout list.~~ **Resolved.** The current file contains exactly two `timeout_ms` settings.
+- ~~**Dead Code:** legacy names remain callable.~~ **Resolved at the public tool boundary; vestigial internal identifiers remain.** Public dispatch uses the 16 names above. Handler/file names such as `handle_legacymind_think`, `agent_job_status`, `list_agent_jobs`, and `cancel_agent_job` are implementation details, not public tool names.
 
 ---
 
@@ -100,7 +100,7 @@ We have successfully separated the *Business Logic* (Photography, Skaters, Order
 ### Stable Configuration (Opus-Compatible)
 | MCP | Status | Tools | Role |
 |-----|--------|-------|------|
-| `surreal-mind` | ✅ Enabled | 10 | Cognition/persistence (`think`, `search`, `remember`, `wander`, etc.) |
+| `surreal-mind` | ✅ Enabled | 16 | Cognition/persistence (`think`, `search`, `remember`, `wander`, etc.) |
 | `serena` | ✅ Enabled | ~20 | Code navigation/symbols |
 | `desktop-commander` | ✅ Enabled (10 tools) | 10 | System ops (processes, PDFs, screenshots) |
 | `backlog` | ❌ Disabled | - | **Crashes Opus.** Delegate via `call_gem` to CC instead. |
