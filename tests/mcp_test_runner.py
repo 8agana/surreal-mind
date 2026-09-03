@@ -282,47 +282,6 @@ def main():
              lambda r: "health" in r["content"][0]["text"].lower()
         )
         
-        # Skipping call_gem, call_cc for now as they might take long or require ext deps
-        # We can stub them or run if needed. Let's run a simple one.
-        
-        def save_job_id(r):
-            if "content" in r and len(r["content"]) > 0:
-                text = r["content"][0]["text"]
-                try:
-                    data = json.loads(text)
-                    if "job_id" in data:
-                        runner.context["JOB_ID"] = data["job_id"]
-                        return True
-                    # call_gem might return status object
-                    if "id" in data: 
-                         runner.context["JOB_ID"] = data["id"]
-                         return True
-                except json.JSONDecodeError:
-                    pass
-                
-                import re
-                match = re.search(r"Job ID: ([a-zA-Z0-9-]+)", text)
-                if match:
-                    runner.context["JOB_ID"] = match.group(1)
-                    return True
-            return False
-
-        # Using a very short timeout/mock
-        runner.run_test(
-            "MCP-TK-008 call_gem (Mock)",
-             "tools/call",
-             {
-                 "name": "call_gem",
-                 "arguments": {
-                     "prompt": "echo OK",
-                     "cwd": ".",
-                     "mode": "observe",
-                     "timeout_ms": 30000
-                 }
-             },
-             save_job_id
-        )
-
         runner.run_test(
              "MCP-TK-014 Rethink",
              "tools/call",

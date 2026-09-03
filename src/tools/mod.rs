@@ -1,6 +1,5 @@
 //! Tool handlers for the surreal-mind MCP server
 
-pub mod call_gem;
 pub mod corrections;
 pub mod howto;
 pub mod journal;

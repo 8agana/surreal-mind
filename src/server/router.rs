@@ -139,8 +139,6 @@ impl ServerHandler for SurrealMindServer {
         let corrections_schema_map = crate::schemas::corrections_schema();
         let test_notification_schema_map = crate::schemas::test_notification_schema();
 
-        let call_gem_schema = crate::schemas::call_gem_schema();
-
         // Output schemas (rmcp 0.11.0+)
         // Output schemas removed as they are no longer used or needed for simple tool defs
 
@@ -205,15 +203,6 @@ impl ServerHandler for SurrealMindServer {
 
         tools.push(
             Tool::new(
-                "call_gem",
-                "Delegate a task to the configured Google CLI provider (Gemini or Antigravity)",
-                call_gem_schema,
-            )
-            .with_title("Call Gem"),
-        );
-
-        tools.push(
-            Tool::new(
                 "search",
                 "Unified search for entities, observations, and thoughts",
                 search_schema_map,
@@ -261,7 +250,6 @@ impl ServerHandler for SurrealMindServer {
                 .handle_knowledgegraph_create(request)
                 .await
                 .map_err(|e| e.into()),
-            "call_gem" => self.handle_call_gem(request).await.map_err(|e| e.into()),
 
             // Help
             "howto" => self.handle_howto(request).await.map_err(|e| e.into()),

@@ -25,7 +25,6 @@ impl SurrealMindServer {
                     json!({"name": "remember", "one_liner": "Create entities/relationships/observations in the KG", "key_params": ["kind", "data", "confidence", "source_thought_id"]}),
                     json!({"name": "search", "one_liner": "Unified LM search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]}),
                     json!({"name": "maintain", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]}),
-                    json!({"name": "call_gem", "one_liner": "Delegate a prompt to the Gemini CLI agent", "key_params": ["prompt", "model", "cwd", "mode"]}),
                     json!({"name": "howto", "one_liner": "Get help for a specific tool or list all tools", "key_params": ["tool", "format"]}),
                     json!({"name": "test_notification", "one_liner": "Send a test logging notification to the client", "key_params": ["message", "level"]}),
                     json!({"name": "wander", "one_liner": "Explore the knowledge graph for curiosity-driven discovery", "key_params": ["mode", "current_thought_id", "visited_ids", "recency_bias", "for"]}),
@@ -245,23 +244,6 @@ impl SurrealMindServer {
                     "embed_pending": "object — {message, processed, succeeded, failed, remaining, dry_run} — retry embedding for thoughts with pending/failed status",
                     "other_subcommands": "object — counts, paths, or messages depending on operation"
                 }
-            }),
-            "call_gem" => json!({
-                "name": "call_gem",
-                "description": "Delegate a prompt to the configured Google CLI provider. Currently supports Gemini CLI and Antigravity CLI behind the call_gem compatibility name.",
-                "arguments": {
-                    "prompt": "string (required) — the prompt text",
-                    "model": "string — override provider model (env: ANTIGRAVITY_MODEL/AGY_MODEL or GEMINI_MODEL)",
-                    "cwd": "string (required) — working directory for the agent",
-                    "resume_session_id": "string — resume a specific provider conversation/session when supported",
-                    "continue_latest": "boolean (default false) — resume last provider conversation/session when supported",
-                    "timeout_ms": "integer (default 60000) — outer timeout",
-                    "tool_timeout_ms": "integer (default 300000) — per-tool timeout",
-                    "expose_stream": "boolean — include stream events in response when the selected provider exposes them",
-                    "mode": "string — 'execute' (default) or 'observe' (read-only analysis)",
-                    "max_response_chars": "integer (default 100000) — max chars for response (0 = no limit)"
-                },
-                "returns": {"status": "completed", "session_id": "string", "response": "string"}
             }),
             _ => {
                 return Err(SurrealMindError::Validation {

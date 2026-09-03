@@ -29,107 +29,6 @@ pub fn think_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
-pub fn call_gem_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "prompt": {"type": "string"},
-            "task_name": {"type": "string", "default": "call_gem"},
-            "model": call_gem_model_property(),
-            "cwd": {
-                "type": "string",
-                "description": "Working directory: workspace alias (e.g., 'surreal-mind', 'home') or absolute path (e.g., '/Users/sam/Projects/foo'). Use '~/' for home expansion."
-            },
-            "resume_session_id": {"type": "string"},
-            "continue_latest": {"type": "boolean", "default": false},
-            "timeout_ms": {"type": "number", "default": 60000},
-            "tool_timeout_ms": {"type": "number", "default": 300000},
-            "expose_stream": {"type": "boolean", "default": false},
-            "mode": {
-                "type": "string",
-                "enum": ["execute", "observe"],
-                "default": "execute",
-                "description": "execute: normal operation with file changes. observe: analyze and report only, no file modifications."
-            },
-            "max_response_chars": {"type": "integer", "default": 100000, "description": "Max chars for response (0 = no limit, default 100000)"}
-        },
-        "required": ["prompt", "cwd"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-fn call_gem_model_property() -> Value {
-    model_property(
-        first_env(&["ANTIGRAVITY_MODELS", "AGY_MODELS", "GEMINI_MODELS"]),
-        first_env(&["ANTIGRAVITY_MODEL", "AGY_MODEL", "GEMINI_MODEL"])
-            .unwrap_or_else(|| "auto".to_string()),
-    )
-}
-
-fn first_env(keys: &[&str]) -> Option<String> {
-    keys.iter()
-        .find_map(|key| std::env::var(key).ok())
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
-}
-
-fn model_property(models_env: Option<String>, default_model: String) -> Value {
-    let mut property = Map::new();
-    property.insert("type".to_string(), Value::String("string".to_string()));
-    property.insert("default".to_string(), Value::String(default_model));
-    property.insert(
-        "description".to_string(),
-        Value::String(
-            "Optional provider model override. Defaults to provider auto-selection when unset."
-                .to_string(),
-        ),
-    );
-
-    let models: Vec<Value> = models_env
-        .unwrap_or_default()
-        .split(',')
-        .map(str::trim)
-        .filter(|model| !model.is_empty())
-        .map(|model| Value::String(model.to_string()))
-        .collect();
-
-    if !models.is_empty() {
-        property.insert("enum".to_string(), Value::Array(models));
-    }
-
-    Value::Object(property)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn model_property_without_env_omits_enum() {
-        let property = model_property(None, "auto".to_string());
-
-        assert_eq!(property["type"], "string");
-        assert_eq!(property["default"], "auto");
-        assert!(property.get("enum").is_none());
-    }
-
-    #[test]
-    fn model_property_with_env_adds_trimmed_enum() {
-        let property = model_property(
-            Some("Gemini 3.5 Flash (Low), Claude Sonnet 4.6 (Thinking)".to_string()),
-            "auto".to_string(),
-        );
-
-        assert_eq!(
-            property["enum"].as_array().unwrap(),
-            &vec![
-                Value::String("Gemini 3.5 Flash (Low)".to_string()),
-                Value::String("Claude Sonnet 4.6 (Thinking)".to_string()),
-            ]
-        );
-    }
-}
-
 pub fn remember_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
@@ -154,7 +53,6 @@ pub fn howto_schema() -> Arc<Map<String, Value>> {
                 "remember",
                 "search",
                 "maintain",
-                "call_gem",
                 "wander",
                 "howto",
                 "journal",

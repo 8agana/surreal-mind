@@ -1,4 +1,4 @@
-//! Antigravity CLI client for the temporary call_gem compatibility path.
+//! Antigravity CLI client shared by kg_populate and kg_wander.
 
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -34,14 +34,6 @@ impl AntigravityPermissionMode {
             | "interactive-skip" => Some(Self::SkipPermissions),
             _ => None,
         }
-    }
-
-    pub fn for_call_gem() -> Self {
-        std::env::var("ANTIGRAVITY_CALL_GEM_PERMISSION_MODE")
-            .ok()
-            .or_else(|| std::env::var("ANTIGRAVITY_PERMISSION_MODE").ok())
-            .and_then(|v| Self::parse(&v))
-            .unwrap_or(Self::Default)
     }
 
     pub fn for_kg() -> Self {
