@@ -28,9 +28,6 @@ impl SurrealMindServer {
                     json!({"name": "call_gem", "one_liner": "Delegate a prompt to the Gemini CLI agent", "key_params": ["prompt", "model", "cwd", "mode"]}),
                     json!({"name": "call_cc", "one_liner": "Delegate a prompt to the Claude Code CLI agent", "key_params": ["prompt", "model", "cwd", "mode"]}),
                     json!({"name": "call_vibe", "one_liner": "Delegate a prompt to the Vibe CLI agent", "key_params": ["prompt", "cwd", "agent", "mode"]}),
-                    json!({"name": "call_status", "one_liner": "Get status of an async agent job", "key_params": ["job_id"]}),
-                    json!({"name": "call_jobs", "one_liner": "List async agent jobs", "key_params": ["limit", "status_filter", "tool_name"]}),
-                    json!({"name": "call_cancel", "one_liner": "Cancel a running or queued job", "key_params": ["job_id"]}),
                     json!({"name": "howto", "one_liner": "Get help for a specific tool or list all tools", "key_params": ["tool", "format"]}),
                     json!({"name": "test_notification", "one_liner": "Send a test logging notification to the client", "key_params": ["message", "level"]}),
                     json!({"name": "wander", "one_liner": "Explore the knowledge graph for curiosity-driven discovery", "key_params": ["mode", "current_thought_id", "visited_ids", "recency_bias", "for"]}),
@@ -284,51 +281,6 @@ impl SurrealMindServer {
                     "max_response_chars": "integer (default 100000) — max chars for response (0 = no limit)"
                 },
                 "returns": {"status": "completed", "session_id": "string", "response": "string"}
-            }),
-            "call_status" => json!({
-                "name": "call_status",
-                "description": "Get status of an async agent job",
-                "arguments": {
-                    "job_id": "string (required)"
-                },
-                "returns": {
-                    "job_id": "string",
-                    "status": "queued|running|completed|failed|cancelled",
-                    "created_at": "string",
-                    "started_at": "string?",
-                    "completed_at": "string?",
-                    "duration_ms": "integer?",
-                    "error": "string?",
-                    "session_id": "string?",
-                    "exchange_id": "string?",
-                    "metadata": "object?"
-                }
-            }),
-            "call_jobs" => json!({
-                "name": "call_jobs",
-                "description": "List async agent jobs with optional filtering",
-                "arguments": {
-                    "limit": "integer (default 20)",
-                    "status_filter": "string — optional status to filter by",
-                    "tool_name": "string — optional tool name to filter by"
-                },
-                "returns": {
-                    "jobs": "array of job summaries",
-                    "total": "integer"
-                }
-            }),
-            "call_cancel" => json!({
-                "name": "call_cancel",
-                "description": "Cancel a running or queued async agent job",
-                "arguments": {
-                    "job_id": "string (required)"
-                },
-                "returns": {
-                    "job_id": "string",
-                    "previous_status": "string",
-                    "new_status": "string",
-                    "message": "string"
-                }
             }),
             "call_vibe" => json!({
                 "name": "call_vibe",

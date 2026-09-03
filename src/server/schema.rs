@@ -211,36 +211,6 @@ impl SurrealMindServer {
             DEFINE INDEX idx_kgbnd_created ON TABLE kg_boundaries FIELDS created_at;
             DEFINE INDEX idx_kgbnd_thought ON TABLE kg_boundaries FIELDS source_thought_id;
             DEFINE INDEX idx_kgbnd_batch ON TABLE kg_boundaries FIELDS extraction_batch_id;
-
-            -- Agent job tracking for async tool execution
-            DEFINE TABLE agent_jobs SCHEMAFULL;
-            DEFINE FIELD job_id ON TABLE agent_jobs TYPE string;
-            DEFINE FIELD tool_name ON TABLE agent_jobs TYPE string;
-            DEFINE FIELD agent_source ON TABLE agent_jobs TYPE string;
-            DEFINE FIELD agent_instance ON TABLE agent_jobs TYPE string;
-            DEFINE FIELD status ON TABLE agent_jobs TYPE string;
-            DEFINE FIELD created_at ON TABLE agent_jobs TYPE datetime DEFAULT time::now();
-            DEFINE FIELD started_at ON TABLE agent_jobs TYPE option<datetime>;
-            DEFINE FIELD completed_at ON TABLE agent_jobs TYPE option<datetime>;
-            DEFINE FIELD duration_ms ON TABLE agent_jobs TYPE option<int>;
-            DEFINE FIELD error ON TABLE agent_jobs TYPE option<string>;
-            DEFINE FIELD session_id ON TABLE agent_jobs TYPE option<string>;
-            DEFINE FIELD exchange_id ON TABLE agent_jobs TYPE option<record<agent_exchanges>>;
-            DEFINE FIELD metadata ON TABLE agent_jobs TYPE option<object>;
-            DEFINE FIELD prompt ON TABLE agent_jobs TYPE string;
-            DEFINE FIELD task_name ON TABLE agent_jobs TYPE string;
-            DEFINE FIELD model_override ON TABLE agent_jobs TYPE option<string>;
-            DEFINE FIELD cwd ON TABLE agent_jobs TYPE option<string>;
-            DEFINE FIELD timeout_ms ON TABLE agent_jobs TYPE option<int>;
-            DEFINE FIELD tool_timeout_ms ON TABLE agent_jobs TYPE option<int>;
-            DEFINE FIELD expose_stream ON TABLE agent_jobs TYPE option<bool>;
-            DEFINE FIELD resume_session_id ON TABLE agent_jobs TYPE option<string>;
-            DEFINE FIELD continue_latest ON TABLE agent_jobs TYPE option<bool>;
-            DEFINE FIELD fire_and_forget ON TABLE agent_jobs TYPE option<bool>;
-            DEFINE INDEX idx_jobs_job_id ON TABLE agent_jobs FIELDS job_id UNIQUE;
-            DEFINE INDEX idx_jobs_status ON TABLE agent_jobs FIELDS status;
-            DEFINE INDEX idx_jobs_created ON TABLE agent_jobs FIELDS created_at;
-            DEFINE INDEX idx_jobs_tool ON TABLE agent_jobs FIELDS tool_name;
         "#
         );
 

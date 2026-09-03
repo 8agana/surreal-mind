@@ -6,7 +6,6 @@ pub mod embeddings;
 pub mod error;
 pub mod indexes;
 pub mod maintenance;
-pub mod registry;
 pub mod schemas;
 pub mod serializers;
 pub mod server;

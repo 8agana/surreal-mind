@@ -323,21 +323,6 @@ def main():
              save_job_id
         )
 
-        if "JOB_ID" in runner.context:
-            runner.run_test(
-                "MCP-TK-011 call_status",
-                "tools/call",
-                {"name": "call_status", "arguments": {"job_id": "REPLACE_JOB_ID"}},
-                lambda r: "content" in r
-            )
-            
-            runner.run_test(
-                "MCP-TK-013 call_cancel",
-                "tools/call",
-                {"name": "call_cancel", "arguments": {"job_id": "REPLACE_JOB_ID"}},
-                lambda r: True # Just check it doesn't crash
-            )
-
         runner.run_test(
              "MCP-TK-014 Rethink",
              "tools/call",
@@ -383,8 +368,8 @@ def main():
         runner.run_test(
             "MCP-ER-004 Missing Args",
             "tools/call",
-            {"name": "call_status", "arguments": {}},
-             lambda r: "error" in r # Should fail validation
+            {"name": "maintain", "arguments": {}},
+             lambda r: "error" in r # Should fail validation (subcommand is required)
         )
 
     finally:

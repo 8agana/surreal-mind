@@ -204,40 +204,6 @@ pub fn call_vibe_schema() -> Arc<Map<String, Value>> {
     Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
 }
 
-pub fn call_status_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "job_id": {"type": "string"}
-        },
-        "required": ["job_id"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn call_jobs_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
-            "status_filter": {"type": "string", "enum": ["queued", "running", "completed", "failed", "cancelled"]},
-            "tool_name": {"type": "string"}
-        }
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
-pub fn call_cancel_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "job_id": {"type": "string"}
-        },
-        "required": ["job_id"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
 pub fn remember_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
@@ -265,9 +231,6 @@ pub fn howto_schema() -> Arc<Map<String, Value>> {
                 "call_gem",
                 "call_cc",
                 "call_vibe",
-                "call_status",
-                "call_jobs",
-                "call_cancel",
                 "wander",
                 "howto",
                 "journal",

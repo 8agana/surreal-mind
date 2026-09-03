@@ -1,15 +1,12 @@
 //! Tool handlers for the surreal-mind MCP server
 
-pub mod agent_job_status;
 pub mod call_cc;
 pub mod call_gem;
 pub mod call_vibe;
-pub mod cancel_agent_job;
 pub mod corrections;
 pub mod howto;
 pub mod journal;
 pub mod knowledge_graph;
-pub mod list_agent_jobs;
 pub mod maintenance;
 pub mod rethink;
 pub mod test_notification;

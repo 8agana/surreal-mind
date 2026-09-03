@@ -560,7 +560,6 @@ mod tests {
             thoughts: normal.thoughts.clone(),
             embedder: Arc::new(WrongDimensionEmbedder),
             config: normal.config.clone(),
-            job_semaphore: normal.job_semaphore.clone(),
         };
         let write_result = guarded
             .ensure_kg_embedding("kg_entities", &record_id, marker, &serde_json::json!({}))

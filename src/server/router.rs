@@ -142,9 +142,6 @@ impl ServerHandler for SurrealMindServer {
         let call_gem_schema = crate::schemas::call_gem_schema();
         let call_cc_schema = crate::schemas::call_cc_schema();
         let call_vibe_schema = crate::schemas::call_vibe_schema();
-        let call_status_schema = crate::schemas::call_status_schema();
-        let call_jobs_schema = crate::schemas::call_jobs_schema();
-        let call_cancel_schema = crate::schemas::call_cancel_schema();
 
         // Output schemas (rmcp 0.11.0+)
         // Output schemas removed as they are no longer used or needed for simple tool defs
@@ -244,33 +241,6 @@ impl ServerHandler for SurrealMindServer {
             .with_title("Search"),
         );
 
-        tools.push(
-            Tool::new(
-                "call_status",
-                "Check the status and results of a delegated agent job",
-                call_status_schema,
-            )
-            .with_title("Call Status"),
-        );
-
-        tools.push(
-            Tool::new(
-                "call_jobs",
-                "List active or completed delegated agent jobs",
-                call_jobs_schema,
-            )
-            .with_title("Call Jobs"),
-        );
-
-        tools.push(
-            Tool::new(
-                "call_cancel",
-                "Cancel an active delegated agent job",
-                call_cancel_schema,
-            )
-            .with_title("Call Cancel"),
-        );
-
         // (photography tools removed from this server)
 
         Ok(list_tools_result(tools, uses_2026_list_shape(&context)))
@@ -314,19 +284,6 @@ impl ServerHandler for SurrealMindServer {
             "call_gem" => self.handle_call_gem(request).await.map_err(|e| e.into()),
             "call_cc" => self.handle_call_cc(request).await.map_err(|e| e.into()),
             "call_vibe" => self.handle_call_vibe(request).await.map_err(|e| e.into()),
-
-            "call_status" => self
-                .handle_agent_job_status(request)
-                .await
-                .map_err(|e| e.into()),
-            "call_jobs" => self
-                .handle_list_agent_jobs(request)
-                .await
-                .map_err(|e| e.into()),
-            "call_cancel" => self
-                .handle_cancel_agent_job(request)
-                .await
-                .map_err(|e| e.into()),
 
             // Help
             "howto" => self.handle_howto(request).await.map_err(|e| e.into()),
