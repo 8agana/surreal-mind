@@ -19,6 +19,12 @@ use surreal_mind::clients::{
 use surreal_mind::config::Config;
 use surreal_mind::server::SurrealMindServer;
 
+fn bool_env(name: &str, default: bool) -> bool {
+    std::env::var(name)
+        .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "on"))
+        .unwrap_or(default)
+}
+
 const DEFAULT_MODEL: &str = "gemini-3-flash-preview";
 const DEFAULT_MAX_STEPS: usize = 50;
 const DEFAULT_TIMEOUT_MS: u64 = 60_000;
@@ -88,6 +94,11 @@ async fn main() -> Result<()> {
     }
 
     println!("🚀 Starting kg_wander - Autonomous Gardener");
+
+    if bool_env("DRY_RUN", false) {
+        println!("[mode] DRY_RUN: wander skipped");
+        return Ok(());
+    }
 
     // Load config
     let config = Config::load().expect("Failed to load config");
