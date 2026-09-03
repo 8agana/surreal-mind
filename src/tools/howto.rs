@@ -26,7 +26,6 @@ impl SurrealMindServer {
                     json!({"name": "search", "one_liner": "Unified LM search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]}),
                     json!({"name": "maintain", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]}),
                     json!({"name": "call_gem", "one_liner": "Delegate a prompt to the Gemini CLI agent", "key_params": ["prompt", "model", "cwd", "mode"]}),
-                    json!({"name": "call_vibe", "one_liner": "Delegate a prompt to the Vibe CLI agent", "key_params": ["prompt", "cwd", "agent", "mode"]}),
                     json!({"name": "howto", "one_liner": "Get help for a specific tool or list all tools", "key_params": ["tool", "format"]}),
                     json!({"name": "test_notification", "one_liner": "Send a test logging notification to the client", "key_params": ["message", "level"]}),
                     json!({"name": "wander", "one_liner": "Explore the knowledge graph for curiosity-driven discovery", "key_params": ["mode", "current_thought_id", "visited_ids", "recency_bias", "for"]}),
@@ -263,20 +262,6 @@ impl SurrealMindServer {
                     "max_response_chars": "integer (default 100000) — max chars for response (0 = no limit)"
                 },
                 "returns": {"status": "completed", "session_id": "string", "response": "string"}
-            }),
-            "call_vibe" => json!({
-                "name": "call_vibe",
-                "description": "Delegate a prompt to the Vibe CLI agent. Supports agent profiles, session continuation, and observe mode.",
-                "arguments": {
-                    "prompt": "string (required) — the prompt text",
-                    "cwd": "string (required) — working directory for the agent",
-                    "agent": "string — agent profile name from ~/.vibe/agents/*.toml",
-                    "mode": "string — 'execute' (default) or 'observe' (read-only analysis)",
-                    "continue_latest": "boolean (default false) — continue from last Vibe session",
-                    "timeout_ms": "integer (default 60000) — execution timeout",
-                    "max_response_chars": "integer (default 100000) — max chars for response (0 = no limit)"
-                },
-                "returns": {"status": "completed", "response": "string"}
             }),
             _ => {
                 return Err(SurrealMindError::Validation {

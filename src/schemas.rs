@@ -130,38 +130,6 @@ mod tests {
     }
 }
 
-pub fn call_vibe_schema() -> Arc<Map<String, Value>> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "prompt": {"type": "string"},
-            "cwd": {
-                "type": "string",
-                "description": "Working directory: workspace alias (e.g., 'surreal-mind', 'home') or absolute path (e.g., '/Users/sam/Projects/foo'). Use '~/' for home expansion."
-            },
-            "agent": {
-                "type": "string",
-                "description": "Agent profile name from ~/.vibe/agents/*.toml"
-            },
-            "mode": {
-                "type": "string",
-                "enum": ["execute", "observe"],
-                "default": "execute",
-                "description": "execute: normal operation with file changes. observe: analyze and report only, no file modifications."
-            },
-            "continue_latest": {"type": "boolean", "default": false},
-            "timeout_ms": {"type": "number", "default": 60000},
-            "max_response_chars": {
-                "type": "integer",
-                "default": 100000,
-                "description": "Max chars for response (0 = no limit, default 100000)"
-            }
-        },
-        "required": ["prompt", "cwd"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
 pub fn remember_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
@@ -187,7 +155,6 @@ pub fn howto_schema() -> Arc<Map<String, Value>> {
                 "search",
                 "maintain",
                 "call_gem",
-                "call_vibe",
                 "wander",
                 "howto",
                 "journal",

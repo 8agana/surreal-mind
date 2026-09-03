@@ -183,7 +183,7 @@ fn make_initialize_request(protocol_version: ProtocolVersion) -> ClientRequest {
 
 // The exact 16-tool contract this upgrade must preserve (TOOL-01), in
 // registration order.
-const EXPECTED_TOOL_NAMES: [&str; 12] = [
+const EXPECTED_TOOL_NAMES: [&str; 11] = [
     "think",
     "wander",
     "maintain",
@@ -194,7 +194,6 @@ const EXPECTED_TOOL_NAMES: [&str; 12] = [
     "remember",
     "howto",
     "call_gem",
-    "call_vibe",
     "search",
 ];
 
@@ -320,14 +319,6 @@ async fn test_list_tools_protocol() {
                             Some("Journal")
                         );
 
-                        let call_vibe = tools
-                            .iter()
-                            .find(|t| t.get("name").and_then(|n| n.as_str()) == Some("call_vibe"))
-                            .expect("call_vibe tool must be present");
-                        assert_eq!(
-                            call_vibe.get("title").and_then(|v| v.as_str()),
-                            Some("Call Vibe")
-                        );
                     } else {
                         panic!("tools/list response did not contain a `tools` array");
                     }

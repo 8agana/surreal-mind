@@ -27,13 +27,12 @@ fn test_list_tools_returns_expected_tools() {
         "remember",
         "howto",
         "call_gem",
-        "call_vibe",
         "search",
     ];
     assert_eq!(
         expected_tools.len(),
-        12,
-        "Tool roster should list entries for all 12 tools"
+        11,
+        "Tool roster should list entries for all 11 tools"
     );
 }
 
