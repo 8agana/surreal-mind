@@ -20,6 +20,7 @@ use surrealdb::types::SurrealValue;
 const EXTRACTION_PROMPT_VERSION: &str = "v1";
 const DEFAULT_BATCH_SIZE: usize = 5;
 const DEFAULT_TIMEOUT_MS: u64 = 120_000;
+const DEFAULT_DRY_RUN_MAX_BATCHES: usize = 3;
 
 // ============================================================================
 // Data Structures
@@ -154,7 +155,17 @@ async fn main() -> Result<()> {
     let max_batches = std::env::var("KG_POPULATE_MAX_BATCHES")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
-        .filter(|v| *v > 0);
+        .filter(|v| *v > 0)
+        .or({
+            // Under DRY_RUN, thoughts are never marked extracted, so the same
+            // batch would be refetched forever. Bound iteration by default so a
+            // dry run terminates without relying on an external timeout wrapper.
+            if dry_run {
+                Some(DEFAULT_DRY_RUN_MAX_BATCHES)
+            } else {
+                None
+            }
+        });
     if let Some(max_batches) = max_batches {
         println!("🧪 Max batches: {}", max_batches);
     }
@@ -201,6 +212,15 @@ async fn main() -> Result<()> {
 
         // Generate batch ID for this extraction run
         let batch_id = uuid::Uuid::new_v4().to_string();
+
+        if dry_run {
+            println!(
+                "  🔎 [DRY_RUN] skipping extraction provider call for {} thoughts",
+                thoughts.len()
+            );
+            stats.thoughts_processed += thoughts.len();
+            continue;
+        }
 
         // Build prompt with thoughts
         let prompt = build_extraction_prompt(&thoughts);
