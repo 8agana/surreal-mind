@@ -1,22 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!--
-  SUPERSEDED by dev.legacymind.nightly-shift under fed-74ee30 on 2026-09-03.
-  Retained for rollback/reference; do not install both 01:00 jobs concurrently.
--->
 <plist version="1.0">
 <dict>
 	<key>EnvironmentVariables</key>
-	<dict>
-		<key>SURR_ENV_FILE</key>
-		<string>/Users/samuelatagana/Projects/LegacyMind/surreal-mind/.env</string>
-		<key>ANTIGRAVITY_CLI_BIN</key>
-		<string>/Users/samuelatagana/.local/bin/agy</string>
-		<key>PATH</key>
-		<string>/Users/samuelatagana/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-		<key>CONSOLIDATE_DELETE</key>
-		<string>1</string>
-	</dict>
+		<dict>
+			<key>SURR_ENV_FILE</key>
+			<string>/Users/samuelatagana/Projects/LegacyMind/surreal-mind/.env</string>
+			<key>ANTIGRAVITY_CLI_BIN</key>
+			<string>/Users/samuelatagana/.local/bin/agy</string>
+			<key>PATH</key>
+			<string>/Users/samuelatagana/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+		</dict>
 	<key>Label</key>
 	<string>dev.legacymind.remini</string>
 	<key>ProgramArguments</key>

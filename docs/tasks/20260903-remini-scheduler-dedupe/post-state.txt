@@ -1,0 +1,6 @@
+standalone_loaded=false
+nightly_loaded=true
+standalone_plist_present=false
+standalone_disabled_present=true
+nightly_plist_bytes_unchanged=true
+nightly_launchctl_print_unchanged=true

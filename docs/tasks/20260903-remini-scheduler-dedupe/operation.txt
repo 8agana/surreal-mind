@@ -1,0 +1,5 @@
+started_at=2026-09-03T21:47:21Z
+command=launchctl bootout gui/501/dev.legacymind.remini
+bootout_exit=0
+rename=/Users/samuelatagana/Library/LaunchAgents/dev.legacymind.remini.plist -> /Users/samuelatagana/Library/LaunchAgents/dev.legacymind.remini.plist.disabled
+completed_at=2026-09-03T21:47:21Z
