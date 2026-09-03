@@ -1,0 +1,89 @@
+gui/501/dev.legacymind.nightly-shift = {
+	active count = 0
+	path = /Users/samuelatagana/Library/LaunchAgents/dev.legacymind.nightly-shift.plist
+	type = LaunchAgent
+	state = not running
+
+	program = /bin/bash
+	arguments = {
+		/bin/bash
+		/Users/samuelatagana/Projects/LegacyMind/surreal-mind/scripts/nightly_shift.sh
+	}
+
+	working directory = /Users/samuelatagana/Projects/LegacyMind/surreal-mind
+
+	stdout path = /Users/samuelatagana/Projects/LegacyMind/surreal-mind/logs/nightly_shift.log
+	stderr path = /Users/samuelatagana/Projects/LegacyMind/surreal-mind/logs/nightly_shift.log
+	inherited environment = {
+		SSH_AUTH_SOCK => /var/run/com.apple.launchd.9MKF4mWTdw/Listeners
+	}
+
+	default environment = {
+		PATH => /usr/bin:/bin:/usr/sbin:/sbin
+	}
+
+	environment = {
+		OSLogRateLimit => 64
+		SURR_ENV_FILE => /Users/samuelatagana/Projects/LegacyMind/surreal-mind/.env
+		PATH => /Users/samuelatagana/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+		ANTIGRAVITY_CLI_BIN => /Users/samuelatagana/.local/bin/agy
+		XPC_SERVICE_NAME => dev.legacymind.nightly-shift
+	}
+
+	domain = gui/501 [100003]
+	asid = 100003
+	minimum runtime = 10
+	exit timeout = 5
+	runs = 2
+	last exit code = 0
+
+	event triggers = {
+		dev.legacymind.nightly-shift.268435471 => {
+			keepalive = 0
+			service = dev.legacymind.nightly-shift
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 0
+				"Hour" => 1
+			}
+		}
+	}
+
+	event channels = {
+		"com.apple.launchd.calendarinterval" = {
+			port = 0xf04ab
+			active = 0
+			managed = 1
+			reset = 0
+			hide = 0
+			watching = 1
+		}
+	}
+
+	resource coalition = {
+		ID = 1390
+		type = resource
+		state = active
+		active count = 1
+		name = dev.legacymind.nightly-shift
+	}
+
+	jetsam coalition = {
+		ID = 1391
+		type = jetsam
+		state = active
+		active count = 1
+		name = dev.legacymind.nightly-shift
+	}
+
+	spawn type = daemon (3)
+	jetsam priority = 40
+	jetsam memory limit (active) = (unlimited)
+	jetsam memory limit (inactive) = (unlimited)
+	jetsamproperties category = daemon
+	jetsam thread limit = 32
+	cpumon = default
+
+	properties = inferred program | managed LWCR | has LWCR
+}

@@ -1,0 +1,16 @@
+097973683b7d2b922709cf9efff531290a932144b66635b80dc294ef89633be5  ./after-disabled-plist-lint.txt
+dcabcb21eb0ddca4405882faba0efc4047ad81d2feba8a49157d5eb1c44dd023  ./after-installed-plists.sha256
+90ad53b6ff83592d835b21734b96e224473f5708797e92c101b153cd2a1b3356  ./after-launchctl-nightly-shift.txt
+6df9d0a6ea8e120e383e708daf48c33d8f6d0f79b42bfc2a0fefbb2d092cadee  ./after-launchctl-remini.exit
+19d9b843c8b6460c9abcb5a872edc1e7702b8978fda580755a9308ae32b0eaa4  ./after-launchctl-remini.txt
+beb01ce3f109565295a31e1dd0aa80505f51b7b24c2785dce4fe8f444fd0bdd8  ./before-installed-dev.legacymind.nightly-shift.plist
+da531a8831ad86eafbfd1be401978ee2a16d8c75c5c5c27afe764b763955ea9e  ./before-installed-dev.legacymind.remini.plist
+6d1f56386021a3694e664c7e76549d0c8ae7090d26aa534841530e4ab145e757  ./before-installed-plists.sha256
+90ad53b6ff83592d835b21734b96e224473f5708797e92c101b153cd2a1b3356  ./before-launchctl-nightly-shift.txt
+ac289d95af11907497382973f907c451606d30f2a6d2e13354abb45355210fb4  ./before-launchctl-remini.txt
+ce9bc40346d914a2dff7f549950b7f197107625cf19d380ccbbddadfc775d14b  ./operation.txt
+296e58f40e99e8be9af23c1484835a23e52c26fdd83206016e84b88c5d40dd2e  ./post-state.txt
+14499a8941ef10d80b1e8ddedaf7037cba84b8e33ac4dfdcce287059cefee251  ./pre-state.txt
+0b2d0df702ecd43603fe7162299207707f6d138d102ef39a590b8a2331ad9232  ./remini-scheduler-dedupe-impl.md
+d2c10c6a41c21bb89f162fabae9361dfe06a24f74e0b3c3bb86d0c7c9e549886  ./remini-scheduler-dedupe-testing.md
+852db82e92e8451098bf8bb1457142172c4358de94fe7c69ac5c63b9610ca530  ./remini-scheduler-dedupe.md

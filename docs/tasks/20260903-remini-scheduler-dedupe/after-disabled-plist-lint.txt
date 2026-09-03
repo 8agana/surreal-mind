@@ -1,0 +1,1 @@
+/Users/samuelatagana/Library/LaunchAgents/dev.legacymind.remini.plist.disabled: OK
