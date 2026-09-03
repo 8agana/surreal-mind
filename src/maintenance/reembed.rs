@@ -895,6 +895,13 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
         "[kg_embed] Processing entities (batch size: {})...",
         ENTITY_BATCH
     );
+    // DRY_RUN never marks rows as embedded, so the same "missing" rows
+    // keep matching this table's query on every pass. Track ids already
+    // seen this run so a --dry-run invocation with no limit cannot loop
+    // indefinitely rescanning an unchanged result set (mirrors the
+    // kg_populate DRY_RUN refetch failure shape).
+    let mut dry_run_seen_entities: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
     let mut entity_remaining = limit_total;
     loop {
         if entity_remaining == 0 {
@@ -915,6 +922,18 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
         let rows: Vec<Value> = db.query(&sql).await?.take(0)?;
         if rows.is_empty() {
             break;
+        }
+
+        if dry_run {
+            let all_seen = rows.iter().all(|r| {
+                r.get("id")
+                    .and_then(|v| v.as_str())
+                    .map(|id| dry_run_seen_entities.contains(id))
+                    .unwrap_or(false)
+            });
+            if all_seen {
+                break;
+            }
         }
 
         for r in &rows {
@@ -967,6 +986,7 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
                     id,
                     &text[..text.len().min(60)]
                 );
+                dry_run_seen_entities.insert(id.clone());
                 entities_updated += 1;
                 entity_remaining = entity_remaining.saturating_sub(1);
                 continue;
@@ -1061,6 +1081,13 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
         "[kg_embed] Processing observations (batch size: {})...",
         OBS_BATCH
     );
+    // DRY_RUN never marks rows as embedded, so the same "missing" rows
+    // keep matching this table's query on every pass. Track ids already
+    // seen this run so a --dry-run invocation with no limit cannot loop
+    // indefinitely rescanning an unchanged result set (mirrors the
+    // kg_populate DRY_RUN refetch failure shape).
+    let mut dry_run_seen_observations: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
     let mut obs_remaining = limit_total;
     loop {
         if obs_remaining == 0 {
@@ -1081,6 +1108,18 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
         let rows: Vec<Value> = db.query(&sql).await?.take(0)?;
         if rows.is_empty() {
             break;
+        }
+
+        if dry_run {
+            let all_seen = rows.iter().all(|r| {
+                r.get("id")
+                    .and_then(|v| v.as_str())
+                    .map(|id| dry_run_seen_observations.contains(id))
+                    .unwrap_or(false)
+            });
+            if all_seen {
+                break;
+            }
         }
 
         for r in &rows {
@@ -1128,6 +1167,7 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
                     id,
                     &text[..text.len().min(60)]
                 );
+                dry_run_seen_observations.insert(id.clone());
                 observations_updated += 1;
                 obs_remaining = obs_remaining.saturating_sub(1);
                 continue;
@@ -1216,6 +1256,13 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
         "[kg_embed] Processing edges (batch size: {})...",
         EDGE_BATCH
     );
+    // DRY_RUN never marks rows as embedded, so the same "missing" rows
+    // keep matching this table's query on every pass. Track ids already
+    // seen this run so a --dry-run invocation with no limit cannot loop
+    // indefinitely rescanning an unchanged result set (mirrors the
+    // kg_populate DRY_RUN refetch failure shape).
+    let mut dry_run_seen_edges: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
     let mut edge_remaining = limit_total;
     loop {
         if edge_remaining == 0 {
@@ -1237,6 +1284,18 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
         let rows: Vec<Value> = db.query(&sql).await?.take(0)?;
         if rows.is_empty() {
             break;
+        }
+
+        if dry_run {
+            let all_seen = rows.iter().all(|r| {
+                r.get("id")
+                    .and_then(|v| v.as_str())
+                    .map(|id| dry_run_seen_edges.contains(id))
+                    .unwrap_or(false)
+            });
+            if all_seen {
+                break;
+            }
         }
 
         for r in &rows {
@@ -1299,6 +1358,7 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
                     id,
                     &text[..text.len().min(60)]
                 );
+                dry_run_seen_edges.insert(id.clone());
                 edges_updated += 1;
                 edge_remaining = edge_remaining.saturating_sub(1);
                 continue;
