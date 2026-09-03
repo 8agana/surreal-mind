@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -34,6 +34,12 @@ struct Args {
     /// Timeout per task in seconds (default: 3600 = 1 hour)
     #[arg(long, default_value = "3600")]
     timeout: u64,
+
+    /// Path to write/read the run report (default: logs/remini_report.json,
+    /// overridable via REMINI_REPORT_PATH; this flag takes precedence over
+    /// the env var)
+    #[arg(long)]
+    report_path: Option<PathBuf>,
 }
 
 #[derive(Serialize, Debug)]
@@ -63,11 +69,28 @@ struct Summary {
 const REPORT_PATH: &str = "logs/remini_report.json";
 const BIN_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/target/release");
 
+/// Resolve the effective report path: --report-path flag, then
+/// REMINI_REPORT_PATH env var, then the hardcoded default -- so the
+/// nightly scheduled run (which sets neither) is byte-for-byte unchanged.
+fn resolve_report_path(cli_path: &Option<PathBuf>) -> PathBuf {
+    if let Some(p) = cli_path {
+        return p.clone();
+    }
+    if let Ok(env_path) = std::env::var("REMINI_REPORT_PATH") {
+        let trimmed = env_path.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+    PathBuf::from(REPORT_PATH)
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
+    let report_path = resolve_report_path(&args.report_path);
 
     if args.report {
-        show_report()?;
+        show_report(&report_path)?;
         return Ok(());
     }
 
@@ -83,6 +106,7 @@ fn main() -> Result<()> {
             args.dry_run,
             args.rethink_types.as_deref(),
             args.timeout,
+            &report_path,
         )?;
         if ok {
             summary.tasks_succeeded += 1;
@@ -106,7 +130,7 @@ fn main() -> Result<()> {
         duration_seconds: start.elapsed().as_secs_f64(),
     };
 
-    persist_report(&report)?;
+    persist_report(&report, &report_path)?;
     println!("{}", serde_json::to_string_pretty(&report)?);
 
     Ok(())
@@ -145,6 +169,7 @@ fn run_task(
     dry_run: bool,
     rethink_types: Option<&str>,
     timeout_secs: u64,
+    report_path: &Path,
 ) -> Result<(bool, u128, String, String)> {
     let mut cmd_path = PathBuf::from(BIN_DIR);
     let mut envs = vec![];
@@ -168,7 +193,7 @@ fn run_task(
         }
         "report" => {
             let start = Instant::now();
-            let res = show_report();
+            let res = show_report(report_path);
             let dur = start.elapsed().as_millis();
             match res {
                 Ok(()) => {
@@ -180,6 +205,14 @@ fn run_task(
             }
         }
         "health" => {
+            if dry_run {
+                return Ok((
+                    true,
+                    0,
+                    "[DRY_RUN] health check skipped, DB read-only mode requires live opt-in".into(),
+                    String::new(),
+                ));
+            }
             let script = PathBuf::from("scripts/sm_health.sh");
             if !script.exists() {
                 return Ok((
@@ -273,20 +306,18 @@ fn run_task(
     }
 }
 
-fn persist_report(report: &SleepReport) -> Result<()> {
-    let path = PathBuf::from(REPORT_PATH);
+fn persist_report(report: &SleepReport, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
     let data = serde_json::to_string_pretty(report)?;
-    fs::write(&path, data)?;
+    fs::write(path, data)?;
     Ok(())
 }
 
-fn show_report() -> Result<()> {
-    let path = PathBuf::from(REPORT_PATH);
+fn show_report(path: &Path) -> Result<()> {
     if !path.exists() {
-        println!("No report found at {}", REPORT_PATH);
+        println!("No report found at {}", path.display());
         return Ok(());
     }
     let data = fs::read_to_string(path)?;
