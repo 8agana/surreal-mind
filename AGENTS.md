@@ -14,4 +14,4 @@ This is the LLM entry point. Detailed, modular docs live in `docs/AGENTS/` to ke
 ## Notes
 - Photography MCP is separate (`photography-mind`); keep photo tooling out of this surface.
 - KG-only injection; maintain embedding provider/dimension hygiene.
-- Google CLI delegation defaults to Antigravity CLI (`agy`) through `call_gem`, `kg_populate`, and `kg_wander`; Gemini CLI remains available as rollback via `SM_AGENT_PROVIDER=gemini` or `google_cli_provider = "gemini"` plus restart.
+- Google CLI delegation defaults to Antigravity CLI (`agy`) through `kg_populate` and `kg_wander`; Gemini CLI remains available as rollback via `SM_AGENT_PROVIDER=gemini` or `google_cli_provider = "gemini"` plus restart.

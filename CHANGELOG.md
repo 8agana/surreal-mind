@@ -1,3 +1,35 @@
+## [Unreleased] - remove call_status/call_jobs/call_cancel/call_cc/call_vibe/call_gem tools (branch `fed-734b8f/remove-call-tools`)
+
+Removed the six delegation/job-management MCP tools that duplicated
+federation delegation already covered elsewhere (`comm`, direct CLI
+invocation): `call_status`, `call_jobs`, `call_cancel` (with
+`registry.rs`, the job semaphore, and the `agent_jobs` DDL/dashmap),
+`call_cc` (and `ClaudeClient`), `call_vibe` (and `VibeClient`), and
+`call_gem` (the wrapper only — `AntigravityClient`, `GeminiClient`,
+`GoogleCliProvider`, and their shared `CognitiveAgent` trait survive
+untouched, since `kg_populate` and `kg_wander` still depend on them
+directly). Also removed the now-unreferenced `workspace.rs` /
+`WorkspaceMap` / `WORKSPACE_*` config, whose only production consumers
+were the three deleted delegation tools.
+
+**Public tool count: 16 → 10.** Surviving roster, in registration order:
+`think`, `wander`, `maintain`, `journal`, `rethink`, `corrections`,
+`test_notification`, `remember`, `howto`, `search`. All six removed
+names now return `METHOD_NOT_FOUND` at the router boundary.
+
+**Unaffected:** REMini (`remini`), `kg_populate`, `kg_wander`, and the
+Antigravity/Gemini/GoogleCli client stack — none of these ever routed
+through the removed MCP tool handlers; they call the clients directly.
+
+Also added, ahead of the removal itself, as their own preceding
+commits: a genuine bounded `DRY_RUN` no-op path for `kg_wander`,
+`kg_populate`, `kg_embed`/`reembed`, and REMini's health task (zero
+provider/DB-write calls under dry-run, verified by a fake-provider
+contract test asserting zero calls into
+`ANTIGRAVITY_CLI_BIN`), and a `--report-path`/`REMINI_REPORT_PATH`
+option on `remini` for capturing dry-run baselines before a
+change like this one.
+
 ## [Unreleased] - rmcp 3.1.4 postdeploy follow-up (branch `codex/rmcp-3.1.4-followup`)
 
 Isolated worktree `surreal-mind-rmcp-3.1.4-followup`, based on the deployed branch commit `13943cb` with the corrected review imported from `f1dbf2f`. Implements the CONFIRMED findings from `docs/tasks/20260823-rmcp-3.1.4-upgrade/rmcp-3.1.4-postdeploy-delta-review-cc.md` Revision 2 (M-1, N-1, N-2, N-5), plus extensions this pass derived directly from that same document's own text (deterministic selection from the N-2 discussion; `src/bin/reembed.rs` false-success accounting from the N-5 "same false-success class" note; `src/bin/admin.rs`'s sibling N-1 site from the N-1 finding's own dual-site anchor), the N-4 protocol test-coverage gap, and this pass's own CLI `--version` provenance design (no separate design document — see `build.rs`'s inline doc comments). All work done over `ssh studio` against this worktree only; the live Studio worktree and production binary/launchd/port 8787/tunnel/DB were never touched. No production install performed — this is a source candidate with recorded evidence, per this task's mandate.

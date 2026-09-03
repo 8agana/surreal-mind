@@ -1,6 +1,6 @@
 # SurrealMind – Consciousness Persistence MCP Server
 
-SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server that stores thoughts and knowledge in SurrealDB, injects relevant memories with orbital mechanics, and exposes 16 curated tools for continuity.
+SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server that stores thoughts and knowledge in SurrealDB, injects relevant memories with orbital mechanics, and exposes 10 curated tools for continuity.
 
 ## What It Does
 
@@ -9,7 +9,6 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
 - **Knowledge graph authoring** (`remember`).
 - **Curiosity-driven exploration** (`wander`) for discovering connections.
 - **Operations and introspection** (`maintain`, `howto`).
-- **Agent delegation** (`call_gem`, `call_cc`, `call_vibe`, `call_status`, `call_jobs`, `call_cancel`).
 - Transports: stdio by default or streamable HTTP with SSE, bearer auth, and an OAuth 2.1 endpoint set for remote MCP clients.
 
 ## Transports
@@ -108,13 +107,6 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
 | `journal` | Research thread management over the KG: create threads, add entries, review dashboard state, and update thread status. |
 | `howto` | Get help for any tool. Optional: `tool`, `format` (`compact\|full`). |
 | `test_notification` | Emit an MCP logging notification to the connected client. Required: `message`. Optional: `level` (`debug\|info\|notice\|warning\|error\|critical\|alert\|emergency`, default `info`). |
-| `call_gem` | Delegate prompts to the configured Google CLI provider (`SM_AGENT_PROVIDER=antigravity\|gemini`; default `antigravity`). Required: `prompt`, `cwd`. Optional: `task_name`, `model`, `timeout_ms`, `resume_session_id`, `continue_latest`. |
-| `call_cc` | Delegate prompts to Claude Code CLI. Required: `prompt`, `cwd`. Optional: `model`, `mode`, `resume_session_id`, `continue_latest`, `timeout_ms`. |
-| `call_vibe` | Delegate prompts to Vibe CLI. Required: `prompt`, `cwd`. Optional: `agent` (profile name), `mode`, `continue_latest`, `timeout_ms`. Supports session continuation. |
-| `call_status` | Check status of a background agent job. Required: `job_id`. |
-| `call_jobs` | List active/recent agent jobs. Optional: `limit`, `status_filter`, `tool_name`. |
-| `call_cancel` | Cancel a running agent job. Required: `job_id`. |
-| `test_notification` | Send a test logging notification to the client (diagnostic). Required: `message`. Optional: `level` (`debug\|info\|notice\|warning\|error\|critical\|alert\|emergency`, default `info`). |
 
 ## Configuration Quick Reference
 

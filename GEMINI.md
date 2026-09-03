@@ -45,17 +45,17 @@ We have successfully separated the *Business Logic* (Photography, Skaters, Order
 ### Active Architecture
 
 - **Server:** Modular `rmcp` implementation in `src/server/`.
-- **Tools:** Consolidated into `src/tools/`. The 16 public wire names are `think`, `search`, `remember`, `wander`, `rethink`, `corrections`, `maintain`, `journal`, `howto`, `test_notification`, `call_gem`, `call_cc`, `call_vibe`, `call_status`, `call_jobs`, and `call_cancel`. Other names return `METHOD_NOT_FOUND` at the router boundary.
+- **Tools:** Consolidated into `src/tools/`. The 10 public wire names are `think`, `search`, `remember`, `wander`, `rethink`, `corrections`, `maintain`, `journal`, `howto`, and `test_notification`. Other names return `METHOD_NOT_FOUND` at the router boundary.
   - `think`: The primary interface. Handles Mode Routing (Debug/Build/Plan).
   - `remember`: KG manipulation for entities, relationships, and observations. It replaced the retired `memories_create` surface; `memories_moderate` has no public replacement.
-- **Google CLI delegation:** `call_gem`, `kg_populate`, and `kg_wander` now default to Antigravity CLI (`agy`). Gemini CLI remains available as a rollback provider with `SM_AGENT_PROVIDER=gemini` or `google_cli_provider = "gemini"` plus restart.
+- **Google CLI delegation:** `kg_populate` and `kg_wander` now default to Antigravity CLI (`agy`). Gemini CLI remains available as a rollback provider with `SM_AGENT_PROVIDER=gemini` or `google_cli_provider = "gemini"` plus restart.
 - **Frameworks:** `src/cognitive/` implements OODA, Socratic, etc., via static analysis.
 
 ### Known Issues / Tech Debt
 
 - ~~**Legacy Artifacts:** `src/bin/` contains photography-specific binaries.~~ **Resolved.** The current binary targets are cognitive, KG, migration, maintenance, and REMini surfaces only.
 - ~~**Config Hallucination:** `surreal_mind.toml` contains an unbounded timeout list.~~ **Resolved.** The current file contains exactly two `timeout_ms` settings.
-- ~~**Dead Code:** legacy names remain callable.~~ **Resolved at the public tool boundary; vestigial internal identifiers remain.** Public dispatch uses the 16 names above. Handler/file names such as `handle_legacymind_think`, `agent_job_status`, `list_agent_jobs`, and `cancel_agent_job` are implementation details, not public tool names.
+- ~~**Dead Code:** legacy names remain callable.~~ **Resolved at the public tool boundary; vestigial internal identifiers remain.** Public dispatch uses the 10 names above. Handler/file names such as `handle_legacymind_think` are implementation details, not public tool names.
 
 ---
 
@@ -100,17 +100,17 @@ We have successfully separated the *Business Logic* (Photography, Skaters, Order
 ### Stable Configuration (Opus-Compatible)
 | MCP | Status | Tools | Role |
 |-----|--------|-------|------|
-| `surreal-mind` | ✅ Enabled | 16 | Cognition/persistence (`think`, `search`, `remember`, `wander`, etc.) |
+| `surreal-mind` | ✅ Enabled | 10 | Cognition/persistence (`think`, `search`, `remember`, `wander`, etc.) |
 | `serena` | ✅ Enabled | ~20 | Code navigation/symbols |
 | `desktop-commander` | ✅ Enabled (10 tools) | 10 | System ops (processes, PDFs, screenshots) |
-| `backlog` | ❌ Disabled | - | **Crashes Opus.** Delegate via `call_gem` to CC instead. |
+| `backlog` | ❌ Disabled | - | **Crashes Opus.** No in-repo MCP delegation tool remains (the Google-CLI delegation wrapper was removed, fed-734b8f); use Claude Code CLI directly instead. |
 
-Note: `call_gem` is a compatibility tool name. In this repo its default runtime backend is Antigravity CLI (`agy`), not Gemini CLI, unless the provider flag is set to `gemini` for rollback.
+Note: the Google-CLI delegation wrapper tool has been removed from this repo (fed-734b8f). `kg_populate` and `kg_wander` still default to Antigravity CLI (`agy`) as their runtime backend, not Gemini CLI, unless the provider flag is set to `gemini` for rollback.
 
 ### Key Findings
 - **50-tool threshold**: AntiGravity warns about agent performance above 50 tools.
 - **Backlog incompatibility**: The `backlog-mcp-surreal-mind` binary causes Opus to terminate. Root cause TBD (likely schema validation or startup timeout).
-- **Workaround**: Use `call_gem(prompt: "Update task-XX...", ...)` to delegate backlog ops to Claude Code.
+- **Workaround**: the Google-CLI delegation wrapper tool has been removed (fed-734b8f); no MCP tool in this repo performs this delegation any more — update task-XX ops via Claude Code CLI directly.
 
 ---
 
