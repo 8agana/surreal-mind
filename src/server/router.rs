@@ -140,7 +140,6 @@ impl ServerHandler for SurrealMindServer {
         let test_notification_schema_map = crate::schemas::test_notification_schema();
 
         let call_gem_schema = crate::schemas::call_gem_schema();
-        let call_cc_schema = crate::schemas::call_cc_schema();
         let call_vibe_schema = crate::schemas::call_vibe_schema();
 
         // Output schemas (rmcp 0.11.0+)
@@ -216,15 +215,6 @@ impl ServerHandler for SurrealMindServer {
 
         tools.push(
             Tool::new(
-                "call_cc",
-                "Delegate a task to Claude Code CLI with full context and tracking",
-                call_cc_schema,
-            )
-            .with_title("Call Claude Code"),
-        );
-
-        tools.push(
-            Tool::new(
                 "call_vibe",
                 "Delegate a task to Vibe CLI with full context and tracking",
                 call_vibe_schema,
@@ -282,7 +272,6 @@ impl ServerHandler for SurrealMindServer {
                 .await
                 .map_err(|e| e.into()),
             "call_gem" => self.handle_call_gem(request).await.map_err(|e| e.into()),
-            "call_cc" => self.handle_call_cc(request).await.map_err(|e| e.into()),
             "call_vibe" => self.handle_call_vibe(request).await.map_err(|e| e.into()),
 
             // Help

@@ -26,7 +26,6 @@ impl SurrealMindServer {
                     json!({"name": "search", "one_liner": "Unified LM search: memories (default) + optional thoughts", "key_params": ["query", "target", "include_thoughts", "top_k_memories", "top_k_thoughts"]}),
                     json!({"name": "maintain", "one_liner": "Archival, export, re-embed checks and housekeeping", "key_params": ["subcommand", "limit", "dry_run", "output_dir"]}),
                     json!({"name": "call_gem", "one_liner": "Delegate a prompt to the Gemini CLI agent", "key_params": ["prompt", "model", "cwd", "mode"]}),
-                    json!({"name": "call_cc", "one_liner": "Delegate a prompt to the Claude Code CLI agent", "key_params": ["prompt", "model", "cwd", "mode"]}),
                     json!({"name": "call_vibe", "one_liner": "Delegate a prompt to the Vibe CLI agent", "key_params": ["prompt", "cwd", "agent", "mode"]}),
                     json!({"name": "howto", "one_liner": "Get help for a specific tool or list all tools", "key_params": ["tool", "format"]}),
                     json!({"name": "test_notification", "one_liner": "Send a test logging notification to the client", "key_params": ["message", "level"]}),
@@ -260,23 +259,6 @@ impl SurrealMindServer {
                     "timeout_ms": "integer (default 60000) — outer timeout",
                     "tool_timeout_ms": "integer (default 300000) — per-tool timeout",
                     "expose_stream": "boolean — include stream events in response when the selected provider exposes them",
-                    "mode": "string — 'execute' (default) or 'observe' (read-only analysis)",
-                    "max_response_chars": "integer (default 100000) — max chars for response (0 = no limit)"
-                },
-                "returns": {"status": "completed", "session_id": "string", "response": "string"}
-            }),
-            "call_cc" => json!({
-                "name": "call_cc",
-                "description": "Delegate a prompt to the Claude Code CLI agent. Supports session resume and observe mode.",
-                "arguments": {
-                    "prompt": "string (required) — the prompt text",
-                    "model": "string — override model (env: ANTHROPIC_MODEL/ANTHROPIC_MODELS)",
-                    "cwd": "string (required) — working directory for the agent",
-                    "resume_session_id": "string — resume a specific Claude session",
-                    "continue_latest": "boolean (default false) — resume last Claude session",
-                    "timeout_ms": "integer (default 60000) — outer timeout",
-                    "tool_timeout_ms": "integer (default 300000) — per-tool timeout",
-                    "expose_stream": "boolean — include stream events in metadata",
                     "mode": "string — 'execute' (default) or 'observe' (read-only analysis)",
                     "max_response_chars": "integer (default 100000) — max chars for response (0 = no limit)"
                 },

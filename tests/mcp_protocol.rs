@@ -183,7 +183,7 @@ fn make_initialize_request(protocol_version: ProtocolVersion) -> ClientRequest {
 
 // The exact 16-tool contract this upgrade must preserve (TOOL-01), in
 // registration order.
-const EXPECTED_TOOL_NAMES: [&str; 13] = [
+const EXPECTED_TOOL_NAMES: [&str; 12] = [
     "think",
     "wander",
     "maintain",
@@ -194,7 +194,6 @@ const EXPECTED_TOOL_NAMES: [&str; 13] = [
     "remember",
     "howto",
     "call_gem",
-    "call_cc",
     "call_vibe",
     "search",
 ];

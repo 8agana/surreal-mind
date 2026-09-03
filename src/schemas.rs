@@ -130,48 +130,6 @@ mod tests {
     }
 }
 
-pub fn call_cc_schema() -> Arc<Map<String, Value>> {
-    // Read available models from env var (comma-separated) - REQUIRED
-    let models: Vec<Value> = std::env::var("ANTHROPIC_MODELS")
-        .expect("ANTHROPIC_MODELS env var required")
-        .split(',')
-        .map(|m| Value::String(m.trim().to_string()))
-        .collect();
-
-    let default_model = std::env::var("ANTHROPIC_MODEL").expect("ANTHROPIC_MODEL env var required");
-
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "prompt": {"type": "string"},
-            "task_name": {"type": "string", "default": "call_cc"},
-            "model": {
-                "type": "string",
-                "enum": models,
-                "default": default_model
-            },
-            "cwd": {
-                "type": "string",
-                "description": "Working directory: workspace alias (e.g., 'surreal-mind', 'home') or absolute path (e.g., '/Users/sam/Projects/foo'). Use '~/' for home expansion."
-            },
-            "resume_session_id": {"type": "string"},
-            "continue_latest": {"type": "boolean", "default": false},
-            "timeout_ms": {"type": "number", "default": 60000},
-            "tool_timeout_ms": {"type": "number", "default": 300000},
-            "expose_stream": {"type": "boolean", "default": false},
-            "mode": {
-                "type": "string",
-                "enum": ["execute", "observe"],
-                "default": "execute",
-                "description": "execute: normal operation with file changes. observe: analyze and report only, no file modifications."
-            },
-            "max_response_chars": {"type": "integer", "default": 100000, "description": "Max chars for response (0 = no limit, default 100000)"}
-        },
-        "required": ["prompt", "cwd"]
-    });
-    Arc::new(schema.as_object().cloned().unwrap_or_else(Map::new))
-}
-
 pub fn call_vibe_schema() -> Arc<Map<String, Value>> {
     let schema = json!({
         "type": "object",
@@ -229,7 +187,6 @@ pub fn howto_schema() -> Arc<Map<String, Value>> {
                 "search",
                 "maintain",
                 "call_gem",
-                "call_cc",
                 "call_vibe",
                 "wander",
                 "howto",
