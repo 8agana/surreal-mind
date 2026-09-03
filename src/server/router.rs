@@ -49,6 +49,98 @@ fn list_tools_result(tools: Vec<Tool>, draft_2026: bool) -> ListToolsResult {
     }
 }
 
+/// Build the full, ordered list of MCP tools this server exposes.
+///
+/// Pure: touches no server state (`self`) and no database. `list_tools` below
+/// (the actual `tools/list` wire handler) delegates to this directly, so a
+/// DB-free test calling this function exercises the real registration path,
+/// not a hand-maintained duplicate of it (see `tests/tool_roster_db_free.rs`).
+pub fn build_tool_list() -> Vec<Tool> {
+    // Input schemas
+    let think_schema_map = crate::schemas::think_schema();
+    let maintain_schema_map = crate::schemas::maintain_schema();
+    let remember_schema_map = crate::schemas::remember_schema();
+    let howto_schema_map = crate::schemas::howto_schema();
+    let search_schema_map = crate::schemas::search_schema();
+    let wander_schema_map = crate::schemas::wander_schema();
+    let journal_schema_map = crate::schemas::journal_schema();
+    let rethink_schema_map = crate::schemas::rethink_schema();
+    let corrections_schema_map = crate::schemas::corrections_schema();
+    let test_notification_schema_map = crate::schemas::test_notification_schema();
+
+    let mut tools = vec![
+        Tool::new(
+            "think",
+            "Unified thinking tool with automatic mode routing (Plan, Build, Debug, Stuck)",
+            think_schema_map,
+        )
+        .with_title("Think"),
+        Tool::new(
+            "wander",
+            "Explore the knowledge graph to form new connections, provide context, and verify information. Use this for curiosity-driven exploration, not goal-directed search.",
+            wander_schema_map,
+        )
+        .with_title("Wander"),
+        Tool::new(
+            "maintain",
+            "Maintenance operations for archival, cleanup, and health checks",
+            maintain_schema_map,
+        )
+        .with_title("Maintain"),
+        Tool::new(
+            "journal",
+            "Research thread management — create threads, add entries, view dashboard, update status. A looking glass over the KG for structured research.",
+            journal_schema_map,
+        )
+        .with_title("Journal"),
+        Tool::new(
+            "rethink",
+            "Mark records for revision or correction by federation members",
+            rethink_schema_map,
+        )
+        .with_title("Rethink"),
+        Tool::new(
+            "corrections",
+            "List correction events with optional target filter",
+            corrections_schema_map,
+        )
+        .with_title("Corrections"),
+        Tool::new(
+            "test_notification",
+            "Send a test logging notification to the client",
+            test_notification_schema_map,
+        )
+        .with_title("Test Notification"),
+        // (legacy think_search removed — use legacymind_search)
+        Tool::new(
+            "remember",
+            "Create entities, relationships, or observations in the knowledge graph",
+            remember_schema_map,
+        )
+        .with_title("Remember"),
+        // (legacy memories_search removed — use legacymind_search)
+        Tool::new(
+            "howto",
+            "Get detailed help and usage examples for available tools",
+            howto_schema_map,
+        )
+        .with_title("How To"),
+    ];
+
+    tools.push(
+        Tool::new(
+            "search",
+            "Unified search for entities, observations, and thoughts",
+            search_schema_map,
+        )
+        .with_title("Search"),
+    );
+
+    // (photography tools removed from this server)
+
+    tools
+}
+
 impl ServerHandler for SurrealMindServer {
     fn get_info(&self) -> ServerInfo {
         // D4: preserve `tools.listChanged = false` explicitly rather than
@@ -123,96 +215,10 @@ impl ServerHandler for SurrealMindServer {
         context: RequestContext<RoleServer>,
     ) -> std::result::Result<ListToolsResult, McpError> {
         info!("tools/list requested");
-
-        // use crate::tools::unified_search::SearchQuery; // Removed as likely internal or unused in this scope
-        // use crate::tools::unified_search::UnifiedSearchParams; // Unused
-
-        // Input schemas
-        let think_schema_map = crate::schemas::think_schema();
-        let maintain_schema_map = crate::schemas::maintain_schema();
-        let remember_schema_map = crate::schemas::remember_schema();
-        let howto_schema_map = crate::schemas::howto_schema();
-        let search_schema_map = crate::schemas::search_schema();
-        let wander_schema_map = crate::schemas::wander_schema();
-        let journal_schema_map = crate::schemas::journal_schema();
-        let rethink_schema_map = crate::schemas::rethink_schema();
-        let corrections_schema_map = crate::schemas::corrections_schema();
-        let test_notification_schema_map = crate::schemas::test_notification_schema();
-
-        // Output schemas (rmcp 0.11.0+)
-        // Output schemas removed as they are no longer used or needed for simple tool defs
-
-        let mut tools = vec![
-            Tool::new(
-                "think",
-                "Unified thinking tool with automatic mode routing (Plan, Build, Debug, Stuck)",
-                think_schema_map,
-            )
-            .with_title("Think"),
-            Tool::new(
-                "wander",
-                "Explore the knowledge graph to form new connections, provide context, and verify information. Use this for curiosity-driven exploration, not goal-directed search.",
-                wander_schema_map,
-            )
-            .with_title("Wander"),
-            Tool::new(
-                "maintain",
-                "Maintenance operations for archival, cleanup, and health checks",
-                maintain_schema_map,
-            )
-            .with_title("Maintain"),
-            Tool::new(
-                "journal",
-                "Research thread management — create threads, add entries, view dashboard, update status. A looking glass over the KG for structured research.",
-                journal_schema_map,
-            )
-            .with_title("Journal"),
-            Tool::new(
-                "rethink",
-                "Mark records for revision or correction by federation members",
-                rethink_schema_map,
-            )
-            .with_title("Rethink"),
-            Tool::new(
-                "corrections",
-                "List correction events with optional target filter",
-                corrections_schema_map,
-            )
-            .with_title("Corrections"),
-            Tool::new(
-                "test_notification",
-                "Send a test logging notification to the client",
-                test_notification_schema_map,
-            )
-            .with_title("Test Notification"),
-            // (legacy think_search removed — use legacymind_search)
-            Tool::new(
-                "remember",
-                "Create entities, relationships, or observations in the knowledge graph",
-                remember_schema_map,
-            )
-            .with_title("Remember"),
-            // (legacy memories_search removed — use legacymind_search)
-            Tool::new(
-                "howto",
-                "Get detailed help and usage examples for available tools",
-                howto_schema_map,
-            )
-            .with_title("How To"),
-        ];
-
-        tools.push(
-            Tool::new(
-                "search",
-                "Unified search for entities, observations, and thoughts",
-                search_schema_map,
-            )
-            .with_title("Search"),
-        );
-
-        // (photography tools removed from this server)
-
-        Ok(list_tools_result(tools, uses_2026_list_shape(&context)))
+        Ok(list_tools_result(
+            build_tool_list(),
+            uses_2026_list_shape(&context),
+        ))
     }
 
     async fn call_tool(

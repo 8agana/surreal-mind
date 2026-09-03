@@ -181,7 +181,7 @@ fn make_initialize_request(protocol_version: ProtocolVersion) -> ClientRequest {
     ClientRequest::InitializeRequest(init_req)
 }
 
-// The exact 16-tool contract this upgrade must preserve (TOOL-01), in
+// The exact 10-tool contract this upgrade must preserve (TOOL-01), in
 // registration order.
 const EXPECTED_TOOL_NAMES: [&str; 10] = [
     "think",
@@ -257,7 +257,7 @@ async fn test_list_tools_protocol() {
                     if let Ok(result_json) = serde_json::to_value(&json_response.result)
                         && let Some(tools) = result_json.get("tools").and_then(|t| t.as_array())
                     {
-                        // TOOL-01: exact 16-name, ordered tool contract. No
+                        // TOOL-01: exact 10-name, ordered tool contract. No
                         // additions or removals; `journal` must be present
                         // (it was previously omitted from a stale startup
                         // log — see upgrade doc Phase 8).
@@ -271,7 +271,7 @@ async fn test_list_tools_protocol() {
                             .collect();
                         assert_eq!(
                             tool_names, EXPECTED_TOOL_NAMES,
-                            "tools/list must return exactly the 16-tool contract, in order"
+                            "tools/list must return exactly the 10-tool contract, in order"
                         );
 
                         // N-3: SurrealMind deliberately stops at the 2025-11-25

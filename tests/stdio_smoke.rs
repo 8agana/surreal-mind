@@ -178,8 +178,8 @@ fn stdio01_initialize_and_list_tools_smoke() {
         .collect();
     assert_eq!(
         tool_names.len(),
-        16,
-        "stdio tools/list must return exactly 16 tools, got: {tool_names:?}"
+        10,
+        "stdio tools/list must return exactly 10 tools, got: {tool_names:?}"
     );
     assert!(
         tool_names.contains(&"journal"),
