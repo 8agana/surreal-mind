@@ -125,8 +125,6 @@ pub struct RuntimeConfig {
     pub oauth_issuer: Option<String>,
     pub oauth_client_id: Option<String>,
     pub oauth_client_secret: Option<String>,
-    // Workspace alias resolution
-    pub workspace_map: crate::workspace::WorkspaceMap,
 }
 
 impl Default for RuntimeConfig {
@@ -172,7 +170,6 @@ impl Default for RuntimeConfig {
             oauth_issuer: None,
             oauth_client_id: None,
             oauth_client_secret: None,
-            workspace_map: crate::workspace::WorkspaceMap::from_env(),
         }
     }
 }
@@ -502,7 +499,6 @@ impl RuntimeConfig {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(200),
-            workspace_map: crate::workspace::WorkspaceMap::from_env(),
             transport: "stdio".to_string(),
             http_bind: "127.0.0.1:8787"
                 .parse()
@@ -567,9 +563,6 @@ impl RuntimeConfig {
         cfg.oauth_issuer = std::env::var("SURR_OAUTH_ISSUER").ok();
         cfg.oauth_client_id = std::env::var("SURR_OAUTH_CLIENT_ID").ok();
         cfg.oauth_client_secret = std::env::var("SURR_OAUTH_CLIENT_SECRET").ok();
-
-        // Load workspace aliases from WORKSPACE_* env vars
-        cfg.workspace_map = crate::workspace::WorkspaceMap::from_env();
 
         Ok(cfg)
     }
