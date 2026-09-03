@@ -127,7 +127,7 @@ impl SurrealMindServer {
                 message: e.message.to_string(),
             })?;
 
-        // Note: Delegation tools (call_gem, call_cc) are synchronous - no background workers needed
+        // Note: no background workers are needed here; the former delegation tools were removed (fed-734b8f).
 
         Ok(server)
     }
