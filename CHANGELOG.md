@@ -97,10 +97,21 @@ commit here. No other finding was addressed in this pass.
   so DB runs were scoped to the new contract test against the throwaway
   `127.0.0.1:8100` instance, which additionally refuses any URL containing
   `:8000`.
-- `run_reembed` (thoughts) and `run_kg_embed` were already correct and were left
-  untouched; they have no counting-embedder test because they build their own
-  embedder from config. `src/bin/reembed.rs` has unit tests on its pure helpers
-  plus a recorded manual end-to-end run, but no CI-visible DB test.
+- `run_reembed` (thoughts, HTTP-client based) and `run_kg_embed` were already
+  correct and were left untouched; they have no counting-embedder test because
+  they build their own embedder from config. `src/bin/reembed.rs`'s core loop
+  now runs through an injectable library function,
+  `run_reembed_standalone_with` (`src/maintenance/reembed.rs`), the same
+  `_with` pattern `run_reembed_kg_with` established — covered by a
+  counting-mock-embedder + disposable-DB dry-run/live-run pair in
+  `tests/reembed_dry_run_contract.rs`. The binary itself keeps two subprocess
+  spawn tests in `tests/reembed_bin_dry_run.rs`, covering only the
+  `--dry-run`/`DRY_RUN` guard end to end (arg parsing, config load, exit code,
+  stdout contract). No test in this suite contacts OpenAI or any other
+  external provider — the subprocess-level negative control that used to
+  reach `api.openai.com` with a fake key was replaced by the in-process one
+  above, run against the counting mock instead of live production
+  infrastructure.
 - Pre-existing and out of scope: `scripts/sm_health.sh`'s `duration::days(90)`
   type mismatch against SurrealDB 3.2.x (reproduced against the pre-fix script),
   and `run_kg_embed`'s `&text[..min(60)]` log truncation, which can panic on a
