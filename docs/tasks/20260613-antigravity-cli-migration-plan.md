@@ -1,5 +1,7 @@
 # Antigravity CLI Migration Plan
 
+> ⛔ **SUPERSEDED 2026-09-03 (fed-734b8f, commits fba5ac2..HEAD):** the "planned post-Antigravity replacement of all `call_*` tools" this plan anticipated has happened — `call_gem`, `call_cc`, `call_vibe`, `call_status`, `call_jobs`, `call_cancel` and `src/tools/call_gem.rs` no longer exist. The Antigravity client work described here (`src/clients/antigravity.rs`, kg_populate/kg_wander consumers) is still live. Kept as a dated record; do not treat the `call_*` sections as current.
+
 Status: implementation approved through KG A/B; Antigravity default with Gemini rollback
 Date: 2026-06-13 CDT
 Scope: replace Gemini CLI usage inside surreal-mind with Antigravity CLI, without redesigning the full `call_*` tool family yet.
