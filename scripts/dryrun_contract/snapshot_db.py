@@ -29,7 +29,6 @@ TABLES = [
     "kg_edge_candidates",
     "kg_blocklist",
     "kg_boundaries",
-    "agent_jobs",
     "recalls",
 ]
 

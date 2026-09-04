@@ -12,12 +12,15 @@ artifact.
 1. Starts its own throwaway in-memory SurrealDB (`surreal start memory`,
    default `127.0.0.1:8100`) and tears it down on exit via a trap — it never
    touches the production database (`surreal_mind`/`consciousness`).
-2. Applies `scripts/dryrun_contract/schema.surql` (a copy of the DDL in
-   `src/server/schema.rs`'s `initialize_schema()`, plus a test-only
-   `FLEXIBLE` override on `correction_events.new_state`/`previous_state` —
-   see the comment at the bottom of that file for why: this SurrealDB
-   version enforces nested-object keys on a plain `TYPE object` field,
-   which the schema.rs comment did not anticipate) and seeds it via
+2. Applies `scripts/dryrun_contract/schema.surql` (derived from the DDL in
+   `src/server/schema.rs`'s `initialize_schema()` at commit `fba5ac2` — same
+   tables, fields, and indexes, with two deliberate differences: `DIMENSION`
+   is a hardcoded literal instead of the `{dim}` template, since the fixture
+   has no live embedder to derive it from; and a test-only `FLEXIBLE`
+   override on `correction_events.new_state`/`previous_state` — see the
+   comment at the bottom of that file for why: this SurrealDB version
+   enforces nested-object keys on a plain `TYPE object` field, which the
+   schema.rs comment did not anticipate) and seeds it via
    `scripts/dryrun_contract/seed.surql` — unextracted thoughts, entities
    missing embeddings, a `marked_for = 'gemini'` mark for `gem_rethink`, and
    a pending `correction_events` row for `kg_consolidate` to merge.
