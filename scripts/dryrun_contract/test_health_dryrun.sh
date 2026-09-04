@@ -145,7 +145,18 @@ export SURR_DB_PASS=root
 echo
 echo "== POSITIVE control: bash scripts/sm_health.sh with DRY_RUN=1 (maintenance.rs's dry_run=true path) =="
 POS_OUT="$WORK_DIR/health_pos.stdout"
-(cd "$REPO_ROOT" && DRY_RUN=1 bash scripts/sm_health.sh) > "$POS_OUT" 2>&1
+# fed-734b8f review: this used to `cd "$REPO_ROOT"` before invoking
+# sm_health.sh, and sm_health.sh's only DB-touching call is `surreal sql`,
+# which writes its readline history into `history.txt` in whatever CWD it
+# is run from (no flag to redirect it -- see the sql() helper above, which
+# already avoids this for its own `surreal sql` calls by cd-ing into
+# $WORK_DIR first). `history.txt` is a TRACKED file at the repo root, so
+# running from $REPO_ROOT dirtied the worktree on every test run.
+# sm_health.sh itself has no CWD-relative paths (verified: it only reads
+# env vars and pipes SQL to `surreal` on PATH/via --endpoint), so invoking
+# it by absolute path from the same disposable $WORK_DIR the sql() helper
+# already uses is a pure fix -- no behavior change, no `git status` noise.
+(cd "$WORK_DIR" && DRY_RUN=1 bash "$REPO_ROOT/scripts/sm_health.sh") > "$POS_OUT" 2>&1
 POS_RC=$?
 echo "exit=$POS_RC"
 cat "$POS_OUT"
@@ -172,7 +183,7 @@ echo "$AFTER_POS" | grep -q "NONE" \
 echo
 echo "== NEGATIVE control: bash scripts/sm_health.sh with DRY_RUN unset (maintenance.rs's dry_run=false path) =="
 NEG_OUT="$WORK_DIR/health_neg.stdout"
-(cd "$REPO_ROOT" && unset DRY_RUN; bash scripts/sm_health.sh) > "$NEG_OUT" 2>&1
+(cd "$WORK_DIR" && unset DRY_RUN; bash "$REPO_ROOT/scripts/sm_health.sh") > "$NEG_OUT" 2>&1
 NEG_RC=$?
 echo "exit=$NEG_RC"
 cat "$NEG_OUT"
