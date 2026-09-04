@@ -4,7 +4,7 @@
 
 ---
 
-**Status:** Ready for Implementation
+**Status:** Superseded (was: Ready for Implementation — see banner above; never implemented, target code removed under fed-734b8f)
 **Priority:** Medium
 **Estimated Effort:** 3-4 hours
 **Created:** 2026-01-30
