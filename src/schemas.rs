@@ -55,6 +55,7 @@ pub fn howto_schema() -> Arc<Map<String, Value>> {
                 "maintain",
                 "wander",
                 "howto",
+                "test_notification",
                 "journal",
                 "rethink",
                 "corrections"
