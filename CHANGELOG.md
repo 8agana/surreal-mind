@@ -6,9 +6,13 @@ invocation): `call_status`, `call_jobs`, `call_cancel` (with
 `registry.rs`, the job semaphore, and the `agent_jobs` DDL/dashmap),
 `call_cc` (and `ClaudeClient`), `call_vibe` (and `VibeClient`), and
 `call_gem` (the wrapper only — `AntigravityClient`, `GeminiClient`,
-`GoogleCliProvider`, and their shared `CognitiveAgent` trait survive
-untouched, since `kg_populate` and `kg_wander` still depend on them
-directly). Also removed the now-unreferenced `workspace.rs` /
+`GoogleCliProvider`, and their shared `CognitiveAgent` trait survive,
+since `kg_populate` and `kg_wander` still depend on them directly;
+`src/clients/antigravity.rs` itself lost the `call_gem`-only
+`AntigravityPermissionMode::for_call_gem()` constructor and its
+`ANTIGRAVITY_CALL_GEM_PERMISSION_MODE` env var, plus a doc-comment
+update — a 1-insertion/9-deletion trim, not an untouched file). Also
+removed the now-unreferenced `workspace.rs` /
 `WorkspaceMap` / `WORKSPACE_*` config, whose only production consumers
 were the three deleted delegation tools.
 

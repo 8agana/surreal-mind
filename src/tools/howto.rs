@@ -245,6 +245,18 @@ impl SurrealMindServer {
                     "other_subcommands": "object — counts, paths, or messages depending on operation"
                 }
             }),
+            "test_notification" => json!({
+                "name": "test_notification",
+                "description": "Send a test MCP logging notification to the connected client. Useful for verifying the client wires up logging/notification handling correctly.",
+                "arguments": {
+                    "message": "string (required) — the notification text to send",
+                    "level": "string — 'debug'|'info'|'notice'|'warning'|'error'|'critical'|'alert'|'emergency' (default 'info')"
+                },
+                "returns": {
+                    "status": "string — 'success' when the notification was delivered",
+                    "message": "string — confirmation echoing the sent notification text"
+                }
+            }),
             _ => {
                 return Err(SurrealMindError::Validation {
                     message: format!("Unknown tool: {}", tool),

@@ -1,5 +1,9 @@
 # Task: Workspace Alias Resolution for Delegation Tools
 
+> ⚠️ **SUPERSEDED (branch `fed-734b8f/remove-call-tools`, commits `18e859b`..`fba5ac2`, merged 2026-09-03):** The delegation tools this plan targeted — `call_cc`, `call_gem`, `call_warp`, `call_vibe` — were removed from the public MCP tool surface (16→10), and the `WorkspaceMap` / `src/workspace.rs` / `WORKSPACE_*` config this plan proposed to extend was deleted outright as an unreferenced consumer of the same removal (commit `2b96f05`). This plan was never implemented; it now targets code that no longer exists. Kept as a historical record per Sam's fencing doctrine — not deleted, not live. See `CHANGELOG.md` (`## [Unreleased] - remove call_status/call_jobs/call_cancel/call_cc/call_vibe/call_gem tools`).
+
+---
+
 **Status:** Ready for Implementation
 **Priority:** Medium
 **Estimated Effort:** 3-4 hours

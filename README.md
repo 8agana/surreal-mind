@@ -93,7 +93,7 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
    ./tests/test_mcp.sh
    ```
 
-## Tool Surface (16)
+## Tool Surface (10)
 
 | Tool | Description |
 |------|-------------|
