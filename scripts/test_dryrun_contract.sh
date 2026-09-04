@@ -11,9 +11,14 @@
 #
 # This script proves that contract two ways:
 #   POSITIVE control: run `remini --all --dry-run` against a seeded throwaway
-#     SurrealDB with a fake provider stub wired in. Assert 0 provider calls,
-#     identical DB snapshot before/after, bounded exit, and that only the
-#     requested report path was written.
+#     SurrealDB with fake provider stubs wired in for BOTH Google CLIs
+#     (Antigravity via ANTIGRAVITY_CLI_BIN, Gemini via a PATH-shadowed
+#     `gemini` stub) and SM_AGENT_PROVIDER forced to antigravity at the top
+#     of the crate's precedence chain, so provider selection cannot depend
+#     on the operator's ambient shell. Assert 0 calls to either fake CLI,
+#     an identical DB snapshot before/after, bounded exit, that only the
+#     requested report path was written, and that the report lists exactly
+#     the six canonical remini tasks each with success:true.
 #   NEGATIVE control: reseed, then run the same binary WITHOUT --dry-run
 #     (excluding the "embed" task -- see NOTE below) and assert the provider
 #     WAS called and the DB DID change. Without this half, a positive result
@@ -51,6 +56,8 @@ fi
 
 FAKE_AGY="$WORK_DIR/fake-agy"
 CALLS_FILE="$WORK_DIR/fake-agy.calls"
+FAKE_BIN_DIR="$WORK_DIR/fakebin"
+GEMINI_CALLS_FILE="$WORK_DIR/fake-gemini.calls"
 SURREAL_PID=""
 FAIL=0
 
@@ -165,12 +172,48 @@ exit 0
 EOF
 chmod +x "$FAKE_AGY"
 
+# Fake `gemini` CLI stub, PATH-shadowed ahead of any real `gemini` binary.
+# kg_populate/kg_wander's Gemini client shells out via `Command::new("gemini")`
+# with a bare command name looked up on PATH -- there is no env var to
+# redirect it (src/clients/gemini.rs:291), unlike Antigravity's
+# ANTIGRAVITY_CLI_BIN override above. If provider selection ever picks
+# Gemini despite the forcing below (a regression, a future task that skips
+# the DRY_RUN guard, ambient config CC didn't anticipate), this is what
+# stands between that call and the real `gemini` CLI. It records every
+# invocation and fails loudly rather than silently succeeding, so a
+# misselection surfaces as a failed task, not a quiet real call.
+mkdir -p "$FAKE_BIN_DIR"
+cat > "$FAKE_BIN_DIR/gemini" << EOF
+#!/bin/bash
+echo "\$(date -u +%Y-%m-%dT%H:%M:%SZ) \$*" >> "$GEMINI_CALLS_FILE"
+echo "FAKE GEMINI CALLED -- dry-run contract test forces provider=antigravity; this should never run" >&2
+exit 17
+EOF
+chmod +x "$FAKE_BIN_DIR/gemini"
+
 export SURR_DB_URL="127.0.0.1:$TEST_PORT"
 export SURR_DB_NS="$TEST_NS"
 export SURR_DB_DB="$TEST_DB"
 export SURR_DB_USER=root
 export SURR_DB_PASS=root
 export ANTIGRAVITY_CLI_BIN="$FAKE_AGY"
+
+# Force provider selection to Antigravity (the fake-agy stub above) at the
+# TOP of the precedence chain, so this test cannot silently fall through to
+# a real Gemini call because of whatever the operator's ambient shell
+# happens to export. Precedence, src/clients/google_cli.rs:11-17:
+#   SM_AGENT_PROVIDER > GOOGLE_CLI_PROVIDER > SURR_GOOGLE_CLI_PROVIDER
+#     > config value > default (Antigravity)
+# SM_AGENT_PROVIDER wins regardless of what the lower-precedence vars or
+# config hold, so setting it alone is sufficient -- no need to unset the
+# others. remini's child processes inherit this script's environment
+# (src/bin/remini.rs's Command doesn't call env_clear()), so it reaches
+# kg_populate and kg_wander unchanged.
+export SM_AGENT_PROVIDER=antigravity
+# PATH-shadow: fakebin first, so a bare `gemini` lookup (gemini.rs:291)
+# hits the failing stub above, never a real install on this machine's PATH.
+export PATH="$FAKE_BIN_DIR:$PATH"
+echo "forced provider: SM_AGENT_PROVIDER=$SM_AGENT_PROVIDER (fake-agy=$FAKE_AGY, fake-gemini=$FAKE_BIN_DIR/gemini shadowing PATH)"
 
 echo
 echo "-- seeding --"
@@ -180,8 +223,22 @@ echo "seeded: $(snapshot | python3 -c 'import json,sys; print(json.load(sys.stdi
 echo
 echo "== POSITIVE control: remini --all --dry-run =="
 export OPENAI_API_KEY="sk-fake-fed734b8f-not-a-real-key-000000000000"
+# OpenAI instrumentation: the embedder's HTTP endpoint is hardcoded
+# (src/embeddings.rs:155, https://api.openai.com/v1/embeddings) with no
+# OPENAI_BASE_URL or similar override in this crate, so redirecting it to a
+# local counting stub is not possible from this test harness -- that gap is
+# DEFERRED to the same "no offline embedder" deferral this task inherited.
+# What we can and do assert: the key is an obviously-fake value, so if the
+# DRY_RUN guard in kg_embed's embed path (which never calls .embed(), only
+# constructs the embedder) were ever bypassed by a regression, the resulting
+# call would 401 against the real endpoint rather than silently succeeding.
+case "$OPENAI_API_KEY" in
+  sk-fake-*) pass "OPENAI_API_KEY is an obviously-fake value (a real call would 401, not succeed)" ;;
+  *) fail "OPENAI_API_KEY does not match the expected fake pattern -- a real key may have leaked in" ;;
+esac
 snapshot > "$WORK_DIR/snap_pos_before.json"
 : > "$CALLS_FILE"
+: > "$GEMINI_CALLS_FILE"
 POS_REPORT="$WORK_DIR/remini_dry_positive.json"
 run_bounded "$WORK_DIR/remini_pos.stdout" 300 \
   "$REMINI" --all --dry-run --timeout 120 --report-path "$POS_REPORT"
@@ -193,8 +250,12 @@ echo "remini exit=$BOUND_RC elapsed=${BOUND_ELAPSED}s timed_out=$BOUND_TIMED_OUT
 [ "$BOUND_RC" -eq 0 ] && pass "process exit 0" || fail "process exit $BOUND_RC"
 
 CALLS=$(wc -l < "$CALLS_FILE" | tr -d ' ')
-[ "$CALLS" -eq 0 ] && pass "zero provider invocations (fake-agy.calls empty)" \
+[ "$CALLS" -eq 0 ] && pass "zero Antigravity provider invocations (fake-agy.calls empty)" \
   || fail "fake-agy.calls has $CALLS line(s) under --dry-run"
+
+GEMINI_CALLS=$(wc -l < "$GEMINI_CALLS_FILE" 2>/dev/null | tr -d ' ')
+[ "${GEMINI_CALLS:-0}" -eq 0 ] && pass "zero Gemini provider invocations (fake-gemini.calls empty)" \
+  || fail "fake-gemini.calls has $GEMINI_CALLS line(s) under --dry-run -- provider selection leaked to Gemini"
 
 DIGEST_BEFORE=$(digest_of "$WORK_DIR/snap_pos_before.json")
 DIGEST_AFTER=$(digest_of "$WORK_DIR/snap_pos_after.json")
@@ -209,9 +270,19 @@ else
   pass "default logs/remini_report.json was NOT written (only the selected path)"
 fi
 
-TASK_COUNT=$(jq '.task_details | length' "$POS_REPORT" 2>/dev/null || echo -1)
-[ "$TASK_COUNT" -eq 6 ] && pass "report has six task_details entries" \
-  || fail "report has $TASK_COUNT task_details entries, expected 6"
+# Exact positive assertion: not just "six entries" but the six canonical
+# remini task names (src/bin/remini.rs:147-152), each reporting success:true.
+# A count-only check would pass if, say, "populate" silently failed while an
+# unexpected seventh task name ran and something else was subtracted -- name
+# and success matter, not just the number.
+EXPECTED_TASKS_JSON=$(printf '%s\n' consolidate embed health populate rethink wander \
+  | jq -R -c -s 'split("\n") | map(select(length > 0)) | map({name: ., success: true}) | sort_by(.name)')
+ACTUAL_TASKS_JSON=$(jq -c -S '[.task_details[] | {name, success}] | sort_by(.name)' "$POS_REPORT" 2>/dev/null)
+if [ "$ACTUAL_TASKS_JSON" = "$EXPECTED_TASKS_JSON" ]; then
+  pass "report has exactly the six expected tasks, each success:true ($ACTUAL_TASKS_JSON)"
+else
+  fail "report task_details mismatch -- expected $EXPECTED_TASKS_JSON got ${ACTUAL_TASKS_JSON:-<unparseable>}"
+fi
 
 echo
 echo "== NEGATIVE control: remini (no --dry-run), tasks=populate,rethink,consolidate =="
@@ -220,6 +291,7 @@ reseed
 unset OPENAI_API_KEY
 snapshot > "$WORK_DIR/snap_neg_before.json"
 : > "$CALLS_FILE"
+: > "$GEMINI_CALLS_FILE"
 NEG_REPORT="$WORK_DIR/remini_live_negative.json"
 run_bounded "$WORK_DIR/remini_neg.stdout" 300 \
   "$REMINI" --tasks populate,rethink,consolidate --timeout 120 --report-path "$NEG_REPORT"
@@ -230,6 +302,10 @@ echo "remini exit=$BOUND_RC elapsed=${BOUND_ELAPSED}s"
 NEG_CALLS=$(grep -c -- "--print-timeout" "$CALLS_FILE" 2>/dev/null || echo 0)
 [ "$NEG_CALLS" -gt 0 ] && pass "provider WAS invoked without --dry-run ($NEG_CALLS call(s))" \
   || fail "fake-agy was never invoked in the live run -- negative control did not fire"
+
+NEG_GEMINI_CALLS=$(wc -l < "$GEMINI_CALLS_FILE" 2>/dev/null | tr -d ' ')
+[ "${NEG_GEMINI_CALLS:-0}" -eq 0 ] && pass "the live provider call went to Antigravity, not Gemini" \
+  || fail "fake-gemini.calls has $NEG_GEMINI_CALLS line(s) in the live run -- forced provider selection did not hold"
 
 NEG_DIGEST_BEFORE=$(digest_of "$WORK_DIR/snap_neg_before.json")
 NEG_DIGEST_AFTER=$(digest_of "$WORK_DIR/snap_neg_after.json")

@@ -37,6 +37,51 @@ artifact.
    Without this half a green positive result proves nothing — a check that
    can't fail isn't a check.
 
+## Provider-selection hardening and exact assertions (review finding #168 item 3)
+
+Codex's review of the first cut of this harness (comment #168, item 3) found
+it environment-dependent and under-asserting: it installed the fake
+Antigravity stub but never forced provider selection, so an operator's
+ambient shell could in principle steer a task to the real Gemini CLI; it
+didn't instrument the OpenAI path at all; and the positive control checked
+only that the report had six `task_details` entries, not that they were the
+right six, each with `success: true`. The script now closes each of those:
+
+- **Provider forced, not assumed.** `SM_AGENT_PROVIDER=antigravity` is
+  exported before either control runs. Per the crate's precedence chain
+  (`src/clients/google_cli.rs:11-17`: `SM_AGENT_PROVIDER` >
+  `GOOGLE_CLI_PROVIDER` > `SURR_GOOGLE_CLI_PROVIDER` > config > default), this
+  wins regardless of what the operator's environment or `Config` already
+  holds — the harness no longer depends on the default happening to be
+  Antigravity.
+- **Gemini explicitly neutralized.** `kg_populate`/`kg_wander`'s Gemini
+  client shells out via a bare `Command::new("gemini")` looked up on `PATH`
+  (`src/clients/gemini.rs:291`), with no env var to redirect it the way
+  `ANTIGRAVITY_CLI_BIN` redirects Antigravity. The harness now writes a fake
+  `gemini` executable into a scratch `fakebin/` directory and prepends it to
+  `PATH`, so any Gemini invocation — intended or a regression — hits a stub
+  that logs the call and exits non-zero (17) instead of reaching a real
+  install. Both controls assert its calls file stays empty; the negative
+  control's live provider call is confirmed to land on the fake Antigravity
+  stub instead.
+- **OpenAI instrumented as far as the crate allows.** `create_embedder`'s
+  HTTP endpoint (`src/embeddings.rs:155`) is hardcoded to
+  `https://api.openai.com/v1/embeddings` with no `OPENAI_BASE_URL` or
+  equivalent override, so redirecting it to a local counting stub isn't
+  possible without touching crate code — out of scope here and folded into
+  the existing "no offline embedder" deferral. The harness does assert
+  `OPENAI_API_KEY` is an obviously-fake value, so if the `embed` task's
+  `DRY_RUN` guard (which constructs the embedder but never calls `.embed()`)
+  were ever bypassed by a regression, the resulting call would 401 rather
+  than silently succeed against a real key.
+- **Exact positive assertion.** The report-shape check no longer stops at
+  "six entries" — it parses `task_details` down to `{name, success}`, sorts
+  it, and compares it byte-for-byte against the six canonical task names
+  from `src/bin/remini.rs:147-152` (`consolidate`, `embed`, `health`,
+  `populate`, `rethink`, `wander`), each expected `success: true`. A wrong
+  task name or a silent `success: false` now fails the run instead of
+  passing because the count happened to still be six.
+
 ## Why `embed`, `wander`, and `health` are excluded from the negative control
 
 - `embed`: `kg_embed`'s embedding provider is OpenAI, called directly with
