@@ -4,6 +4,18 @@
 
 set -euo pipefail
 
+# Under DRY_RUN, exit before any SQL is issued. Truthiness matches the
+# convention used across the other maintenance binaries (bool_env in
+# kg_embed.rs/kg_wander.rs/reembed_kg.rs, and the `== "1" ||
+# eq_ignore_ascii_case("true")` checks in kg_populate.rs/gem_rethink.rs/
+# kg_consolidate.rs): "1", "true"/"TRUE"/"True", "yes", "on".
+case "${DRY_RUN:-}" in
+  1|true|TRUE|True|yes|YES|on|ON)
+    echo "[DRY_RUN] sm_health: skipping stale-entity UPDATE, no SQL issued"
+    exit 0
+    ;;
+esac
+
 NS=${SURR_DB_NS:-surreal_mind}
 DB=${SURR_DB_DB:-consciousness}
 USER=${SURR_DB_USER:-root}
