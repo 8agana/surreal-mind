@@ -1,9 +1,28 @@
 use anyhow::Result;
 // use chrono::Utc;
 use surreal_mind::embeddings::create_embedder;
+use surreal_mind::maintenance::reembed::{ThoughtReembedDecision, classify_thought_reembed};
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::Ws;
 use surrealdb::opt::auth::Root;
+
+/// Dry-run is requested by `--dry-run` on the command line OR by a truthy
+/// `DRY_RUN` environment variable. The truthiness table is copied verbatim from
+/// the `bool_env` helper used by `reembed_kg`, `kg_embed`, and `kg_wander` so
+/// this binary cannot disagree with its siblings about what `DRY_RUN=yes` means.
+///
+/// Pure so it can be unit-tested without a process environment.
+fn dry_run_requested(args: &[String], env_value: Option<&str>) -> bool {
+    let env_on = env_value
+        .map(|v| matches!(v, "1" | "true" | "TRUE" | "yes" | "on"))
+        .unwrap_or(false);
+    env_on || args.iter().any(|a| a == "--dry-run")
+}
+
+/// Truncate for a log line without splitting a UTF-8 code point.
+fn preview(text: &str) -> String {
+    text.chars().take(60).collect()
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -12,6 +31,9 @@ async fn main() -> Result<()> {
         eprintln!("Warning: Could not load .env file: {}", e);
     }
 
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let dry_run = dry_run_requested(&args, std::env::var("DRY_RUN").ok().as_deref());
+
     // Load configuration
     let config = surreal_mind::config::Config::load().map_err(|e| {
         eprintln!("Failed to load configuration: {}", e);
@@ -19,6 +41,9 @@ async fn main() -> Result<()> {
     })?;
 
     println!("🚀 Starting thought re-embedding process...");
+    if dry_run {
+        println!("🔎 DRY RUN: no embedding-provider calls and no writes will be made");
+    }
     // Prefer OpenAI 1536; fallback to local BGE if unavailable
     let embedder = create_embedder(&config).await?;
     let embed_dims = embedder.dimensions();
@@ -75,6 +100,7 @@ async fn main() -> Result<()> {
     let mut error_count = 0;
     let mut mismatched_count = 0;
     let mut missing_count = 0;
+    let mut would_reembed_count = 0;
 
     println!("\n🔄 Re-embedding thoughts with configured embedder (OpenAI→BGE fallback)...");
     for i in 0..thoughts.len() {
@@ -95,18 +121,40 @@ async fn main() -> Result<()> {
         let existing_emb_len = thought["emb_len"].as_u64().unwrap_or(0) as usize;
         let existing_model = thought["embedding_model"].as_str().unwrap_or("");
 
-        // Hygiene counts
-        if existing_emb_len == 0 {
-            missing_count += 1;
-        } else if existing_emb_len != embed_dims || existing_model != config.system.embedding_model
-        {
-            mismatched_count += 1;
+        // Hygiene counts and the skip decision now come from one shared, pure
+        // classifier so a dry run reports exactly the rows a live run would
+        // re-embed (same predicate, not a parallel reimplementation of it).
+        let decision = classify_thought_reembed(
+            existing_emb_len,
+            existing_model,
+            embed_dims,
+            &config.system.embedding_model,
+        );
+        match decision {
+            ThoughtReembedDecision::Missing => missing_count += 1,
+            ThoughtReembedDecision::Mismatched => mismatched_count += 1,
+            ThoughtReembedDecision::UpToDate => {}
         }
 
         // Skip if already embedded with the current embedder's dimensions AND model matches config model
-        let target_model = config.system.embedding_model.clone();
-        if existing_emb_len == embed_dims && existing_model == target_model {
+        if !decision.needs_embedding() {
             skip_count += 1;
+            continue;
+        }
+
+        // DRY-RUN GUARD: branch BEFORE the provider call and before the UPDATE.
+        // This binary previously ignored DRY_RUN entirely: it embedded and wrote
+        // every non-matching row no matter how it was invoked.
+        if dry_run {
+            would_reembed_count += 1;
+            if would_reembed_count <= 3 {
+                eprintln!(
+                    "  🔎 [dry_run] Would re-embed {} ({:?}): \"{}\"",
+                    thought_id,
+                    decision,
+                    preview(&content)
+                );
+            }
             continue;
         }
 
@@ -186,7 +234,12 @@ async fn main() -> Result<()> {
 
     // Final statistics
     println!("\n{}", "=".repeat(50));
-    println!("📊 RE-EMBEDDING COMPLETE!");
+    if dry_run {
+        println!("📊 RE-EMBEDDING DRY RUN COMPLETE (no provider calls, no writes)");
+        println!("🔎 Would re-embed: {} thoughts", would_reembed_count);
+    } else {
+        println!("📊 RE-EMBEDDING COMPLETE!");
+    }
     println!("✅ Successfully re-embedded: {} thoughts", success_count);
     println!(
         "⏭️  Skipped (already target dims={} & model): {} thoughts",
@@ -199,4 +252,46 @@ async fn main() -> Result<()> {
     println!("{}", "=".repeat(50));
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{dry_run_requested, preview};
+
+    #[test]
+    fn dry_run_flag_is_honored() {
+        let args = vec!["--dry-run".to_string()];
+        assert!(dry_run_requested(&args, None));
+    }
+
+    #[test]
+    fn dry_run_env_truthiness_matches_sibling_binaries() {
+        let none: Vec<String> = Vec::new();
+        for truthy in ["1", "true", "TRUE", "yes", "on"] {
+            assert!(
+                dry_run_requested(&none, Some(truthy)),
+                "DRY_RUN={truthy} must enable dry run"
+            );
+        }
+        for falsy in ["0", "false", "no", "off", ""] {
+            assert!(
+                !dry_run_requested(&none, Some(falsy)),
+                "DRY_RUN={falsy} must not enable dry run"
+            );
+        }
+        assert!(!dry_run_requested(&none, None));
+    }
+
+    #[test]
+    fn unrelated_args_do_not_enable_dry_run() {
+        let args = vec!["--verbose".to_string(), "dry-run".to_string()];
+        assert!(!dry_run_requested(&args, None));
+    }
+
+    #[test]
+    fn preview_does_not_split_multibyte_characters() {
+        let text = "\u{e9}".repeat(100);
+        let out = preview(&text);
+        assert_eq!(out.chars().count(), 60);
+    }
 }

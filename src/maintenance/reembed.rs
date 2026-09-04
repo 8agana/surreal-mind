@@ -44,6 +44,61 @@ where
     }
 }
 
+/// Truncate a string for a log line without splitting a UTF-8 code point.
+fn truncate_for_log(text: &str) -> &str {
+    const MAX: usize = 60;
+    if text.len() <= MAX {
+        return text;
+    }
+    let mut end = MAX;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
+}
+
+/// Whether a single `thoughts` row needs a fresh embedding, and why.
+///
+/// Extracted from the standalone `reembed` binary so the "does this row need a
+/// provider call at all" question is one pure, unit-testable decision shared by
+/// the dry-run and live paths of that binary. Keeping it here (next to the
+/// library re-embed paths) is deliberate: a future dimension/model migration
+/// must not be able to change the live predicate without changing the dry-run
+/// report that was used to approve it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThoughtReembedDecision {
+    /// No embedding stored at all.
+    Missing,
+    /// An embedding is stored but its dimension or model does not match the
+    /// configured target.
+    Mismatched,
+    /// Already at the target dimension and model; no provider call needed.
+    UpToDate,
+}
+
+impl ThoughtReembedDecision {
+    /// True when a live run would issue an `Embedder::embed` call for this row.
+    pub fn needs_embedding(self) -> bool {
+        !matches!(self, ThoughtReembedDecision::UpToDate)
+    }
+}
+
+/// Classify one `thoughts` row. Pure: no I/O, no provider, no database.
+pub fn classify_thought_reembed(
+    existing_emb_len: usize,
+    existing_model: &str,
+    expected_dim: usize,
+    target_model: &str,
+) -> ThoughtReembedDecision {
+    if existing_emb_len == 0 {
+        ThoughtReembedDecision::Missing
+    } else if existing_emb_len != expected_dim || existing_model != target_model {
+        ThoughtReembedDecision::Mismatched
+    } else {
+        ThoughtReembedDecision::UpToDate
+    }
+}
+
 #[derive(Debug, serde::Serialize)]
 pub struct ReembedStats {
     pub expected_dim: usize,
@@ -356,9 +411,13 @@ pub async fn run_reembed(
     })
 }
 
+/// Re-embed every `kg_entities`/`kg_observations`/`kg_edges` row, resolving the
+/// config, embedder, and database connection from the environment.
+///
+/// This is a thin wrapper: all behaviour (including the dry-run contract) lives
+/// in [`run_reembed_kg_with`], so `maintain(action: "reembed_kg")` and the
+/// `reembed_kg` binary cannot drift apart from what the tests exercise.
 pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<ReembedKgStats> {
-    use chrono::Utc;
-    use serde_json::Value;
     use surrealdb::Surreal;
     use surrealdb::engine::remote::ws::Ws;
     use surrealdb::opt::auth::Root;
@@ -366,9 +425,11 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
     // Load configuration
     let config = crate::config::Config::load()?;
 
-    // Embedder
+    // Embedder. Constructing one performs NO network I/O (it builds a reqwest
+    // client and reads the configured dimension), and `dimensions()` is a local
+    // constant. The dry-run guarantee is about `Embedder::embed`, which
+    // `run_reembed_kg_with` never reaches when `dry_run` is true.
     let embedder = crate::embeddings::create_embedder(&config).await?;
-    let dims = embedder.dimensions();
     let prov = config.system.embedding_provider.clone();
     let model = config.system.embedding_model.clone();
 
@@ -385,6 +446,44 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
     })
     .await?;
     db.use_ns(&ns).use_db(&dbname).await?;
+
+    run_reembed_kg_with(&db, embedder.as_ref(), &prov, &model, limit, dry_run).await
+}
+
+/// Re-embed every KG record against an explicitly supplied database handle and
+/// embedder.
+///
+/// **Dry-run contract:** when `dry_run` is true this function performs ZERO
+/// [`crate::embeddings::Embedder::embed`] calls and ZERO writes. It still walks
+/// the same rows and applies the same skip/hygiene classification, so the
+/// reported `*_updated` counters are exactly the rows a live run would have
+/// re-embedded, and `*_missing` / `*_mismatched` still describe the table.
+///
+/// Before this was fixed, every row's embedding was generated first and only
+/// the `UPDATE` was guarded by `dry_run`, so a "dry" run still billed the
+/// embedding provider once per row on both reachable entry points
+/// (`maintain(action: "reembed_kg")` and the `reembed_kg` binary).
+///
+/// The embedder and DB handle are parameters rather than being built from
+/// config inside so tests can inject a counting mock embedder and a disposable
+/// database and assert the contract directly, with no live provider available.
+pub async fn run_reembed_kg_with<C>(
+    db: &surrealdb::Surreal<C>,
+    embedder: &dyn crate::embeddings::Embedder,
+    provider: &str,
+    embedding_model: &str,
+    limit: Option<usize>,
+    dry_run: bool,
+) -> Result<ReembedKgStats>
+where
+    C: surrealdb::Connection,
+{
+    use chrono::Utc;
+    use serde_json::Value;
+
+    let dims = embedder.dimensions();
+    let prov = provider.to_string();
+    let model = embedding_model.to_string();
 
     let mut updated_entities = 0usize;
     let mut skipped_entities = 0usize;
@@ -467,6 +566,18 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
             } else {
                 format!("{} ({})", name, etype)
             };
+            // DRY-RUN GUARD: branch BEFORE the provider call, not just before the
+            // write. A dry run must cost nothing and mutate nothing; the row is
+            // still counted so the report says how many rows would be re-embedded.
+            if dry_run {
+                println!(
+                    "[dry_run] Would re-embed kg_entities:{}: \"{}\"",
+                    id,
+                    truncate_for_log(&text)
+                );
+                updated_entities += 1;
+                continue;
+            }
             let emb = match embedder.embed(&text).await {
                 Ok(embedding) => embedding,
                 Err(error) => {
@@ -487,6 +598,9 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
                 );
                 continue;
             }
+            // Redundant second guard: `dry_run` already returned above. Kept so a
+            // future edit that moves or removes the early branch cannot silently
+            // reintroduce a write on a dry run.
             if !dry_run {
                 let ts = Utc::now().to_rfc3339();
                 // Same false-success class as N-5 in run_reembed above: verify
@@ -593,6 +707,18 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
                 text.push_str(" - ");
                 text.push_str(desc);
             }
+            // DRY-RUN GUARD: branch BEFORE the provider call, not just before the
+            // write. A dry run must cost nothing and mutate nothing; the row is
+            // still counted so the report says how many rows would be re-embedded.
+            if dry_run {
+                println!(
+                    "[dry_run] Would re-embed kg_observations:{}: \"{}\"",
+                    id,
+                    truncate_for_log(&text)
+                );
+                updated_obs += 1;
+                continue;
+            }
             let emb = match embedder.embed(&text).await {
                 Ok(embedding) => embedding,
                 Err(error) => {
@@ -613,6 +739,9 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
                 );
                 continue;
             }
+            // Redundant second guard: `dry_run` already returned above. Kept so a
+            // future edit that moves or removes the early branch cannot silently
+            // reintroduce a write on a dry run.
             if !dry_run {
                 let ts = Utc::now().to_rfc3339();
                 let q = format!(
@@ -723,6 +852,18 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
                 text.push_str(desc);
             }
 
+            // DRY-RUN GUARD: branch BEFORE the provider call, not just before the
+            // write. A dry run must cost nothing and mutate nothing; the row is
+            // still counted so the report says how many rows would be re-embedded.
+            if dry_run {
+                println!(
+                    "[dry_run] Would re-embed kg_edges:{}: \"{}\"",
+                    id,
+                    truncate_for_log(&text)
+                );
+                updated_edges += 1;
+                continue;
+            }
             let emb = match embedder.embed(&text).await {
                 Ok(embedding) => embedding,
                 Err(error) => {
@@ -743,6 +884,9 @@ pub async fn run_reembed_kg(limit: Option<usize>, dry_run: bool) -> Result<Reemb
                 );
                 continue;
             }
+            // Redundant second guard: `dry_run` already returned above. Kept so a
+            // future edit that moves or removes the early branch cannot silently
+            // reintroduce a write on a dry run.
             if !dry_run {
                 let ts = Utc::now().to_rfc3339();
                 let q = format!(
@@ -1460,7 +1604,10 @@ pub async fn run_kg_embed(limit: Option<usize>, dry_run: bool) -> Result<KgEmbed
 
 #[cfg(test)]
 mod tests {
-    use super::{EmbeddingUpdateOutcome, classify_embedding_update_rows, execute_embedding_update};
+    use super::{
+        EmbeddingUpdateOutcome, ThoughtReembedDecision, classify_embedding_update_rows,
+        classify_thought_reembed, execute_embedding_update, truncate_for_log,
+    };
 
     fn function_body<'a>(source: &'a str, signature: &str) -> &'a str {
         let start = source
@@ -1489,7 +1636,9 @@ mod tests {
     #[test]
     fn every_kg_batch_writer_uses_the_shared_update_executor() {
         let source = include_str!("reembed.rs");
-        let reembed_kg = function_body(source, "pub async fn run_reembed_kg");
+        // NOTE: the whole body moved into `run_reembed_kg_with` when the dry-run
+        // guarantee was centralised; `run_reembed_kg` is now a thin wrapper.
+        let reembed_kg = function_body(source, "pub async fn run_reembed_kg_with");
         let kg_embed = function_body(source, "pub async fn run_kg_embed");
 
         assert_eq!(
@@ -1607,5 +1756,101 @@ mod tests {
             .await?
             .check()?;
         Ok(())
+    }
+
+    #[test]
+    fn thought_reembed_classifier_matches_the_predicate_it_replaced() {
+        // The standalone `reembed` binary previously inlined this predicate:
+        //   missing      <=> len == 0
+        //   mismatched   <=> len != dims || model != target
+        //   skip         <=> len == dims && model == target
+        let dims = 1536;
+        let target = "text-embedding-3-small";
+
+        assert_eq!(
+            classify_thought_reembed(0, "", dims, target),
+            ThoughtReembedDecision::Missing
+        );
+        assert_eq!(
+            classify_thought_reembed(0, target, dims, target),
+            ThoughtReembedDecision::Missing,
+            "a zero-length embedding is Missing even when the model column is right"
+        );
+        assert_eq!(
+            classify_thought_reembed(384, target, dims, target),
+            ThoughtReembedDecision::Mismatched,
+            "right model, wrong dimension"
+        );
+        assert_eq!(
+            classify_thought_reembed(dims, "bge-small-en-v1.5", dims, target),
+            ThoughtReembedDecision::Mismatched,
+            "right dimension, wrong model"
+        );
+        assert_eq!(
+            classify_thought_reembed(dims, target, dims, target),
+            ThoughtReembedDecision::UpToDate
+        );
+
+        assert!(ThoughtReembedDecision::Missing.needs_embedding());
+        assert!(ThoughtReembedDecision::Mismatched.needs_embedding());
+        assert!(!ThoughtReembedDecision::UpToDate.needs_embedding());
+    }
+
+    /// Source-order guard for the dry-run contract, DB-free and provider-free.
+    ///
+    /// The DB-backed proof lives in `tests/reembed_dry_run_contract.rs`, but that
+    /// test only runs under `--features db_integration` with `RUN_DB_TESTS=1`. This
+    /// one runs in the default suite and fails the moment somebody reorders a loop
+    /// so the provider call happens before the `dry_run` branch again — which is
+    /// exactly the regression being fixed here.
+    #[test]
+    fn every_reembed_kg_loop_branches_on_dry_run_before_calling_the_provider() {
+        let source = include_str!("reembed.rs");
+        let body = function_body(source, "pub async fn run_reembed_kg_with");
+
+        let embed_calls: Vec<usize> = body
+            .match_indices("embedder.embed(")
+            .map(|(i, _)| i)
+            .collect();
+        let dry_run_branches: Vec<usize> =
+            body.match_indices("if dry_run {").map(|(i, _)| i).collect();
+
+        assert_eq!(
+            embed_calls.len(),
+            3,
+            "expected exactly one provider call per table (entities/observations/edges)"
+        );
+        assert_eq!(
+            dry_run_branches.len(),
+            3,
+            "expected exactly one early dry-run branch per table"
+        );
+        for (index, (branch, call)) in dry_run_branches.iter().zip(&embed_calls).enumerate() {
+            assert!(
+                branch < call,
+                "loop {index}: the `if dry_run` branch must come BEFORE `embedder.embed(` \
+                 (branch at {branch}, call at {call}); guarding only the write still bills \
+                 the provider once per row on a dry run"
+            );
+        }
+
+        assert_eq!(
+            body.matches("if !dry_run {").count(),
+            3,
+            "the write-side guard must stay as a second line of defence"
+        );
+    }
+
+    #[test]
+    fn truncate_for_log_never_splits_a_code_point() {
+        let ascii = "a".repeat(200);
+        assert_eq!(truncate_for_log(&ascii).len(), 60);
+        assert_eq!(truncate_for_log("short"), "short");
+
+        // 'é' is 2 bytes, so byte 60 lands mid-character on an odd offset.
+        let multibyte = "é".repeat(200);
+        let out = truncate_for_log(&multibyte);
+        assert!(out.len() <= 60);
+        assert!(multibyte.starts_with(out));
     }
 }
