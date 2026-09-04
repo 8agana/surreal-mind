@@ -3,7 +3,267 @@
 use crate::error::{Result, SurrealMindError};
 use crate::server::SurrealMindServer;
 use rmcp::model::{CallToolRequestParams, CallToolResult};
-use serde_json::json;
+use serde_json::{Value, json};
+
+/// Per-tool detailed-help JSON payload, keyed by tool name.
+///
+/// Extracted as a free function (not a method on `SurrealMindServer`) so it
+/// can be exercised directly by DB-free tests: it touches no `self`/DB/
+/// embedder state, unlike `handle_howto` below, whose owning
+/// `SurrealMindServer` requires a live database connection to construct
+/// (`SurrealMindServer::new()`). `tests/howto_schema_matches_roster.rs`
+/// calls this for every value in `howto_schema()`'s `tool` enum and asserts
+/// `Ok`, plus one unknown name asserting `Err` — real handler dispatch, not
+/// a hand-maintained duplicate of it.
+///
+/// Behavior for every pre-existing arm is unchanged from the match that
+/// used to live inline in `handle_howto`; this is a pure extraction plus
+/// the addition of a "howto" arm (fed-734b8f #172 item 1 follow-up:
+/// `howto` was already a valid value in `howto_schema()`'s `tool` enum but
+/// had no matching arm here, so `howto(tool: "howto")` fell through to the
+/// `Unknown tool` error).
+pub fn tool_help(tool: &str) -> Result<Value> {
+    let help = match tool {
+        "think" => json!({
+            "name": "think",
+            "description": "Unified thinking tool that routes to appropriate mode. Persists thoughts with optional memory injection. (Framework enhancement currently disabled).",
+            "arguments": {
+                "content": "string (required) — the thought text",
+                "hint": "string — optional explicit mode ('debug', 'build', 'plan', 'stuck', 'question', 'conclude')",
+                "injection_scale": "integer|string (0-3) — memory injection level (overrides mode default)",
+                "tags": "string[] — optional tags",
+                "significance": "number|string (0.0-1.0) — importance (overrides mode default)",
+                "verbose_analysis": "boolean — (unused) previously for verbose framework output",
+                "session_id": "string — optional session identifier",
+                "chain_id": "string — optional chain identifier",
+                "previous_thought_id": "string — optional reference to previous thought",
+                "revises_thought": "string — optional reference to thought being revised",
+                "branch_from": "string — optional reference to thought being branched from",
+                "confidence": "number (0.0-1.0) — optional confidence level",
+                "hypothesis": "string — optional hypothesis to verify against KG evidence",
+                "needs_verification": "boolean — set true to run hypothesis verification (only when hypothesis provided)",
+                "verify_top_k": "integer (1-500) — candidate pool size for KG search (default 100)",
+                "min_similarity": "number (0.0-1.0) — minimum similarity threshold (default 0.70)",
+                "evidence_limit": "integer (1-25) — max evidence items per bucket (default 10)",
+                "contradiction_patterns": "string[] — optional custom patterns for contradiction detection"
+            },
+            "returns": {
+                "thought_id": "string — the ID of the created thought",
+                "memories_injected": "integer — count of memories injected",
+                "embedding_dim": "integer — dimension of the generated embedding",
+                "embedding_model": "string — model used for embedding",
+                "continuity": {
+                    "session_id": "string? — resolved session identifier",
+                    "chain_id": "string? — resolved chain identifier",
+                    "previous_thought_id": "string? — resolved previous thought reference",
+                    "revises_thought": "string? — resolved thought being revised",
+                    "branch_from": "string? — resolved branch reference",
+                    "confidence": "number? — clamped confidence value",
+                    "links_resolved": "object? — details on how links were resolved"
+                },
+                "verification": "object? — hypothesis verification result"
+            },
+             "routing": {
+                 "triggers": {
+                     "debug": "debug time",
+                     "build": "building time",
+                     "plan": "plan/planning time",
+                     "stuck": "i'm stuck / stuck",
+                     "question": "question time",
+                     "conclude": "wrap up / conclude"
+                 },
+                 "heuristics": {
+                     "debug": ["error", "bug", "stack trace", "failed", "exception", "panic"],
+                     "build": ["implement", "create", "add function", "build", "scaffold", "wire"],
+                     "plan": ["architecture", "design", "approach", "how should", "strategy", "trade-off"],
+                     "stuck": ["stuck", "unsure", "confused", "not sure", "blocked"]
+                 }
+             }
+        }),
+        "search" => json!({
+            "name": "search",
+            "description": "Unified search in LegacyMind: searches memories by default and, when include_thoughts=true, also searches thoughts. Supports continuity field filters for thoughts and forensic mode for provenance tracking.",
+            "arguments": {
+                "query": "object — {name?, text?, id?} query parameters",
+                "target": "'entity'|'relationship'|'observation'|'mixed' (default 'mixed')",
+                "include_thoughts": "boolean (default false) — also search thoughts",
+                "thoughts_content": "string — optional explicit query text for thoughts",
+                "top_k_memories": "integer (1-50; default 10)",
+                "top_k_thoughts": "integer (1-50; default 5)",
+                "sim_thresh": "number (0.0-1.0) — similarity floor for thoughts",
+                "session_id": "string? — filter thoughts by session_id",
+                "chain_id": "string? — filter thoughts by chain_id",
+                "previous_thought_id": "string? — filter thoughts by previous_thought_id (record or string)",
+                "revises_thought": "string? — filter thoughts by revises_thought (record or string)",
+                "branch_from": "string? — filter thoughts by branch_from (record or string)",
+                "origin": "string? — filter thoughts by origin",
+                "confidence_gte": "number? (0.0-1.0) — filter thoughts with confidence >= value",
+                "confidence_lte": "number? (0.0-1.0) — filter thoughts with confidence <= value",
+                "date_from": "string? (YYYY-MM-DD) — filter thoughts created_at >= date",
+                "date_to": "string? (YYYY-MM-DD) — filter thoughts created_at <= date",
+                "order": "string? ('created_at_asc'|'created_at_desc') — order thoughts by created_at",
+                "forensic": "boolean — include correction chain and derivatives in results"
+            },
+            "returns": {"memories": {"items": "array"}, "thoughts": {"total": "number", "results": "array"}},
+            "examples": [
+                {"description": "Search entities with forensic provenance", "call": {"query": {"name": "REMini"}, "target": "entity", "forensic": true}},
+                {"description": "Search thoughts in a specific session", "call": {"include_thoughts": true, "session_id": "session_123"}}
+            ]
+        }),
+        "wander" => json!({
+            "name": "wander",
+            "description": "Interactively explore the knowledge graph via traversals. Can wander randomly, semantically, or via metadata and attention marks.",
+            "arguments": {
+                "mode": "string (required) — 'random', 'semantic', 'meta', 'marks'",
+                "current_thought_id": "string — optional starting thought ID",
+                "visited_ids": "array — IDs to avoid preventing loops",
+                "recency_bias": "boolean (default false) — prioritize recent memories",
+                "for": "string — filter marks assigned to a specific member ('cc', 'codex', 'sam', 'gemini', 'dt', 'gem')"
+            },
+            "returns": {
+                "current_node": "object — the node reached in the step",
+                "mode_used": "string — the mode used for the step",
+                "affordances": "array — suggested next modes",
+                "guidance": "string — actionable architectural guidance",
+                "queue_depth": "integer? — remaining items in queue (marks mode only)"
+            },
+            "examples": [
+                {"description": "Surface marks for CC", "call": {"mode": "marks", "for": "cc"}},
+                {"description": "Wander semantically from a specific thought", "call": {"mode": "semantic", "current_thought_id": "thoughts:abc"}}
+            ]
+        }),
+        "rethink" => json!({
+            "name": "rethink",
+            "description": "Revise or mark knowledge graph items for correction. Supports provenance-tracked corrections and attention routing.",
+            "arguments": {
+                "target_id": "string (required) — ID of the record (thoughts:xxx, entity:xxx, observation:xxx)",
+                "mode": "string (required) — 'mark' (flag for review) or 'correct' (apply fix)",
+                "mark_type": "string — 'correction', 'research', 'enrich', 'expand' (mark mode)",
+                "marked_for": "string — 'cc', 'codex', 'sam', 'gemini', 'dt', 'gem' (mark mode)",
+                "note": "string — contextual explanation for the mark (mark mode)",
+                "reasoning": "string — why the record is being corrected (correct mode)",
+                "sources": "string[] — verification sources (correct mode)",
+                "cascade": "boolean (default false) — flag derivatives for review (correct mode)"
+            },
+            "returns": {
+                "success": "boolean",
+                "marked": "object? — details of the created mark",
+                "correction": "object? — details of the applied correction event",
+                "derivatives_flagged": "integer? — count of cascaded marks"
+            }
+        }),
+        "corrections" => json!({
+            "name": "corrections",
+            "description": "List recent correction events to inspect the learning journey of the KG.",
+            "arguments": {
+                "target_id": "string — optional filter for a specific target ID",
+                "limit": "integer (default 10) — max events to return"
+            },
+            "returns": {
+                "success": "boolean",
+                "count": "integer",
+                "events": "array of correction_event objects"
+            }
+        }),
+        "journal" => json!({
+            "name": "journal",
+            "description": "Research thread management tool. Create and track research threads as KG entities, add journal entries as observations. A looking glass over the existing KG — no new tables.",
+            "arguments": {
+                "mode": "string (required) — 'write', 'read', 'threads', 'status'",
+                "thread": "string — thread name or kg_entities ID (required for write/read/status). Use ID when names are duplicated.",
+                "content": "string — journal entry content (required for write)",
+                "observation_type": "string — 'question', 'hypothesis', 'evidence', 'reflection', 'dead_end', 'follow_up' (required for write)",
+                "author": "string — 'cc', 'codex', 'gem', 'vibe', 'dt' (default 'cc')",
+                "tags": "string[] — optional tags (write mode)",
+                "confidence": "number (0.0-1.0) — optional confidence (write mode)",
+                "thread_status": "string — 'open', 'pursuing', 'resolved', 'abandoned' (required for status mode)",
+                "author_filter": "string — filter by author (read/threads mode)",
+                "type_filter": "string — filter by observation_type (read mode)",
+                "status_filter": "string — filter by thread status (threads mode)",
+                "limit": "integer (1-100, default 20) — max entries (read mode)"
+            },
+            "returns": {
+                "write": {"success": true, "thread": "object", "entry": "object"},
+                "read": {"thread": "object", "entries": "array", "count": "integer"},
+                "threads": {"threads": "array (enriched with entry_count, last_activity)", "total": "integer"},
+                "status": {"success": true, "thread": "object with previous/new status"}
+            },
+            "examples": [
+                {"description": "Start a new research thread", "call": {"mode": "write", "thread": "Embedding dimension drift", "content": "Why do we see dimension mismatches after provider switches?", "observation_type": "question"}},
+                {"description": "Add evidence to a thread", "call": {"mode": "write", "thread": "Embedding dimension drift", "content": "Found 3 entities with 768-dim embeddings from old BGE provider", "observation_type": "evidence", "confidence": 0.9}},
+                {"description": "Read all entries for a thread", "call": {"mode": "read", "thread": "Embedding dimension drift"}},
+                {"description": "Read by thread ID when names are duplicated", "call": {"mode": "read", "thread": "kg_entities:abc123"}},
+                {"description": "View all open threads", "call": {"mode": "threads", "status_filter": "open"}},
+                {"description": "Mark a thread as resolved", "call": {"mode": "status", "thread": "Embedding dimension drift", "thread_status": "resolved"}}
+            ]
+        }),
+        "remember" => json!({
+            "name": "remember",
+            "description": "Create personal memory entities or relationships; returns created id.",
+            "arguments": {
+                "kind": "string — 'entity'|'relationship'|'observation'",
+                "data": "object — entity: {name, entity_type?, properties?} | relationship: {source, target, rel_type, properties?} | observation: {source, observation_type, properties?}",
+                "confidence": "number — optional confidence",
+                "upsert": "boolean (default true) — whether to find existing matching record or always create new"
+            },
+            "returns": {"created": true, "id": "string", "kind": "string"}
+        }),
+        "maintain" => json!({
+            "name": "maintain",
+            "description": "Maintenance operations including archival, cleanup, embedding refresh, rethink queue processing, and health checks (thoughts/entities/observations/edges).",
+            "arguments": {
+                "subcommand": "string (required) — 'list_removal_candidates'|'export_removals'|'finalize_removal'|'health_check_embeddings'|'health_check_indexes'|'reembed'|'reembed_kg'|'embed_pending'|'ensure_continuity_fields'|'echo_config'|'corrections'|'rethink'|'consolidate'|'populate'|'embed'|'wander'|'health'|'report'|'tasks'",
+                "dry_run": "boolean (default: false) — simulate operation without changes",
+                "limit": "integer|string (default: 100) — max items to process",
+                "format": "string (default: 'json') — export format",
+                "output_dir": "string (default: './archive') — export directory",
+                "tasks": "string — comma separated list for subcommand 'tasks' (default populate,embed,rethink,consolidate,wander,health,report,corrections)",
+                "target_id": "string — optional filter for 'corrections' subcommand",
+                "rethink_types": "string — comma-separated mark types for 'rethink' subcommand (e.g., correction,research)"
+            },
+            "returns": {
+                "health_check_embeddings": "object — detailed breakdown per table (total, ok, missing, mismatched) with sample IDs",
+                "corrections": "object — {success, count, events[]} result from corrections bridge",
+                "rethink/consolidate/populate/embed/wander/health": "object — {task, success, stdout, stderr}",
+                "tasks": "object — {results: [...]} aggregated per task",
+                "report": "object — contents of logs/remini_report.json",
+                "embed_pending": "object — {message, processed, succeeded, failed, remaining, dry_run} — retry embedding for thoughts with pending/failed status",
+                "other_subcommands": "object — counts, paths, or messages depending on operation"
+            }
+        }),
+        "test_notification" => json!({
+            "name": "test_notification",
+            "description": "Send a test MCP logging notification to the connected client. Useful for verifying the client wires up logging/notification handling correctly.",
+            "arguments": {
+                "message": "string (required) — the notification text to send",
+                "level": "string — 'debug'|'info'|'notice'|'warning'|'error'|'critical'|'alert'|'emergency' (default 'info')"
+            },
+            "returns": {
+                "status": "string — 'success' when the notification was delivered",
+                "message": "string — confirmation echoing the sent notification text"
+            }
+        }),
+        "howto" => json!({
+            "name": "howto",
+            "description": "Get detailed help for a specific tool, or (when `tool` is omitted entirely) a compact roster of every tool this server exposes.",
+            "arguments": {
+                "tool": "string — name of the tool to get help for. Accepted values are exactly the server's live tool roster: corrections, howto, journal, maintain, remember, rethink, search, test_notification, think, wander. Omit this argument to get the compact roster instead of a single tool's help.",
+                "format": "string — 'compact'|'full' (default 'full'); 'compact' returns only {tool, summary, arguments} derived from the full help object"
+            },
+            "returns": {
+                "no_tool_arg": "object — {tools: array of {name, one_liner, key_params}}, one entry per tool in the live roster",
+                "full": "object — {name, description, arguments, returns, examples?, routing?} for the requested tool",
+                "compact": "object — {tool, summary, arguments}"
+            }
+        }),
+        _ => {
+            return Err(SurrealMindError::Validation {
+                message: format!("Unknown tool: {}", tool),
+            });
+        }
+    };
+    Ok(help)
+}
 
 impl SurrealMindServer {
     /// Handle the detailed_help tool call
@@ -37,232 +297,7 @@ impl SurrealMindServer {
             Some(t) => t,
         };
 
-        let help = match tool {
-            "think" => json!({
-                "name": "think",
-                "description": "Unified thinking tool that routes to appropriate mode. Persists thoughts with optional memory injection. (Framework enhancement currently disabled).",
-                "arguments": {
-                    "content": "string (required) — the thought text",
-                    "hint": "string — optional explicit mode ('debug', 'build', 'plan', 'stuck', 'question', 'conclude')",
-                    "injection_scale": "integer|string (0-3) — memory injection level (overrides mode default)",
-                    "tags": "string[] — optional tags",
-                    "significance": "number|string (0.0-1.0) — importance (overrides mode default)",
-                    "verbose_analysis": "boolean — (unused) previously for verbose framework output",
-                    "session_id": "string — optional session identifier",
-                    "chain_id": "string — optional chain identifier",
-                    "previous_thought_id": "string — optional reference to previous thought",
-                    "revises_thought": "string — optional reference to thought being revised",
-                    "branch_from": "string — optional reference to thought being branched from",
-                    "confidence": "number (0.0-1.0) — optional confidence level",
-                    "hypothesis": "string — optional hypothesis to verify against KG evidence",
-                    "needs_verification": "boolean — set true to run hypothesis verification (only when hypothesis provided)",
-                    "verify_top_k": "integer (1-500) — candidate pool size for KG search (default 100)",
-                    "min_similarity": "number (0.0-1.0) — minimum similarity threshold (default 0.70)",
-                    "evidence_limit": "integer (1-25) — max evidence items per bucket (default 10)",
-                    "contradiction_patterns": "string[] — optional custom patterns for contradiction detection"
-                },
-                "returns": {
-                    "thought_id": "string — the ID of the created thought",
-                    "memories_injected": "integer — count of memories injected",
-                    "embedding_dim": "integer — dimension of the generated embedding",
-                    "embedding_model": "string — model used for embedding",
-                    "continuity": {
-                        "session_id": "string? — resolved session identifier",
-                        "chain_id": "string? — resolved chain identifier",
-                        "previous_thought_id": "string? — resolved previous thought reference",
-                        "revises_thought": "string? — resolved thought being revised",
-                        "branch_from": "string? — resolved branch reference",
-                        "confidence": "number? — clamped confidence value",
-                        "links_resolved": "object? — details on how links were resolved"
-                    },
-                    "verification": "object? — hypothesis verification result"
-                },
-                 "routing": {
-                     "triggers": {
-                         "debug": "debug time",
-                         "build": "building time",
-                         "plan": "plan/planning time",
-                         "stuck": "i'm stuck / stuck",
-                         "question": "question time",
-                         "conclude": "wrap up / conclude"
-                     },
-                     "heuristics": {
-                         "debug": ["error", "bug", "stack trace", "failed", "exception", "panic"],
-                         "build": ["implement", "create", "add function", "build", "scaffold", "wire"],
-                         "plan": ["architecture", "design", "approach", "how should", "strategy", "trade-off"],
-                         "stuck": ["stuck", "unsure", "confused", "not sure", "blocked"]
-                     }
-                 }
-            }),
-            "search" => json!({
-                "name": "search",
-                "description": "Unified search in LegacyMind: searches memories by default and, when include_thoughts=true, also searches thoughts. Supports continuity field filters for thoughts and forensic mode for provenance tracking.",
-                "arguments": {
-                    "query": "object — {name?, text?, id?} query parameters",
-                    "target": "'entity'|'relationship'|'observation'|'mixed' (default 'mixed')",
-                    "include_thoughts": "boolean (default false) — also search thoughts",
-                    "thoughts_content": "string — optional explicit query text for thoughts",
-                    "top_k_memories": "integer (1-50; default 10)",
-                    "top_k_thoughts": "integer (1-50; default 5)",
-                    "sim_thresh": "number (0.0-1.0) — similarity floor for thoughts",
-                    "session_id": "string? — filter thoughts by session_id",
-                    "chain_id": "string? — filter thoughts by chain_id",
-                    "previous_thought_id": "string? — filter thoughts by previous_thought_id (record or string)",
-                    "revises_thought": "string? — filter thoughts by revises_thought (record or string)",
-                    "branch_from": "string? — filter thoughts by branch_from (record or string)",
-                    "origin": "string? — filter thoughts by origin",
-                    "confidence_gte": "number? (0.0-1.0) — filter thoughts with confidence >= value",
-                    "confidence_lte": "number? (0.0-1.0) — filter thoughts with confidence <= value",
-                    "date_from": "string? (YYYY-MM-DD) — filter thoughts created_at >= date",
-                    "date_to": "string? (YYYY-MM-DD) — filter thoughts created_at <= date",
-                    "order": "string? ('created_at_asc'|'created_at_desc') — order thoughts by created_at",
-                    "forensic": "boolean — include correction chain and derivatives in results"
-                },
-                "returns": {"memories": {"items": "array"}, "thoughts": {"total": "number", "results": "array"}},
-                "examples": [
-                    {"description": "Search entities with forensic provenance", "call": {"query": {"name": "REMini"}, "target": "entity", "forensic": true}},
-                    {"description": "Search thoughts in a specific session", "call": {"include_thoughts": true, "session_id": "session_123"}}
-                ]
-            }),
-            "wander" => json!({
-                "name": "wander",
-                "description": "Interactively explore the knowledge graph via traversals. Can wander randomly, semantically, or via metadata and attention marks.",
-                "arguments": {
-                    "mode": "string (required) — 'random', 'semantic', 'meta', 'marks'",
-                    "current_thought_id": "string — optional starting thought ID",
-                    "visited_ids": "array — IDs to avoid preventing loops",
-                    "recency_bias": "boolean (default false) — prioritize recent memories",
-                    "for": "string — filter marks assigned to a specific member ('cc', 'codex', 'sam', 'gemini', 'dt', 'gem')"
-                },
-                "returns": {
-                    "current_node": "object — the node reached in the step",
-                    "mode_used": "string — the mode used for the step",
-                    "affordances": "array — suggested next modes",
-                    "guidance": "string — actionable architectural guidance",
-                    "queue_depth": "integer? — remaining items in queue (marks mode only)"
-                },
-                "examples": [
-                    {"description": "Surface marks for CC", "call": {"mode": "marks", "for": "cc"}},
-                    {"description": "Wander semantically from a specific thought", "call": {"mode": "semantic", "current_thought_id": "thoughts:abc"}}
-                ]
-            }),
-            "rethink" => json!({
-                "name": "rethink",
-                "description": "Revise or mark knowledge graph items for correction. Supports provenance-tracked corrections and attention routing.",
-                "arguments": {
-                    "target_id": "string (required) — ID of the record (thoughts:xxx, entity:xxx, observation:xxx)",
-                    "mode": "string (required) — 'mark' (flag for review) or 'correct' (apply fix)",
-                    "mark_type": "string — 'correction', 'research', 'enrich', 'expand' (mark mode)",
-                    "marked_for": "string — 'cc', 'codex', 'sam', 'gemini', 'dt', 'gem' (mark mode)",
-                    "note": "string — contextual explanation for the mark (mark mode)",
-                    "reasoning": "string — why the record is being corrected (correct mode)",
-                    "sources": "string[] — verification sources (correct mode)",
-                    "cascade": "boolean (default false) — flag derivatives for review (correct mode)"
-                },
-                "returns": {
-                    "success": "boolean",
-                    "marked": "object? — details of the created mark",
-                    "correction": "object? — details of the applied correction event",
-                    "derivatives_flagged": "integer? — count of cascaded marks"
-                }
-            }),
-            "corrections" => json!({
-                "name": "corrections",
-                "description": "List recent correction events to inspect the learning journey of the KG.",
-                "arguments": {
-                    "target_id": "string — optional filter for a specific target ID",
-                    "limit": "integer (default 10) — max events to return"
-                },
-                "returns": {
-                    "success": "boolean",
-                    "count": "integer",
-                    "events": "array of correction_event objects"
-                }
-            }),
-            "journal" => json!({
-                "name": "journal",
-                "description": "Research thread management tool. Create and track research threads as KG entities, add journal entries as observations. A looking glass over the existing KG — no new tables.",
-                "arguments": {
-                    "mode": "string (required) — 'write', 'read', 'threads', 'status'",
-                    "thread": "string — thread name or kg_entities ID (required for write/read/status). Use ID when names are duplicated.",
-                    "content": "string — journal entry content (required for write)",
-                    "observation_type": "string — 'question', 'hypothesis', 'evidence', 'reflection', 'dead_end', 'follow_up' (required for write)",
-                    "author": "string — 'cc', 'codex', 'gem', 'vibe', 'dt' (default 'cc')",
-                    "tags": "string[] — optional tags (write mode)",
-                    "confidence": "number (0.0-1.0) — optional confidence (write mode)",
-                    "thread_status": "string — 'open', 'pursuing', 'resolved', 'abandoned' (required for status mode)",
-                    "author_filter": "string — filter by author (read/threads mode)",
-                    "type_filter": "string — filter by observation_type (read mode)",
-                    "status_filter": "string — filter by thread status (threads mode)",
-                    "limit": "integer (1-100, default 20) — max entries (read mode)"
-                },
-                "returns": {
-                    "write": {"success": true, "thread": "object", "entry": "object"},
-                    "read": {"thread": "object", "entries": "array", "count": "integer"},
-                    "threads": {"threads": "array (enriched with entry_count, last_activity)", "total": "integer"},
-                    "status": {"success": true, "thread": "object with previous/new status"}
-                },
-                "examples": [
-                    {"description": "Start a new research thread", "call": {"mode": "write", "thread": "Embedding dimension drift", "content": "Why do we see dimension mismatches after provider switches?", "observation_type": "question"}},
-                    {"description": "Add evidence to a thread", "call": {"mode": "write", "thread": "Embedding dimension drift", "content": "Found 3 entities with 768-dim embeddings from old BGE provider", "observation_type": "evidence", "confidence": 0.9}},
-                    {"description": "Read all entries for a thread", "call": {"mode": "read", "thread": "Embedding dimension drift"}},
-                    {"description": "Read by thread ID when names are duplicated", "call": {"mode": "read", "thread": "kg_entities:abc123"}},
-                    {"description": "View all open threads", "call": {"mode": "threads", "status_filter": "open"}},
-                    {"description": "Mark a thread as resolved", "call": {"mode": "status", "thread": "Embedding dimension drift", "thread_status": "resolved"}}
-                ]
-            }),
-            "remember" => json!({
-                "name": "remember",
-                "description": "Create personal memory entities or relationships; returns created id.",
-                "arguments": {
-                    "kind": "string — 'entity'|'relationship'|'observation'",
-                    "data": "object — entity: {name, entity_type?, properties?} | relationship: {source, target, rel_type, properties?} | observation: {source, observation_type, properties?}",
-                    "confidence": "number — optional confidence",
-                    "upsert": "boolean (default true) — whether to find existing matching record or always create new"
-                },
-                "returns": {"created": true, "id": "string", "kind": "string"}
-            }),
-            "maintain" => json!({
-                "name": "maintain",
-                "description": "Maintenance operations including archival, cleanup, embedding refresh, rethink queue processing, and health checks (thoughts/entities/observations/edges).",
-                "arguments": {
-                    "subcommand": "string (required) — 'list_removal_candidates'|'export_removals'|'finalize_removal'|'health_check_embeddings'|'health_check_indexes'|'reembed'|'reembed_kg'|'embed_pending'|'ensure_continuity_fields'|'echo_config'|'corrections'|'rethink'|'consolidate'|'populate'|'embed'|'wander'|'health'|'report'|'tasks'",
-                    "dry_run": "boolean (default: false) — simulate operation without changes",
-                    "limit": "integer|string (default: 100) — max items to process",
-                    "format": "string (default: 'json') — export format",
-                    "output_dir": "string (default: './archive') — export directory",
-                    "tasks": "string — comma separated list for subcommand 'tasks' (default populate,embed,rethink,consolidate,wander,health,report,corrections)",
-                    "target_id": "string — optional filter for 'corrections' subcommand",
-                    "rethink_types": "string — comma-separated mark types for 'rethink' subcommand (e.g., correction,research)"
-                },
-                "returns": {
-                    "health_check_embeddings": "object — detailed breakdown per table (total, ok, missing, mismatched) with sample IDs",
-                    "corrections": "object — {success, count, events[]} result from corrections bridge",
-                    "rethink/consolidate/populate/embed/wander/health": "object — {task, success, stdout, stderr}",
-                    "tasks": "object — {results: [...]} aggregated per task",
-                    "report": "object — contents of logs/remini_report.json",
-                    "embed_pending": "object — {message, processed, succeeded, failed, remaining, dry_run} — retry embedding for thoughts with pending/failed status",
-                    "other_subcommands": "object — counts, paths, or messages depending on operation"
-                }
-            }),
-            "test_notification" => json!({
-                "name": "test_notification",
-                "description": "Send a test MCP logging notification to the connected client. Useful for verifying the client wires up logging/notification handling correctly.",
-                "arguments": {
-                    "message": "string (required) — the notification text to send",
-                    "level": "string — 'debug'|'info'|'notice'|'warning'|'error'|'critical'|'alert'|'emergency' (default 'info')"
-                },
-                "returns": {
-                    "status": "string — 'success' when the notification was delivered",
-                    "message": "string — confirmation echoing the sent notification text"
-                }
-            }),
-            _ => {
-                return Err(SurrealMindError::Validation {
-                    message: format!("Unknown tool: {}", tool),
-                });
-            }
-        };
+        let help = tool_help(tool)?;
 
         let output = if format == "compact" {
             // Provide a concise one-paragraph summary
