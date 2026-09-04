@@ -1,4 +1,6 @@
-//! Dry-run contract for the KG re-embed path.
+//! Dry-run contract for the KG re-embed path, and for the standalone
+//! `thoughts` re-embed path used by the `reembed` binary
+//! (`src/bin/reembed.rs`).
 //!
 //! The bug this guards: `run_reembed_kg` used to call the embedding provider for
 //! every candidate row and only guard the `UPDATE` behind `dry_run`. Both
@@ -6,9 +8,18 @@
 //! binary) therefore billed a provider once per row on a "dry" run.
 //!
 //! The embedder is the provider sink, so the embedder is what these tests count.
-//! A counting mock is injected through [`run_reembed_kg_with`] together with a
-//! disposable in-memory SurrealDB, which also means these tests need no API key
-//! and can never reach a real provider.
+//! A counting mock is injected through [`run_reembed_kg_with`] and
+//! [`run_reembed_standalone_with`] together with a disposable SurrealDB, which
+//! also means these tests need no API key and can never reach a real provider.
+//!
+//! The `reembed_standalone_*` tests below are the library-level negative
+//! control for the standalone `reembed` binary's dry-run contract: they cover
+//! the same "dry_run=false calls the provider and writes; dry_run=true does
+//! neither" property that `tests/reembed_bin_dry_run.rs` used to prove by
+//! spawning a live (non-dry) run of the compiled binary against a real
+//! `api.openai.com` request. That subprocess-level negative control has been
+//! removed (see that file's module doc comment) in favor of this in-process
+//! one, which needs no network access at all.
 //!
 //! Gated behind the `db_integration` feature AND `RUN_DB_TESTS`, and refuses to
 //! run against anything that looks like the production endpoint.
@@ -19,7 +30,7 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use surreal_mind::embeddings::Embedder;
-use surreal_mind::maintenance::reembed::run_reembed_kg_with;
+use surreal_mind::maintenance::reembed::{run_reembed_kg_with, run_reembed_standalone_with};
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::{Client, Ws};
 use surrealdb::opt::auth::Root;
@@ -134,6 +145,39 @@ async fn snapshot(db: &Surreal<Client>) -> Result<String> {
         out.push('\n');
     }
     Ok(out)
+}
+
+/// Seed three `thoughts` rows exercising all three `ThoughtReembedDecision`
+/// branches `run_reembed_standalone_with`'s selection predicate
+/// (`classify_thought_reembed`) reads off `array::len(embedding)` and
+/// `embedding_model`, mirroring `tests/reembed_bin_dry_run.rs::seed`:
+///   - `thoughts:missing`    -- embedding = NONE                 -> Missing    (needs embedding)
+///   - `thoughts:mismatched` -- 2-length embedding, wrong model  -> Mismatched (needs embedding)
+///   - `thoughts:current`    -- MOCK_DIMS-length embedding, TARGET_MODEL -> UpToDate (must be skipped)
+async fn seed_thoughts(db: &Surreal<Client>) -> Result<()> {
+    db.query(
+        "CREATE thoughts:missing SET content = 'standalone-dryrun-missing', embedding = NONE;
+         CREATE thoughts:mismatched SET content = 'standalone-dryrun-mismatched', embedding = [0.1f, 0.2f], embedding_model = 'old-model', embedding_provider = 'openai', embedding_dim = 2;
+         CREATE thoughts:current SET content = 'standalone-dryrun-current', embedding = [0.1f, 0.2f, 0.3f, 0.4f], embedding_model = $model, embedding_provider = 'openai', embedding_dim = 4;",
+    )
+    .bind(("model", TARGET_MODEL))
+    .await?
+    .check()?;
+    Ok(())
+}
+
+/// Canonical snapshot of every embedding-bearing column
+/// `run_reembed_standalone_with` can write, mirroring
+/// `tests/reembed_bin_dry_run.rs::snapshot`.
+async fn snapshot_thoughts(db: &Surreal<Client>) -> Result<String> {
+    let rows: Vec<serde_json::Value> = db
+        .query(
+            "SELECT meta::id(id) AS id, embedding, embedding_model, embedding_provider, \
+             embedding_dim, embedded_at FROM thoughts ORDER BY id",
+        )
+        .await?
+        .take(0)?;
+    Ok(serde_json::to_string(&rows)?)
 }
 
 /// THE CONTRACT: `dry_run = true` makes zero provider calls and zero writes,
@@ -256,6 +300,107 @@ async fn reembed_kg_live_run_does_call_provider_and_does_write() -> Result<()> {
     assert!(
         !stats.dry_run,
         "stats must record that this was NOT a dry run"
+    );
+
+    Ok(())
+}
+
+/// THE CONTRACT for the standalone `thoughts` path: `dry_run = true` makes
+/// zero provider calls and zero writes, while still reporting how many rows
+/// would be re-embedded. This is `run_reembed_standalone_with`'s half of the
+/// contract the `reembed` binary itself is a thin wrapper around.
+#[tokio::test]
+async fn reembed_standalone_dry_run_makes_no_provider_calls_and_no_writes() -> Result<()> {
+    let Some((db, _ns)) = disposable_db().await? else {
+        return Ok(());
+    };
+    seed_thoughts(&db).await?;
+
+    let before = snapshot_thoughts(&db).await?;
+    let embedder = Arc::new(CountingEmbedder::default());
+
+    let report =
+        run_reembed_standalone_with(&db, embedder.as_ref(), "mock-provider", TARGET_MODEL, true)
+            .await?;
+
+    assert_eq!(
+        embedder.calls(),
+        0,
+        "a dry run must make ZERO embedding-provider calls; made {}. Report: {report:?}",
+        embedder.calls()
+    );
+
+    let after = snapshot_thoughts(&db).await?;
+    assert_eq!(
+        before, after,
+        "a dry run must not mutate any row of thoughts"
+    );
+
+    assert_eq!(
+        report.would_reembed, 2,
+        "dry run should report the 2 candidate rows (missing + mismatched); report={report:?}"
+    );
+    assert_eq!(
+        report.skipped, 1,
+        "the already-current row must be skipped, not reported; report={report:?}"
+    );
+    assert!(report.dry_run, "report must record that this was a dry run");
+    assert_eq!(
+        report.error, 0,
+        "a dry run cannot fail a provider call it never makes; report={report:?}"
+    );
+
+    Ok(())
+}
+
+/// Negative control for the standalone `thoughts` path: the same fixtures
+/// with `dry_run = false` DO call the provider and DO change the database.
+/// Without this, the test above would pass against a function that silently
+/// does nothing at all. This replaces the subprocess-level negative control
+/// `tests/reembed_bin_dry_run.rs` used to run against a real OpenAI request
+/// (see that file's module doc comment) — the assertion is the same
+/// property, proven here with an injected mock instead of live production
+/// infrastructure.
+#[tokio::test]
+async fn reembed_standalone_live_run_does_call_provider_and_does_write() -> Result<()> {
+    let Some((db, _ns)) = disposable_db().await? else {
+        return Ok(());
+    };
+    seed_thoughts(&db).await?;
+
+    let before = snapshot_thoughts(&db).await?;
+    let embedder = Arc::new(CountingEmbedder::default());
+
+    let report =
+        run_reembed_standalone_with(&db, embedder.as_ref(), "mock-provider", TARGET_MODEL, false)
+            .await?;
+
+    assert_eq!(
+        embedder.calls(),
+        2,
+        "a live run must embed the 2 candidate rows (missing + mismatched); \
+         got {} calls. Report: {report:?}",
+        embedder.calls()
+    );
+
+    let after = snapshot_thoughts(&db).await?;
+    assert_ne!(
+        before, after,
+        "a live run must actually change the stored embeddings (negative control \
+         for the dry-run snapshot assertion)"
+    );
+
+    assert_eq!(
+        report.success, 2,
+        "live run should have updated both candidate rows; report={report:?}"
+    );
+    assert_eq!(
+        report.error, 0,
+        "every UPDATE targets a freshly created row and must match; report={report:?}"
+    );
+    assert!(
+        !report.dry_run,
+        "report must record that this was NOT a dry run"
     );
 
     Ok(())

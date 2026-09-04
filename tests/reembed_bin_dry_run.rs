@@ -1,34 +1,40 @@
 //! Binary-level dry-run contract for `src/bin/reembed.rs` (the `thoughts`
 //! table re-embed CLI), companion to `tests/reembed_dry_run_contract.rs`
-//! which covers `run_reembed_kg_with` (the `kg_entities`/`kg_observations`/
-//! `kg_edges` path via a function call with an injected mock embedder).
+//! which covers both `run_reembed_kg_with` (the `kg_entities`/
+//! `kg_observations`/`kg_edges` path) and `run_reembed_standalone_with` (the
+//! `thoughts` path this binary now calls), each via a function call with an
+//! injected mock embedder.
 //!
 //! Commit aeceb2b taught the `reembed` binary to respect `--dry-run` and
-//! `DRY_RUN` before it ever calls the embedding provider or writes anything
-//! (the guard sits at src/bin/reembed.rs:145-159, right after the
-//! `classify_thought_reembed`/`needs_embedding()` skip check and strictly
-//! before `embedder.embed(...)`). The only coverage that guard had was two
-//! unit tests on the pure `dry_run_requested` arg/env parser at the bottom
-//! of that file -- nothing exercised the actual dry-run BEHAVIOR: that a
-//! real invocation of the compiled binary makes zero provider calls and
-//! zero writes.
+//! `DRY_RUN` before it ever calls the embedding provider or writes anything.
+//! The only coverage that guard had was two unit tests on the pure
+//! `dry_run_requested` arg/env parser at the bottom of `src/bin/reembed.rs`
+//! -- nothing exercised the actual dry-run BEHAVIOR: that a real invocation
+//! of the compiled binary makes zero provider calls and zero writes.
 //!
-//! Unlike `reembed_dry_run_contract.rs`, the `reembed` binary cannot take an
-//! injected mock `Embedder` -- it always builds a real `OpenAIEmbedder` via
-//! `create_embedder(&config)` (src/bin/reembed.rs:48), constructed
-//! unconditionally before the dry-run branch. So this test spawns the
-//! actual compiled `reembed` binary as a subprocess (never a function call),
-//! the same `env!("CARGO_BIN_EXE_<name>")` pattern
-//! `tests/stdio_smoke.rs:71-78` uses for `surreal-mind` itself, points it at
-//! a disposable SurrealDB via `SURR_DB_URL`/`SURR_DB_NS`/`SURR_DB_DB`, and
-//! feeds it an OBVIOUSLY-fake `OPENAI_API_KEY` so a live (non-dry) run
-//! actually reaches (and is rejected by) the real OpenAI API instead of
-//! silently short-circuiting on a placeholder-shaped key
-//! (`embeddings::create_embedder`'s `is_placeholder` check only rejects
-//! empty/`${...}`/`your-api-key-here`/`changeme` -- a fake-but-well-formed
-//! key like `sk-fake-...` sails through construction and is only rejected
-//! by the OpenAI API itself at request time, which is exactly the behavior
-//! this test's negative control needs).
+//! `src/bin/reembed.rs` is now a thin wrapper around
+//! `surreal_mind::maintenance::reembed::run_reembed_standalone_with`, the
+//! same injectable-runner pattern `run_reembed_kg_with` established: the
+//! binary builds config/embedder/db, calls the runner, and prints the
+//! summary from the returned report. That runner is unit-testable directly
+//! with a counting mock embedder and a disposable database (see
+//! `tests/reembed_dry_run_contract.rs`), with ZERO network calls anywhere in
+//! the test suite for this path. This file keeps ONLY the two positive
+//! dry-run spawns below, which exercise the compiled binary end to end (arg
+//! parsing, config loading, process exit code, stdout contract) --
+//! `create_embedder`/`OpenAIEmbedder::new` performs no network I/O at
+//! construction (it only builds a local `reqwest::Client` and reads the
+//! configured dimension; see `src/embeddings.rs`), and the dry-run guard in
+//! `run_reembed_standalone_with` returns before `Embedder::embed` is ever
+//! called, so these two tests reach no external service. The negative
+//! control that used to spawn a *live* (non-dry) run of this binary against
+//! a fake OpenAI key -- proving a genuine `embedder.embed(...)` attempt by
+//! observing the real `api.openai.com` 401 -- has been removed: it depended
+//! on live, nondeterministic production infrastructure as a test double.
+//! The equivalent negative control (dry_run=false calls the provider and
+//! writes; dry_run=true does neither) now lives at the library level in
+//! `tests/reembed_dry_run_contract.rs` against the counting mock embedder
+//! and the disposable `127.0.0.1:8100` SurrealDB instead.
 //!
 //! Gated on `RUN_DB_TESTS=1` and refuses to run against anything that looks
 //! like the production SurrealDB endpoint (`:8000`) -- mirrors
@@ -78,9 +84,11 @@ fn test_db_url() -> Option<String> {
 /// name only -- `embeddings::create_embedder`'s `is_placeholder` check is an
 /// exact case-insensitive match on `"changeme"`/`"your-api-key-here"`/empty/
 /// `${...}`, so `changeme-fed734b8f-worktree` does NOT match it and would
-/// be treated as a usable key). This key is shaped like a real OpenAI key
-/// so it passes that same construction-time check and only fails at the
-/// OpenAI API itself, which is what the negative control below needs.
+/// be treated as a usable key). This key is shaped like a real OpenAI key so
+/// it passes that same construction-time check; both tests below use it
+/// under `--dry-run`/`DRY_RUN=1`, where the dry-run guard in
+/// `run_reembed_standalone_with` returns before any embedder call is ever
+/// made, so this key is never actually sent anywhere.
 const FAKE_OPENAI_KEY: &str = "sk-fake-fed734b8f";
 
 /// Target model/dims this test seeds against: matches both this worktree's
@@ -177,10 +185,10 @@ async fn snapshot(db: &Surreal<Client>) -> Result<String> {
 }
 
 /// Spawn the compiled `reembed` binary (never the library function) against
-/// the disposable ns/db, with a fixed fake OpenAI key and a fast retry
-/// budget (`SURR_EMBED_RETRIES=1`) so a live-run negative control fails
-/// after exactly one real HTTP round trip instead of `Config::default`'s 3
-/// retries with exponential backoff. `extra_args`/`extra_env` let each test
+/// the disposable ns/db, with a fixed fake OpenAI key. Both tests below
+/// invoke this under `--dry-run`/`DRY_RUN=1`, so `SURR_EMBED_RETRIES=1` is
+/// belt-and-suspenders (no embedder call is ever reached on the dry-run
+/// path) rather than load-bearing. `extra_args`/`extra_env` let each test
 /// add `--dry-run` or `DRY_RUN=1` without duplicating the whole spawn.
 fn run_binary(
     url: &str,
@@ -287,81 +295,9 @@ async fn reembed_bin_dry_run_env_makes_no_writes() -> Result<()> {
     Ok(())
 }
 
-/// NEGATIVE CONTROL: the same fixture, same fake key, with dry-run NOT
-/// requested. Without this half, the two tests above would pass equally
-/// well against a binary that silently never calls the provider at all --
-/// this proves the binary genuinely attempts a live embed when not told to
-/// skip it. The snapshot is still expected to be unchanged after this run,
-/// but for a DIFFERENT reason than the dry-run tests: not because the code
-/// refused to try, but because the fake key makes the OpenAI API reject
-/// every attempt (measured live: `curl` against
-/// `https://api.openai.com/v1/models` with this key returns HTTP 401), so
-/// no `UPDATE` is ever reached (src/bin/reembed.rs:222-225, the `Err(e)`
-/// arm of `embedder.embed(...)`, increments `error_count` and `continue`s
-/// -- it never runs the `UPDATE` query).
-#[tokio::test]
-async fn reembed_bin_live_run_with_fake_key_attempts_provider_and_writes_nothing() -> Result<()> {
-    let Some(url) = test_db_url() else {
-        return Ok(());
-    };
-    let (ns, db) = unique_ns_db("live");
-    let conn = connect(&url, &ns, &db).await?;
-    seed(&conn).await?;
-    let before = snapshot(&conn).await?;
-
-    let out = run_binary(&url, &ns, &db, &[], &[])?;
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let stderr = String::from_utf8_lossy(&out.stderr);
-
-    // main() -> anyhow::Result<()> only ever returns Err for a failure in
-    // the DB connect/query calls made with `?` -- a per-row embed failure
-    // is caught inline (error_count += 1; continue) and never propagated,
-    // so exit 0 here is expected and is NOT evidence the provider call
-    // succeeded or was skipped. The real evidence is the stderr lines
-    // below, which src/bin/reembed.rs only ever prints from inside the
-    // `Err(e)` arm of an actual `embedder.embed(...).await` call.
-    assert!(
-        out.status.success(),
-        "a live run's per-row embed failures are caught, not propagated, so exit should still be \
-         0; status={:?}\nstdout:\n{stdout}\nstderr:\n{stderr}",
-        out.status
-    );
-    assert!(
-        !stdout.contains("DRY RUN"),
-        "a live run must not print the dry-run marker; stdout:\n{stdout}"
-    );
-    assert!(
-        stderr.contains("Failed to embed content for"),
-        "stderr must show the binary actually attempted (and failed) an embedder.embed(...) call \
-         for a candidate row -- this is the proof of a genuine provider attempt, independent of \
-         whether the failure looks like an HTTP 401 body or a network-layer send error; \
-         stderr:\n{stderr}"
-    );
-    // Best-effort, not load-bearing: with real internet reachability
-    // (verified live against api.openai.com during development of this
-    // test -- HTTP 401 for this fake key), the underlying error also
-    // carries OpenAI's own error text. Not asserted as a hard requirement
-    // because a sandboxed CI runner without outbound internet would
-    // instead see a "Failed to send embedding request" transport error,
-    // which is equally valid evidence of an attempt.
-    if stderr.contains("OpenAI API error") {
-        eprintln!(
-            "(informational) reached OpenAI and got a non-success HTTP status, as expected for a fake key"
-        );
-    }
-    assert!(
-        stdout.contains("❌ Errors: 2 thoughts"),
-        "both candidate rows (missing + mismatched) should have failed to embed; stdout:\n{stdout}"
-    );
-
-    let after = snapshot(&conn).await?;
-    assert_eq!(
-        before, after,
-        "every embed attempt failed against the fake key, so no UPDATE should ever have been \
-         reached -- the snapshot staying identical here is a side effect of the provider \
-         rejecting the fake key, NOT evidence dry-run logic fired (dry-run was not requested in \
-         this test); stdout:\n{stdout}\nstderr:\n{stderr}"
-    );
-
-    Ok(())
-}
+// The negative control that used to live here spawned a *live* (non-dry)
+// run of this binary against a fake OpenAI key and asserted on the real
+// `api.openai.com` 401 response -- see the module doc comment at the top of
+// this file for why that was removed and where its replacement lives
+// (`tests/reembed_dry_run_contract.rs`, against the counting mock embedder
+// and the disposable `127.0.0.1:8100` SurrealDB, zero network calls).

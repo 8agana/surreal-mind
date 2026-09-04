@@ -411,6 +411,238 @@ pub async fn run_reembed(
     })
 }
 
+/// Stats returned by [`run_reembed_standalone_with`], the `thoughts`-table
+/// re-embed loop used by the standalone `reembed` binary
+/// (`src/bin/reembed.rs`).
+///
+/// Field naming mirrors the binary's own original local counters
+/// (`success_count`, `skip_count`, `error_count`, `mismatched_count`,
+/// `missing_count`, `would_reembed_count`) rather than `ReembedStats`'s
+/// `no_match`/`failed` split: a per-row UPDATE that matched zero rows is
+/// folded into `error` here, exactly as the binary's original inline loop
+/// did, so the printed "❌ Errors: N thoughts" line keeps reporting the same
+/// number the binary always has.
+#[derive(Debug, serde::Serialize)]
+pub struct ReembedStandaloneReport {
+    pub expected_dim: usize,
+    pub dry_run: bool,
+    pub total: usize,
+    pub success: usize,
+    pub skipped: usize,
+    pub error: usize,
+    pub mismatched: usize,
+    pub missing: usize,
+    pub would_reembed: usize,
+}
+
+/// Re-embed every `thoughts` row against an explicitly supplied database
+/// handle and embedder — the `thoughts`-table counterpart to
+/// [`run_reembed_kg_with`], used by the standalone `reembed` binary
+/// (`src/bin/reembed.rs`).
+///
+/// **Dry-run contract:** when `dry_run` is true this function performs ZERO
+/// [`crate::embeddings::Embedder::embed`] calls and ZERO writes. It still
+/// walks the same rows and applies the same skip/hygiene classification
+/// (`classify_thought_reembed`), so `would_reembed` is exactly the count of
+/// rows a live run would have re-embedded. The guard sits before the
+/// embedder call and before the `UPDATE`, same ordering as
+/// [`run_reembed_kg_with`].
+///
+/// The embedder and DB handle are parameters rather than being built from
+/// config inside so tests can inject a counting mock embedder and a
+/// disposable database and assert the contract directly, with no live
+/// provider available and no subprocess spawn required — see
+/// `tests/reembed_dry_run_contract.rs`. `src/bin/reembed.rs` itself stays a
+/// thin wrapper: it builds the config/embedder/db connection, calls this
+/// function, and prints the final summary from the returned report.
+pub async fn run_reembed_standalone_with<C>(
+    db: &surrealdb::Surreal<C>,
+    embedder: &dyn crate::embeddings::Embedder,
+    provider: &str,
+    embedding_model: &str,
+    dry_run: bool,
+) -> Result<ReembedStandaloneReport>
+where
+    C: surrealdb::Connection,
+{
+    let embed_dims = embedder.dimensions();
+
+    // Show current distribution by provider/model/dimension
+    println!("\n📊 Current embedding distribution (before re-embed):");
+    let dist_rows: Vec<serde_json::Value> = db
+        .query(
+            "SELECT embedding_provider as provider, embedding_model as model, embedding_dim as dim, count() as count FROM thoughts GROUP BY embedding_provider, embedding_model, embedding_dim ORDER BY count DESC"
+        )
+        .await?
+        .take(0)?;
+    if dist_rows.is_empty() {
+        println!("  (no existing embeddings found)");
+    } else {
+        for r in &dist_rows {
+            let prov = r.get("provider").and_then(|v| v.as_str()).unwrap_or("NONE");
+            let model = r.get("model").and_then(|v| v.as_str()).unwrap_or("NONE");
+            let dim = r.get("dim").and_then(|v| v.as_i64()).unwrap_or(0);
+            let count = r.get("count").and_then(|v| v.as_i64()).unwrap_or(0);
+            println!(
+                "  - {:>6} dims | {:<8} | {:<28} | {:>6} items",
+                dim, prov, model, count
+            );
+        }
+    }
+
+    // Get all thoughts using a raw query with meta::id() to avoid Thing serialization
+    println!("\n📚 Fetching all thoughts from database...");
+    let result = db
+        .query("SELECT meta::id(id) as id, content, (IF type::is_array(embedding) THEN array::len(embedding) ELSE 0 END) as emb_len, embedding_model, embedding_provider, embedding_dim FROM thoughts")
+        .await?;
+    let mut response = result.check()?;
+    let thoughts: Vec<serde_json::Value> = response.take(0)?;
+    println!("✅ Found {} thoughts to process", thoughts.len());
+
+    let mut success_count = 0;
+    let mut skip_count = 0;
+    let mut error_count = 0;
+    let mut mismatched_count = 0;
+    let mut missing_count = 0;
+    let mut would_reembed_count = 0;
+
+    println!("\n🔄 Re-embedding thoughts with configured embedder (OpenAI→BGE fallback)...");
+    for i in 0..thoughts.len() {
+        let thought = &thoughts[i];
+        // Progress indicator
+        if i % 10 == 0 && i > 0 {
+            println!(
+                "  Progress: {}/{} ({}%)",
+                i,
+                thoughts.len(),
+                i * 100 / thoughts.len()
+            );
+        }
+
+        // Extract fields
+        let thought_id = thought["id"].as_str().unwrap_or("unknown").to_string();
+        let content = thought["content"].as_str().unwrap_or("").to_string();
+        let existing_emb_len = thought["emb_len"].as_u64().unwrap_or(0) as usize;
+        let existing_model = thought["embedding_model"].as_str().unwrap_or("");
+
+        // Hygiene counts and the skip decision now come from one shared, pure
+        // classifier so a dry run reports exactly the rows a live run would
+        // re-embed (same predicate, not a parallel reimplementation of it).
+        let decision = classify_thought_reembed(
+            existing_emb_len,
+            existing_model,
+            embed_dims,
+            embedding_model,
+        );
+        match decision {
+            ThoughtReembedDecision::Missing => missing_count += 1,
+            ThoughtReembedDecision::Mismatched => mismatched_count += 1,
+            ThoughtReembedDecision::UpToDate => {}
+        }
+
+        // Skip if already embedded with the current embedder's dimensions AND model matches config model
+        if !decision.needs_embedding() {
+            skip_count += 1;
+            continue;
+        }
+
+        // DRY-RUN GUARD: branch BEFORE the provider call and before the UPDATE.
+        if dry_run {
+            would_reembed_count += 1;
+            if would_reembed_count <= 3 {
+                eprintln!(
+                    "  🔎 [dry_run] Would re-embed {} ({:?}): \"{}\"",
+                    thought_id,
+                    decision,
+                    truncate_for_log(&content)
+                );
+            }
+            continue;
+        }
+
+        // Generate new embedding
+        match embedder.embed(&content).await {
+            Ok(new_embedding) => {
+                if let Err(e) = crate::embeddings::ensure_generated_embedding_dimension(
+                    &new_embedding,
+                    embed_dims,
+                ) {
+                    error_count += 1;
+                    eprintln!(
+                        "  ⚠️  Refusing wrong-dimension embedding for {}: {}",
+                        thought_id, e
+                    );
+                    continue;
+                }
+                // Update thought with new embedding and metadata
+                let query = "UPDATE type::record('thoughts', $id) SET embedding = $embedding, embedding_provider = $provider, embedding_model = $model, embedding_dim = $dims, embedded_at = time::now() RETURN meta::id(id) as id";
+
+                match db
+                    .query(query)
+                    .bind(("id", thought_id.clone()))
+                    .bind(("embedding", new_embedding))
+                    .bind(("provider", provider.to_string()))
+                    .bind(("model", embedding_model.to_string()))
+                    .bind(("dims", embed_dims as i64))
+                    .await
+                {
+                    // `Ok(response)` from `.query().await` only means the driver
+                    // received a response, not that this UPDATE matched a row —
+                    // same per-statement-error semantics as N-2/N-5. Only count a
+                    // success when `.take(0)` yields a non-empty result array for
+                    // the RETURN clause above.
+                    Ok(mut response) => match response.take::<Vec<serde_json::Value>>(0) {
+                        Ok(rows) if !rows.is_empty() => {
+                            success_count += 1;
+                            if i < 3 {
+                                eprintln!(
+                                    "  ✅ Updated {} with provider={}, model={}, dims={}",
+                                    thought_id, provider, embedding_model, embed_dims
+                                );
+                                eprintln!("     Rows: {:?}", rows);
+                            }
+                        }
+                        Ok(_) => {
+                            error_count += 1;
+                            eprintln!(
+                                "  ⚠️  Update for {} matched 0 rows; not counted as success",
+                                thought_id
+                            );
+                        }
+                        Err(e) => {
+                            error_count += 1;
+                            eprintln!(
+                                "  ⚠️  Statement error verifying update for {}: {}",
+                                thought_id, e
+                            );
+                        }
+                    },
+                    Err(e) => {
+                        error_count += 1;
+                        eprintln!("  ⚠️  Failed to update {}: {}", thought_id, e);
+                    }
+                }
+            }
+            Err(e) => {
+                error_count += 1;
+                eprintln!("  ⚠️  Failed to embed content for {}: {}", thought_id, e);
+            }
+        }
+    }
+
+    Ok(ReembedStandaloneReport {
+        expected_dim: embed_dims,
+        dry_run,
+        total: thoughts.len(),
+        success: success_count,
+        skipped: skip_count,
+        error: error_count,
+        mismatched: mismatched_count,
+        missing: missing_count,
+        would_reembed: would_reembed_count,
+    })
+}
+
 /// Re-embed every `kg_entities`/`kg_observations`/`kg_edges` row, resolving the
 /// config, embedder, and database connection from the environment.
 ///

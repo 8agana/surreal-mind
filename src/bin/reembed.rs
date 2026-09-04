@@ -1,7 +1,7 @@
 use anyhow::Result;
 // use chrono::Utc;
 use surreal_mind::embeddings::create_embedder;
-use surreal_mind::maintenance::reembed::{ThoughtReembedDecision, classify_thought_reembed};
+use surreal_mind::maintenance::reembed::run_reembed_standalone_with;
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::Ws;
 use surrealdb::opt::auth::Root;
@@ -17,11 +17,6 @@ fn dry_run_requested(args: &[String], env_value: Option<&str>) -> bool {
         .map(|v| matches!(v, "1" | "true" | "TRUE" | "yes" | "on"))
         .unwrap_or(false);
     env_on || args.iter().any(|a| a == "--dry-run")
-}
-
-/// Truncate for a log line without splitting a UTF-8 code point.
-fn preview(text: &str) -> String {
-    text.chars().take(60).collect()
 }
 
 #[tokio::main]
@@ -63,192 +58,37 @@ async fn main() -> Result<()> {
         .use_db(&config.system.database_db)
         .await?;
 
-    // Show current distribution by provider/model/dimension
-    println!("\n📊 Current embedding distribution (before re-embed):");
-    let dist_rows: Vec<serde_json::Value> = db
-        .query(
-            "SELECT embedding_provider as provider, embedding_model as model, embedding_dim as dim, count() as count FROM thoughts GROUP BY embedding_provider, embedding_model, embedding_dim ORDER BY count DESC"
-        )
-        .await?
-        .take(0)?;
-    if dist_rows.is_empty() {
-        println!("  (no existing embeddings found)");
-    } else {
-        for r in &dist_rows {
-            let prov = r.get("provider").and_then(|v| v.as_str()).unwrap_or("NONE");
-            let model = r.get("model").and_then(|v| v.as_str()).unwrap_or("NONE");
-            let dim = r.get("dim").and_then(|v| v.as_i64()).unwrap_or(0);
-            let count = r.get("count").and_then(|v| v.as_i64()).unwrap_or(0);
-            println!(
-                "  - {:>6} dims | {:<8} | {:<28} | {:>6} items",
-                dim, prov, model, count
-            );
-        }
-    }
-
-    // Get all thoughts using a raw query with meta::id() to avoid Thing serialization
-    println!("\n📚 Fetching all thoughts from database...");
-    let result = db
-        .query("SELECT meta::id(id) as id, content, (IF type::is_array(embedding) THEN array::len(embedding) ELSE 0 END) as emb_len, embedding_model, embedding_provider, embedding_dim FROM thoughts")
-        .await?;
-    let mut response = result.check()?;
-    let thoughts: Vec<serde_json::Value> = response.take(0)?;
-    println!("✅ Found {} thoughts to process", thoughts.len());
-
-    let mut success_count = 0;
-    let mut skip_count = 0;
-    let mut error_count = 0;
-    let mut mismatched_count = 0;
-    let mut missing_count = 0;
-    let mut would_reembed_count = 0;
-
-    println!("\n🔄 Re-embedding thoughts with configured embedder (OpenAI→BGE fallback)...");
-    for i in 0..thoughts.len() {
-        let thought = &thoughts[i];
-        // Progress indicator
-        if i % 10 == 0 && i > 0 {
-            println!(
-                "  Progress: {}/{} ({}%)",
-                i,
-                thoughts.len(),
-                i * 100 / thoughts.len()
-            );
-        }
-
-        // Extract fields
-        let thought_id = thought["id"].as_str().unwrap_or("unknown").to_string();
-        let content = thought["content"].as_str().unwrap_or("").to_string();
-        let existing_emb_len = thought["emb_len"].as_u64().unwrap_or(0) as usize;
-        let existing_model = thought["embedding_model"].as_str().unwrap_or("");
-
-        // Hygiene counts and the skip decision now come from one shared, pure
-        // classifier so a dry run reports exactly the rows a live run would
-        // re-embed (same predicate, not a parallel reimplementation of it).
-        let decision = classify_thought_reembed(
-            existing_emb_len,
-            existing_model,
-            embed_dims,
-            &config.system.embedding_model,
-        );
-        match decision {
-            ThoughtReembedDecision::Missing => missing_count += 1,
-            ThoughtReembedDecision::Mismatched => mismatched_count += 1,
-            ThoughtReembedDecision::UpToDate => {}
-        }
-
-        // Skip if already embedded with the current embedder's dimensions AND model matches config model
-        if !decision.needs_embedding() {
-            skip_count += 1;
-            continue;
-        }
-
-        // DRY-RUN GUARD: branch BEFORE the provider call and before the UPDATE.
-        // This binary previously ignored DRY_RUN entirely: it embedded and wrote
-        // every non-matching row no matter how it was invoked.
-        if dry_run {
-            would_reembed_count += 1;
-            if would_reembed_count <= 3 {
-                eprintln!(
-                    "  🔎 [dry_run] Would re-embed {} ({:?}): \"{}\"",
-                    thought_id,
-                    decision,
-                    preview(&content)
-                );
-            }
-            continue;
-        }
-
-        // Generate new embedding
-        match embedder.embed(&content).await {
-            Ok(new_embedding) => {
-                if let Err(e) = surreal_mind::embeddings::ensure_generated_embedding_dimension(
-                    &new_embedding,
-                    embed_dims,
-                ) {
-                    error_count += 1;
-                    eprintln!(
-                        "  ⚠️  Refusing wrong-dimension embedding for {}: {}",
-                        thought_id, e
-                    );
-                    continue;
-                }
-                // Update thought with new embedding and metadata
-                let (provider, model) = (
-                    config.system.embedding_provider.clone(),
-                    config.system.embedding_model.clone(),
-                );
-                let query = "UPDATE type::record('thoughts', $id) SET embedding = $embedding, embedding_provider = $provider, embedding_model = $model, embedding_dim = $dims, embedded_at = time::now() RETURN meta::id(id) as id";
-
-                match db
-                    .query(query)
-                    .bind(("id", thought_id.clone()))
-                    .bind(("embedding", new_embedding))
-                    .bind(("provider", provider.clone()))
-                    .bind(("model", model.clone()))
-                    .bind(("dims", embed_dims as i64))
-                    .await
-                {
-                    // `Ok(response)` from `.query().await` only means the driver
-                    // received a response, not that this UPDATE matched a row —
-                    // same per-statement-error semantics as N-2/N-5. Only count a
-                    // success when `.take(0)` yields a non-empty result array for
-                    // the RETURN clause above.
-                    Ok(mut response) => match response.take::<Vec<serde_json::Value>>(0) {
-                        Ok(rows) if !rows.is_empty() => {
-                            success_count += 1;
-                            if i < 3 {
-                                eprintln!(
-                                    "  ✅ Updated {} with provider={}, model={}, dims={}",
-                                    thought_id, provider, model, embed_dims
-                                );
-                                eprintln!("     Rows: {:?}", rows);
-                            }
-                        }
-                        Ok(_) => {
-                            error_count += 1;
-                            eprintln!(
-                                "  ⚠️  Update for {} matched 0 rows; not counted as success",
-                                thought_id
-                            );
-                        }
-                        Err(e) => {
-                            error_count += 1;
-                            eprintln!(
-                                "  ⚠️  Statement error verifying update for {}: {}",
-                                thought_id, e
-                            );
-                        }
-                    },
-                    Err(e) => {
-                        error_count += 1;
-                        eprintln!("  ⚠️  Failed to update {}: {}", thought_id, e);
-                    }
-                }
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("  ⚠️  Failed to embed content for {}: {}", thought_id, e);
-            }
-        }
-    }
+    // All behaviour (including the dry-run contract) lives in
+    // `run_reembed_standalone_with`, so this binary and any future callers
+    // cannot drift apart from what the tests exercise. This binary's job is
+    // just: parse args/env, build config/embedder/db, call the runner, print
+    // the final summary from the returned report.
+    let report = run_reembed_standalone_with(
+        &db,
+        embedder.as_ref(),
+        &config.system.embedding_provider,
+        &config.system.embedding_model,
+        dry_run,
+    )
+    .await?;
 
     // Final statistics
     println!("\n{}", "=".repeat(50));
     if dry_run {
         println!("📊 RE-EMBEDDING DRY RUN COMPLETE (no provider calls, no writes)");
-        println!("🔎 Would re-embed: {} thoughts", would_reembed_count);
+        println!("🔎 Would re-embed: {} thoughts", report.would_reembed);
     } else {
         println!("📊 RE-EMBEDDING COMPLETE!");
     }
-    println!("✅ Successfully re-embedded: {} thoughts", success_count);
+    println!("✅ Successfully re-embedded: {} thoughts", report.success);
     println!(
         "⏭️  Skipped (already target dims={} & model): {} thoughts",
-        embed_dims, skip_count
+        report.expected_dim, report.skipped
     );
-    println!("❌ Errors: {} thoughts", error_count);
-    println!("🧪 Mismatched dims/model: {}", mismatched_count);
-    println!("∅ Missing embeddings: {}", missing_count);
-    println!("🎯 Target embedding dimensions: {}", embed_dims);
+    println!("❌ Errors: {} thoughts", report.error);
+    println!("🧪 Mismatched dims/model: {}", report.mismatched);
+    println!("∅ Missing embeddings: {}", report.missing);
+    println!("🎯 Target embedding dimensions: {}", report.expected_dim);
     println!("{}", "=".repeat(50));
 
     Ok(())
@@ -256,7 +96,7 @@ async fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{dry_run_requested, preview};
+    use super::dry_run_requested;
 
     #[test]
     fn dry_run_flag_is_honored() {
@@ -286,12 +126,5 @@ mod tests {
     fn unrelated_args_do_not_enable_dry_run() {
         let args = vec!["--verbose".to_string(), "dry-run".to_string()];
         assert!(!dry_run_requested(&args, None));
-    }
-
-    #[test]
-    fn preview_does_not_split_multibyte_characters() {
-        let text = "\u{e9}".repeat(100);
-        let out = preview(&text);
-        assert_eq!(out.chars().count(), 60);
     }
 }
