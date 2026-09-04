@@ -34,6 +34,78 @@ contract test asserting zero calls into
 option on `remini` for capturing dry-run baselines before a
 change like this one.
 
+### Repair pass — Codex review #168 (2026-09-03)
+
+Independent review of the deploy at `fba5ac2` returned BLOCK. Items 1–5 are
+repaired in this tree and are described below. Item 7 (the deploy backup's
+`ROLLBACK.md`, which prescribed a destructive `git reset --hard` against a
+production checkout that had uncommitted work) was rewritten in place under
+`surreal-mind-backups/20260903-fed734b8f/`, outside git, and so leaves no
+commit here. No other finding was addressed in this pass.
+
+- **Item 1 — `scripts/sm_health.sh` ignored `DRY_RUN`.** `maintain(subcommand=health,
+  dry_run=true)` spawns the script with `DRY_RUN=1`, but the script issued its
+  stale-entity `UPDATE` regardless. Added a truthiness-matched guard
+  (`1|true|TRUE|True|yes|YES|on|ON`, matching the crate's `bool_env` helpers)
+  that exits 0 before any `surreal sql` call, plus
+  `scripts/dryrun_contract/test_health_dryrun.sh` with a positive and a
+  negative control. REMini's own health shortcut in `src/bin/remini.rs` was
+  already safe — it intercepts `dry_run` in Rust and never invokes the script.
+- **Item 2 — both re-embed paths called the provider under dry-run.**
+  `run_reembed_kg` embedded every candidate row and only guarded the write, and
+  `src/bin/reembed.rs` read no dry-run flag at all. Split `run_reembed_kg` into
+  a thin env-resolving wrapper plus an injectable `run_reembed_kg_with` core,
+  and added a dry-run branch immediately before each of the three
+  `embedder.embed()` calls; the pre-existing `if !dry_run` write guards are kept
+  as a second line of defence. `src/bin/reembed.rs` now honours both
+  `--dry-run` and `DRY_RUN` via a shared pure classifier. Covered by
+  `tests/reembed_dry_run_contract.rs` (counting embedder, before/after snapshot,
+  live negative control), which fails against the pre-fix code.
+- **Item 3 — the contract harness relied on the provider default rather than
+  forcing it.** `scripts/test_dryrun_contract.sh` now forces
+  `SM_AGENT_PROVIDER=antigravity` at the top of the crate's precedence chain,
+  PATH-shadows a fake `gemini` stub that logs and exits non-zero (Gemini has no
+  env redirect the way `ANTIGRAVITY_CLI_BIN` does), asserts both fake-CLI call
+  logs are empty, asserts `OPENAI_API_KEY` is an obviously-fake value, and
+  replaces the count-only check with an exact comparison against the six
+  canonical task names each with `success:true`.
+- **Item 4 — the dry-run fixture resurrected a removed table.**
+  `scripts/dryrun_contract/schema.surql` carried a 28-line `agent_jobs` DDL
+  block for a table this branch deleted. Removed it and dropped `agent_jobs`
+  from `snapshot_db.py`'s `TABLES`; a statement-by-statement diff against
+  `initialize_schema()` confirmed it was the only table-level discrepancy. The
+  task README's "a copy of the DDL in schema.rs" claim is now anchored to
+  `fba5ac2` and names the two deliberate differences that remain.
+- **Item 5 — documentation left stale by the removal.** `README.md`'s
+  "Tool Surface (16)" heading, `docs/AGENTS/arch.md`'s Agent Jobs line, and the
+  never-implemented `docs/tasks/workspace-alias-resolution.md` (now banner-
+  fenced, body preserved) were corrected, along with this entry's own
+  overstated claim that the client stack survived "untouched" —
+  `src/clients/antigravity.rs` lost 9 lines. `src/tools/howto.rs` gained the
+  missing `test_notification` help arm.
+
+**Deferrals carried forward, as labelled by the repairing workers:**
+
+- No offline embedding provider exists, so nothing that requires constructing
+  `SurrealMindServer` was exercised end to end; item 1 was verified by invoking
+  the script directly under the identical env contract `handle_spawn_script`
+  uses. `src/embeddings.rs` hardcodes the OpenAI endpoint with no base-URL
+  override, so item 3's OpenAI leg is a fake-key assertion rather than a
+  counting stub.
+- No whole-suite `RUN_DB_TESTS=1 --features db_integration` run: the worktree
+  `.env` points at production (`127.0.0.1:8000`, `surreal_mind`/`consciousness`),
+  so DB runs were scoped to the new contract test against the throwaway
+  `127.0.0.1:8100` instance, which additionally refuses any URL containing
+  `:8000`.
+- `run_reembed` (thoughts) and `run_kg_embed` were already correct and were left
+  untouched; they have no counting-embedder test because they build their own
+  embedder from config. `src/bin/reembed.rs` has unit tests on its pure helpers
+  plus a recorded manual end-to-end run, but no CI-visible DB test.
+- Pre-existing and out of scope: `scripts/sm_health.sh`'s `duration::days(90)`
+  type mismatch against SurrealDB 3.2.x (reproduced against the pre-fix script),
+  and `run_kg_embed`'s `&text[..min(60)]` log truncation, which can panic on a
+  UTF-8 boundary.
+
 ## [Unreleased] - REMini scheduler deduplication
 
 - **Single 01:00 owner:** `dev.legacymind.nightly-shift` remains the canonical
