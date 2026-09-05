@@ -147,8 +147,12 @@ check in the readiness loop, not a stop action:
 ```
 
 **Related, in-scope tightening:** to keep the overall failed-ready-to-
-stopped budget small, the readiness poll bound was reduced from 40x0.5s
-(20s) to 8x0.3s (2.4s) -- every real `surreal start memory` instance in
+stopped budget small, the readiness poll SLEEP BUDGET was reduced from
+40x0.5s (20s) to 8x0.3s (2.4s of sleep). This is a sleep-budget figure, NOT
+a wall-clock deadline: each iteration also runs a synchronous `surreal
+is-ready` subprocess with no measured/enforced timeout of its own, so
+actual wall-clock time is this sleep budget plus however long those
+`is-ready` invocations take. Every real `surreal start memory` instance in
 every proof run in this doc became ready in well under 1s, so this remains
 generous for the happy path.
 
@@ -171,9 +175,9 @@ stub attempt 1: binding port 8380, ignoring TERM (exec'd python, no separate chi
 [test_db.sh] pid 94727 still alive 5s after TERM, sending KILL
 [test_db.sh] confirmed: surreal pid 94727 is not running
 ```
--- readiness detection (2.4s bound) plus the TERM-wait-then-KILL cycle
-(5s bound) resolves this ONE stubborn attempt in ~7s, not an unbounded
-hang. (The wrapper's total exit time was 16s because it then had to
+-- readiness detection (2.4s sleep budget, not wall-clock -- see above)
+plus the TERM-wait-then-KILL cycle (5s bound) resolves this ONE stubborn
+attempt in ~7s, not an unbounded hang. (The wrapper's total exit time was 16s because it then had to
 exhaust the remaining 19 candidate ports, each of which the stub fails
 fast on by design (per point 3 above) -- that 16s reflects the port-scan
 policy from Part 2, not the stop mechanism; the stop mechanism itself,
@@ -273,43 +277,57 @@ implication) is in the task's working notes, not reproduced here in full:
 | `ANTIGRAVITY_CLI_BIN` / `AGY_CLI_BIN` | `src/clients/antigravity.rs:79-80` | which binary `AntigravityClient` shells out to | `ANTIGRAVITY_CLI_BIN` SET to a fake stub (first in the `.or_else` chain, so `AGY_CLI_BIN` never matters) |
 | `OPENAI_API_KEY` / `GEMINI_API_KEY` | `src/config.rs:427`; not read anywhere for the latter (verified empty grep) | embedder auth / defensive | both explicitly SET to obviously-fake values |
 
-### Dotenv gap: CLOSED (#216)
+### Dotenv gap: CLOSED (#216), fallback semantics CORRECTED (#222)
 
-The previous pass in this task documented three bare, unconditional
-`dotenvy::dotenv()` calls that did not honor `SURR_ENV_FILE` and disclosed
-the gap rather than shipping a broken fix (an attempted cwd-redirect had
-been tried and empirically disproven -- see the git history of this file
-for that account). Codex ruled closing it in-scope. Fixed properly this
-pass:
-
-**One shared resolution rule**, `pub fn load_env_file()` in `src/config.rs`:
+The previous pass in this task closed the dotenv gap by routing every
+reachable dotenv-loading call site through ONE shared function that,
+when `SURR_ENV_FILE` was unset, called bare `dotenvy::dotenv()` for
+every caller including `Config::load()`. Codex's #222 review caught that
+this silently changed a PRODUCTION behavior: `Config::load()`'s
+pre-#216 unset-path was never a bare `dotenvy::dotenv()` -- see `git show
+73d5831:src/config.rs`:
 ```rust
-pub fn load_env_file() {
+// 2) ./.env
+// 3) ../.env (repo root when running from crate dir)
+let _ = dotenvy::from_path(".env");
+let core_present =
+    std::env::var("SURR_DB_URL").is_ok() || std::env::var("OPENAI_API_KEY").is_ok();
+if !core_present {
+    let _ = dotenvy::from_path("../.env");
+}
+```
+**Old vs new fallback rule, in two lines:** OLD (`Config::load`, restored
+this pass) = local `.env`, then `../.env` ONLY if neither `SURR_DB_URL`
+nor `OPENAI_API_KEY` ended up present, never further up. WRONG (#216's
+mistake, since reverted) = `dotenvy::dotenv()`'s unconditional upward walk,
+which can search past the parent and does not re-check the core-vars
+condition.
+
+**Repair (#222):** the shared rule is narrowed to ONLY the explicit-pin
+case (`SURR_ENV_FILE` set -> load that path, no fallback, ever -- this
+part genuinely was, and remains, identical across every caller):
+```rust
+pub fn load_env_file_or(unset_fallback: impl FnOnce()) {
     if let Ok(env_path) = std::env::var("SURR_ENV_FILE") {
         let _ = dotenvy::from_path(env_path);
     } else {
-        let _ = dotenvy::dotenv();
+        unset_fallback();
     }
 }
 ```
-If `SURR_ENV_FILE` is set, load ONLY that path -- no fallback, ever. If
-unset, ordinary `dotenvy::dotenv()` discovery (unchanged default
-behavior). Every dotenv-loading call site reachable by the `db_integration`
-test suite now routes through it:
-- `src/config.rs`'s own `Config::load()` (replaced its previous two-branch
-  `.env`/`../.env` inline logic -- a strict generalization for this
-  deployment, since `dotenvy::dotenv()`'s unbounded upward walk finds
-  everything that 2-hop check found and more).
-- `src/embeddings.rs:238` (`create_embedder`, reached by every test that
-  builds a real `SurrealMindServer`).
-- `src/lib.rs:24` (`pub fn load_env()`).
-- `tests/gemini_client_integration.rs:9` (was unconditional, before that
-  test's own `RUN_GEMINI_TESTS` check).
-- `src/bin/reembed.rs:25` -- reachable because `tests/
-  reembed_bin_dry_run.rs` spawns the compiled `reembed` binary as a
-  subprocess, which inherits this process's env (including a pinned
-  `SURR_ENV_FILE`) but has its own `main()` entry point with its own
-  independent dotenv call.
+Each caller now supplies its OWN pre-#216 unset behavior as the closure:
+- `Config::load()` -> `load_env_file_or(load_env_file_config_load_unset_rule)`,
+  where `load_env_file_config_load_unset_rule` is the two-hop rule above,
+  extracted to its own named function verbatim from the pre-#216 code.
+- `src/embeddings.rs:238`, `src/lib.rs:24`, `tests/
+  gemini_client_integration.rs:9` (was unconditional, before that test's
+  own `RUN_GEMINI_TESTS` check), `src/bin/reembed.rs:25` (reachable
+  because `tests/reembed_bin_dry_run.rs` spawns the compiled `reembed`
+  binary as a subprocess) -> `load_env_file()`, a thin convenience wrapper
+  around `load_env_file_or(|| { let _ = dotenvy::dotenv(); })` -- these
+  four callers were ALREADY bare `dotenvy::dotenv()` before #216 (verified
+  against `git show 73d5831`), so nothing about their unset-path behavior
+  changes here; only the explicit-pin branch they now share was ever new.
 
 **Deliberately left unconverted** (grepped, flagged, not silently
 skipped): 11 other `src/bin/*.rs` binaries (`admin` x5, `kg_populate`,
@@ -317,65 +335,67 @@ skipped): 11 other `src/bin/*.rs` binaries (`admin` x5, `kg_populate`,
 `kg_apply_from_plan`, `kg_debug_tool`, `gem_rethink`, `migration`,
 `reembed_kg`) also call bare `dotenvy::dotenv()` at their own `main()`.
 None are spawned by anything in the `db_integration` test suite (verified:
-`grep -rn 'CARGO_BIN_EXE_' tests/` finds only `CARGO_BIN_EXE_reembed` and
-`CARGO_BIN_EXE_surreal-mind`), so converting them was an unrelated,
-unbounded blast-radius change to operational CLI tools (`admin` in
-particular runs against live production per AGENTS.md) that this task did
-not ask for and did not touch.
+`grep -rn 'CARGO_BIN_EXE_' tests/` finds only `CARGO_BIN_EXE_reembed`,
+`CARGO_BIN_EXE_surreal-mind`, and `CARGO_BIN_EXE_env_resolution_probe`),
+so converting them remains an unrelated, unbounded blast-radius change to
+operational CLI tools (`admin` in particular runs against live production
+per AGENTS.md) that this task did not ask for and did not touch.
 
-**Control (b) -- normal behavior preserved**, permanent unit tests in
-`src/config.rs`'s `mod tests` (both pass under plain `cargo test`,
-5-run-stable):
-- `load_env_file_without_surr_env_file_falls_back_to_default_dotenv_discovery`
-  -- with `SURR_ENV_FILE` unset, writes a decoy `.env` directly at
-  `env!("CARGO_MANIFEST_DIR")` (a compile-time constant, so **chdir-
-  independent** -- no `std::env::set_current_dir` call anywhere in this
-  test), calls `load_env_file()`, asserts the decoy's variable appears,
-  then removes the file (cleanup happens **before** the assertion so a
-  failing test can never leave it behind).
-- `load_env_file_with_surr_env_file_set_ignores_crate_root_decoy_and_keeps_present_key`
-  -- control (a) at the Rust level: with `OPENAI_API_KEY` already set to a
-  fake wrapper-style value (mirrors the wrapper's own export) and
-  `SURR_ENV_FILE` pinned to an empty scratch file, a decoy `.env` at the
-  crate root defining `ALLOW_NETWORK_EMBED=1` and a different fake
-  `OPENAI_API_KEY=sk-decoy-...` is proven completely ignored: the decoy's
-  probe variable never appears, `ALLOW_NETWORK_EMBED` never appears, and
-  `OPENAI_API_KEY` stays exactly `"sk-fake-testdb"`. Prints the resolved
-  key's first 8 characters via `eprintln!` (synthetic test values only,
-  never a real key) as the "which key did it resolve to" evidence.
+**Tests rebuilt as private-temp SUBPROCESS controls (#222 item 2).** The
+first version of these tests lived in `src/config.rs`'s own `mod tests`,
+wrote a decoy `.env` directly under `CARGO_MANIFEST_DIR` (`exists()` then
+`write()` -- not atomic, not exclusive against another concurrent `cargo`
+invocation or a live command), and called `std::env::set_var`/`remove_var`
+on the shared test process (removing `ALLOW_NETWORK_EMBED` rather than
+restoring an absence, and mutating env before the very `exists()` hazard
+check that was supposed to refuse touching a real file). All of that is
+gone. Every dotenv-resolution test now lives in `tests/
+config_env_resolution.rs` and follows the same shape: build a private
+`mktemp`-style temp tree (never a path under this checkout), spawn the
+compiled `src/bin/env_resolution_probe.rs` binary (a tiny test-only helper
+that prints `NAME=value`/`NAME=ABSENT` for the vars a test cares about,
+then exits -- no DB connection, no provider call, no `surreal_mind.toml`
+read) with `Command::env_clear()` plus only the entries the test wants,
+and `current_dir` pointed at a directory inside that private tree. No
+file under the checkout is written by any test; no `std::env::set_var`/
+`remove_var` runs in the test process; no Mutex is needed (each test gets
+its own subprocess with its own private env and its own private temp
+tree, so there is nothing left to race).
 
-  **Both tests mutate process-wide env vars and a shared crate-root file,
-  so they're serialized against each other with a `static
-  LOAD_ENV_FILE_TEST_LOCK: Mutex<()>`.** This was NOT optional: the first
-  version of these tests (without also guarding the pre-existing
-  `test_config_loading`, which calls `Config::load()` unconditionally with
-  no env control of its own) was OBSERVED to fail exactly this way --
-  `test_config_loading`, running concurrently on another thread in the
-  same `cargo test --lib` process, read the decoy `.env` sitting at the
-  crate root via its own unguarded `Config::load()` call before the decoy
-  test had pinned `SURR_ENV_FILE`, leaking the probe variable into the
-  shared process environment. Fixed by adding the same lock to
-  `test_config_loading`; verified stable across 5 consecutive
-  `cargo test --lib` runs afterward. (Other `Config::load()`/
-  `create_embedder` call sites in this crate's own `#[cfg(test)]` modules
-  -- `src/http.rs:597`, `src/maintenance/reembed.rs:1924` -- are gated
-  behind `RUN_DB_TESTS` and/or `#[cfg(feature = "db_integration")]`, so
-  they don't run and can't race under a bare `cargo test`; under the
-  wrapper's `--features db_integration` invocation they run in entirely
-  separate OS processes -- each `tests/*.rs` file and the lib are
-  independent binaries with no shared mutable env -- so they were never a
-  race risk regardless.)
+Seven tests, `cargo test --test config_env_resolution`, 7/7 pass,
+3-consecutive-runs stable:
+- `config_load_rule_local_incomplete_falls_back_to_parent` -- local `.env`
+  present but lacking both core vars -> `../.env` IS consulted and its
+  `SURR_DB_URL` appears.
+- `config_load_rule_local_complete_never_consults_parent` -- local `.env`
+  sets `SURR_DB_URL` -> a marker that ONLY exists in the parent `.env`
+  never appears (parent never opened at all).
+- `config_load_rule_no_local_no_parent_never_searches_grandparent` -- no
+  local, no parent, only a grandparent `.env` with `SURR_DB_URL` -> stays
+  `ABSENT` (the old rule never searches past the immediate parent).
+- `config_load_rule_explicit_empty_pin_ignores_the_whole_tree` -- local,
+  parent, AND grandparent all define `SURR_DB_URL`, but `SURR_ENV_FILE` is
+  pinned to an empty file -> `ABSENT` (no fallback, ever, once pinned).
+- `config_load_rule_missing_explicit_pin_with_nothing_on_disk_resolves_nothing`
+  -- `SURR_ENV_FILE` genuinely unset, nothing anywhere in the tree -> a
+  clean, unsurprising no-op baseline.
+- `control_b_bare_dotenv_unset_still_discovers_local_env` -- the
+  `load_env_file()` policy (the other four callers): `SURR_ENV_FILE`
+  unset, local `.env` present -> its variable appears, matching
+  `dotenvy::dotenv()`'s unchanged default.
+- `control_a_shared_pin_ignores_decoy_and_keeps_already_set_key` -- the
+  shared explicit-pin branch: `SURR_ENV_FILE` pinned to an empty file, a
+  decoy `.env` in the same directory defines `ALLOW_NETWORK_EMBED=1` and a
+  different `OPENAI_API_KEY`, while the child's OWN env (set via
+  `Command::env`, never the test process's own env) already carries
+  `OPENAI_API_KEY=sk-fake-testdb` -- the decoy's marker and
+  `ALLOW_NETWORK_EMBED` both come back `ABSENT`, and `OPENAI_API_KEY`
+  stays exactly the value the test set on the CHILD, proving both "the
+  pin wins, no fallback" and "an already-present var is never overridden"
+  independently, with only synthetic key material anywhere.
 
-**Control (a) -- script level, using the actual wrapper:** created a real
-decoy `.env` at the crate root (`ALLOW_NETWORK_EMBED=1` /
-`OPENAI_API_KEY=sk-decoy`), ran `scripts/test_db.sh --test mcp_integration
--- --nocapture`. Log confirmed `SURR_ENV_FILE=<scratch>/empty.env (size: 0
-bytes)`, `ALLOW_NETWORK_EMBED unset`, both gated tests printed `skipped:
-reaches api.openai.com...`, 6/6 passed. Removed the decoy immediately
-after (`git status --short` showed only the expected source files
-modified, decoy gone). `~/Projects/LegacyMind/.env` (the one real ancestor
-`.env` this machine has) was never touched, read, or written by anything
-in this pass.
+`~/Projects/LegacyMind/.env` (the one real ancestor `.env` this machine
+has) was never touched, read, or written by anything in this pass.
 
 ### Control: hostile inherited environment
 
@@ -437,19 +457,27 @@ seed themselves independently of this wrapper (see the file:line contract
 above) -- unaffected by anything in this pass.
 
 ## Final proof run (2026-09-05, Studio, `surreal-mind-wt-fed93bfee` @
-`fed-93bfee/test-db-wrapper`, this commit, #216)
+`fed-93bfee/test-db-wrapper`, this commit, #222)
 
 - `cargo fmt --check` -- clean.
 - `cargo clippy --all-targets --features db_integration -- -D warnings` --
   clean.
+- `cargo test --test config_env_resolution` -- **7 passed, 0 failed**,
+  stable across 3 consecutive runs; `git status --short` empty after
+  (confirms no test wrote into the checkout).
 - `cargo test` (DB-free, no features) -- clean across every target; lib
-  unit tests **74 passed, 0 failed** (72 + the 2 new `load_env_file` tests),
-  stable across 5 consecutive runs.
-- `scripts/test_db.sh --port 8420` (full default run, fresh instance,
-  sanitized env, no seed, no network) -- **exit 0**, every one of 17 test
-  binaries + lib (74) + doctests green or explicitly skipped by its own gate.
-  Cleanup confirmed: `sending TERM to surreal pid 96083` -> `confirmed:
-  surreal pid 96083 is not running`. `pgrep` after: only pid 42064.
+  unit tests **70 passed, 0 failed** (down from 74: the 2 racy
+  crate-root-writing tests from #216 are gone, replaced by the 7
+  subprocess tests above, which is why the net count differs from a simple
+  74-2+7 -- see the per-target counts in this file's own build log).
+- `scripts/test_db.sh --port 8500` (full default run under
+  `RUN_DB_TESTS=1 --features db_integration`, fresh instance, sanitized
+  env, no seed, no network) -- **exit 0**, every one of 18 test binaries
+  (17 from #216 plus the new `config_env_resolution`, 7/7) + lib (72
+  under this feature set) + doctests green or explicitly skipped by its
+  own gate. Cleanup confirmed: `sending TERM to surreal pid 98365` ->
+  `confirmed: surreal pid 98365 is not running`. `pgrep` after: only pid
+  42064.
 - Refusal, re-proven after all changes: `SURR_TEST_DB_URL=127.0.0.1:8000
   scripts/test_db.sh` -> exit 3, `pgrep -fl "surreal start memory"`
   identical (only pid 42064) before and after.

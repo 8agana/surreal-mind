@@ -361,11 +361,17 @@ while :; do
   DB_PID=$!
   log "spawned pid $DB_PID for candidate port $CANDIDATE"
 
-  # Bounded readiness wait: 8 x 0.3s = 2.4s max. Every observed real
-  # `surreal start memory` instance in this task's proof runs became ready
-  # in well under 1s, so this is generous for the happy path while keeping
-  # the OVERALL failed-ready-to-stopped budget small (this bound + stop_db's
-  # own <=5s TERM-wait bound), per the stubborn-child control below.
+  # Bounded readiness wait: 8 iterations x 0.3s sleep = 2.4s of SLEEP
+  # BUDGET, not a wall-clock deadline -- each iteration also runs a
+  # synchronous `surreal is-ready` subprocess whose own duration is not
+  # bounded by this loop (it has no measured/enforced timeout of its own),
+  # so actual wall-clock time is this sleep budget PLUS however long those
+  # `is-ready` invocations take. Every observed real `surreal start memory`
+  # instance in this task's proof runs became ready in well under 1s, so
+  # this remains generous for the happy path while keeping the readiness
+  # phase of the overall failed-ready-to-stopped budget small (this budget
+  # + stop_db's own <=5s TERM-wait bound), per the stubborn-child control
+  # below.
   READY=0
   for _ in $(seq 1 8); do
     if ! kill -0 "$DB_PID" 2>/dev/null; then
