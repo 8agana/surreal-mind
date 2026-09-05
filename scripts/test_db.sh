@@ -45,7 +45,7 @@
 #                       the default 8100 (or $TEST_DB_PORT). Must be numeric,
 #                       1024-65535.
 #     [cargo-test-args...] forwarded verbatim to
-#       `cargo test --features db_integration --no-fail-fast <args>`, e.g.
+#       `cargo test --features db_integration,test-probe --no-fail-fast <args>`, e.g.
 #       `--test reembed_dry_run_contract` to target one integration test
 #       binary, or a test-name substring filter.
 #
@@ -270,7 +270,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
   else
     log "  --allow-network NOT passed: ALLOW_NETWORK_EMBED stays unset, the 3 network-reaching tests will skip"
   fi
-  log "  would run: cargo test --features db_integration --no-fail-fast $(cargo_args_display)"
+  log "  would run: cargo test --features db_integration,test-probe --no-fail-fast $(cargo_args_display)"
   exit 0
 fi
 
@@ -514,13 +514,13 @@ fi
 # only in that scratch directory was not found). So that redirect bought
 # nothing and has been removed -- see the header comment's "ACKNOWLEDGED
 # RESIDUAL GAP" for what actually protects against this and what doesn't.
-log "running: cargo test --features db_integration --no-fail-fast $(cargo_args_display)"
+log "running: cargo test --features db_integration,test-probe --no-fail-fast $(cargo_args_display)"
 cd "$REPO_ROOT"
 set +e
 if [ "${#CARGO_ARGS[@]}" -gt 0 ]; then
-  cargo test --features db_integration --no-fail-fast "${CARGO_ARGS[@]}"
+  cargo test --features db_integration,test-probe --no-fail-fast "${CARGO_ARGS[@]}"
 else
-  cargo test --features db_integration --no-fail-fast
+  cargo test --features db_integration,test-probe --no-fail-fast
 fi
 CARGO_RC=$?
 set -e

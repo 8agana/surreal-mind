@@ -69,3 +69,12 @@ tempfile = "3.10"
 default = []
 # Enables DB-backed integration tests (not enabled by default)
 db_integration = []
+# Enables the test-only env_resolution_probe binary (fed-93bfee #225). NOT
+# enabled by default -- required-features on that [[bin]] entry below means
+# a plain `cargo build`/`cargo build --release` never produces this binary.
+test-probe = []
+
+[[bin]]
+name = "env_resolution_probe"
+path = "src/bin/env_resolution_probe.rs"
+required-features = ["test-probe"]

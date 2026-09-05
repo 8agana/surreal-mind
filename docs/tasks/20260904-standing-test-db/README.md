@@ -485,3 +485,133 @@ above) -- unaffected by anything in this pass.
 `pid 42064` was never reused, signaled, or touched across any run in any
 pass of this task, including every stray process spawned and cleaned up
 while iterating on the stubborn-child control stub itself.
+
+---
+
+## #225: `env_resolution_probe` was a shippable credential-leak vector -- fixed
+
+The `#222` pass introduced `src/bin/env_resolution_probe.rs` as a test-only
+helper spawned by `tests/config_env_resolution.rs`. Because Cargo
+auto-discovers every `src/bin/*.rs` file as an ordinary `[[bin]]` target,
+this file was **also** a normal production binary: a plain `cargo build
+--release` produced `target/release/env_resolution_probe`, and its old
+implementation printed the *actual resolved value* of `OPENAI_API_KEY` (and
+`SURR_DB_URL`) to stdout -- a credential-leak vector shipped in a release
+binary that nothing in this crate ever intentionally invoked outside a
+sanitized test subprocess. Codex's #225 review caught this.
+
+Fixed two ways, both required:
+
+1. **Non-default Cargo feature gate.** `Cargo.toml` gained a `test-probe`
+   feature and an explicit `[[bin]]` entry for `env_resolution_probe` with
+   `required-features = ["test-probe"]`
+   (`~/Projects/LegacyMind/surreal-mind-wt-fed93bfee/Cargo.toml`). A plain
+   `cargo build` / `cargo build --release` (default features) no longer
+   produces this binary at all -- verified below. `tests/
+   config_env_resolution.rs` is now itself gated with `#![cfg(feature =
+   "test-probe")]` (line 1 of that file) so it does not even attempt to
+   compile -- and does not reference `env!("CARGO_BIN_EXE_
+   env_resolution_probe")` -- under default features. `scripts/test_db.sh`
+   now passes `--features db_integration,test-probe` at every `cargo test`
+   invocation site (4 occurrences: the doc comment, the `--dry-run` log
+   line, the "running:" log line, and the actual invocation), so the
+   wrapper still exercises this suite.
+
+2. **Value-free output.** `src/bin/env_resolution_probe.rs` was rewritten
+   end to end (see its module doc comment, lines 1-47) so it never prints an
+   actual environment value under any circumstance. It only ever prints one
+   of four fixed verdict strings: `NAME=PRESENT`, `NAME=ABSENT`,
+   `NAME_EQ=MATCHES_EXPECTED`, `NAME_EQ=DIFFERS` (`print_presence` at
+   src/bin/env_resolution_probe.rs:59-64; `print_equality` at
+   src/bin/env_resolution_probe.rs:70-77). Equality checks compare against
+   an `expected` value the *caller* supplies on argv (always a synthetic
+   test value chosen by the test itself, never read from a real
+   environment by this program) -- the probe never echoes what it read.
+
+   Grep for every `println!`/`eprintln!` in the final source (proof this
+   holds):
+   ```
+   61:        Ok(_) => println!("{name}=PRESENT"),
+   62:        Err(_) => println!("{name}=ABSENT"),
+   76:    println!("{name}_EQ={verdict}");
+   92:            eprintln!(
+   107:            eprintln!("env_resolution_probe: ignoring malformed equality arg {arg:?} (expected NAME=expected)");
+   ```
+   Every call interpolates only a `name` (an argv-supplied variable *name*,
+   never a value), a literal verdict string, or a static/argv-echoed
+   diagnostic -- none reads `std::env::var(..)` and prints the `Ok(..)`
+   payload.
+
+   Proof the release build no longer ships it: after `cargo build
+   --release` (default features, no `--features` flag), `ls target/release
+   | grep -c env_resolution_probe` -> `0`.
+
+### Two missing controls added (#225 item 2)
+
+`tests/config_env_resolution.rs` gained 4 new tests (11 total, up from 7),
+covering the two control gaps Codex named:
+
+- **(a) Explicit nonexistent pin, decoys on both sides.**
+  `config_load_rule_explicit_nonexistent_pin_ignores_local_and_parent_decoys`
+  and `bare_dotenv_explicit_nonexistent_pin_ignores_local_decoy` set
+  `SURR_ENV_FILE=/private/tmp/does-not-exist-<pid>` (a path that never
+  exists) with a decoy `.env` planted in both the probe's cwd and its
+  parent directory, and assert every probed name comes back `ABSENT` under
+  both the `config-load` and `bare-dotenv` policies. This is distinct from
+  the pre-existing `config_load_rule_missing_explicit_pin_with_nothing_on_
+  disk_resolves_nothing`, which leaves `SURR_ENV_FILE` genuinely *unset* --
+  both are kept because both are meaningful (unset-pin vs. pointed-at-
+  nothing are different code paths through `load_env_file_or`).
+
+- **(b) Already-present core env suppresses the parent, and the inverse.**
+  `config_load_rule_core_env_already_present_in_child_env_suppresses_
+  parent` passes `SURR_DB_URL` and `OPENAI_API_KEY` directly in the
+  spawned child's env map (not via any `.env` file), gives it a local
+  `.env` that lacks both, and a parent `.env` carrying a `PARENT_ONLY_
+  MARKER` -- and asserts the marker comes back `ABSENT` (the parent file is
+  never consulted once both core vars are already present, per the
+  restored `Config::load` rule). `config_load_rule_no_core_env_and_no_
+  local_falls_back_to_parent_marker` is the inverse: neither core var
+  present anywhere, no local `.env` at all, only a parent `.env` with the
+  marker -- and asserts the marker comes back `PRESENT` (parent *is*
+  consulted when the local file is absent/incomplete and no explicit pin is
+  set).
+
+All 11 tests pass, stable across the `cargo test --features test-probe
+--test config_env_resolution -- --nocapture` run and the full wrapper run
+below; `git status --short` confirmed empty after every run (no test
+writes into the checkout, no shared-env mutation -- each test spawns its
+probe via `Command::env_clear()` + explicit `.env()` calls + `.current_dir()`
+into a private `tempfile::tempdir()`).
+
+## Final proof run (2026-09-04, Studio, `surreal-mind-wt-fed93bfee` @
+`fed-93bfee/test-db-wrapper`, this commit, #225)
+
+- `cargo fmt --check` -- clean.
+- `cargo clippy --all-targets --features db_integration,test-probe -- -D
+  warnings` -- clean. `cargo clippy --all-targets -- -D warnings` (default
+  features) -- clean.
+- `cargo test --features test-probe` (DB-free) -- clean across every
+  target; lib unit tests **70 passed, 0 failed**; `env_resolution_probe`'s
+  own unit-test harness **0 passed, 0 failed** (no `#[test]`s in that
+  binary, expected); `tests/config_env_resolution.rs` **11 passed, 0
+  failed**.
+- `cargo build --release` (default features) -- clean; `ls target/release
+  | grep -c env_resolution_probe` -> **0**.
+- `scripts/test_db.sh` (full default run, fresh instance, sanitized env, no
+  seed, no network, `--features db_integration,test-probe`) -- **exit 0**;
+  `config_env_resolution.rs` **11 passed, 0 failed**;
+  `env_resolution_probe` unittests 0/0; every other target's counts
+  unchanged from the #222 baseline. Cleanup confirmed: `sending TERM to
+  surreal pid 3950` -> `confirmed: surreal pid 3950 is not running`.
+  `git status --short` empty immediately after (no decoy/test artifacts
+  leaked into the checkout). Full log: `/tmp/test_db_full_run_225.log`.
+- Refusal, re-proven after all changes: `SURR_TEST_DB_URL=127.0.0.1:8000
+  scripts/test_db.sh` -> exit 3 (`REFUSING: $SURR_TEST_DB_URL=127.0.0.1:8000
+  ... that is the production SurrealMind endpoint`); `ps -p 42064` before
+  and after both show the same unchanged production process (`/opt/
+  homebrew/bin/surreal start memory --bind 127.0.0.1:8100 --user root
+  --pass root`, uptime continuous across the whole run).
+
+`pid 42064` was never reused, signaled, or touched across any run in any
+pass of this task, including this one.
