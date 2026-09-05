@@ -4,6 +4,7 @@
 - Format: `cargo fmt --all`
 - Lint: `cargo clippy --workspace --all-targets -- -D warnings`
 - Tests: `cargo test --workspace --all-features` (plus `./tests/test_mcp.sh` when applicable). Use targeted binaries/tests for narrower verification when needed.
+- DB-gated tests (`--features db_integration`): use `scripts/test_db.sh` — a standing ephemeral SurrealDB wrapper that never touches the production endpoint (see `docs/tasks/20260904-standing-test-db/README.md` for the full env contract and refusal behavior).
 - Run stdio: `./target/release/surreal-mind`
 - Run HTTP: `SURR_TRANSPORT=http SURR_BEARER_TOKEN=$(cat ~/.surr_token) SURR_HTTP_BIND=127.0.0.1:8787 ./target/release/surreal-mind`
 - Env templates: see `docs/AGENTS/connections.md` for transport, `docs/AGENTS/arch.md` for embeddings defaults. Keep `~/.surr_token` present for HTTP.
