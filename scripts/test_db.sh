@@ -12,7 +12,7 @@
 # check below before making any change.
 #
 # Usage:
-#   scripts/test_db.sh [--keep] [--dry-run] [cargo-test-args...]
+#   scripts/test_db.sh [--keep] [--dry-run] [--seed] [cargo-test-args...]
 #     --keep       leave the ephemeral SurrealDB instance running after the
 #                  test run and print its connection env for manual poking.
 #                  Only meaningful when this script started the instance
@@ -20,10 +20,38 @@
 #                  regardless of --keep.
 #     --dry-run    print the plan (port, reuse/start, ns/db, env names) and
 #                  exit 0 without starting anything or running any test.
+#     --seed       ALSO apply scripts/dryrun_contract/seed.surql on top of
+#                  schema.surql (schema is always applied; seed data is
+#                  opt-in). NOT the default: seed.surql leaves several
+#                  `thoughts` rows with no `embedding_dim` field, which
+#                  breaks tests/dimension_hygiene.rs::test_reembed_mismatch_
+#                  reporting's own ungrouped `GROUP BY embedding_dim` query
+#                  (it picks up the seeded NONE-dimension group instead of
+#                  only the row it deliberately inserted -- a fixture/test
+#                  mismatch, not a product bug; see
+#                  docs/tasks/20260904-standing-test-db/README.md). Nothing
+#                  in the `cargo test` suite itself needs seed.surql --
+#                  scripts/test_dryrun_contract.sh and scripts/
+#                  dryrun_contract/test_health_dryrun.sh already seed
+#                  themselves independently of this wrapper. Use --seed only
+#                  to manually poke at seeded data (e.g. with --keep).
 #     [cargo-test-args...] forwarded verbatim to
 #       `cargo test --features db_integration <args>`, e.g.
 #       `--test reembed_dry_run_contract` to target one integration test
 #       binary, or a test-name substring filter.
+#
+# ALLOW_NETWORK_EMBED (env var, NOT set by this wrapper by default): three
+# tests reach api.openai.com for a real (bound-to-fail, fake-key) embedding
+# call unless this is set -- tests/mcp_integration.rs::test_think_handler,
+# tests/mcp_integration.rs::test_think_with_continuity, and
+# tests/mcp_protocol.rs::test_call_tool_continuity_fallback_protocol. This
+# wrapper's contract is zero external calls, so it leaves the var unset and
+# those three tests print a skip notice instead of reaching the network. Set
+# `ALLOW_NETWORK_EMBED=1` yourself before invoking this script to explicitly
+# opt back into exercising that path (it will still fail/degrade against the
+# fake key, per src/config.rs's embed_strict=false default -- see the
+# in-code comments at each gated test for the full explanation and clu
+# fed-77afac, the offline-embedder fix this is deferred to).
 #
 # Env contract this script sets (see docs/tasks/20260904-standing-test-db/README.md
 # for the full file:line sourcing of every name below):
@@ -92,6 +120,7 @@ FIXTURE_DIR="$REPO_ROOT/scripts/dryrun_contract"
 # --- argument parsing: consume our own flags, forward the rest to cargo test ---
 KEEP=0
 DRY_RUN=0
+SEED=0
 CARGO_ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -101,6 +130,10 @@ while [ $# -gt 0 ]; do
       ;;
     --dry-run)
       DRY_RUN=1
+      shift
+      ;;
+    --seed)
+      SEED=1
       shift
       ;;
     *)
@@ -189,8 +222,13 @@ if [ "$DRY_RUN" -eq 1 ]; then
   log "  port: $PORT (reuse=$REUSE)"
   log "  db url: $DB_URL"
   log "  namespace: $TEST_NS  database: $TEST_DB"
-  log "  fixture: $FIXTURE_DIR/schema.surql + seed.surql"
+  if [ "$SEED" -eq 1 ]; then
+    log "  fixture: $FIXTURE_DIR/schema.surql + seed.surql (--seed passed)"
+  else
+    log "  fixture: $FIXTURE_DIR/schema.surql only (pass --seed to also apply seed.surql)"
+  fi
   log "  env that would be exported: SURR_DB_URL SURR_DB_NS SURR_DB_DB SURR_DB_USER SURR_DB_PASS RUN_DB_TESTS SURR_TEST_DB_URL OPENAI_API_KEY GEMINI_API_KEY SM_AGENT_PROVIDER ANTIGRAVITY_CLI_BIN"
+  log "  ALLOW_NETWORK_EMBED: $( [ -n "${ALLOW_NETWORK_EMBED:-}" ] && echo "set (${ALLOW_NETWORK_EMBED}) -- network-reaching tests will run" || echo "unset -- 3 network-reaching tests will skip" )"
   log "  would run: cargo test --features db_integration --no-fail-fast $(cargo_args_display)"
   exit 0
 fi
@@ -247,7 +285,7 @@ else
   log "reused SurrealDB instance on 127.0.0.1:$PORT answers is-ready."
 fi
 
-# --- apply the shared fixture (fed-734b8f's schema.surql + seed.surql) to the scratch ns/db ---
+# --- apply the shared fixture (fed-734b8f's schema.surql, ALWAYS; seed.surql, opt-in via --seed) to the scratch ns/db ---
 sql() {
   # `surreal sql` writes a readline history.txt into its CWD with no flag to
   # redirect it -- run it from the scratch work dir so it never dirties the
@@ -260,9 +298,13 @@ sql() {
 log "applying fixture: schema.surql"
 sql < "$FIXTURE_DIR/schema.surql" > "$WORK_DIR/schema_apply.log" 2>&1
 cat "$WORK_DIR/schema_apply.log"
-log "applying fixture: seed.surql"
-sql < "$FIXTURE_DIR/seed.surql" > "$WORK_DIR/seed_apply.log" 2>&1
-cat "$WORK_DIR/seed_apply.log"
+if [ "$SEED" -eq 1 ]; then
+  log "applying fixture: seed.surql (--seed passed)"
+  sql < "$FIXTURE_DIR/seed.surql" > "$WORK_DIR/seed_apply.log" 2>&1
+  cat "$WORK_DIR/seed_apply.log"
+else
+  log "skipping seed.surql (default -- pass --seed to apply it; scripts/test_dryrun_contract.sh and scripts/dryrun_contract/test_health_dryrun.sh seed themselves independently of this wrapper and are unaffected either way)"
+fi
 
 # --- fake Antigravity CLI stub (mirrors scripts/test_dryrun_contract.sh) ---
 FAKE_AGY="$WORK_DIR/fake-agy"
@@ -295,6 +337,15 @@ log "  SURR_DB_USER=$SURR_DB_USER SURR_DB_PASS=$SURR_DB_PASS"
 log "  RUN_DB_TESTS=$RUN_DB_TESTS SURR_TEST_DB_URL=$SURR_TEST_DB_URL"
 log "  OPENAI_API_KEY=$OPENAI_API_KEY GEMINI_API_KEY=$GEMINI_API_KEY"
 log "  SM_AGENT_PROVIDER=$SM_AGENT_PROVIDER ANTIGRAVITY_CLI_BIN=$ANTIGRAVITY_CLI_BIN"
+# ALLOW_NETWORK_EMBED is deliberately NOT exported by this wrapper -- it is
+# only ever set if the operator already had it set in the calling
+# environment before invoking this script (see the header comment's
+# ALLOW_NETWORK_EMBED section).
+if [ -n "${ALLOW_NETWORK_EMBED:-}" ]; then
+  log "  ALLOW_NETWORK_EMBED=$ALLOW_NETWORK_EMBED (set by caller -- the 3 network-reaching tests will run)"
+else
+  log "  ALLOW_NETWORK_EMBED unset (default -- the 3 network-reaching tests will skip)"
+fi
 
 # --no-fail-fast: this is a STANDING wrapper meant to report results across
 # every db_integration test binary in one pass, not stop at the first

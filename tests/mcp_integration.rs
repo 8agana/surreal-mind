@@ -32,7 +32,18 @@ async fn test_server_initialization() {
     let info = <SurrealMindServer as ServerHandler>::get_info(&server);
     assert_eq!(info.server_info.name.as_ref() as &str, "surreal-mind");
     let version: &str = info.server_info.version.as_ref();
-    assert!(version.starts_with("0.1"));
+    // Router (src/server/router.rs:157) sets this to exactly
+    // `env!("CARGO_PKG_VERSION")` -- compare against the crate's actual
+    // version instead of a hardcoded literal so this cannot silently rot
+    // again the way the old `"0.1"` prefix did once the crate moved past
+    // 0.1.x (it was last correct at some 0.1.x release; Cargo.toml is now
+    // 0.8.2 and this assertion kept passing on a coincidental prefix match
+    // it no longer meaningfully checked).
+    assert_eq!(
+        version,
+        env!("CARGO_PKG_VERSION"),
+        "server_info.version must be exactly the crate's Cargo.toml version"
+    );
 
     // Verify embedder metadata
     let (provider, model, dims) = server.get_embedding_metadata();
@@ -91,6 +102,20 @@ async fn test_think_handler() {
         return;
     }
 
+    // Reaches api.openai.com for real: `handle_legacymind_think` always
+    // attempts a live OpenAI embedding call for `content`
+    // (src/tools/thinking.rs:236 -> embedder.embed()), and `embed_strict`
+    // defaults to false (src/config.rs:149), so the handler tolerates the
+    // failure and this test would otherwise "pass" while silently making a
+    // real network call under a wrapper whose contract is zero external
+    // calls (Codex blocked fed-734b8f #172 item 2 for exactly this). Skip
+    // unless the operator explicitly opts in; the real fix is the offline
+    // embedder tracked at clu fed-77afac.
+    if std::env::var("ALLOW_NETWORK_EMBED").is_err() {
+        eprintln!("skipped: reaches api.openai.com; needs the offline embedder (clu fed-77afac)");
+        return;
+    }
+
     let server = create_test_server().await;
 
     // Test with valid params
@@ -115,6 +140,20 @@ async fn test_think_handler() {
 async fn test_think_with_continuity() {
     if std::env::var("RUN_DB_TESTS").is_err() {
         eprintln!("Skipping integration test - set RUN_DB_TESTS=1 to run");
+        return;
+    }
+
+    // Reaches api.openai.com for real: `handle_legacymind_think` always
+    // attempts a live OpenAI embedding call for `content`
+    // (src/tools/thinking.rs:236 -> embedder.embed()), and `embed_strict`
+    // defaults to false (src/config.rs:149), so the handler tolerates the
+    // failure and this test would otherwise "pass" while silently making a
+    // real network call under a wrapper whose contract is zero external
+    // calls (Codex blocked fed-734b8f #172 item 2 for exactly this). Skip
+    // unless the operator explicitly opts in; the real fix is the offline
+    // embedder tracked at clu fed-77afac.
+    if std::env::var("ALLOW_NETWORK_EMBED").is_err() {
+        eprintln!("skipped: reaches api.openai.com; needs the offline embedder (clu fed-77afac)");
         return;
     }
 
