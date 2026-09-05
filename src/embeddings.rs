@@ -235,7 +235,7 @@ impl Embedder for OpenAIEmbedder {
 // Factory function to create embedder based on configuration
 pub async fn create_embedder(config: &crate::config::Config) -> Result<Arc<dyn Embedder>> {
     // Load .env file if it exists
-    let _ = dotenvy::dotenv();
+    crate::config::load_env_file();
 
     // Configuration: prefer OpenAI when key present; else Candle
     let provider = &config.system.embedding_provider;

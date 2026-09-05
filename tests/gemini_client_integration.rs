@@ -6,7 +6,7 @@ use surreal_mind::clients::{CognitiveAgent, GeminiClient};
 #[tokio::test]
 #[cfg(feature = "db_integration")]
 async fn test_gemini_client_call() -> Result<()> {
-    dotenvy::dotenv().ok();
+    surreal_mind::config::load_env_file();
     tracing_subscriber::fmt::init();
 
     if std::env::var("RUN_GEMINI_TESTS").is_err() {

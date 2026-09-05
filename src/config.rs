@@ -1,5 +1,41 @@
 use serde::{Deserialize, Serialize};
 
+/// Load environment variables for this process.
+///
+/// If `SURR_ENV_FILE` is set, load ONLY that exact path (`dotenvy::from_path`)
+/// and never fall back to searching for an ancestor `.env` -- an empty file
+/// at that path loads nothing. If `SURR_ENV_FILE` is unset, behavior is this
+/// crate's ordinary default: `dotenvy::dotenv()`'s upward search from the
+/// current directory for a file named `.env`.
+///
+/// This is the ONE resolution rule every dotenv-loading call site in this
+/// crate that is reachable by the `db_integration` test suite routes
+/// through (`Config::load` below, `embeddings::create_embedder`,
+/// `lib::load_env`, `tests/gemini_client_integration.rs`, and
+/// `src/bin/reembed.rs`, which is spawned as a subprocess by
+/// `tests/reembed_bin_dry_run.rs`) -- fed-93bfee #216, closing the gap where
+/// scripts/test_db.sh's SURR_ENV_FILE pin protected only Config::load's own
+/// dotenv step while three other bare `dotenvy::dotenv()` calls could still
+/// silently repopulate a sanitized-away env var from a real ancestor `.env`.
+/// Several other `src/bin/*.rs` binaries (admin, kg_populate, kg_wander,
+/// kg_embed, kg_consolidate, kg_dedupe_plan, kg_apply_from_plan,
+/// kg_debug_tool, gem_rethink, migration, reembed_kg) also call bare
+/// `dotenvy::dotenv()` at their own `main()` entry points; none of them are
+/// spawned by anything in the `db_integration` test suite (verified via
+/// grep), so they are intentionally left unconverted here rather than
+/// touched as an unrelated, unbounded blast-radius change to operational
+/// CLI tools -- flagged, not silently skipped.
+///
+/// Errors (missing/unreadable files) are intentionally swallowed, matching
+/// every call site this replaces.
+pub fn load_env_file() {
+    if let Ok(env_path) = std::env::var("SURR_ENV_FILE") {
+        let _ = dotenvy::from_path(env_path);
+    } else {
+        let _ = dotenvy::dotenv();
+    }
+}
+
 /// Main configuration structure loaded from surreal_mind.toml and environment variables
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
@@ -222,22 +258,10 @@ impl Config {
     /// Load configuration from TOML file and environment variables
     /// Uses SURREAL_MIND_CONFIG environment variable or defaults to "surreal_mind.toml"
     pub fn load() -> anyhow::Result<Self> {
-        // Load environment variables with smart fallbacks:
-        // 1) SURR_ENV_FILE if set
-        // 2) ./.env
-        // 3) ../.env (repo root when running from crate dir)
-        if let Ok(env_path) = std::env::var("SURR_ENV_FILE") {
-            let _ = dotenvy::from_path(env_path);
-        } else {
-            // Current directory .env
-            let _ = dotenvy::from_path(".env");
-            // Fallback to parent .env if core vars are still missing
-            let core_present =
-                std::env::var("SURR_DB_URL").is_ok() || std::env::var("OPENAI_API_KEY").is_ok();
-            if !core_present {
-                let _ = dotenvy::from_path("../.env");
-            }
-        }
+        // See `load_env_file` above for the one resolution rule this shares
+        // with every other dotenv-loading call site in the crate that the
+        // db_integration test suite can reach.
+        load_env_file();
 
         let config_path = std::env::var("SURREAL_MIND_CONFIG")
             .unwrap_or_else(|_| "surreal_mind.toml".to_string());
@@ -572,11 +596,183 @@ impl RuntimeConfig {
 mod tests {
     use super::*;
 
+    /// Serializes the two `load_env_file` tests below against each other --
+    /// both mutate process-wide env vars and a shared file at the crate
+    /// root, so they must not interleave. (Other, unrelated tests in this
+    /// binary that also call `Config::load`/`load_env_file` are not guarded
+    /// by this lock; the only one that does, `test_config_loading` below,
+    /// asserts a tautology and is unaffected regardless of interleaving.)
+    static LOAD_ENV_FILE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn test_config_loading() {
+        // Guarded by the same lock as the load_env_file tests below: this
+        // test calls Config::load() (which calls load_env_file()) with no
+        // control over ambient env state, so it must not run concurrently
+        // with a test that is deliberately mutating SURR_ENV_FILE and a
+        // decoy .env at the crate root -- confirmed necessary, not
+        // theoretical: without this guard, a decoy .env written by a
+        // concurrently-running load_env_file test was observed leaking its
+        // values into the process via THIS test's unguarded Config::load()
+        // call (both processes/threads share one env; separate `cargo test`
+        // targets do not, so this is scoped to this one binary).
+        let _guard = LOAD_ENV_FILE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         // This test would require a test config file, but demonstrates the pattern
         let config = Config::load();
         assert!(config.is_ok() || config.is_err()); // Either way, method works
+    }
+
+    // --- load_env_file: the one resolution rule (fed-93bfee #216) ---
+
+    /// Control (b): with SURR_ENV_FILE unset, load_env_file() must still
+    /// discover an ordinary `.env` via dotenvy::dotenv()'s default upward
+    /// search -- unchanged from this crate's long-standing behavior.
+    /// Deliberately chdir-independent: `env!("CARGO_MANIFEST_DIR")` is a
+    /// compile-time constant, not a runtime `std::env::current_dir()` call,
+    /// so this test never mutates the test process's actual working
+    /// directory. It writes directly to the one location this crate's
+    /// default dotenv discovery is empirically known to reach regardless of
+    /// where `cargo test` itself was invoked from (see
+    /// docs/tasks/20260904-standing-test-db/README.md's "acknowledged
+    /// residual gap" section for the direct experiment that established
+    /// this).
+    #[test]
+    fn load_env_file_without_surr_env_file_falls_back_to_default_dotenv_discovery() {
+        let _guard = LOAD_ENV_FILE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let prev_surr_env_file = std::env::var_os("SURR_ENV_FILE");
+        unsafe {
+            std::env::remove_var("SURR_ENV_FILE");
+            std::env::remove_var("LOAD_ENV_FILE_TEST_PROBE_B");
+        }
+
+        let decoy_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".env");
+        assert!(
+            !decoy_path.exists(),
+            "test hazard: a real .env already exists at the crate root; refusing to touch it"
+        );
+        std::fs::write(
+            &decoy_path,
+            "LOAD_ENV_FILE_TEST_PROBE_B=default_discovery_value\n",
+        )
+        .expect("write decoy .env");
+
+        load_env_file();
+        let result = std::env::var("LOAD_ENV_FILE_TEST_PROBE_B");
+
+        // Cleanup BEFORE asserting, so a failed assertion can never leave the
+        // decoy file or mutated env behind.
+        let _ = std::fs::remove_file(&decoy_path);
+        unsafe {
+            std::env::remove_var("LOAD_ENV_FILE_TEST_PROBE_B");
+            if let Some(v) = prev_surr_env_file {
+                std::env::set_var("SURR_ENV_FILE", v);
+            }
+        }
+
+        assert_eq!(
+            result.as_deref(),
+            Ok("default_discovery_value"),
+            "with SURR_ENV_FILE unset, load_env_file() must still discover an ordinary .env"
+        );
+    }
+
+    /// Control (a): with SURR_ENV_FILE pinned to an empty file (exactly what
+    /// scripts/test_db.sh does), a decoy `.env` sitting at the crate root
+    /// with a network-enabling gate var and a fake OPENAI_API_KEY must be
+    /// completely ignored -- both because SURR_ENV_FILE takes exclusive
+    /// precedence (no fallback) and because OPENAI_API_KEY is already
+    /// present in the process (mirroring the wrapper always exporting it
+    /// itself before cargo test runs), so dotenvy's own
+    /// never-override-an-already-set-var rule protects it independently.
+    /// Only synthetic, obviously-fake key material is ever used or printed.
+    #[test]
+    fn load_env_file_with_surr_env_file_set_ignores_crate_root_decoy_and_keeps_present_key() {
+        let _guard = LOAD_ENV_FILE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let prev_surr_env_file = std::env::var_os("SURR_ENV_FILE");
+        let prev_openai_key = std::env::var_os("OPENAI_API_KEY");
+        unsafe {
+            std::env::remove_var("LOAD_ENV_FILE_TEST_PROBE_A");
+            // A fake, wrapper-style key already present BEFORE load_env_file()
+            // runs -- mirrors scripts/test_db.sh's OPENAI_API_KEY=sk-fake-testdb export.
+            std::env::set_var("OPENAI_API_KEY", "sk-fake-testdb");
+        }
+
+        let decoy_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".env");
+        assert!(
+            !decoy_path.exists(),
+            "test hazard: a real .env already exists at the crate root; refusing to touch it"
+        );
+        std::fs::write(
+            &decoy_path,
+            "LOAD_ENV_FILE_TEST_PROBE_A=should_never_appear\nOPENAI_API_KEY=sk-decoy-should-never-be-used\nALLOW_NETWORK_EMBED=1\n",
+        )
+        .expect("write decoy .env");
+
+        let pinned_dir = std::env::temp_dir().join(format!(
+            "load_env_file_test_a_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&pinned_dir).expect("create scratch dir");
+        let pinned_path = pinned_dir.join("empty.env");
+        std::fs::write(&pinned_path, "").expect("write empty pinned env");
+        unsafe {
+            std::env::set_var("SURR_ENV_FILE", &pinned_path);
+        }
+
+        load_env_file();
+
+        let probe_result = std::env::var("LOAD_ENV_FILE_TEST_PROBE_A");
+        let allow_network_result = std::env::var("ALLOW_NETWORK_EMBED");
+        let key_result = std::env::var("OPENAI_API_KEY");
+        let key_prefix: String = key_result
+            .as_deref()
+            .unwrap_or("")
+            .chars()
+            .take(8)
+            .collect();
+
+        // Cleanup BEFORE asserting.
+        let _ = std::fs::remove_file(&decoy_path);
+        let _ = std::fs::remove_dir_all(&pinned_dir);
+        unsafe {
+            std::env::remove_var("LOAD_ENV_FILE_TEST_PROBE_A");
+            std::env::remove_var("ALLOW_NETWORK_EMBED");
+            match prev_openai_key {
+                Some(v) => std::env::set_var("OPENAI_API_KEY", v),
+                None => std::env::remove_var("OPENAI_API_KEY"),
+            }
+            match prev_surr_env_file {
+                Some(v) => std::env::set_var("SURR_ENV_FILE", v),
+                None => std::env::remove_var("SURR_ENV_FILE"),
+            }
+        }
+
+        eprintln!(
+            "resolved OPENAI_API_KEY prefix (synthetic test values only, never a real key): {key_prefix:?}"
+        );
+        assert!(
+            probe_result.is_err(),
+            "decoy .env at the crate root must NOT be read when SURR_ENV_FILE is pinned: got {probe_result:?}"
+        );
+        assert!(
+            allow_network_result.is_err(),
+            "ALLOW_NETWORK_EMBED must NOT be reintroduced from the decoy .env: got {allow_network_result:?}"
+        );
+        assert_eq!(
+            key_result.as_deref(),
+            Ok("sk-fake-testdb"),
+            "OPENAI_API_KEY must remain the wrapper's own value, never the decoy's"
+        );
     }
 
     // --- SURR_HTTP_ALLOWED_HOSTS semantics (upgrade doc D5 / HTTP-01..05) ---

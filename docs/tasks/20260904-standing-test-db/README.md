@@ -117,6 +117,70 @@ thing when it does.)
 TERM to surreal pid 91093` -> `confirmed: surreal pid 91093 is not
 running`. `pgrep` after: only pid 42064.
 
+### Follow-up (#216): one bounded `stop_db()` on every exit path
+
+The failed-ready and owner-mismatch branches in the launch loop previously
+had their OWN inline `kill -TERM` + unbounded `wait`, duplicating (and not
+matching) the bounded TERM->poll->KILL->assert logic that only `cleanup()`
+had. Factored into a single function, `stop_db(pid)`, and every exit path
+now calls only that: `cleanup()` (success, cargo failure, INT, TERM all
+route through the EXIT trap -> `cleanup()` -> `stop_db`), the failed-ready
+branch, and the owner-mismatch branch. Port-exhaustion needs no separate
+call: by the time `MAX_PORT_ATTEMPTS` is exhausted, the prior iteration's
+own `stop_db` call has already left `DB_PID` empty, so the EXIT trap's
+`stop_db ""` is a no-op.
+
+`grep -n 'kill\|wait ' scripts/test_db.sh` after the refactor -- every
+actual TERM/KILL/wait is inside `stop_db()` (lines 294-311 at the time of
+this grep); the one `kill -0` outside it (line 371) is a pure liveness
+check in the readiness loop, not a stop action:
+```
+294:  if ! kill -0 "$pid" 2>/dev/null; then
+296:    wait "$pid" 2>/dev/null || true
+300:  kill -TERM "$pid" 2>/dev/null || true
+302:  while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 50 ]; do
+306:  if kill -0 "$pid" 2>/dev/null; then
+308:    kill -KILL "$pid" 2>/dev/null || true
+310:  wait "$pid" 2>/dev/null || true
+311:  if kill -0 "$pid" 2>/dev/null; then
+371:    if ! kill -0 "$DB_PID" 2>/dev/null; then   # readiness-loop liveness check, not a stop
+```
+
+**Related, in-scope tightening:** to keep the overall failed-ready-to-
+stopped budget small, the readiness poll bound was reduced from 40x0.5s
+(20s) to 8x0.3s (2.4s) -- every real `surreal start memory` instance in
+every proof run in this doc became ready in well under 1s, so this remains
+generous for the happy path.
+
+**Stubborn-child control:** `SURREAL_BIN` pointed at a stub that (1) always
+fails `is-ready`, (2) on its first `start` invocation, `trap '' TERM`s
+itself then `exec`s directly into a small Python one-liner that binds the
+requested port and sleeps 60 (`exec`, not a backgrounded child, so there is
+no separate grandchild left behind when the stub process itself is
+killed -- an earlier draft of this stub backgrounded the Python listener
+and left it orphaned after SIGKILL, exactly the Part-1 bug shape recurring
+in the TEST HARNESS; fixed by using `exec` instead), and (3) on subsequent
+invocations exits immediately (so the wrapper's 20-candidate port-scan
+doesn't repeat the same 60s-stubborn behavior 20 times over). Result for
+the actual stubborn attempt (candidate 1, pid 94727):
+```
+[test_db.sh] spawned pid 94727 for candidate port 8380
+[test_db.sh] candidate port 8380 unusable (process died or never became ready); log:
+stub attempt 1: binding port 8380, ignoring TERM (exec'd python, no separate child), sleeping 60
+[test_db.sh] sending TERM to surreal pid 94727
+[test_db.sh] pid 94727 still alive 5s after TERM, sending KILL
+[test_db.sh] confirmed: surreal pid 94727 is not running
+```
+-- readiness detection (2.4s bound) plus the TERM-wait-then-KILL cycle
+(5s bound) resolves this ONE stubborn attempt in ~7s, not an unbounded
+hang. (The wrapper's total exit time was 16s because it then had to
+exhaust the remaining 19 candidate ports, each of which the stub fails
+fast on by design (per point 3 above) -- that 16s reflects the port-scan
+policy from Part 2, not the stop mechanism; the stop mechanism itself,
+isolated to the one attempt that actually needed it, is the ~7s above.)
+`lsof` on the port range and `pgrep` after: nothing listening, no leftover
+process, only pid 42064 remained.
+
 ---
 
 ## Part 2: fresh instance only (no reuse)
@@ -209,62 +273,109 @@ implication) is in the task's working notes, not reproduced here in full:
 | `ANTIGRAVITY_CLI_BIN` / `AGY_CLI_BIN` | `src/clients/antigravity.rs:79-80` | which binary `AntigravityClient` shells out to | `ANTIGRAVITY_CLI_BIN` SET to a fake stub (first in the `.or_else` chain, so `AGY_CLI_BIN` never matters) |
 | `OPENAI_API_KEY` / `GEMINI_API_KEY` | `src/config.rs:427`; not read anywhere for the latter (verified empty grep) | embedder auth / defensive | both explicitly SET to obviously-fake values |
 
-### Acknowledged residual gap (not fully closed, disclosed rather than
-hidden)
+### Dotenv gap: CLOSED (#216)
 
-This crate has **three bare, unconditional `dotenvy::dotenv()` calls** that
-do **not** honor `SURR_ENV_FILE` and are **not** blocked by anything this
-wrapper does:
-- `src/embeddings.rs:238` -- inside `create_embedder`, reached by every
-  test that builds a real `SurrealMindServer`.
-- `src/lib.rs:24` -- `pub fn load_env()`; not currently called by any test
-  in this suite, but exported for external use.
-- `tests/gemini_client_integration.rs:9` -- called **unconditionally**,
-  before that test's own `RUN_GEMINI_TESTS` check.
+The previous pass in this task documented three bare, unconditional
+`dotenvy::dotenv()` calls that did not honor `SURR_ENV_FILE` and disclosed
+the gap rather than shipping a broken fix (an attempted cwd-redirect had
+been tried and empirically disproven -- see the git history of this file
+for that account). Codex ruled closing it in-scope. Fixed properly this
+pass:
 
-`dotenvy::dotenv()` walks upward from the test binary's own current
-directory looking for a file literally named `.env`, and (per dotenv/
-dotenvy's universal convention) never overrides a variable that is already
-present in the process environment -- only genuinely absent ones.
+**One shared resolution rule**, `pub fn load_env_file()` in `src/config.rs`:
+```rust
+pub fn load_env_file() {
+    if let Ok(env_path) = std::env::var("SURR_ENV_FILE") {
+        let _ = dotenvy::from_path(env_path);
+    } else {
+        let _ = dotenvy::dotenv();
+    }
+}
+```
+If `SURR_ENV_FILE` is set, load ONLY that path -- no fallback, ever. If
+unset, ordinary `dotenvy::dotenv()` discovery (unchanged default
+behavior). Every dotenv-loading call site reachable by the `db_integration`
+test suite now routes through it:
+- `src/config.rs`'s own `Config::load()` (replaced its previous two-branch
+  `.env`/`../.env` inline logic -- a strict generalization for this
+  deployment, since `dotenvy::dotenv()`'s unbounded upward walk finds
+  everything that 2-hop check found and more).
+- `src/embeddings.rs:238` (`create_embedder`, reached by every test that
+  builds a real `SurrealMindServer`).
+- `src/lib.rs:24` (`pub fn load_env()`).
+- `tests/gemini_client_integration.rs:9` (was unconditional, before that
+  test's own `RUN_GEMINI_TESTS` check).
+- `src/bin/reembed.rs:25` -- reachable because `tests/
+  reembed_bin_dry_run.rs` spawns the compiled `reembed` binary as a
+  subprocess, which inherits this process's env (including a pinned
+  `SURR_ENV_FILE`) but has its own `main()` entry point with its own
+  independent dotenv call.
 
-**An attempt to redirect cargo test's own working directory to a scratch
-dir with no reachable ancestor `.env` was tried in this pass and
-EMPIRICALLY DISPROVEN, then reverted.** Direct test: with a decoy `.env`
-(`RUN_GEMINI_TESTS=1`) placed at the crate root and `RUN_GEMINI_TESTS`
-genuinely absent from the shell, `cargo test --manifest-path
-$REPO_ROOT/Cargo.toml --features db_integration --test
-gemini_client_integration` run from an unrelated `mktemp -d` scratch
-directory **still** picked up the decoy and attempted a real call
-(`Error: cli executable not found` -- the gate was bypassed and it tried).
-The same decoy placed ONLY inside that scratch directory (none at the
-crate root) was **not** found -- the test correctly skipped. Conclusion:
-`cargo test`'s test binaries run with their current directory anchored at
-the crate root regardless of where `cargo` itself was invoked from, so
-there is no cwd lever available to this wrapper for these three call
-sites. (This also means the earlier draft's `SURREAL_MIND_CONFIG`-plus-
-cwd-redirect combination in this same pass provided no actual protection
-for the claimed purpose; the cwd redirect has been removed, `cargo test`
-runs from `$REPO_ROOT` as before this pass.)
+**Deliberately left unconverted** (grepped, flagged, not silently
+skipped): 11 other `src/bin/*.rs` binaries (`admin` x5, `kg_populate`,
+`kg_wander`, `kg_embed`, `kg_consolidate`, `kg_dedupe_plan`,
+`kg_apply_from_plan`, `kg_debug_tool`, `gem_rethink`, `migration`,
+`reembed_kg`) also call bare `dotenvy::dotenv()` at their own `main()`.
+None are spawned by anything in the `db_integration` test suite (verified:
+`grep -rn 'CARGO_BIN_EXE_' tests/` finds only `CARGO_BIN_EXE_reembed` and
+`CARGO_BIN_EXE_surreal-mind`), so converting them was an unrelated,
+unbounded blast-radius change to operational CLI tools (`admin` in
+particular runs against live production per AGENTS.md) that this task did
+not ask for and did not touch.
 
-**Is this exploitable today?** This machine has a real ancestor `.env` one
-directory above every worktree (`~/Projects/LegacyMind/.env`), which
-`dotenvy::dotenv()`'s upward walk from the crate root (which has no `.env`
-of its own, verified) would reach. Checked its variable **names only**
-(never read a value): it defines `SURR_DB_URL`, `SURR_DB_NS`, `SURR_DB_DB`,
-`SURR_DB_USER`, `SURR_DB_PASS`, `OPENAI_API_KEY`, `GEMINI_API_KEY` (among
-others unrelated to this crate) -- every one of which this wrapper already
-explicitly exports itself before cargo test runs, so dotenvy's
-"never-override-an-already-set-var" rule protects them regardless of this
-gap. It does **not** define `RUN_GEMINI_TESTS`, `SURR_SMOKE_TEST`,
-`REEMBED_TEST_CONFIRM_DISPOSABLE_NS`, or `ALLOW_NETWORK_EMBED`. **So this
-gap is not currently exploitable on this machine** -- but it is a
-structural gap, not a closed one: if that file (or any other ancestor
-`.env` on a different machine) ever defines one of those four names, it
-will silently reappear despite this wrapper's explicit `unset`. The
-correct full fix is out of scope here (editing `src/embeddings.rs`,
-`src/lib.rs`, and `tests/gemini_client_integration.rs` themselves to honor
-`SURR_ENV_FILE` or skip dotenv under `RUN_DB_TESTS`) and is left as a
-follow-up, not silently patched around.
+**Control (b) -- normal behavior preserved**, permanent unit tests in
+`src/config.rs`'s `mod tests` (both pass under plain `cargo test`,
+5-run-stable):
+- `load_env_file_without_surr_env_file_falls_back_to_default_dotenv_discovery`
+  -- with `SURR_ENV_FILE` unset, writes a decoy `.env` directly at
+  `env!("CARGO_MANIFEST_DIR")` (a compile-time constant, so **chdir-
+  independent** -- no `std::env::set_current_dir` call anywhere in this
+  test), calls `load_env_file()`, asserts the decoy's variable appears,
+  then removes the file (cleanup happens **before** the assertion so a
+  failing test can never leave it behind).
+- `load_env_file_with_surr_env_file_set_ignores_crate_root_decoy_and_keeps_present_key`
+  -- control (a) at the Rust level: with `OPENAI_API_KEY` already set to a
+  fake wrapper-style value (mirrors the wrapper's own export) and
+  `SURR_ENV_FILE` pinned to an empty scratch file, a decoy `.env` at the
+  crate root defining `ALLOW_NETWORK_EMBED=1` and a different fake
+  `OPENAI_API_KEY=sk-decoy-...` is proven completely ignored: the decoy's
+  probe variable never appears, `ALLOW_NETWORK_EMBED` never appears, and
+  `OPENAI_API_KEY` stays exactly `"sk-fake-testdb"`. Prints the resolved
+  key's first 8 characters via `eprintln!` (synthetic test values only,
+  never a real key) as the "which key did it resolve to" evidence.
+
+  **Both tests mutate process-wide env vars and a shared crate-root file,
+  so they're serialized against each other with a `static
+  LOAD_ENV_FILE_TEST_LOCK: Mutex<()>`.** This was NOT optional: the first
+  version of these tests (without also guarding the pre-existing
+  `test_config_loading`, which calls `Config::load()` unconditionally with
+  no env control of its own) was OBSERVED to fail exactly this way --
+  `test_config_loading`, running concurrently on another thread in the
+  same `cargo test --lib` process, read the decoy `.env` sitting at the
+  crate root via its own unguarded `Config::load()` call before the decoy
+  test had pinned `SURR_ENV_FILE`, leaking the probe variable into the
+  shared process environment. Fixed by adding the same lock to
+  `test_config_loading`; verified stable across 5 consecutive
+  `cargo test --lib` runs afterward. (Other `Config::load()`/
+  `create_embedder` call sites in this crate's own `#[cfg(test)]` modules
+  -- `src/http.rs:597`, `src/maintenance/reembed.rs:1924` -- are gated
+  behind `RUN_DB_TESTS` and/or `#[cfg(feature = "db_integration")]`, so
+  they don't run and can't race under a bare `cargo test`; under the
+  wrapper's `--features db_integration` invocation they run in entirely
+  separate OS processes -- each `tests/*.rs` file and the lib are
+  independent binaries with no shared mutable env -- so they were never a
+  race risk regardless.)
+
+**Control (a) -- script level, using the actual wrapper:** created a real
+decoy `.env` at the crate root (`ALLOW_NETWORK_EMBED=1` /
+`OPENAI_API_KEY=sk-decoy`), ran `scripts/test_db.sh --test mcp_integration
+-- --nocapture`. Log confirmed `SURR_ENV_FILE=<scratch>/empty.env (size: 0
+bytes)`, `ALLOW_NETWORK_EMBED unset`, both gated tests printed `skipped:
+reaches api.openai.com...`, 6/6 passed. Removed the decoy immediately
+after (`git status --short` showed only the expected source files
+modified, decoy gone). `~/Projects/LegacyMind/.env` (the one real ancestor
+`.env` this machine has) was never touched, read, or written by anything
+in this pass.
 
 ### Control: hostile inherited environment
 
@@ -326,22 +437,23 @@ seed themselves independently of this wrapper (see the file:line contract
 above) -- unaffected by anything in this pass.
 
 ## Final proof run (2026-09-05, Studio, `surreal-mind-wt-fed93bfee` @
-`fed-93bfee/test-db-wrapper`, this commit)
+`fed-93bfee/test-db-wrapper`, this commit, #216)
 
 - `cargo fmt --check` -- clean.
 - `cargo clippy --all-targets --features db_integration -- -D warnings` --
   clean.
-- `scripts/test_db.sh --port 8340` (full default run, fresh instance,
+- `cargo test` (DB-free, no features) -- clean across every target; lib
+  unit tests **74 passed, 0 failed** (72 + the 2 new `load_env_file` tests),
+  stable across 5 consecutive runs.
+- `scripts/test_db.sh --port 8420` (full default run, fresh instance,
   sanitized env, no seed, no network) -- **exit 0**, every one of 17 test
-  binaries + lib + doctests green or explicitly skipped by its own gate
-  (`gemini_client_integration`, `relationship_smoke` skip on pre-existing
-  gates unrelated to this pass; `mcp_integration`/`mcp_protocol` skip the 3
-  `ALLOW_NETWORK_EMBED`-gated tests). Cleanup confirmed: `sending TERM to
-  surreal pid 92349` -> `confirmed: surreal pid 92349 is not running`.
-  `pgrep` after: only pid 42064.
+  binaries + lib (74) + doctests green or explicitly skipped by its own gate.
+  Cleanup confirmed: `sending TERM to surreal pid 96083` -> `confirmed:
+  surreal pid 96083 is not running`. `pgrep` after: only pid 42064.
 - Refusal, re-proven after all changes: `SURR_TEST_DB_URL=127.0.0.1:8000
   scripts/test_db.sh` -> exit 3, `pgrep -fl "surreal start memory"`
   identical (only pid 42064) before and after.
 
-`pid 42064` was never reused, signaled, or touched across any run in
-either the previous or this pass.
+`pid 42064` was never reused, signaled, or touched across any run in any
+pass of this task, including every stray process spawned and cleaned up
+while iterating on the stubborn-child control stub itself.

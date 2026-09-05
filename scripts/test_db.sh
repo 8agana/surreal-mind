@@ -281,34 +281,50 @@ DB_PID=""
 WE_STARTED_SURREAL=0
 PORT=""
 
+# --- the ONE stop path: every exit route (success, cargo failure, INT,
+# TERM, failed-ready, owner-mismatch, port-exhaustion) calls this and only
+# this to actually terminate a surreal child. TERM -> poll <=5s -> KILL ->
+# wait/reap -> assert + log the outcome either way. Idempotent (safe to
+# call with an empty pid, or a pid that's already dead).
+stop_db() {
+  local pid="$1"
+  if [ -z "$pid" ]; then
+    return 0
+  fi
+  if ! kill -0 "$pid" 2>/dev/null; then
+    log "surreal pid $pid already not running"
+    wait "$pid" 2>/dev/null || true
+    return 0
+  fi
+  log "sending TERM to surreal pid $pid"
+  kill -TERM "$pid" 2>/dev/null || true
+  local i=0
+  while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 50 ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    log "pid $pid still alive 5s after TERM, sending KILL"
+    kill -KILL "$pid" 2>/dev/null || true
+  fi
+  wait "$pid" 2>/dev/null || true
+  if kill -0 "$pid" 2>/dev/null; then
+    log "WARNING: pid $pid still appears alive after KILL -- this should never happen"
+    return 1
+  fi
+  log "confirmed: surreal pid $pid is not running"
+  return 0
+}
+
 cleanup() {
   local rc=$?
-  if [ -n "$DB_PID" ]; then
-    if [ "$KEEP" -eq 1 ] && [ "$WE_STARTED_SURREAL" -eq 1 ]; then
-      log "--keep set: leaving the SurrealDB instance this script started (pid $DB_PID) running on 127.0.0.1:$PORT."
-      log "  connection env for manual poking:"
-      log "    export SURR_DB_URL=127.0.0.1:$PORT SURR_DB_NS=$TEST_NS SURR_DB_DB=$TEST_DB SURR_DB_USER=root SURR_DB_PASS=root"
-    else
-      if kill -0 "$DB_PID" 2>/dev/null; then
-        log "sending TERM to surreal pid $DB_PID"
-        kill -TERM "$DB_PID" 2>/dev/null || true
-        i=0
-        while kill -0 "$DB_PID" 2>/dev/null && [ "$i" -lt 50 ]; do
-          sleep 0.1
-          i=$((i + 1))
-        done
-        if kill -0 "$DB_PID" 2>/dev/null; then
-          log "pid $DB_PID still alive 5s after TERM, sending KILL"
-          kill -KILL "$DB_PID" 2>/dev/null || true
-        fi
-        wait "$DB_PID" 2>/dev/null || true
-      fi
-      if kill -0 "$DB_PID" 2>/dev/null; then
-        log "WARNING: pid $DB_PID still appears alive after KILL -- this should never happen"
-      else
-        log "confirmed: surreal pid $DB_PID is not running"
-      fi
-    fi
+  if [ -n "$DB_PID" ] && [ "$KEEP" -eq 1 ] && [ "$WE_STARTED_SURREAL" -eq 1 ]; then
+    log "--keep set: leaving the SurrealDB instance this script started (pid $DB_PID) running on 127.0.0.1:$PORT."
+    log "  connection env for manual poking:"
+    log "    export SURR_DB_URL=127.0.0.1:$PORT SURR_DB_NS=$TEST_NS SURR_DB_DB=$TEST_DB SURR_DB_USER=root SURR_DB_PASS=root"
+  else
+    stop_db "$DB_PID"
+    DB_PID=""
   fi
   rm -rf "$WORK_DIR"
   return "$rc"
@@ -345,8 +361,13 @@ while :; do
   DB_PID=$!
   log "spawned pid $DB_PID for candidate port $CANDIDATE"
 
+  # Bounded readiness wait: 8 x 0.3s = 2.4s max. Every observed real
+  # `surreal start memory` instance in this task's proof runs became ready
+  # in well under 1s, so this is generous for the happy path while keeping
+  # the OVERALL failed-ready-to-stopped budget small (this bound + stop_db's
+  # own <=5s TERM-wait bound), per the stubborn-child control below.
   READY=0
-  for _ in $(seq 1 40); do
+  for _ in $(seq 1 8); do
     if ! kill -0 "$DB_PID" 2>/dev/null; then
       log "pid $DB_PID exited early (before becoming ready) on candidate port $CANDIDATE"
       break
@@ -355,16 +376,13 @@ while :; do
       READY=1
       break
     fi
-    sleep 0.5
+    sleep 0.3
   done
 
   if [ "$READY" -ne 1 ]; then
     log "candidate port $CANDIDATE unusable (process died or never became ready); log:"
     cat "$WORK_DIR/surreal.$ATTEMPT.log" 2>/dev/null || true
-    if [ -n "$DB_PID" ] && kill -0 "$DB_PID" 2>/dev/null; then
-      kill -TERM "$DB_PID" 2>/dev/null || true
-      wait "$DB_PID" 2>/dev/null || true
-    fi
+    stop_db "$DB_PID"
     DB_PID=""
     CANDIDATE=$((CANDIDATE + 1))
     continue
@@ -377,8 +395,7 @@ while :; do
   OWNER_PIDS="$(lsof -nP -iTCP:"$CANDIDATE" -sTCP:LISTEN -t 2>/dev/null || true)"
   if ! printf '%s\n' "$OWNER_PIDS" | grep -qx "$DB_PID"; then
     log "bind race on port $CANDIDATE: pid $DB_PID is NOT the LISTEN owner (owner(s): ${OWNER_PIDS:-none}) -- discarding this attempt, trying next candidate."
-    kill -TERM "$DB_PID" 2>/dev/null || true
-    wait "$DB_PID" 2>/dev/null || true
+    stop_db "$DB_PID"
     DB_PID=""
     CANDIDATE=$((CANDIDATE + 1))
     continue
