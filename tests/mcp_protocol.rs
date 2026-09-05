@@ -410,7 +410,7 @@ async fn test_call_tool_continuity_fallback_protocol() {
     // blocked fed-734b8f #172 item 2 for exactly this). Skip unless the
     // operator explicitly opts in; the real fix is the offline embedder
     // tracked at clu fed-77afac.
-    if std::env::var("ALLOW_NETWORK_EMBED").is_err() {
+    if std::env::var("ALLOW_NETWORK_EMBED").ok().as_deref() != Some("1") {
         eprintln!("skipped: reaches api.openai.com; needs the offline embedder (clu fed-77afac)");
         return;
     }

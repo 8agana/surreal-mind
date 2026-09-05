@@ -2,113 +2,143 @@
 # scripts/test_db.sh
 #
 # fed-93bfee: standing ephemeral SurrealDB wrapper for `cargo test --features
-# db_integration`. Starts (or reuses) a throwaway in-memory `surreal start
-# memory` instance on a loopback port, exports exactly the environment the
-# DB-gated test suite reads, refuses outright if anything resolves to the
-# production endpoint (127.0.0.1:8000, ns surreal_mind / db consciousness),
-# and tears down only the instance it started itself.
+# db_integration`. Every run launches and OWNS a fresh throwaway in-memory
+# `surreal start memory` instance on a loopback port (no reuse of anything
+# already listening, including whatever else may be running on this
+# machine), exports exactly the environment the DB-gated test suite reads,
+# explicitly sanitizes every network-enabling test gate this wrapper knows
+# about (an absent var can otherwise silently reappear via this crate's own
+# bare `dotenvy::dotenv()` calls -- see "Environment sanitization" below),
+# refuses outright if anything resolves to the production endpoint
+# (127.0.0.1:8000, ns surreal_mind / db consciousness), and tears down the
+# exact child process it started -- verified, not assumed.
 #
-# THIS SCRIPT NEVER TOUCHES PRODUCTION. If in doubt, read the HARD REFUSAL
-# check below before making any change.
+# THIS SCRIPT NEVER TOUCHES PRODUCTION and NEVER REUSES AN EXISTING PROCESS.
+# If in doubt, read the HARD REFUSAL check and the fresh-instance-only port
+# loop below before making any change.
 #
 # Usage:
-#   scripts/test_db.sh [--keep] [--dry-run] [--seed] [cargo-test-args...]
-#     --keep       leave the ephemeral SurrealDB instance running after the
-#                  test run and print its connection env for manual poking.
-#                  Only meaningful when this script started the instance
-#                  itself -- a reused pre-existing instance is never killed
-#                  regardless of --keep.
-#     --dry-run    print the plan (port, reuse/start, ns/db, env names) and
-#                  exit 0 without starting anything or running any test.
-#     --seed       ALSO apply scripts/dryrun_contract/seed.surql on top of
-#                  schema.surql (schema is always applied; seed data is
-#                  opt-in). NOT the default: seed.surql leaves several
-#                  `thoughts` rows with no `embedding_dim` field, which
-#                  breaks tests/dimension_hygiene.rs::test_reembed_mismatch_
-#                  reporting's own ungrouped `GROUP BY embedding_dim` query
-#                  (it picks up the seeded NONE-dimension group instead of
-#                  only the row it deliberately inserted -- a fixture/test
-#                  mismatch, not a product bug; see
-#                  docs/tasks/20260904-standing-test-db/README.md). Nothing
-#                  in the `cargo test` suite itself needs seed.surql --
-#                  scripts/test_dryrun_contract.sh and scripts/
-#                  dryrun_contract/test_health_dryrun.sh already seed
-#                  themselves independently of this wrapper. Use --seed only
-#                  to manually poke at seeded data (e.g. with --keep).
+#   scripts/test_db.sh [--keep] [--dry-run] [--seed] [--allow-network]
+#                       [--port N] [cargo-test-args...]
+#     --keep           leave the ephemeral SurrealDB instance running after
+#                       the test run and print its connection env for manual
+#                       poking. Only meaningful for the instance THIS
+#                       invocation started (there is no other kind now).
+#     --dry-run        print the plan (start port, port-scan bound, fixture
+#                       plan, sanitized/exported env names, the cargo command
+#                       that would run) and exit 0 without starting anything
+#                       or running any test.
+#     --seed           ALSO apply scripts/dryrun_contract/seed.surql on top
+#                       of schema.surql (schema is always applied; seed data
+#                       is opt-in -- see "Fixture: schema always, seed
+#                       opt-in" in docs/tasks/20260904-standing-test-db/
+#                       README.md for why).
+#     --allow-network  explicit, loud opt-in to the 3 tests that reach
+#                       api.openai.com for real (embed_strict fails open, so
+#                       they still only skip/degrade, never hard-fail; see
+#                       the README's "Network contract" section). Sets
+#                       ALLOW_NETWORK_EMBED=1 for the cargo test invocation
+#                       and prints a banner. Without this flag,
+#                       ALLOW_NETWORK_EMBED is explicitly unset regardless
+#                       of what the calling environment had.
+#     --port N         start the fresh-instance port scan at N instead of
+#                       the default 8100 (or $TEST_DB_PORT). Must be numeric,
+#                       1024-65535.
 #     [cargo-test-args...] forwarded verbatim to
-#       `cargo test --features db_integration <args>`, e.g.
+#       `cargo test --features db_integration --no-fail-fast <args>`, e.g.
 #       `--test reembed_dry_run_contract` to target one integration test
 #       binary, or a test-name substring filter.
 #
-# ALLOW_NETWORK_EMBED (env var, NOT set by this wrapper by default): three
-# tests reach api.openai.com for a real (bound-to-fail, fake-key) embedding
-# call unless this is set -- tests/mcp_integration.rs::test_think_handler,
-# tests/mcp_integration.rs::test_think_with_continuity, and
-# tests/mcp_protocol.rs::test_call_tool_continuity_fallback_protocol. This
-# wrapper's contract is zero external calls, so it leaves the var unset and
-# those three tests print a skip notice instead of reaching the network. Set
-# `ALLOW_NETWORK_EMBED=1` yourself before invoking this script to explicitly
-# opt back into exercising that path (it will still fail/degrade against the
-# fake key, per src/config.rs's embed_strict=false default -- see the
-# in-code comments at each gated test for the full explanation and clu
-# fed-77afac, the offline-embedder fix this is deferred to).
-#
-# Env contract this script sets (see docs/tasks/20260904-standing-test-db/README.md
-# for the full file:line sourcing of every name below):
+# Env contract this script sets (see docs/tasks/20260904-standing-test-db/
+# README.md for the full file:line sourcing of every name below and the
+# complete env::var( inventory this pass grepped across tests/ and src/):
 #   SURR_DB_URL / SURR_DB_NS / SURR_DB_DB / SURR_DB_USER / SURR_DB_PASS
 #     -- read by src/config.rs (Config::load), consumed by
 #        SurrealMindServer::new() (src/server/db.rs) for every test that
-#        builds a full server (tests/mcp_integration.rs, tests/mcp_protocol.rs,
-#        tests/test_wander.rs, tests/stdio_smoke.rs, tests/dimension_hygiene.rs).
-#   RUN_DB_TESTS=1
-#     -- the runtime skip-gate checked by every DB-backed #[tokio::test]/#[test]
-#        in this suite (tests/mcp_protocol.rs, tests/mcp_integration.rs,
-#        tests/test_wander.rs, tests/stdio_smoke.rs, tests/dimension_hygiene.rs,
-#        tests/reembed_dry_run_contract.rs, tests/reembed_bin_dry_run.rs,
-#        src/tools/knowledge_graph.rs, src/maintenance/reembed.rs, src/http.rs).
-#        Without it every one of those tests prints a skip notice and
-#        returns Ok(()) -- the crate's default `cargo test` stays green and
-#        never touches a socket.
-#   SURR_TEST_DB_URL
-#     -- read by tests/reembed_dry_run_contract.rs and
-#        tests/reembed_bin_dry_run.rs's own `disposable_db()`/`test_db_url()`
-#        guards, which build their own scratch namespace internally (they do
-#        NOT use SURR_DB_NS/SURR_DB_DB) and independently refuse any URL
-#        containing ":8000".
-#   OPENAI_API_KEY -- src/config.rs, consumed by src/embeddings.rs's
-#        `create_embedder`/`is_placeholder` check. Set to an obviously-fake
-#        value (never the literal "changeme", which embeddings.rs treats as
-#        an accepted placeholder rather than a rejected one, and never
-#        empty). No test in this suite makes a real embedding call (they
-#        either never invoke Embedder::embed, or -- reembed_dry_run_contract.rs
-#        -- inject a CountingEmbedder mock instead of the real one), so this
-#        key is never sent anywhere; it exists so a regression that DID
-#        reach the real embedder would 401 loudly rather than silently using
-#        a real credential.
-#   GEMINI_API_KEY -- set defensively (obviously fake). NOT currently read by
-#        any code path in this crate (verified: `grep -rn '"GEMINI_API_KEY"' src/`
-#        is empty) -- Gemini auth in this crate goes through the `gemini` CLI
-#        binary on PATH, not an API key env var. Kept per the task brief in
-#        case a future test path starts reading it.
-#   SM_AGENT_PROVIDER=antigravity -- src/clients/google_cli.rs
-#        (GoogleCliProvider::from_env_or_config), top of precedence chain.
-#        Forces Google CLI provider selection away from whatever the
-#        operator's ambient shell exports, mirroring
-#        scripts/test_dryrun_contract.sh. Only tests/test_wander.rs in this
-#        suite calls a wander path, and its "random"/"unknown_mode" cases
-#        never reach the Google CLI client -- but this is forced anyway so a
-#        future db_integration test that DOES exercise kg_populate/kg_wander
-#        cannot silently fall through to a real `gemini` CLI call.
-#   ANTIGRAVITY_CLI_BIN -- src/clients/antigravity.rs:79. Points at a fake
-#        stub script this wrapper writes to $WORK_DIR (same shape as
-#        scripts/test_dryrun_contract.sh's fake-agy), so if provider
-#        selection above is ever reached it hits a canned response instead
-#        of a real CLI.
+#        builds a full server.
+#   RUN_DB_TESTS=1 -- the runtime skip-gate checked by every DB-backed test
+#        in this suite. Without it every one of those tests prints a skip
+#        notice and returns Ok(())/passes trivially.
+#   SURR_TEST_DB_URL -- read by tests/reembed_dry_run_contract.rs and
+#        tests/reembed_bin_dry_run.rs's own disposable_db()/test_db_url()
+#        guards, which build their own scratch namespace internally and
+#        independently refuse any URL containing ":8000".
+#   OPENAI_API_KEY="sk-fake-testdb" / GEMINI_API_KEY="fake-testdb"
+#        -- obviously-fake values, never empty, never the literal
+#        "changeme" (src/embeddings.rs's is_placeholder treats that as an
+#        ACCEPTED placeholder, not rejected).
+#   SM_AGENT_PROVIDER=antigravity / GOOGLE_CLI_PROVIDER (unset) /
+#   SURR_GOOGLE_CLI_PROVIDER (unset) -- forces Google CLI provider selection
+#        at the top of src/clients/google_cli.rs's precedence chain,
+#        regardless of what the calling environment exports for the two
+#        lower-precedence names (which are explicitly unset here too, for
+#        defense in depth even though SM_AGENT_PROVIDER already wins).
+#   ANTIGRAVITY_CLI_BIN -- points at a fake stub this wrapper writes into
+#        its scratch work dir; a canned JSON response, never a real CLI.
+#   ALLOW_NETWORK_EMBED -- unset by default; set to exactly "1" only with
+#        --allow-network. The three tests that read it now require an EXACT
+#        "1" match (not mere presence).
+#
+# Environment sanitization (network-enabling gates this wrapper knows about,
+# explicitly unset every run regardless of what the CALLING shell already
+# exported -- "not setting a flag does not unset an inherited one"):
+#   RUN_GEMINI_TESTS, SURR_SMOKE_TEST, REEMBED_TEST_CONFIRM_DISPOSABLE_NS,
+#   ALLOW_NETWORK_EMBED, GOOGLE_CLI_PROVIDER, SURR_GOOGLE_CLI_PROVIDER.
+# This closes the "hostile inherited shell" case (proven: even with all of
+# the above pre-set to network-enabling values in the CALLING shell before
+# invoking this script, the exported/sanitized values win).
+#
+# SURR_ENV_FILE is pinned to an empty scratch file this wrapper creates, so
+# Config::load's OWN dotenv step (src/config.rs:229-231, the `if let Ok(env_path)
+# = env::var("SURR_ENV_FILE")` branch) cannot repopulate any of the above
+# from a real .env.
+#
+# ACKNOWLEDGED RESIDUAL GAP, not fully closed by this wrapper: this crate
+# has THREE OTHER bare, unconditional `dotenvy::dotenv()` calls that do NOT
+# honor SURR_ENV_FILE -- src/embeddings.rs:238 (inside create_embedder,
+# reached by every test that builds a real SurrealMindServer),
+# src/lib.rs:24 (load_env(), not currently called by any test in this
+# suite but exported for external use), and
+# tests/gemini_client_integration.rs:9 (called unconditionally, BEFORE that
+# test's own RUN_GEMINI_TESTS check). `dotenvy::dotenv()` walks upward from
+# the test binary's own current directory looking for a file literally
+# named `.env`; an attempt to redirect that search by changing cargo test's
+# invocation directory was tried and EMPIRICALLY DISPROVEN in this pass --
+# `cargo test --manifest-path X` runs test binaries with their cwd anchored
+# at the crate root regardless of where `cargo` itself was invoked from
+# (verified directly: a decoy `.env` placed at the crate root was found by
+# gemini_client_integration.rs even when cargo was invoked from an unrelated
+# scratch directory; the same decoy placed only in that scratch directory
+# was NOT found). So there is no cwd lever available to this wrapper for
+# the three call sites above. This machine DOES have a real ancestor .env
+# one directory above every worktree (~/Projects/LegacyMind/.env) that
+# dotenvy's upward walk from the crate root would reach next if the crate
+# root itself had no `.env` (verified: it doesn't, today). Checked (key
+# names only, values never read): that real .env defines
+# SURR_DB_URL/NS/DB/USER/PASS and OPENAI_API_KEY/GEMINI_API_KEY (all of
+# which THIS wrapper explicitly exports itself before cargo test runs, so
+# dotenvy's "never override an already-set var" rule protects them
+# regardless of this gap) and does NOT define RUN_GEMINI_TESTS,
+# SURR_SMOKE_TEST, REEMBED_TEST_CONFIRM_DISPOSABLE_NS, or
+# ALLOW_NETWORK_EMBED -- so this gap is NOT currently exploitable on this
+# machine, but it is a structural gap, not a closed one: if that file (or
+# any other ancestor .env on a different machine) ever defines one of those
+# four names, it WILL silently reappear despite this wrapper's explicit
+# unset. The correct full fix is out of scope here (it means editing
+# src/embeddings.rs, src/lib.rs, and tests/gemini_client_integration.rs
+# themselves to honor SURR_ENV_FILE or skip dotenv under RUN_DB_TESTS) and
+# is left for a follow-up.
 #
 # HARD REFUSAL: if the resolved DB URL, or any pre-existing SURR_DB_URL /
 # SURR_TEST_DB_URL in the CALLING environment, contains ":8000" (the
 # production SurrealMind port, ns surreal_mind / db consciousness -- see
 # AGENTS.md/CLAUDE.md), this script exits 3 before starting anything.
+#
+# FRESH INSTANCE ONLY: this script never reuses an already-listening
+# instance, including any pre-existing `surreal start memory` process. If
+# the candidate port is occupied by ANYTHING, it is skipped -- never
+# signaled, never touched -- and the next candidate port is tried, up to
+# MAX_PORT_ATTEMPTS times.
 #
 # Never runs with `2>/dev/null` anywhere; every command's stderr is visible.
 
@@ -116,11 +146,14 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FIXTURE_DIR="$REPO_ROOT/scripts/dryrun_contract"
+MAX_PORT_ATTEMPTS=20
 
 # --- argument parsing: consume our own flags, forward the rest to cargo test ---
 KEEP=0
 DRY_RUN=0
 SEED=0
+ALLOW_NETWORK=0
+PORT_ARG=""
 CARGO_ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -136,6 +169,14 @@ while [ $# -gt 0 ]; do
       SEED=1
       shift
       ;;
+    --allow-network)
+      ALLOW_NETWORK=1
+      shift
+      ;;
+    --port)
+      PORT_ARG="${2:-}"
+      shift 2
+      ;;
     *)
       CARGO_ARGS+=("$1")
       shift
@@ -144,7 +185,6 @@ while [ $# -gt 0 ]; do
 done
 
 log() { echo "[test_db.sh] $*"; }
-run() { log "+ $*"; "$@"; }
 
 # bash 3.2 (macOS system bash) throws "unbound variable" under `set -u` when
 # expanding "${arr[@]}" on a genuinely empty array -- this helper renders an
@@ -176,42 +216,38 @@ if ! command -v "$SURREAL_BIN" >/dev/null 2>&1; then
   exit 1
 fi
 
-# --- port selection: try 8100; reuse if a surreal-memory instance already owns it; else pick a free port ---
-DEFAULT_PORT="${TEST_DB_PORT:-8100}"
+# --- port validation ---
+is_valid_port() {
+  case "$1" in
+    '' | *[!0-9]*) return 1 ;;
+  esac
+  [ "$1" -ge 1024 ] && [ "$1" -le 65535 ]
+}
+
+if [ -n "$PORT_ARG" ]; then
+  if ! is_valid_port "$PORT_ARG"; then
+    log "REFUSING: --port $PORT_ARG is not a valid numeric port in 1024-65535."
+    exit 2
+  fi
+  START_PORT="$PORT_ARG"
+else
+  START_PORT="${TEST_DB_PORT:-8100}"
+  if ! is_valid_port "$START_PORT"; then
+    log "REFUSING: TEST_DB_PORT=$START_PORT is not a valid numeric port in 1024-65535."
+    exit 2
+  fi
+fi
 
 port_listening() {
   lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
 }
 
-surreal_memory_owns_port() {
-  pgrep -f "surreal start memory --bind 127.0.0.1:$1 " >/dev/null 2>&1
-}
-
-PORT="$DEFAULT_PORT"
-REUSE=0
-if port_listening "$PORT"; then
-  if surreal_memory_owns_port "$PORT"; then
-    log "port $PORT is already bound by a 'surreal start memory' process (pid: $(pgrep -f "surreal start memory --bind 127.0.0.1:$PORT " | tr '\n' ' ')) -- reusing it, not starting a new instance, will NOT kill it on exit."
-    REUSE=1
-  else
-    log "port $PORT is in use by something that is NOT a 'surreal start memory' instance -- picking a different free port."
-    CANDIDATE=$((PORT + 1))
-    while port_listening "$CANDIDATE"; do
-      CANDIDATE=$((CANDIDATE + 1))
-    done
-    PORT="$CANDIDATE"
-    log "using free port $PORT instead."
+refuse_if_prod_url() {
+  if printf '%s' "$1" | grep -q ':8000'; then
+    log "REFUSING: $1 contains ':8000'. Exiting before starting anything."
+    exit 3
   fi
-else
-  log "port $PORT is free."
-fi
-
-# --- resolved DB URL + refusal check on what we are ABOUT to use ---
-DB_URL="127.0.0.1:$PORT"
-if printf '%s' "$DB_URL" | grep -q ':8000'; then
-  log "REFUSING: resolved DB URL $DB_URL contains ':8000'. This should be unreachable (port selection above never picks 8000), but refusing anyway rather than proceeding. Exiting before starting anything."
-  exit 3
-fi
+}
 
 # --- scratch namespace/database, unique per run ---
 TEST_NS="test_fed93bfee_$$_$(date +%s)"
@@ -219,16 +255,21 @@ TEST_DB="scratch"
 
 if [ "$DRY_RUN" -eq 1 ]; then
   log "DRY RUN -- plan only, nothing started, nothing run."
-  log "  port: $PORT (reuse=$REUSE)"
-  log "  db url: $DB_URL"
+  log "  fresh instance only: start scanning at port $START_PORT, up to $MAX_PORT_ATTEMPTS candidates, never reusing anything already listening"
   log "  namespace: $TEST_NS  database: $TEST_DB"
   if [ "$SEED" -eq 1 ]; then
     log "  fixture: $FIXTURE_DIR/schema.surql + seed.surql (--seed passed)"
   else
     log "  fixture: $FIXTURE_DIR/schema.surql only (pass --seed to also apply seed.surql)"
   fi
-  log "  env that would be exported: SURR_DB_URL SURR_DB_NS SURR_DB_DB SURR_DB_USER SURR_DB_PASS RUN_DB_TESTS SURR_TEST_DB_URL OPENAI_API_KEY GEMINI_API_KEY SM_AGENT_PROVIDER ANTIGRAVITY_CLI_BIN"
-  log "  ALLOW_NETWORK_EMBED: $( [ -n "${ALLOW_NETWORK_EMBED:-}" ] && echo "set (${ALLOW_NETWORK_EMBED}) -- network-reaching tests will run" || echo "unset -- 3 network-reaching tests will skip" )"
+  log "  env sanitized (explicitly unset unless the corresponding opt-in flag is passed): RUN_GEMINI_TESTS SURR_SMOKE_TEST REEMBED_TEST_CONFIRM_DISPOSABLE_NS ALLOW_NETWORK_EMBED GOOGLE_CLI_PROVIDER SURR_GOOGLE_CLI_PROVIDER"
+  log "  SURR_ENV_FILE pinned to an empty scratch file (protects Config::load's own dotenv step, src/config.rs:229); SURREAL_MIND_CONFIG pinned to $REPO_ROOT/surreal_mind.toml (belt-and-suspenders, config-file resolution unambiguous)"
+  log "  ACKNOWLEDGED GAP (see header comment): src/embeddings.rs:238, src/lib.rs:24, and tests/gemini_client_integration.rs:9 each call the bare dotenvy::dotenv(), which does NOT honor SURR_ENV_FILE and is NOT blocked by this wrapper -- not currently exploitable on this machine (checked: the real ~/Projects/LegacyMind/.env's key names do not include any sanitized gate var), but not a closed gap either."
+  if [ "$ALLOW_NETWORK" -eq 1 ]; then
+    log "  --allow-network passed: ALLOW_NETWORK_EMBED=1 would be exported, the 3 network-reaching tests would run"
+  else
+    log "  --allow-network NOT passed: ALLOW_NETWORK_EMBED stays unset, the 3 network-reaching tests will skip"
+  fi
   log "  would run: cargo test --features db_integration --no-fail-fast $(cargo_args_display)"
   exit 0
 fi
@@ -236,54 +277,120 @@ fi
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/test_db.XXXXXX")"
 log "scratch work dir: $WORK_DIR"
 
-SURREAL_PID=""
+DB_PID=""
 WE_STARTED_SURREAL=0
+PORT=""
 
 cleanup() {
-  if [ "$KEEP" -eq 1 ] && [ "$WE_STARTED_SURREAL" -eq 1 ]; then
-    log "--keep set: leaving the SurrealDB instance this script started (pid $SURREAL_PID) running on 127.0.0.1:$PORT."
-    log "  connection env for manual poking:"
-    log "    export SURR_DB_URL=$DB_URL SURR_DB_NS=$TEST_NS SURR_DB_DB=$TEST_DB SURR_DB_USER=root SURR_DB_PASS=root"
-    rm -rf "$WORK_DIR"
-    return
-  fi
-  if [ "$WE_STARTED_SURREAL" -eq 1 ] && [ -n "$SURREAL_PID" ] && kill -0 "$SURREAL_PID" 2>/dev/null; then
-    log "killing the SurrealDB instance this script started (pid $SURREAL_PID)."
-    kill "$SURREAL_PID" 2>/dev/null || true
-    wait "$SURREAL_PID" 2>/dev/null || true
+  local rc=$?
+  if [ -n "$DB_PID" ]; then
+    if [ "$KEEP" -eq 1 ] && [ "$WE_STARTED_SURREAL" -eq 1 ]; then
+      log "--keep set: leaving the SurrealDB instance this script started (pid $DB_PID) running on 127.0.0.1:$PORT."
+      log "  connection env for manual poking:"
+      log "    export SURR_DB_URL=127.0.0.1:$PORT SURR_DB_NS=$TEST_NS SURR_DB_DB=$TEST_DB SURR_DB_USER=root SURR_DB_PASS=root"
+    else
+      if kill -0 "$DB_PID" 2>/dev/null; then
+        log "sending TERM to surreal pid $DB_PID"
+        kill -TERM "$DB_PID" 2>/dev/null || true
+        i=0
+        while kill -0 "$DB_PID" 2>/dev/null && [ "$i" -lt 50 ]; do
+          sleep 0.1
+          i=$((i + 1))
+        done
+        if kill -0 "$DB_PID" 2>/dev/null; then
+          log "pid $DB_PID still alive 5s after TERM, sending KILL"
+          kill -KILL "$DB_PID" 2>/dev/null || true
+        fi
+        wait "$DB_PID" 2>/dev/null || true
+      fi
+      if kill -0 "$DB_PID" 2>/dev/null; then
+        log "WARNING: pid $DB_PID still appears alive after KILL -- this should never happen"
+      else
+        log "confirmed: surreal pid $DB_PID is not running"
+      fi
+    fi
   fi
   rm -rf "$WORK_DIR"
+  return "$rc"
 }
 trap cleanup EXIT
+trap 'log "received SIGINT"; exit 130' INT
+trap 'log "received SIGTERM"; exit 143' TERM
 
-if [ "$REUSE" -eq 0 ]; then
-  log "starting throwaway SurrealDB (memory, 127.0.0.1:$PORT)..."
-  run "$SURREAL_BIN" start memory --bind "127.0.0.1:$PORT" --user root --pass root \
-    > "$WORK_DIR/surreal.log" 2>&1 &
-  SURREAL_PID=$!
-  WE_STARTED_SURREAL=1
-  log "spawned surreal pid $SURREAL_PID, waiting for readiness..."
+# --- fresh-instance-only launch loop: try up to MAX_PORT_ATTEMPTS candidate ports, never reuse ---
+CANDIDATE="$START_PORT"
+ATTEMPT=0
+while :; do
+  ATTEMPT=$((ATTEMPT + 1))
+  if [ "$ATTEMPT" -gt "$MAX_PORT_ATTEMPTS" ]; then
+    log "REFUSING: exhausted $MAX_PORT_ATTEMPTS candidate ports starting at $START_PORT without a usable one."
+    exit 1
+  fi
+  if ! is_valid_port "$CANDIDATE"; then
+    log "REFUSING: candidate port $CANDIDATE left the valid 1024-65535 range."
+    exit 1
+  fi
+  refuse_if_prod_url "127.0.0.1:$CANDIDATE"
+
+  if port_listening "$CANDIDATE"; then
+    log "port $CANDIDATE is already in use by something -- SKIPPING it (never touching whatever owns it), trying next candidate."
+    CANDIDATE=$((CANDIDATE + 1))
+    continue
+  fi
+
+  log "launching fresh SurrealDB (memory) on 127.0.0.1:$CANDIDATE (attempt $ATTEMPT/$MAX_PORT_ATTEMPTS)..."
+  log "+ $SURREAL_BIN start memory --bind 127.0.0.1:$CANDIDATE --user root --pass root"
+  "$SURREAL_BIN" start memory --bind "127.0.0.1:$CANDIDATE" --user root --pass root \
+    >"$WORK_DIR/surreal.$ATTEMPT.log" 2>&1 &
+  DB_PID=$!
+  log "spawned pid $DB_PID for candidate port $CANDIDATE"
+
   READY=0
   for _ in $(seq 1 40); do
-    if "$SURREAL_BIN" is-ready --endpoint "http://127.0.0.1:$PORT" >/dev/null 2>&1; then
+    if ! kill -0 "$DB_PID" 2>/dev/null; then
+      log "pid $DB_PID exited early (before becoming ready) on candidate port $CANDIDATE"
+      break
+    fi
+    if "$SURREAL_BIN" is-ready --endpoint "http://127.0.0.1:$CANDIDATE" >/dev/null 2>&1; then
       READY=1
       break
     fi
     sleep 0.5
   done
+
   if [ "$READY" -ne 1 ]; then
-    log "throwaway SurrealDB did not become ready within 20s; see $WORK_DIR/surreal.log"
-    cat "$WORK_DIR/surreal.log" || true
-    exit 1
+    log "candidate port $CANDIDATE unusable (process died or never became ready); log:"
+    cat "$WORK_DIR/surreal.$ATTEMPT.log" 2>/dev/null || true
+    if [ -n "$DB_PID" ] && kill -0 "$DB_PID" 2>/dev/null; then
+      kill -TERM "$DB_PID" 2>/dev/null || true
+      wait "$DB_PID" 2>/dev/null || true
+    fi
+    DB_PID=""
+    CANDIDATE=$((CANDIDATE + 1))
+    continue
   fi
-  log "SurrealDB is ready on 127.0.0.1:$PORT."
-else
-  if ! "$SURREAL_BIN" is-ready --endpoint "http://127.0.0.1:$PORT" >/dev/null 2>&1; then
-    log "reused instance on 127.0.0.1:$PORT did not answer is-ready. Aborting."
-    exit 1
+
+  # Bind-race check: confirm OUR pid is actually the LISTEN owner of the port
+  # before trusting it (something else could have bound it in the gap
+  # between our free-port check and our own bind, or `surreal` itself could
+  # be a wrapper around a different real listener).
+  OWNER_PIDS="$(lsof -nP -iTCP:"$CANDIDATE" -sTCP:LISTEN -t 2>/dev/null || true)"
+  if ! printf '%s\n' "$OWNER_PIDS" | grep -qx "$DB_PID"; then
+    log "bind race on port $CANDIDATE: pid $DB_PID is NOT the LISTEN owner (owner(s): ${OWNER_PIDS:-none}) -- discarding this attempt, trying next candidate."
+    kill -TERM "$DB_PID" 2>/dev/null || true
+    wait "$DB_PID" 2>/dev/null || true
+    DB_PID=""
+    CANDIDATE=$((CANDIDATE + 1))
+    continue
   fi
-  log "reused SurrealDB instance on 127.0.0.1:$PORT answers is-ready."
-fi
+
+  PORT="$CANDIDATE"
+  WE_STARTED_SURREAL=1
+  log "SurrealDB pid $DB_PID is ready and confirmed as the LISTEN owner of 127.0.0.1:$PORT."
+  break
+done
+
+DB_URL="127.0.0.1:$PORT"
 
 # --- apply the shared fixture (fed-734b8f's schema.surql, ALWAYS; seed.surql, opt-in via --seed) to the scratch ns/db ---
 sql() {
@@ -296,11 +403,11 @@ sql() {
 }
 
 log "applying fixture: schema.surql"
-sql < "$FIXTURE_DIR/schema.surql" > "$WORK_DIR/schema_apply.log" 2>&1
+sql <"$FIXTURE_DIR/schema.surql" >"$WORK_DIR/schema_apply.log" 2>&1
 cat "$WORK_DIR/schema_apply.log"
 if [ "$SEED" -eq 1 ]; then
   log "applying fixture: seed.surql (--seed passed)"
-  sql < "$FIXTURE_DIR/seed.surql" > "$WORK_DIR/seed_apply.log" 2>&1
+  sql <"$FIXTURE_DIR/seed.surql" >"$WORK_DIR/seed_apply.log" 2>&1
   cat "$WORK_DIR/seed_apply.log"
 else
   log "skipping seed.surql (default -- pass --seed to apply it; scripts/test_dryrun_contract.sh and scripts/dryrun_contract/test_health_dryrun.sh seed themselves independently of this wrapper and are unaffected either way)"
@@ -308,7 +415,7 @@ fi
 
 # --- fake Antigravity CLI stub (mirrors scripts/test_dryrun_contract.sh) ---
 FAKE_AGY="$WORK_DIR/fake-agy"
-cat > "$FAKE_AGY" << 'FAKE_AGY_EOF'
+cat >"$FAKE_AGY" <<'FAKE_AGY_EOF'
 #!/bin/bash
 # Fake Antigravity CLI stub for scripts/test_db.sh. Never calls a real provider.
 cat <<'JSON'
@@ -317,6 +424,16 @@ JSON
 exit 0
 FAKE_AGY_EOF
 chmod +x "$FAKE_AGY"
+
+# --- empty scratch env file: SURR_ENV_FILE pin (see header comment) ---
+EMPTY_ENV_FILE="$WORK_DIR/empty.env"
+: >"$EMPTY_ENV_FILE"
+
+# --- environment sanitization: explicitly UNSET every network-enabling gate ---
+# this wrapper knows about, regardless of what the calling shell already
+# exported. "Not setting a flag does not unset an inherited one" -- these
+# must be removed, not merely left alone.
+unset RUN_GEMINI_TESTS SURR_SMOKE_TEST REEMBED_TEST_CONFIRM_DISPOSABLE_NS ALLOW_NETWORK_EMBED GOOGLE_CLI_PROVIDER SURR_GOOGLE_CLI_PROVIDER 2>/dev/null || true
 
 # --- export exactly the env the tests read (see file:line contract in the header comment above) ---
 export SURR_DB_URL="$DB_URL"
@@ -330,6 +447,17 @@ export OPENAI_API_KEY="sk-fake-testdb"
 export GEMINI_API_KEY="fake-testdb"
 export SM_AGENT_PROVIDER=antigravity
 export ANTIGRAVITY_CLI_BIN="$FAKE_AGY"
+export SURR_ENV_FILE="$EMPTY_ENV_FILE"
+export SURREAL_MIND_CONFIG="$REPO_ROOT/surreal_mind.toml"
+
+if [ "$ALLOW_NETWORK" -eq 1 ]; then
+  log "=================================================================="
+  log "  --allow-network: OPTING IN TO REAL api.openai.com CALLS"
+  log "  ALLOW_NETWORK_EMBED=1 -- 3 tests will attempt a real (fake-key,"
+  log "  bound-to-degrade) embedding call against the live OpenAI API."
+  log "=================================================================="
+  export ALLOW_NETWORK_EMBED=1
+fi
 
 log "environment exported:"
 log "  SURR_DB_URL=$SURR_DB_URL SURR_DB_NS=$SURR_DB_NS SURR_DB_DB=$SURR_DB_DB"
@@ -337,24 +465,32 @@ log "  SURR_DB_USER=$SURR_DB_USER SURR_DB_PASS=$SURR_DB_PASS"
 log "  RUN_DB_TESTS=$RUN_DB_TESTS SURR_TEST_DB_URL=$SURR_TEST_DB_URL"
 log "  OPENAI_API_KEY=$OPENAI_API_KEY GEMINI_API_KEY=$GEMINI_API_KEY"
 log "  SM_AGENT_PROVIDER=$SM_AGENT_PROVIDER ANTIGRAVITY_CLI_BIN=$ANTIGRAVITY_CLI_BIN"
-# ALLOW_NETWORK_EMBED is deliberately NOT exported by this wrapper -- it is
-# only ever set if the operator already had it set in the calling
-# environment before invoking this script (see the header comment's
-# ALLOW_NETWORK_EMBED section).
+log "  SURR_ENV_FILE=$SURR_ENV_FILE (size: $(wc -c <"$SURR_ENV_FILE" | tr -d ' ') bytes)"
+log "  SURREAL_MIND_CONFIG=$SURREAL_MIND_CONFIG"
+log "  sanitized (unset, not merely left alone): RUN_GEMINI_TESTS SURR_SMOKE_TEST REEMBED_TEST_CONFIRM_DISPOSABLE_NS GOOGLE_CLI_PROVIDER SURR_GOOGLE_CLI_PROVIDER"
 if [ -n "${ALLOW_NETWORK_EMBED:-}" ]; then
-  log "  ALLOW_NETWORK_EMBED=$ALLOW_NETWORK_EMBED (set by caller -- the 3 network-reaching tests will run)"
+  log "  ALLOW_NETWORK_EMBED=$ALLOW_NETWORK_EMBED (--allow-network passed -- the 3 network-reaching tests will run)"
 else
   log "  ALLOW_NETWORK_EMBED unset (default -- the 3 network-reaching tests will skip)"
 fi
 
 # --no-fail-fast: this is a STANDING wrapper meant to report results across
 # every db_integration test binary in one pass, not stop at the first
-# failing one -- without it, cargo test's default fail-fast behavior means
-# a single failing test in an alphabetically-early binary (observed:
-# tests/dimension_hygiene.rs) silently prevents every later binary
-# (tests/mcp_integration.rs, tests/reembed_dry_run_contract.rs, etc.) from
-# running at all, which would make this wrapper's pass/fail report useless
-# for anything but the first failure.
+# failing one.
+#
+# NOTE: an earlier draft of this pass tried to redirect cargo test's own
+# working directory to the scratch work dir (via `cd "$WORK_DIR" && cargo
+# test --manifest-path ...`), on the theory that this would starve
+# src/embeddings.rs/src/lib.rs/tests/gemini_client_integration.rs's bare,
+# cwd-upward-searching `dotenvy::dotenv()` calls of a reachable ancestor
+# .env. That theory was tested directly and DISPROVEN: `cargo test
+# --manifest-path X` runs test binaries with their current directory
+# anchored at the crate root regardless of where `cargo` itself was
+# invoked from (a decoy .env placed at the crate root was found even when
+# cargo ran from an unrelated scratch directory; the same decoy placed
+# only in that scratch directory was not found). So that redirect bought
+# nothing and has been removed -- see the header comment's "ACKNOWLEDGED
+# RESIDUAL GAP" for what actually protects against this and what doesn't.
 log "running: cargo test --features db_integration --no-fail-fast $(cargo_args_display)"
 cd "$REPO_ROOT"
 set +e
