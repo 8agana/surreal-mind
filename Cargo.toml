@@ -4,6 +4,7 @@ version = "0.8.2"
 edition = "2024"
 
 [dependencies]
+libc = "0.2"
 anyhow = "1.0"
 async-trait = "0.1"
 # HTTP transport dependencies

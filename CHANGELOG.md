@@ -1,3 +1,31 @@
+## [Unreleased] - fed-6d00e5 decision-runner controls
+
+- Normalized the Python decision runner's model forwarding to match the Rust
+  Antigravity client: empty or case-insensitive `auto` omits `--model`; an
+  explicit trimmed model is forwarded. Offline fake-CLI argv coverage proves
+  both paths. The recorded standalone acceptance attempt failed before this
+  correction because it forwarded `--model auto` alongside `--effort low`.
+
+- Forward the selected KG model through the opt-in Rust/Python runner to
+  Antigravity's `--model`; offline fixtures assert both argument boundaries.
+
+- Added an opt-in Rust adapter through `KG_WANDER_DECISION_RUNNER` (absolute
+  script path). Sends context over stdin to the Python runner, consumes exact
+  JSON, and propagates runner failure instead of falling back to random wander.
+  Existing runtime selection is unchanged unless explicitly enabled. Pending
+  review and deployment; this does not yet repair nightly execution.
+
+- Added independent Rust/Python process-group supervision for the opt-in
+  runner. Rust bounds the adapter deadline and combined output while it waits,
+  then kills/reaps its shared Python/`agy` group on every result path; standalone
+  Python retains its existing ownership model.
+
+- Added offline subprocess controls for the candidate subscription decision runner:
+  valid terminal output, nonzero child exit, oversized stdout, and timeout of
+  a TERM-ignoring child. Each verifies child reaping and disposable workspace
+  removal, including descendant cleanup. No provider or KG call.
+  Runner remains unintegrated and undeployed; nightly wander is not fixed yet.
+
 ## [Unreleased] - remove call_status/call_jobs/call_cancel/call_cc/call_vibe/call_gem tools (branch `fed-734b8f/remove-call-tools`)
 
 Removed the six delegation/job-management MCP tools that duplicated

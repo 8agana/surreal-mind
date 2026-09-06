@@ -1,0 +1,1 @@
+Not captured. The post-invocation zsh receipt attempted assignment to reserved parameter `status` and failed after the pipeline completed. No retry was performed.

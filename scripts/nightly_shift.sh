@@ -11,6 +11,9 @@ cd /Users/samuelatagana/Projects/LegacyMind/surreal-mind || exit 1
 
 export SURR_ENV_FILE=/Users/samuelatagana/Projects/LegacyMind/surreal-mind/.env
 export ANTIGRAVITY_CLI_BIN=${ANTIGRAVITY_CLI_BIN:-/Users/samuelatagana/.local/bin/agy}
+# Opt-in only for the REMini wander child; keep Gemini rollback direct when
+# this binding is removed. Do not move this into the global .env.
+export KG_WANDER_DECISION_RUNNER=/Users/samuelatagana/Projects/LegacyMind/surreal-mind/scripts/kg_decision/kg_decision.py
 export PATH="/Users/samuelatagana/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 LOG="logs/nightly_shift.log"

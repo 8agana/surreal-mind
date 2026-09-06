@@ -4506,6 +4506,7 @@ dependencies = [
  "dirs",
  "dotenvy",
  "futures-util",
+ "libc",
  "lru",
  "once_cell",
  "regex",

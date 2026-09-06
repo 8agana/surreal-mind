@@ -1,0 +1,1 @@
+{"action": "wander", "parameters": {"mode": "semantic"}, "rationale": "Synthetic non-production gardening exercise."}

@@ -13,6 +13,13 @@ use rmcp::model::CallToolRequestParams;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::io::Write;
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+use std::time::{Duration, Instant};
 use surreal_mind::clients::{
     AntigravityClient, AntigravityPermissionMode, CognitiveAgent, GeminiClient, GoogleCliProvider,
 };
@@ -28,6 +35,8 @@ fn bool_env(name: &str, default: bool) -> bool {
 const DEFAULT_MODEL: &str = "gemini-3-flash-preview";
 const DEFAULT_MAX_STEPS: usize = 50;
 const DEFAULT_TIMEOUT_MS: u64 = 60_000;
+const RUNNER_OUTPUT_LIMIT: u64 = 65_536;
+const RUNNER_GRACE: Duration = Duration::from_secs(6);
 
 #[derive(Debug, Serialize)]
 struct AgentPrompt {
@@ -48,6 +57,113 @@ struct AgentDecision {
 
 fn default_action() -> String {
     "wander".to_string()
+}
+
+/// Dropping the async caller signals the blocking subprocess worker to stop.
+struct CancelOnDrop(Arc<AtomicBool>);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Release);
+    }
+}
+
+// Opt-in candidate only. Rust owns one process group containing the Python
+// adapter and its provider child. This is distinct from a standalone Python
+// invocation, where the Python adapter creates and cleans up its own group.
+async fn runner_decision(
+    script: String,
+    prompt: String,
+    timeout_ms: u64,
+    model: String,
+) -> Result<AgentDecision> {
+    anyhow::ensure!(
+        std::path::Path::new(&script).is_absolute(),
+        "decision runner path must be absolute"
+    );
+    let seconds = timeout_ms.div_ceil(1000).clamp(1, 300);
+    let agy = std::env::var("ANTIGRAVITY_CLI_BIN").unwrap_or_else(|_| "agy".to_string());
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let _cancel_guard = CancelOnDrop(cancelled.clone());
+    tokio::task::spawn_blocking(move || -> Result<AgentDecision> {
+        use std::io::{Read, Seek};
+        let mut input = tempfile::tempfile()?;
+        input.write_all(prompt.as_bytes())?;
+        input.rewind()?;
+        let mut output = tempfile::tempfile()?;
+        let errors = tempfile::tempfile()?;
+        let mut child = std::process::Command::new("/usr/bin/python3")
+            .arg(script)
+            .args(["--agy", &agy, "--timeout", &seconds.to_string()])
+            .args(["--model", &model])
+            .arg("--supervised")
+            .stdin(input)
+            .stdout(output.try_clone()?)
+            .stderr(errors.try_clone()?)
+            .process_group(0)
+            .spawn()?;
+        let pgid = child.id() as i32;
+        let result = (|| -> Result<AgentDecision> {
+            let deadline = Instant::now() + Duration::from_secs(seconds) + RUNNER_GRACE;
+            let status = loop {
+                if let Some(status) = child.try_wait()? {
+                    break status;
+                }
+                if output.metadata()?.len() + errors.metadata()?.len() > RUNNER_OUTPUT_LIMIT {
+                    anyhow::bail!("decision runner output exceeds limit");
+                }
+                if cancelled.load(Ordering::Acquire) {
+                    anyhow::bail!("decision runner cancelled");
+                }
+                if Instant::now() >= deadline {
+                    anyhow::bail!("decision runner timed out");
+                }
+                std::thread::sleep(Duration::from_millis(25));
+            };
+            anyhow::ensure!(
+                output.metadata()?.len() + errors.metadata()?.len() <= RUNNER_OUTPUT_LIMIT,
+                "decision runner output exceeds limit"
+            );
+            anyhow::ensure!(
+                status.success(),
+                "decision runner failed; no fallback performed"
+            );
+            output.rewind()?;
+            let mut bytes = Vec::new();
+            output
+                .take(RUNNER_OUTPUT_LIMIT + 1)
+                .read_to_end(&mut bytes)?;
+            anyhow::ensure!(
+                bytes.len() <= RUNNER_OUTPUT_LIMIT as usize,
+                "decision output exceeds limit"
+            );
+            let value: serde_json::Value = serde_json::from_slice(&bytes)?;
+            anyhow::ensure!(
+                value
+                    .get("action")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|a| matches!(
+                        a,
+                        "wander" | "connect" | "create_entity" | "observe"
+                    )),
+                "invalid runner action"
+            );
+            anyhow::ensure!(
+                value.get("parameters").is_some_and(|v| v.is_object())
+                    && value
+                        .get("rationale")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|s| !s.trim().is_empty()),
+                "invalid runner decision fields"
+            );
+            Ok(serde_json::from_value(value)?)
+        })();
+        // This group is unique to the adapter invocation; clean every return path.
+        unsafe { libc::kill(-pgid, libc::SIGKILL) };
+        let _ = child.wait();
+        result
+    })
+    .await?
 }
 
 enum WanderDriver {
@@ -86,6 +202,18 @@ fn kg_wander_model(provider: GoogleCliProvider, config: &Config) -> String {
     }
 }
 
+fn decision_runner_script(
+    provider: GoogleCliProvider,
+    script: Option<String>,
+) -> Result<Option<String>> {
+    if script.is_some() && provider != GoogleCliProvider::Antigravity {
+        anyhow::bail!(
+            "KG_WANDER_DECISION_RUNNER requires the antigravity provider; Gemini rollback remains direct"
+        );
+    }
+    Ok(script)
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Load .env
@@ -103,16 +231,14 @@ async fn main() -> Result<()> {
     // Load config
     let config = Config::load().expect("Failed to load config");
 
-    // Initialize Server (for tool execution)
-    let server = SurrealMindServer::new(&config)
-        .await
-        .expect("Failed to start server");
-    println!("✅ Connected to SurrealMind");
-
     // Initialize configured provider for decision making. Antigravity is the
     // default after KG quality signoff; Gemini remains available for rollback.
     let provider = GoogleCliProvider::from_env_or_config(Some(&config.system.google_cli_provider))
         .map_err(anyhow::Error::msg)?;
+    // Resolve and validate before server setup, so the Gemini rollback cannot
+    // be silently replaced by the Antigravity-only subscription runner.
+    let decision_runner =
+        decision_runner_script(provider, std::env::var("KG_WANDER_DECISION_RUNNER").ok())?;
     let model = kg_wander_model(provider, &config);
     let timeout = std::env::var("KG_WANDER_TIMEOUT_MS")
         .ok()
@@ -120,12 +246,18 @@ async fn main() -> Result<()> {
         .unwrap_or(DEFAULT_TIMEOUT_MS);
     println!("🧠 AI Driver: {} ({})", provider, model);
 
+    // Initialize Server (for tool execution) only after runner/provider validation.
+    let server = SurrealMindServer::new(&config)
+        .await
+        .expect("Failed to start server");
+    println!("✅ Connected to SurrealMind");
+
     let driver = match provider {
         GoogleCliProvider::Gemini => {
-            WanderDriver::Gemini(GeminiClient::with_timeout_ms(model, timeout))
+            WanderDriver::Gemini(GeminiClient::with_timeout_ms(model.clone(), timeout))
         }
         GoogleCliProvider::Antigravity => WanderDriver::Antigravity(
-            AntigravityClient::new(Some(model))
+            AntigravityClient::new(Some(model.clone()))
                 .with_timeout_ms(timeout)
                 .with_print_timeout_ms(timeout)
                 .with_permission_mode(AntigravityPermissionMode::for_kg()),
@@ -195,15 +327,20 @@ async fn main() -> Result<()> {
             serde_json::to_string_pretty(&prompt_data)?
         );
 
-        let decision_json = driver.call(&prompt_str).await?.response;
-        let decision: AgentDecision = parse_json(&decision_json).unwrap_or_else(|| {
-            println!("\n⚠️ Failed to parse: {}", decision_json);
-            AgentDecision {
-                action: "wander".to_string(),
-                parameters: Some(json!({"mode": "random"})),
-                rationale: "Failed to parse decision, defaulting to random wander.".to_string(),
-            }
-        });
+        let decision = if let Some(script) = &decision_runner {
+            runner_decision(script.clone(), prompt_str, timeout, model.clone()).await?
+        } else {
+            let decision_json = driver.call(&prompt_str).await?.response;
+            let decision: AgentDecision = parse_json(&decision_json).unwrap_or_else(|| {
+                println!("\n⚠️ Failed to parse: {}", decision_json);
+                AgentDecision {
+                    action: "wander".to_string(),
+                    parameters: Some(json!({"mode": "random"})),
+                    rationale: "Failed to parse decision, defaulting to random wander.".to_string(),
+                }
+            });
+            decision
+        };
 
         println!(
             "\r👉 {} ({})",
@@ -474,6 +611,107 @@ fn parse_json(s: &str) -> Option<AgentDecision> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[tokio::test]
+    async fn runner_adapter_rejects_failure_and_malformed_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("fixture.py");
+        for body in ["raise SystemExit(7)", "print('not json')", "print('{}')"] {
+            std::fs::write(&script, body).unwrap();
+            assert!(
+                runner_decision(
+                    script.to_str().unwrap().into(),
+                    "test".into(),
+                    1000,
+                    "fixture-model".into()
+                )
+                .await
+                .is_err()
+            );
+        }
+        std::fs::write(&script, "import sys\nassert sys.argv[sys.argv.index('--model')+1] == 'fixture-model'\nassert '--supervised' in sys.argv\nprint('{\"action\":\"wander\",\"parameters\":{\"mode\":\"random\"},\"rationale\":\"fixture\"}')").unwrap();
+        let result = runner_decision(
+            script.to_str().unwrap().into(),
+            "test".into(),
+            1000,
+            "fixture-model".into(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.action, "wander");
+    }
+
+    #[tokio::test]
+    async fn runner_adapter_timeout_kills_owned_descendant_group() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("sleeper.py");
+        let witness = script.with_extension("pid");
+        std::fs::write(&script, "import pathlib, subprocess, sys, time\nchild = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\npathlib.Path(sys.argv[0]).with_suffix('.pid').write_text(str(child.pid))\ntime.sleep(60)\n").unwrap();
+        let started = Instant::now();
+        assert!(
+            runner_decision(
+                script.to_str().unwrap().into(),
+                "test".into(),
+                1000,
+                "fixture-model".into()
+            )
+            .await
+            .is_err()
+        );
+        assert!(started.elapsed() < Duration::from_secs(9));
+        let pid: i32 = std::fs::read_to_string(witness).unwrap().parse().unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        assert_ne!(
+            unsafe { libc::kill(pid, 0) },
+            0,
+            "descendant survived timeout"
+        );
+    }
+
+    #[tokio::test]
+    async fn runner_adapter_cancellation_kills_owned_descendant_group() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("cancellable.py");
+        let witness = script.with_extension("pid");
+        std::fs::write(&script, "import pathlib, subprocess, sys, time\nchild = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\npathlib.Path(sys.argv[0]).with_suffix('.pid').write_text(str(child.pid))\ntime.sleep(60)\n").unwrap();
+        let task = tokio::spawn(runner_decision(
+            script.to_str().unwrap().into(),
+            "test".into(),
+            60_000,
+            "fixture-model".into(),
+        ));
+        for _ in 0..100 {
+            if witness.exists() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(witness.exists(), "runner did not start");
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        let pid: i32 = std::fs::read_to_string(witness).unwrap().parse().unwrap();
+        for _ in 0..100 {
+            if unsafe { libc::kill(pid, 0) } != 0 {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        panic!("descendant survived async cancellation");
+    }
+
+    #[test]
+    fn decision_runner_preserves_gemini_rollback() {
+        let runner = Some("/opt/runner.py".to_string());
+        assert!(decision_runner_script(GoogleCliProvider::Gemini, runner.clone()).is_err());
+        assert_eq!(
+            decision_runner_script(GoogleCliProvider::Antigravity, runner).unwrap(),
+            Some("/opt/runner.py".to_string())
+        );
+        assert_eq!(
+            decision_runner_script(GoogleCliProvider::Gemini, None).unwrap(),
+            None
+        );
+    }
 
     #[test]
     fn compact_current_node_drops_embedding_and_bounds_content() {
