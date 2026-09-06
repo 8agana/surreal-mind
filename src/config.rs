@@ -1,5 +1,81 @@
 use serde::{Deserialize, Serialize};
 
+/// The ONE shared rule for the explicit-pin case, used by every reachable
+/// dotenv-loading call site in this crate: if `SURR_ENV_FILE` is set, load
+/// ONLY that exact path (`dotenvy::from_path`) and never fall back to an
+/// ancestor `.env` -- an empty file at that path loads nothing. If
+/// `SURR_ENV_FILE` is unset, run the caller-supplied `unset_fallback`
+/// closure instead.
+///
+/// fed-93bfee #216 unified this AND each caller's unset-path behavior into
+/// one bare `dotenvy::dotenv()` rule. Codex's #222 review caught that as a
+/// production behavior change: `Config::load`'s pre-existing unset rule was
+/// NOT a bare `dotenvy::dotenv()` -- it was local `.env`, then `../.env`
+/// ONLY if neither `SURR_DB_URL` nor `OPENAI_API_KEY` ended up present (see
+/// `git show 73d5831:src/config.rs`). `dotenvy::dotenv()`'s unconditional
+/// upward walk can search past the immediate parent and does not re-check
+/// "are the core vars still missing" before continuing, so swapping in one
+/// unchanged default silently changed `Config::load`'s production behavior.
+/// This function narrows the shared rule to ONLY the explicit-pin branch
+/// (genuinely identical and safe to share across every caller) and leaves
+/// each caller's unset-path exactly as it was before #216 -- see
+/// `load_env_file` (the bare-`dotenv()` policy every caller except
+/// `Config::load` used, and still uses) and
+/// `load_env_file_config_load_unset_rule` (the two-hop policy unique to
+/// `Config::load`, extracted to its own named, independently testable
+/// function so `src/bin/env_resolution_probe.rs` can exercise it without a
+/// full `Config::load()` round-trip).
+///
+/// Errors (missing/unreadable files) are intentionally swallowed, matching
+/// every call site this replaces.
+pub fn load_env_file_or(unset_fallback: impl FnOnce()) {
+    if let Ok(env_path) = std::env::var("SURR_ENV_FILE") {
+        let _ = dotenvy::from_path(env_path);
+    } else {
+        unset_fallback();
+    }
+}
+
+/// The bare-`dotenv()` policy: every reachable dotenv-loading call site in
+/// this crate EXCEPT `Config::load` used a plain `dotenvy::dotenv()` when
+/// `SURR_ENV_FILE` was unset, both before and after fed-93bfee #216/#222 --
+/// that part never changed. Used by `embeddings::create_embedder`,
+/// `lib::load_env`, `tests/gemini_client_integration.rs`, and
+/// `src/bin/reembed.rs` (spawned as a subprocess by `tests/
+/// reembed_bin_dry_run.rs`, the reason this needs to be reachable at all).
+/// Several other `src/bin/*.rs` binaries (admin, kg_populate, kg_wander,
+/// kg_embed, kg_consolidate, kg_dedupe_plan, kg_apply_from_plan,
+/// kg_debug_tool, gem_rethink, migration, reembed_kg) also call bare
+/// `dotenvy::dotenv()` at their own `main()` entry points; none of them are
+/// spawned by anything in the `db_integration` test suite (verified via
+/// grep), so they are intentionally left unconverted here rather than
+/// touched as an unrelated, unbounded blast-radius change to operational
+/// CLI tools -- flagged, not silently skipped.
+pub fn load_env_file() {
+    load_env_file_or(|| {
+        let _ = dotenvy::dotenv();
+    });
+}
+
+/// The exact rule `Config::load` used for its unset-path before fed-93bfee
+/// #216 ever existed, preserved verbatim and extracted to its own function
+/// (see `load_env_file_or`'s doc comment for why): load local `.env`, then
+/// load `../.env` ONLY if, after that local load, NEITHER `SURR_DB_URL` NOR
+/// `OPENAI_API_KEY` ended up present in the process environment. Both
+/// paths are relative to the process's actual current directory --
+/// `Config::load` itself never changes that, and neither does this
+/// function; callers that want a specific directory (e.g. the fallback-rule
+/// probe binary, or a subprocess test) control it via `current_dir` on the
+/// `Command` that spawns the process, not by any path manipulation here.
+pub fn load_env_file_config_load_unset_rule() {
+    let _ = dotenvy::from_path(".env");
+    let core_present =
+        std::env::var("SURR_DB_URL").is_ok() || std::env::var("OPENAI_API_KEY").is_ok();
+    if !core_present {
+        let _ = dotenvy::from_path("../.env");
+    }
+}
+
 /// Main configuration structure loaded from surreal_mind.toml and environment variables
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
@@ -222,22 +298,11 @@ impl Config {
     /// Load configuration from TOML file and environment variables
     /// Uses SURREAL_MIND_CONFIG environment variable or defaults to "surreal_mind.toml"
     pub fn load() -> anyhow::Result<Self> {
-        // Load environment variables with smart fallbacks:
-        // 1) SURR_ENV_FILE if set
-        // 2) ./.env
-        // 3) ../.env (repo root when running from crate dir)
-        if let Ok(env_path) = std::env::var("SURR_ENV_FILE") {
-            let _ = dotenvy::from_path(env_path);
-        } else {
-            // Current directory .env
-            let _ = dotenvy::from_path(".env");
-            // Fallback to parent .env if core vars are still missing
-            let core_present =
-                std::env::var("SURR_DB_URL").is_ok() || std::env::var("OPENAI_API_KEY").is_ok();
-            if !core_present {
-                let _ = dotenvy::from_path("../.env");
-            }
-        }
+        // Explicit-pin case shared with every other reachable dotenv call
+        // site (load_env_file_or); unset case is Config::load's OWN
+        // pre-existing rule, preserved verbatim
+        // (load_env_file_config_load_unset_rule) -- fed-93bfee #216/#222.
+        load_env_file_or(load_env_file_config_load_unset_rule);
 
         let config_path = std::env::var("SURREAL_MIND_CONFIG")
             .unwrap_or_else(|_| "surreal_mind.toml".to_string());
@@ -578,6 +643,18 @@ mod tests {
         let config = Config::load();
         assert!(config.is_ok() || config.is_err()); // Either way, method works
     }
+
+    // load_env_file_or / load_env_file / load_env_file_config_load_unset_rule
+    // (fed-93bfee #216/#222): the dotenv-resolution controls for these live
+    // in tests/config_env_resolution.rs, NOT here -- Codex's #222 review
+    // required them to be private-temp SUBPROCESS controls (spawn
+    // src/bin/env_resolution_probe.rs with an isolated current_dir and an
+    // explicit, cleared env), never writing a decoy .env under this
+    // checkout and never calling std::env::set_var/remove_var in-process.
+    // An earlier version of these tests lived here, mutated process-wide
+    // env vars and a real file at the crate root, and needed a Mutex to
+    // avoid racing test_config_loading above -- all of that is gone now
+    // that the controls run in their own processes instead.
 
     // --- SURR_HTTP_ALLOWED_HOSTS semantics (upgrade doc D5 / HTTP-01..05) ---
 

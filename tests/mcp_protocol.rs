@@ -400,6 +400,21 @@ async fn test_call_tool_continuity_fallback_protocol() {
         return;
     }
 
+    // Reaches api.openai.com for real: this drives a live "think" CallTool
+    // through the full protocol harness, which always attempts a live
+    // OpenAI embedding call for `content` (src/tools/thinking.rs:236 ->
+    // embedder.embed()), and `embed_strict` defaults to false
+    // (src/config.rs:149), so the handler tolerates the failure and this
+    // test would otherwise "pass" while silently making a real network
+    // call under a wrapper whose contract is zero external calls (Codex
+    // blocked fed-734b8f #172 item 2 for exactly this). Skip unless the
+    // operator explicitly opts in; the real fix is the offline embedder
+    // tracked at clu fed-77afac.
+    if std::env::var("ALLOW_NETWORK_EMBED").ok().as_deref() != Some("1") {
+        eprintln!("skipped: reaches api.openai.com; needs the offline embedder (clu fed-77afac)");
+        return;
+    }
+
     // Create server
     let config = Config::load().expect("Failed to load config");
     let server = SurrealMindServer::new(&config)

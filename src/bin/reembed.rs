@@ -21,10 +21,12 @@ fn dry_run_requested(args: &[String], env_value: Option<&str>) -> bool {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Load environment from .env file
-    if let Err(e) = dotenvy::dotenv() {
-        eprintln!("Warning: Could not load .env file: {}", e);
-    }
+    // Load environment from .env file. Routes through
+    // config::load_env_file() (fed-93bfee #216) since this binary is
+    // spawned as a subprocess by tests/reembed_bin_dry_run.rs and must
+    // honor a pinned SURR_ENV_FILE the same way every other reachable
+    // dotenv call site in this crate does.
+    surreal_mind::config::load_env_file();
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     let dry_run = dry_run_requested(&args, std::env::var("DRY_RUN").ok().as_deref());

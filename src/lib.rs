@@ -19,7 +19,11 @@ pub use maintenance::{
 };
 
 // Load env from a simple, standardized location resolution.
-// This uses dotenvy::dotenv().ok() which loads .env if present and silently ignores if missing.
+// Routes through config::load_env_file() (fed-93bfee #216) so this and every
+// other dotenv-loading call site reachable by the db_integration test suite
+// share exactly one resolution rule (honors SURR_ENV_FILE when set, with no
+// fallback to an ancestor .env; falls back to ordinary dotenvy::dotenv()
+// discovery only when SURR_ENV_FILE is unset).
 pub fn load_env() {
-    let _ = dotenvy::dotenv();
+    config::load_env_file();
 }
