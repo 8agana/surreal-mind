@@ -25,7 +25,7 @@
 //! run against anything that looks like the production endpoint.
 #![cfg(feature = "db_integration")]
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -68,6 +68,32 @@ impl Embedder for CountingEmbedder {
 
 /// `None` means "do not run" — the caller returns Ok(()) so the DB-free suite
 /// stays green and a misconfigured environment can never touch production.
+/// fed-ef0759. Measured mechanism: the per-test namespace name was
+/// `{pid}_{SystemTime nanos}`, and macOS's realtime clock has ~microsecond
+/// effective resolution, so two test threads reaching the name in the same
+/// microsecond got the SAME namespace. Two threads then issued
+/// `DEFINE NAMESPACE` for one key at once ("Transaction conflict: Write
+/// conflict, retry the transaction", 8 of 40 runs), and with a retry alone the
+/// loser walked into the winner's already-seeded namespace ("record already
+/// exists", 4 of 50 runs). The real fix is the process-wide sequence in
+/// `disposable_db` below. This bounded retry on exactly the conflict error is
+/// kept as defence in depth; every other error propagates at once with its site.
+async fn define_with_retry(db: &Surreal<Client>, stmt: &str, site: &'static str) -> Result<()> {
+    let mut attempt: u32 = 0;
+    loop {
+        attempt += 1;
+        match db.query(stmt).await.and_then(|r| r.check()) {
+            Ok(_) => return Ok(()),
+            Err(e) if attempt < 10 && e.to_string().contains("Transaction conflict") => {
+                tokio::time::sleep(std::time::Duration::from_millis(15 * u64::from(attempt))).await;
+            }
+            Err(e) => {
+                return Err(anyhow::Error::new(e).context(format!("{site} (attempt {attempt})")));
+            }
+        }
+    }
+}
+
 async fn disposable_db() -> Result<Option<(Surreal<Client>, String)>> {
     if std::env::var("RUN_DB_TESTS").is_err() {
         eprintln!("skipping: set RUN_DB_TESTS=1 to run the reembed dry-run contract tests");
@@ -89,24 +115,37 @@ async fn disposable_db() -> Result<Option<(Surreal<Client>, String)>> {
     })
     .await?;
 
-    // Unique namespace per test run: other workers share this instance, and a
-    // fresh namespace means these tests never need DELETE or REMOVE TABLE.
+    // Unique namespace per TEST, by construction: pid + wall clock + a
+    // process-wide sequence. pid+nanos alone collided when two test threads
+    // reached this line within the clock's resolution (fed-ef0759). A fresh
+    // namespace means these tests never need DELETE or REMOVE TABLE.
+    static SEQ: AtomicUsize = AtomicUsize::new(0);
     let suffix = format!(
-        "{}_{}",
+        "{}_{}_{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
-            .as_nanos()
+            .as_nanos(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
     );
     let ns = format!("reembed_dryrun_{suffix}");
-    db.query(format!("DEFINE NAMESPACE IF NOT EXISTS {ns}"))
-        .await?
-        .check()?;
-    db.use_ns(&ns).await?;
-    db.query("DEFINE DATABASE IF NOT EXISTS scratch")
-        .await?
-        .check()?;
-    db.use_ns(&ns).use_db("scratch").await?;
+    define_with_retry(
+        &db,
+        &format!("DEFINE NAMESPACE IF NOT EXISTS {ns}"),
+        "DEFINE NAMESPACE",
+    )
+    .await?;
+    db.use_ns(&ns).await.context("use_ns")?;
+    define_with_retry(
+        &db,
+        "DEFINE DATABASE IF NOT EXISTS scratch",
+        "DEFINE DATABASE",
+    )
+    .await?;
+    db.use_ns(&ns)
+        .use_db("scratch")
+        .await
+        .context("use_ns/use_db")?;
     Ok(Some((db, ns)))
 }
 
@@ -122,7 +161,8 @@ async fn seed(db: &Surreal<Client>) -> Result<()> {
     )
     .bind(("model", TARGET_MODEL))
     .await?
-    .check()?;
+    .check()
+    .context("seed: CREATE batch")?;
     Ok(())
 }
 
@@ -162,7 +202,8 @@ async fn seed_thoughts(db: &Surreal<Client>) -> Result<()> {
     )
     .bind(("model", TARGET_MODEL))
     .await?
-    .check()?;
+    .check()
+    .context("seed_thoughts: CREATE batch")?;
     Ok(())
 }
 
