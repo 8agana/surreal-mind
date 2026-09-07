@@ -9,9 +9,10 @@
   prompt carries a bounded recent-action record; this is state feedback, not a
   claim of semantic novelty or global deduplication.
 - Dead-end/exhausted traversal falls back to random; an empty graph ends the
-  runner cleanly with an explicit message. Transport/DB failure remains an
-  error if its random fallback also fails, preventing further mutations against
-  stale context. No live model or database calls were made for this change.
+  runner cleanly with an explicit message. Transport/DB errors propagate
+  directly and are never masked by random fallback, preventing further
+  mutations against stale context. No live model or database calls were made
+  for this change.
 
 - Normalized the Python decision runner's model forwarding to match the Rust
   Antigravity client: empty or case-insensitive `auto` omits `--model`; an

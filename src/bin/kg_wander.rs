@@ -540,18 +540,6 @@ async fn execute_wander_with_fallback(
             );
             execute_random_fallback(server, visited_ids).await
         }
-        Err(primary_error) if mode != "random" => {
-            println!(
-                "❌ {} traversal failed: {}; falling back to random.",
-                mode, primary_error
-            );
-            execute_random_fallback(server, visited_ids).await.map_err(|fallback_error| {
-                anyhow::anyhow!(
-                    "{} traversal failed ({primary_error}); random fallback failed ({fallback_error})",
-                    mode
-                )
-            })
-        }
         Err(error) => Err(error),
     }
 }
@@ -625,14 +613,6 @@ where
         Ok(_) if mode == "random" => Ok(None),
         Ok(_) => execute("random", None, visited_ids)
             .map(|result| has_current_node(&result).then_some(result)),
-        Err(primary_error) if mode != "random" => execute("random", None, visited_ids)
-            .map(|result| has_current_node(&result).then_some(result))
-            .map_err(|fallback_error| {
-                anyhow::anyhow!(
-                    "{} traversal failed ({primary_error}); random fallback failed ({fallback_error})",
-                    mode
-                )
-            }),
         Err(error) => Err(error),
     }
 }
@@ -974,19 +954,18 @@ mod tests {
     }
 
     #[test]
-    fn failed_traversal_stops_when_random_fallback_also_fails() {
+    fn traversal_error_does_not_attempt_random_fallback() {
+        let mut calls = 0;
         let error =
             next_wander_with_fallback("semantic", Some("thoughts:a".into()), &[], |_, _, _| {
-                anyhow::bail!("transport unavailable")
+                calls += 1;
+                if calls == 1 {
+                    anyhow::bail!("transport unavailable")
+                }
+                Ok(json!({"current_node": {"id": "thoughts:random-success"}}))
             })
             .unwrap_err();
-        assert!(error.to_string().contains("random fallback failed"));
-
-        assert!(
-            next_wander_with_fallback("random", None, &[], |_, _, _| {
-                anyhow::bail!("transport unavailable")
-            })
-            .is_err()
-        );
+        assert_eq!(calls, 1, "execution errors must not be masked by fallback");
+        assert!(error.to_string().contains("transport unavailable"));
     }
 }
