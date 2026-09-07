@@ -1,5 +1,18 @@
 ## [Unreleased] - fed-6d00e5 decision-runner controls
 
+## [Unreleased] - fed-11a1a0 gardener state advancement
+
+- `kg_wander` now records each successful relationship/entity/observation
+  mutation outcome truthfully (`kind`, `id`, `created`), including idempotent
+  `created:false` responses. It then performs one semantic traversal from the
+  current node, with random fallback, before the next decision prompt. The
+  prompt carries a bounded recent-action record; this is state feedback, not a
+  claim of semantic novelty or global deduplication.
+- Dead-end/exhausted traversal falls back to random; an empty graph ends the
+  runner cleanly with an explicit message. Transport/DB failure remains an
+  error if its random fallback also fails, preventing further mutations against
+  stale context. No live model or database calls were made for this change.
+
 - Normalized the Python decision runner's model forwarding to match the Rust
   Antigravity client: empty or case-insensitive `auto` omits `--model`; an
   explicit trimmed model is forwarded. Offline fake-CLI argv coverage proves
