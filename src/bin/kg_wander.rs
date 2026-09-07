@@ -9,7 +9,7 @@
 //! Run with: cargo run --bin kg_wander
 
 use anyhow::Result;
-use rmcp::model::CallToolRequestParams;
+use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::io::Write;
@@ -37,12 +37,14 @@ const DEFAULT_MAX_STEPS: usize = 50;
 const DEFAULT_TIMEOUT_MS: u64 = 60_000;
 const RUNNER_OUTPUT_LIMIT: u64 = 65_536;
 const RUNNER_GRACE: Duration = Duration::from_secs(6);
+const ACTION_HISTORY_LIMIT: usize = 3;
 
 #[derive(Debug, Serialize)]
 struct AgentPrompt {
     current_node: Option<serde_json::Value>,
     affordances: Vec<String>,
     visited_count: usize,
+    recent_actions: Vec<MutationOutcome>,
     mission: String,
 }
 
@@ -53,6 +55,13 @@ struct AgentDecision {
     parameters: Option<serde_json::Value>,
     #[serde(default)]
     rationale: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct MutationOutcome {
+    kind: String,
+    id: String,
+    created: bool,
 }
 
 fn default_action() -> String {
@@ -314,11 +323,17 @@ async fn main() -> Result<()> {
     // State
     let mut visited_ids: Vec<String> = Vec::new();
     let mut current_thought_id: Option<String> = None;
+    let mut recent_actions: Vec<MutationOutcome> = Vec::new();
     let mut step_count = 0;
 
     // Initial wander (Random kick-off)
     println!("🎲 Initializing with random jump...");
-    let initial_res = execute_wander(&server, "random", None, &visited_ids).await?;
+    let Some(initial_res) =
+        execute_wander_with_fallback(&server, "random", None, &visited_ids).await?
+    else {
+        println!("🛑 Wander stopped: graph has no eligible nodes.");
+        return Ok(());
+    };
     update_state(&initial_res, &mut current_thought_id, &mut visited_ids);
     print_node(&initial_res);
 
@@ -336,26 +351,7 @@ async fn main() -> Result<()> {
         std::io::stdout().flush()?;
 
         // 2. Ask configured provider
-        let affordances = last_result["affordances"]
-            .as_array()
-            .unwrap_or(&vec![])
-            .iter()
-            .map(|v| v.as_str().unwrap_or("unknown").to_string())
-            .collect();
-
-        let prompt_data = AgentPrompt {
-            current_node: compact_current_node(&last_result["current_node"]),
-            affordances,
-            visited_count: visited_ids.len(),
-            mission: "You are a Knowledge Gardener. Don't just wander! Actively build connections.\n\
-                      ACTIONS:\n\
-                      1. 'wander': { \"mode\": \"semantic\" | \"meta\" | \"random\" } - Move to a new node.\n\
-                      2. 'connect': { \"target\": \"<node_id>\", \"rel_type\": \"related_to\" } - Connect current node to another.\n\
-                      3. 'create_entity': { \"name\": \"...\", \"entity_type\": \"...\" } - Create a new concept related to this one.\n\
-                      4. 'observe': { \"name\": \"Observation\", \"content\": \"...\" } - Add a note/observation.\n\
-                      \n\
-                      Prioritize 'wander' (semantic) usually, but randomly 'connect' or 'create_entity' if you spot missing links.".to_string(),
-        };
+        let prompt_data = agent_prompt(&last_result, visited_ids.len(), &recent_actions);
 
         let prompt_str = format!(
             "You are a Knowledge Gardener.\n\
@@ -412,10 +408,21 @@ async fn main() -> Result<()> {
                         });
                         let req = CallToolRequestParams::new("memories_create")
                             .with_arguments(args.as_object().unwrap().clone());
-                        match server.handle_knowledgegraph_create(req).await {
-                            Ok(_) => println!("✅ Connected!"),
-                            Err(e) => println!("❌ Connect failed: {}", e),
-                        }
+                        let outcome =
+                            mutation_outcome(server.handle_knowledgegraph_create(req).await?)?;
+                        record_action(&mut recent_actions, outcome.clone());
+                        let Some(next_result) = advance_after_mutation(
+                            &server,
+                            &outcome,
+                            &mut current_thought_id,
+                            &mut visited_ids,
+                        )
+                        .await?
+                        else {
+                            println!("🛑 Wander stopped: graph has no eligible nodes.");
+                            return Ok(());
+                        };
+                        last_result = next_result;
                     }
                 } else {
                     println!("❌ Cannot connect: No current node.");
@@ -440,10 +447,21 @@ async fn main() -> Result<()> {
                     });
                     let req = CallToolRequestParams::new("memories_create")
                         .with_arguments(args.as_object().unwrap().clone());
-                    match server.handle_knowledgegraph_create(req).await {
-                        Ok(_) => println!("✅ Created."),
-                        Err(e) => println!("❌ Create failed: {}", e),
-                    }
+                    let outcome =
+                        mutation_outcome(server.handle_knowledgegraph_create(req).await?)?;
+                    record_action(&mut recent_actions, outcome.clone());
+                    let Some(next_result) = advance_after_mutation(
+                        &server,
+                        &outcome,
+                        &mut current_thought_id,
+                        &mut visited_ids,
+                    )
+                    .await?
+                    else {
+                        println!("🛑 Wander stopped: graph has no eligible nodes.");
+                        return Ok(());
+                    };
+                    last_result = next_result;
                 }
             }
             "observe" => {
@@ -466,10 +484,21 @@ async fn main() -> Result<()> {
                     });
                     let req = CallToolRequestParams::new("memories_create")
                         .with_arguments(args.as_object().unwrap().clone());
-                    match server.handle_knowledgegraph_create(req).await {
-                        Ok(_) => println!("✅ Observed."),
-                        Err(e) => println!("❌ Observe failed: {}", e),
-                    }
+                    let outcome =
+                        mutation_outcome(server.handle_knowledgegraph_create(req).await?)?;
+                    record_action(&mut recent_actions, outcome.clone());
+                    let Some(next_result) = advance_after_mutation(
+                        &server,
+                        &outcome,
+                        &mut current_thought_id,
+                        &mut visited_ids,
+                    )
+                    .await?
+                    else {
+                        println!("🛑 Wander stopped: graph has no eligible nodes.");
+                        return Ok(());
+                    };
+                    last_result = next_result;
                 }
             }
             // Default to wander
@@ -486,27 +515,15 @@ async fn main() -> Result<()> {
                     current_thought_id.clone()
                 };
 
-                match execute_wander(&server, mode, cid, &visited_ids).await {
-                    Ok(res) => {
-                        update_state(&res, &mut current_thought_id, &mut visited_ids);
-                        print_node(&res);
-                        last_result = res;
-                    }
-                    Err(e) => {
-                        println!("❌ Wander failed: {}", e);
-                        // Fallback to random if stuck
-                        if mode != "random" {
-                            println!("🔀 Fallback to random...");
-                            if let Ok(res) =
-                                execute_wander(&server, "random", None, &visited_ids).await
-                            {
-                                update_state(&res, &mut current_thought_id, &mut visited_ids);
-                                print_node(&res);
-                                last_result = res;
-                            }
-                        }
-                    }
-                }
+                let Some(res) =
+                    execute_wander_with_fallback(&server, mode, cid, &visited_ids).await?
+                else {
+                    println!("🛑 Wander stopped: graph has no eligible nodes.");
+                    break;
+                };
+                update_state(&res, &mut current_thought_id, &mut visited_ids);
+                print_node(&res);
+                last_result = res;
             }
         }
 
@@ -548,6 +565,99 @@ async fn execute_wander(
     }
 }
 
+async fn execute_wander_with_fallback(
+    server: &SurrealMindServer,
+    mode: &str,
+    current_thought_id: Option<String>,
+    visited_ids: &[String],
+) -> Result<Option<serde_json::Value>> {
+    match execute_wander(server, mode, current_thought_id, visited_ids).await {
+        Ok(result) if has_current_node(&result) => Ok(Some(result)),
+        Ok(_) if mode == "random" => Ok(None),
+        Ok(_) => {
+            println!(
+                "🌫️  {} traversal reached a dead end; falling back to random.",
+                mode
+            );
+            execute_random_fallback(server, visited_ids).await
+        }
+        Err(error) => Err(error),
+    }
+}
+
+async fn execute_random_fallback(
+    server: &SurrealMindServer,
+    visited_ids: &[String],
+) -> Result<Option<serde_json::Value>> {
+    let result = execute_wander(server, "random", None, visited_ids).await?;
+    Ok(has_current_node(&result).then_some(result))
+}
+
+async fn advance_after_mutation(
+    server: &SurrealMindServer,
+    outcome: &MutationOutcome,
+    current_id: &mut Option<String>,
+    visited: &mut Vec<String>,
+) -> Result<Option<serde_json::Value>> {
+    println!(
+        "✅ Action result: kind={} id={} created={}",
+        outcome.kind, outcome.id, outcome.created
+    );
+    let next =
+        execute_wander_with_fallback(server, "semantic", current_id.clone(), visited).await?;
+    if let Some(result) = &next {
+        update_state(result, current_id, visited);
+        print_node(result);
+    }
+    Ok(next)
+}
+
+fn mutation_outcome(result: CallToolResult) -> Result<MutationOutcome> {
+    anyhow::ensure!(
+        !result.is_error.unwrap_or(false),
+        "knowledge graph mutation returned an error result"
+    );
+    let outcome: MutationOutcome = result.into_typed()?;
+    anyhow::ensure!(
+        !outcome.kind.trim().is_empty() && !outcome.id.trim().is_empty(),
+        "knowledge graph mutation response is missing kind or id"
+    );
+    Ok(outcome)
+}
+
+fn record_action(actions: &mut Vec<MutationOutcome>, outcome: MutationOutcome) {
+    actions.push(outcome);
+    let excess = actions.len().saturating_sub(ACTION_HISTORY_LIMIT);
+    if excess > 0 {
+        actions.drain(..excess);
+    }
+}
+
+fn has_current_node(result: &serde_json::Value) -> bool {
+    result
+        .get("current_node")
+        .is_some_and(|node| node.is_object())
+}
+
+#[cfg(test)]
+fn next_wander_with_fallback<F>(
+    mode: &str,
+    current_thought_id: Option<String>,
+    visited_ids: &[String],
+    mut execute: F,
+) -> Result<Option<serde_json::Value>>
+where
+    F: FnMut(&str, Option<String>, &[String]) -> Result<serde_json::Value>,
+{
+    match execute(mode, current_thought_id, visited_ids) {
+        Ok(result) if has_current_node(&result) => Ok(Some(result)),
+        Ok(_) if mode == "random" => Ok(None),
+        Ok(_) => execute("random", None, visited_ids)
+            .map(|result| has_current_node(&result).then_some(result)),
+        Err(error) => Err(error),
+    }
+}
+
 fn update_state(
     res: &serde_json::Value,
     current_id: &mut Option<String>,
@@ -559,6 +669,34 @@ fn update_state(
     {
         *current_id = Some(id_str.to_string());
         visited.push(id_str.to_string());
+    }
+}
+
+fn agent_prompt(
+    last_result: &serde_json::Value,
+    visited_count: usize,
+    recent_actions: &[MutationOutcome],
+) -> AgentPrompt {
+    let affordances = last_result["affordances"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|value| value.as_str().unwrap_or("unknown").to_string())
+        .collect();
+
+    AgentPrompt {
+        current_node: compact_current_node(&last_result["current_node"]),
+        affordances,
+        visited_count,
+        recent_actions: recent_actions.to_vec(),
+        mission: "You are a Knowledge Gardener. Don't just wander! Actively build connections.\n\
+                  ACTIONS:\n\
+                  1. 'wander': { \"mode\": \"semantic\" | \"meta\" | \"random\" } - Move to a new node.\n\
+                  2. 'connect': { \"target\": \"<node_id>\", \"rel_type\": \"related_to\" } - Connect current node to another.\n\
+                  3. 'create_entity': { \"name\": \"...\", \"entity_type\": \"...\" } - Create a new concept related to this one.\n\
+                  4. 'observe': { \"name\": \"Observation\", \"content\": \"...\" } - Add a note/observation.\n\
+                  \n\
+                  Prioritize 'wander' (semantic) usually, but randomly 'connect' or 'create_entity' if you spot missing links. Recent action results are factual mutation outcomes, not proof that a concept is novel.".to_string(),
     }
 }
 
@@ -819,5 +957,95 @@ mod tests {
             .expect("content");
         assert_eq!(content.chars().count(), 1_503);
         assert!(content.ends_with("..."));
+    }
+
+    #[test]
+    fn every_mutation_outcome_refreshes_the_next_prompt_state() {
+        for kind in ["relationship", "entity", "observation"] {
+            let outcome = mutation_outcome(CallToolResult::structured(json!({
+                "kind": kind,
+                "id": format!("{kind}:existing"),
+                "created": false
+            })))
+            .expect("existing mutation is a successful outcome");
+            assert!(!outcome.created);
+
+            let before = json!({
+                "current_node": {"id": "thoughts:before", "content": "before"},
+                "affordances": ["semantic"]
+            });
+            let after = next_wander_with_fallback(
+                "semantic",
+                Some("thoughts:before".to_string()),
+                &["thoughts:before".to_string()],
+                |mode, current, visited| {
+                    assert_eq!(mode, "semantic");
+                    assert_eq!(current.as_deref(), Some("thoughts:before"));
+                    assert_eq!(visited, ["thoughts:before"]);
+                    Ok(json!({
+                        "current_node": {"id": "kg_entities:after", "name": "after"},
+                        "affordances": ["random"]
+                    }))
+                },
+            )
+            .unwrap()
+            .expect("fake semantic response has a node");
+
+            let mut visited = vec!["thoughts:before".to_string()];
+            let mut current = Some("thoughts:before".to_string());
+            update_state(&after, &mut current, &mut visited);
+            let mut actions = Vec::new();
+            record_action(&mut actions, outcome);
+            let prompt = agent_prompt(&after, visited.len(), &actions);
+
+            assert_ne!(
+                prompt.current_node,
+                compact_current_node(&before["current_node"])
+            );
+            assert_eq!(current.as_deref(), Some("kg_entities:after"));
+            assert_eq!(prompt.recent_actions.len(), 1);
+            assert_eq!(prompt.recent_actions[0].kind, kind);
+            assert!(!prompt.recent_actions[0].created);
+        }
+    }
+
+    #[test]
+    fn dead_end_falls_back_random_but_empty_graph_stops_cleanly() {
+        let mut calls = Vec::new();
+        let result =
+            next_wander_with_fallback("semantic", Some("thoughts:a".into()), &[], |mode, _, _| {
+                calls.push(mode.to_string());
+                Ok(if mode == "semantic" {
+                    json!({"current_node": null})
+                } else {
+                    json!({"current_node": {"id": "thoughts:b"}})
+                })
+            })
+            .unwrap();
+        assert_eq!(calls, ["semantic", "random"]);
+        assert_eq!(result.unwrap()["current_node"]["id"], "thoughts:b");
+
+        let empty =
+            next_wander_with_fallback("semantic", Some("thoughts:a".into()), &[], |_, _, _| {
+                Ok(json!({"current_node": null}))
+            })
+            .unwrap();
+        assert!(empty.is_none(), "empty graph is a graceful terminal state");
+    }
+
+    #[test]
+    fn traversal_error_does_not_attempt_random_fallback() {
+        let mut calls = 0;
+        let error =
+            next_wander_with_fallback("semantic", Some("thoughts:a".into()), &[], |_, _, _| {
+                calls += 1;
+                if calls == 1 {
+                    anyhow::bail!("transport unavailable")
+                }
+                Ok(json!({"current_node": {"id": "thoughts:random-success"}}))
+            })
+            .unwrap_err();
+        assert_eq!(calls, 1, "execution errors must not be masked by fallback");
+        assert!(error.to_string().contains("transport unavailable"));
     }
 }
