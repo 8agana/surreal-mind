@@ -33,7 +33,7 @@ class SubprocessTests(unittest.TestCase):
                 os.kill(state["pid"], 0)
 
     def test_nonzero_exit_is_rejected_and_reaped(self):
-        self.exercise("raise SystemExit(7)\n", "process failed")
+        self.exercise("raise SystemExit(7)\n", r"kind=child_exit exit=7 pid=\d+ stdout_bytes=0 stderr_bytes=0")
 
     def test_stdout_limit_is_rejected_and_reaped(self):
         self.exercise("print('x' * " + str(MAX_BYTES + 1) + ", flush=True)\n", "output too large")

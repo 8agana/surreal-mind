@@ -14,6 +14,8 @@ export ANTIGRAVITY_CLI_BIN=${ANTIGRAVITY_CLI_BIN:-/Users/samuelatagana/.local/bi
 # Opt-in only for the REMini wander child; keep Gemini rollback direct when
 # this binding is removed. Do not move this into the global .env.
 export KG_WANDER_DECISION_RUNNER=/Users/samuelatagana/Projects/LegacyMind/surreal-mind/scripts/kg_decision/kg_decision.py
+# Nightly-only default; explicit operator values remain authoritative.
+export KG_WANDER_TIMEOUT_MS=${KG_WANDER_TIMEOUT_MS:-120000}
 export PATH="/Users/samuelatagana/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 LOG="logs/nightly_shift.log"

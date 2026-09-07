@@ -2,7 +2,7 @@ import copy
 import json
 import unittest
 
-from kg_decision import parse_stream, validate
+from kg_decision import parse_stream, validate, classify_child_failure
 
 
 def events():
@@ -18,6 +18,11 @@ def wire(items):
 
 
 class DecisionTests(unittest.TestCase):
+    def test_child_failure_categories(self):
+        self.assertEqual(classify_child_failure("Print mode: timed out"), "timeout")
+        self.assertEqual(classify_child_failure("permission denied"), "permission")
+        self.assertEqual(classify_child_failure("not logged in"), "auth")
+        self.assertEqual(classify_child_failure("opaque failure"), "child_exit")
     def test_structured_field_not_prose_or_global_inventory(self):
         self.assertEqual(parse_stream(wire(events()))["action"], "wander")
 

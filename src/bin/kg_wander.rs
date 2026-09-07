@@ -59,6 +59,42 @@ fn default_action() -> String {
     "wander".to_string()
 }
 
+fn safe_runner_diagnostic(bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes);
+    let line = text
+        .lines()
+        .find(|line| line.starts_with("kg_decision: kind="));
+    let Some(line) = line else {
+        return "kind=unknown_runner exit=unknown stdout_bytes=unknown stderr_bytes=unknown".into();
+    };
+    let mut kind = None;
+    let mut exit = None;
+    let mut stdout = None;
+    let mut stderr = None;
+    for field in line.trim_start_matches("kg_decision: ").split_whitespace() {
+        let Some((key, value)) = field.split_once('=') else {
+            continue;
+        };
+        match key {
+            "kind" if matches!(value, "timeout" | "permission" | "auth" | "child_exit") => {
+                kind = Some(value)
+            }
+            "exit" if value.parse::<i32>().is_ok() => exit = Some(value),
+            "stdout_bytes" | "stderr_bytes" if value.parse::<u64>().is_ok() => match key {
+                "stdout_bytes" => stdout = Some(value),
+                _ => stderr = Some(value),
+            },
+            _ => {}
+        }
+    }
+    match (kind, exit, stdout, stderr) {
+        (Some(kind), Some(exit), Some(stdout), Some(stderr)) => {
+            format!("kind={kind} exit={exit} stdout_bytes={stdout} stderr_bytes={stderr}")
+        }
+        _ => "kind=unknown_runner exit=unknown stdout_bytes=unknown stderr_bytes=unknown".into(),
+    }
+}
+
 /// Dropping the async caller signals the blocking subprocess worker to stop.
 struct CancelOnDrop(Arc<AtomicBool>);
 
@@ -91,7 +127,7 @@ async fn runner_decision(
         input.write_all(prompt.as_bytes())?;
         input.rewind()?;
         let mut output = tempfile::tempfile()?;
-        let errors = tempfile::tempfile()?;
+        let mut errors = tempfile::tempfile()?;
         let mut child = std::process::Command::new("/usr/bin/python3")
             .arg(script)
             .args(["--agy", &agy, "--timeout", &seconds.to_string()])
@@ -124,10 +160,15 @@ async fn runner_decision(
                 output.metadata()?.len() + errors.metadata()?.len() <= RUNNER_OUTPUT_LIMIT,
                 "decision runner output exceeds limit"
             );
-            anyhow::ensure!(
-                status.success(),
-                "decision runner failed; no fallback performed"
-            );
+            if !status.success() {
+                errors.rewind()?;
+                let mut diagnostic = Vec::new();
+                errors.take(512).read_to_end(&mut diagnostic)?;
+                anyhow::bail!(
+                    "decision runner failed; {}",
+                    safe_runner_diagnostic(&diagnostic)
+                );
+            }
             output.rewind()?;
             let mut bytes = Vec::new();
             output
@@ -639,6 +680,45 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(result.action, "wander");
+    }
+
+    #[tokio::test]
+    async fn runner_adapter_propagates_bounded_child_exit_diagnostic() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("fixture.py");
+        std::fs::write(&script, "import sys\nprint('kg_decision: kind=child_exit exit=7 stdout_bytes=0 stderr_bytes=0', file=sys.stderr)\nraise SystemExit(1)").unwrap();
+        let error = runner_decision(
+            script.to_str().unwrap().into(),
+            "test".into(),
+            1000,
+            "fixture".into(),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("kind=child_exit exit=7 stdout_bytes=0 stderr_bytes=0"));
+    }
+
+    #[test]
+    fn runner_diagnostic_is_allowlisted_and_lossy_safe() {
+        for kind in ["timeout", "permission", "auth", "child_exit"] {
+            assert_eq!(
+                safe_runner_diagnostic(
+                    format!("kg_decision: kind={kind} exit=-9 stdout_bytes=1 stderr_bytes=2")
+                        .as_bytes()
+                ),
+                format!("kind={kind} exit=-9 stdout_bytes=1 stderr_bytes=2")
+            );
+        }
+        let unknown = "kind=unknown_runner exit=unknown stdout_bytes=unknown stderr_bytes=unknown";
+        for input in [
+            b"SECRET_MARKER".as_slice(),
+            b"kg_decision: kind=child_exit exit=x stdout_bytes=1 stderr_bytes=2",
+            b"\xff\xfesecret",
+            b"kg_decision: kind=bogus exit=1 stdout_bytes=1 stderr_bytes=2",
+        ] {
+            assert_eq!(safe_runner_diagnostic(input), unknown);
+        }
     }
 
     #[tokio::test]

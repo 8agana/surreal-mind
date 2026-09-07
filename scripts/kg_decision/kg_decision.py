@@ -113,6 +113,17 @@ def normalize_model(model):
     return normalized
 
 
+def classify_child_failure(err):
+    text = err.lower()
+    if "timed out" in text or "timeout" in text:
+        return "timeout"
+    if "permission" in text or "denied" in text:
+        return "permission"
+    if "auth" in text or "token" in text or "logged in" in text:
+        return "auth"
+    return "child_exit"
+
+
 def run(prompt, agy, timeout, model=None, supervised=False):
     model = normalize_model(model)
     binary = shutil.which(agy)
@@ -143,7 +154,13 @@ def run(prompt, agy, timeout, model=None, supervised=False):
                         raise ValueError("output too large")
                     time.sleep(0.05)
                 if child.returncode != 0:
-                    raise ValueError("agy process failed")
+                    err.seek(0)
+                    kind = classify_child_failure(err.read(4096).decode("utf-8", "replace"))
+                    raise ValueError(
+                        f"kind={kind} exit={child.returncode} pid={child.pid} "
+                        f"stdout_bytes={os.fstat(out.fileno()).st_size} "
+                        f"stderr_bytes={os.fstat(err.fileno()).st_size}"
+                    )
                 out.seek(0)
                 return parse_stream(out.read(MAX_BYTES + 1))
             finally:
