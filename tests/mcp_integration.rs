@@ -15,6 +15,106 @@ async fn create_test_server() -> SurrealMindServer {
         .expect("Failed to create server")
 }
 
+/// Offline-embedder test server (clu fed-77afac): wired to the
+/// deterministic, zero-network `FakeEmbedder` instead of a live OpenAI
+/// call. Requires the crate to be built with `--features test-embedder`
+/// (scripts/test_db.sh does this by default); without it, `create_embedder`
+/// has no "fake" arm to select and this will fail loudly with an "unknown
+/// or unsupported embedding provider" error rather than silently reaching
+/// the network.
+async fn create_offline_test_server() -> SurrealMindServer {
+    let mut config = Config::load().expect("Failed to load config");
+    config.system.embedding_provider = "fake".to_string();
+    // NOTE (fed-77afac design note 6, verified against the code rather than
+    // assumed): `embed_strict` does NOT gate embedding failure inside
+    // `handle_legacymind_think` -- `ThoughtBuilder::execute` (src/tools/
+    // thinking.rs) tolerates embedder failure unconditionally and still
+    // returns Ok with embedding_status "pending"/"failed", and the only
+    // consumer of `embed_strict` in this codebase is main.rs's startup
+    // dimension preflight, which these tests never reach (they construct
+    // SurrealMindServer directly, bypassing main()). Set here anyway
+    // because it costs nothing and matches the documented intent, but the
+    // REAL non-vacuous guard against a broken/missing embedder is the
+    // `embedding_status` assertion in the tests below -- `result.is_ok()`
+    // alone is true on both success AND embedder failure.
+    config.runtime.embed_strict = true;
+    SurrealMindServer::new(&config)
+        .await
+        .expect("Failed to create server (built with --features test-embedder?)")
+}
+
+/// `handle_legacymind_think`'s response JSON carries an `embedding_status`
+/// key, NESTED under `delegated_result` -- `handle_legacymind_think`
+/// (src/tools/thinking.rs) wraps run_convo/run_technical's return value
+/// under that key, not at the top level. (The first version of this helper
+/// checked `parsed.get("embedding_status")` directly and therefore passed
+/// unconditionally regardless of actual status; caught by the fed-77afac
+/// step 6 negative control, which is the entire point of running one.)
+/// ONLY present when status is NOT "complete" (src/tools/thinking/
+/// runners.rs: `if embedding_status != "complete" { ... }`). So the key's
+/// ABSENCE under `delegated_result` is the positive assertion that the
+/// embedder actually ran and produced a stored embedding -- this is what
+/// makes these tests fail for real if the offline embedder is broken,
+/// instead of vacuously passing on `result.is_ok()` alone.
+fn assert_embedding_complete(result: &rmcp::model::CallToolResult) {
+    let first = result
+        .content
+        .first()
+        .expect("think response should have at least one content block");
+    let rmcp::model::ContentBlock::Text(text_content) = first else {
+        panic!(
+            "expected a text content block in think response, got {:?}",
+            first
+        );
+    };
+    let parsed: serde_json::Value =
+        serde_json::from_str(&text_content.text).expect("think response text should be valid JSON");
+    let delegated = parsed
+        .get("delegated_result")
+        .expect("think response should include a delegated_result object");
+    assert!(
+        delegated.get("embedding_status").is_none(),
+        "expected embedding to complete (embedding_status key absent under \
+         delegated_result), but got embedding_status={:?} (full response: {})",
+        delegated.get("embedding_status"),
+        parsed
+    );
+}
+
+/// Companion to `assert_embedding_complete` for the `--allow-network` path
+/// (scripts/test_db.sh): that flag deliberately uses an invalid API key
+/// (`OPENAI_API_KEY=sk-fake-testdb`) to exercise "a real call that is bound
+/// to degrade" rather than a real successful embedding -- the point of
+/// `--allow-network` is proving the handler tolerates embedder failure
+/// gracefully, not proving OpenAI works. So under network mode the
+/// opposite assertion is the real one: `embedding_status` must be PRESENT
+/// (the call failed as expected and the thought was still saved).
+fn assert_embedding_degraded(result: &rmcp::model::CallToolResult) {
+    let first = result
+        .content
+        .first()
+        .expect("think response should have at least one content block");
+    let rmcp::model::ContentBlock::Text(text_content) = first else {
+        panic!(
+            "expected a text content block in think response, got {:?}",
+            first
+        );
+    };
+    let parsed: serde_json::Value =
+        serde_json::from_str(&text_content.text).expect("think response text should be valid JSON");
+    let delegated = parsed
+        .get("delegated_result")
+        .expect("think response should include a delegated_result object");
+    assert!(
+        delegated.get("embedding_status").is_some(),
+        "--allow-network uses an intentionally invalid API key and expects \
+         graceful degradation (embedding_status key present under \
+         delegated_result), but it was absent -- did this somehow reach a \
+         VALID OpenAI key? (full response: {})",
+        parsed
+    );
+}
+
 #[tokio::test]
 async fn test_server_initialization() {
     if std::env::var("RUN_DB_TESTS").is_err() {
@@ -102,21 +202,18 @@ async fn test_think_handler() {
         return;
     }
 
-    // Reaches api.openai.com for real: `handle_legacymind_think` always
-    // attempts a live OpenAI embedding call for `content`
-    // (src/tools/thinking.rs:236 -> embedder.embed()), and `embed_strict`
-    // defaults to false (src/config.rs:149), so the handler tolerates the
-    // failure and this test would otherwise "pass" while silently making a
-    // real network call under a wrapper whose contract is zero external
-    // calls (Codex blocked fed-734b8f #172 item 2 for exactly this). Skip
-    // unless the operator explicitly opts in; the real fix is the offline
-    // embedder tracked at clu fed-77afac.
-    if std::env::var("ALLOW_NETWORK_EMBED").ok().as_deref() != Some("1") {
-        eprintln!("skipped: reaches api.openai.com; needs the offline embedder (clu fed-77afac)");
-        return;
-    }
-
-    let server = create_test_server().await;
+    // Offline embedder by default (clu fed-77afac): runs against the
+    // deterministic, zero-network FakeEmbedder instead of reaching
+    // api.openai.com. ALLOW_NETWORK_EMBED=1 (scripts/test_db.sh
+    // --allow-network) is still honored as the explicit, loud opt-in to a
+    // real (intentionally invalid-key, bound-to-degrade) network call --
+    // it no longer means "skip this test entirely".
+    let network_mode = std::env::var("ALLOW_NETWORK_EMBED").ok().as_deref() == Some("1");
+    let server = if network_mode {
+        create_test_server().await
+    } else {
+        create_offline_test_server().await
+    };
 
     // Test with valid params
     let request = CallToolRequestParams::new("think").with_arguments(
@@ -134,6 +231,11 @@ async fn test_think_handler() {
 
     let result = result.unwrap();
     assert!(!result.content.is_empty(), "Should return content");
+    if network_mode {
+        assert_embedding_degraded(&result);
+    } else {
+        assert_embedding_complete(&result);
+    }
 }
 
 #[tokio::test]
@@ -143,21 +245,15 @@ async fn test_think_with_continuity() {
         return;
     }
 
-    // Reaches api.openai.com for real: `handle_legacymind_think` always
-    // attempts a live OpenAI embedding call for `content`
-    // (src/tools/thinking.rs:236 -> embedder.embed()), and `embed_strict`
-    // defaults to false (src/config.rs:149), so the handler tolerates the
-    // failure and this test would otherwise "pass" while silently making a
-    // real network call under a wrapper whose contract is zero external
-    // calls (Codex blocked fed-734b8f #172 item 2 for exactly this). Skip
-    // unless the operator explicitly opts in; the real fix is the offline
-    // embedder tracked at clu fed-77afac.
-    if std::env::var("ALLOW_NETWORK_EMBED").ok().as_deref() != Some("1") {
-        eprintln!("skipped: reaches api.openai.com; needs the offline embedder (clu fed-77afac)");
-        return;
-    }
-
-    let server = create_test_server().await;
+    // Offline embedder by default (clu fed-77afac); ALLOW_NETWORK_EMBED=1
+    // still opts into the real, intentionally invalid-key, bound-to-degrade
+    // path (see test_think_handler above for the full rationale).
+    let network_mode = std::env::var("ALLOW_NETWORK_EMBED").ok().as_deref() == Some("1");
+    let server = if network_mode {
+        create_test_server().await
+    } else {
+        create_offline_test_server().await
+    };
 
     // Test with non-existent previous_thought_id
     let non_existent_id = "non_existent_thought_id_12345";
@@ -181,27 +277,41 @@ async fn test_think_with_continuity() {
     );
 
     let result = result.unwrap();
-
-    // Check that the response contains the preserved ID
-    if !result.content.is_empty()
-        && let Some(first_content) = result.content.first()
-    {
-        // Extract text from ContentBlock enum
-        if let rmcp::model::ContentBlock::Text(text_content) = first_content
-            && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text_content.text)
-            && let Some(links) = parsed.get("links")
-            && let Some(prev_id) = links.get("previous_thought_id")
-        {
-            // The ID may be prefixed with "thoughts:" when processed
-            let expected_with_prefix = format!("thoughts:{}", non_existent_id);
-            assert!(
-                prev_id == non_existent_id || prev_id == &expected_with_prefix,
-                "Previous thought ID should be preserved (found: {}, expected: {})",
-                prev_id,
-                non_existent_id
-            );
-        }
+    assert!(!result.content.is_empty(), "Should return content");
+    if network_mode {
+        assert_embedding_degraded(&result);
+    } else {
+        assert_embedding_complete(&result);
     }
+
+    // Check that the response contains the preserved ID. This is a hard
+    // assertion (not the previous soft `if let` chain, which silently
+    // no-oped on any parse failure) -- offline and deterministic, this
+    // response shape should never fail to parse.
+    let first_content = result
+        .content
+        .first()
+        .expect("think response should have at least one content block");
+    let rmcp::model::ContentBlock::Text(text_content) = first_content else {
+        panic!("expected a text content block, got {:?}", first_content);
+    };
+    let parsed: serde_json::Value =
+        serde_json::from_str(&text_content.text).expect("think response text should be valid JSON");
+    let links = parsed
+        .get("links")
+        .expect("think response should include a links object");
+    let prev_id = links
+        .get("previous_thought_id")
+        .expect("links should include previous_thought_id");
+
+    // The ID may be prefixed with "thoughts:" when processed
+    let expected_with_prefix = format!("thoughts:{}", non_existent_id);
+    assert!(
+        prev_id == non_existent_id || prev_id == &expected_with_prefix,
+        "Previous thought ID should be preserved (found: {}, expected: {})",
+        prev_id,
+        non_existent_id
+    );
 }
 
 #[tokio::test]

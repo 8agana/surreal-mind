@@ -13,6 +13,20 @@
 # (127.0.0.1:8000, ns surreal_mind / db consciousness), and tears down the
 # exact child process it started -- verified, not assumed.
 #
+# fed-77afac: by default this wrapper now also builds with the
+# `test-embedder` Cargo feature and points the embedding provider at the
+# offline, deterministic, zero-network `FakeEmbedder` (SURR_EMBED_PROVIDER
+# =fake, SURR_EMBED_STRICT=1) instead of the real OpenAI API. The 3 tests
+# that used to require --allow-network and a live api.openai.com call just
+# to exercise `handle_legacymind_think` at all (tests/mcp_integration.rs::
+# test_think_handler, test_think_with_continuity,
+# tests/mcp_protocol.rs::test_call_tool_continuity_fallback_protocol) now
+# run every time, offline, with real assertions on the resulting
+# `embedding_status`. --allow-network is still available and still means
+# something real: it switches those same 3 tests to the pre-existing
+# intentionally-invalid-key network path and asserts the OPPOSITE
+# (graceful degradation), instead of skipping.
+#
 # THIS SCRIPT NEVER TOUCHES PRODUCTION and NEVER REUSES AN EXISTING PROCESS.
 # If in doubt, read the HARD REFUSAL check and the fresh-instance-only port
 # loop below before making any change.
@@ -33,21 +47,28 @@
 #                       is opt-in -- see "Fixture: schema always, seed
 #                       opt-in" in docs/tasks/20260904-standing-test-db/
 #                       README.md for why).
-#     --allow-network  explicit, loud opt-in to the 3 tests that reach
-#                       api.openai.com for real (embed_strict fails open, so
-#                       they still only skip/degrade, never hard-fail; see
-#                       the README's "Network contract" section). Sets
+#     --allow-network  explicit, loud opt-in for the 3 tests that CAN reach
+#                       api.openai.com for real (fed-77afac: this is now a
+#                       SWITCH, not a skip-gate -- without it those 3 tests
+#                       still run, offline, against the deterministic
+#                       FakeEmbedder). With --allow-network they instead
+#                       exercise the real network path with an
+#                       intentionally invalid key and assert it degrades
+#                       gracefully rather than hard-failing (see the
+#                       README's "Network contract" section). Sets
 #                       ALLOW_NETWORK_EMBED=1 for the cargo test invocation
 #                       and prints a banner. Without this flag,
 #                       ALLOW_NETWORK_EMBED is explicitly unset regardless
-#                       of what the calling environment had.
+#                       of what the calling environment had, and
+#                       SURR_EMBED_PROVIDER=fake / SURR_EMBED_STRICT=1 are
+#                       exported instead.
 #     --port N         start the fresh-instance port scan at N instead of
 #                       the default 8100 (or $TEST_DB_PORT). Must be numeric,
 #                       1024-65535.
 #     [cargo-test-args...] forwarded verbatim to
-#       `cargo test --features db_integration,test-probe --no-fail-fast <args>`, e.g.
-#       `--test reembed_dry_run_contract` to target one integration test
-#       binary, or a test-name substring filter.
+#       `cargo test --features db_integration,test-probe,test-embedder --no-fail-fast <args>`,
+#       e.g. `--test reembed_dry_run_contract` to target one integration
+#       test binary, or a test-name substring filter.
 #
 # Env contract this script sets (see docs/tasks/20260904-standing-test-db/
 # README.md for the full file:line sourcing of every name below and the
@@ -66,7 +87,20 @@
 #   OPENAI_API_KEY="sk-fake-testdb" / GEMINI_API_KEY="fake-testdb"
 #        -- obviously-fake values, never empty, never the literal
 #        "changeme" (src/embeddings.rs's is_placeholder treats that as an
-#        ACCEPTED placeholder, not rejected).
+#        ACCEPTED placeholder, not rejected). Only actually reaches the
+#        network with --allow-network (see SURR_EMBED_PROVIDER below);
+#        otherwise it's inert since the fake provider never looks at it.
+#   SURR_EMBED_PROVIDER=fake / SURR_EMBED_STRICT=1 (fed-77afac) -- default
+#        (no --allow-network): selects the offline, deterministic,
+#        zero-network FakeEmbedder (src/embeddings.rs, requires this
+#        wrapper's `test-embedder` cargo feature) instead of a real OpenAI
+#        call. SURR_EMBED_PROVIDER is read by Config::load (src/config.rs);
+#        SURR_EMBED_STRICT only gates src/main.rs's startup dimension
+#        preflight, which none of this suite's tests reach directly, but is
+#        set anyway to match documented intent. With --allow-network,
+#        SURR_EMBED_PROVIDER is left UNSET so Config::load falls back to
+#        surreal_mind.toml's "openai", and the 3 network-capable tests use
+#        the (fake, bound-to-degrade) OPENAI_API_KEY above for real.
 #   SM_AGENT_PROVIDER=antigravity / GOOGLE_CLI_PROVIDER (unset) /
 #   SURR_GOOGLE_CLI_PROVIDER (unset) -- forces Google CLI provider selection
 #        at the top of src/clients/google_cli.rs's precedence chain,
@@ -77,7 +111,11 @@
 #        its scratch work dir; a canned JSON response, never a real CLI.
 #   ALLOW_NETWORK_EMBED -- unset by default; set to exactly "1" only with
 #        --allow-network. The three tests that read it now require an EXACT
-#        "1" match (not mere presence).
+#        "1" match (not mere presence). fed-77afac: this no longer skips
+#        those 3 tests -- it switches them from the offline FakeEmbedder
+#        path to the real, intentionally-invalid-key network path (and
+#        their assertions flip accordingly; see the top-of-file fed-77afac
+#        note).
 #
 # Environment sanitization (network-enabling gates this wrapper knows about,
 # explicitly unset every run regardless of what the CALLING shell already
@@ -266,11 +304,11 @@ if [ "$DRY_RUN" -eq 1 ]; then
   log "  SURR_ENV_FILE pinned to an empty scratch file (protects Config::load's own dotenv step, src/config.rs:229); SURREAL_MIND_CONFIG pinned to $REPO_ROOT/surreal_mind.toml (belt-and-suspenders, config-file resolution unambiguous)"
   log "  ACKNOWLEDGED GAP (see header comment): src/embeddings.rs:238, src/lib.rs:24, and tests/gemini_client_integration.rs:9 each call the bare dotenvy::dotenv(), which does NOT honor SURR_ENV_FILE and is NOT blocked by this wrapper -- not currently exploitable on this machine (checked: the real ~/Projects/LegacyMind/.env's key names do not include any sanitized gate var), but not a closed gap either."
   if [ "$ALLOW_NETWORK" -eq 1 ]; then
-    log "  --allow-network passed: ALLOW_NETWORK_EMBED=1 would be exported, the 3 network-reaching tests would run"
+    log "  --allow-network passed: ALLOW_NETWORK_EMBED=1 would be exported, SURR_EMBED_PROVIDER left unset (surreal_mind.toml's \"openai\" applies) -- the 3 network-capable tests would exercise the real, intentionally-invalid-key, bound-to-degrade path"
   else
-    log "  --allow-network NOT passed: ALLOW_NETWORK_EMBED stays unset, the 3 network-reaching tests will skip"
+    log "  --allow-network NOT passed: ALLOW_NETWORK_EMBED stays unset, SURR_EMBED_PROVIDER=fake / SURR_EMBED_STRICT=1 would be exported -- the 3 network-capable tests run offline against the deterministic FakeEmbedder (fed-77afac)"
   fi
-  log "  would run: cargo test --features db_integration,test-probe --no-fail-fast $(cargo_args_display)"
+  log "  would run: cargo test --features db_integration,test-probe,test-embedder --no-fail-fast $(cargo_args_display)"
   exit 0
 fi
 
@@ -456,7 +494,7 @@ EMPTY_ENV_FILE="$WORK_DIR/empty.env"
 # this wrapper knows about, regardless of what the calling shell already
 # exported. "Not setting a flag does not unset an inherited one" -- these
 # must be removed, not merely left alone.
-unset RUN_GEMINI_TESTS SURR_SMOKE_TEST REEMBED_TEST_CONFIRM_DISPOSABLE_NS ALLOW_NETWORK_EMBED GOOGLE_CLI_PROVIDER SURR_GOOGLE_CLI_PROVIDER 2>/dev/null || true
+unset RUN_GEMINI_TESTS SURR_SMOKE_TEST REEMBED_TEST_CONFIRM_DISPOSABLE_NS ALLOW_NETWORK_EMBED GOOGLE_CLI_PROVIDER SURR_GOOGLE_CLI_PROVIDER SURR_EMBED_PROVIDER SURR_EMBED_STRICT 2>/dev/null || true
 
 # --- export exactly the env the tests read (see file:line contract in the header comment above) ---
 export SURR_DB_URL="$DB_URL"
@@ -478,8 +516,15 @@ if [ "$ALLOW_NETWORK" -eq 1 ]; then
   log "  --allow-network: OPTING IN TO REAL api.openai.com CALLS"
   log "  ALLOW_NETWORK_EMBED=1 -- 3 tests will attempt a real (fake-key,"
   log "  bound-to-degrade) embedding call against the live OpenAI API."
+  log "  SURR_EMBED_PROVIDER left unset (surreal_mind.toml's \"openai\" applies)."
   log "=================================================================="
   export ALLOW_NETWORK_EMBED=1
+else
+  # fed-77afac: default path. Offline, deterministic, zero-network
+  # FakeEmbedder -- requires this wrapper's `test-embedder` cargo feature
+  # (added to the cargo test invocation below).
+  export SURR_EMBED_PROVIDER=fake
+  export SURR_EMBED_STRICT=1
 fi
 
 log "environment exported:"
@@ -490,11 +535,12 @@ log "  OPENAI_API_KEY=$OPENAI_API_KEY GEMINI_API_KEY=$GEMINI_API_KEY"
 log "  SM_AGENT_PROVIDER=$SM_AGENT_PROVIDER ANTIGRAVITY_CLI_BIN=$ANTIGRAVITY_CLI_BIN"
 log "  SURR_ENV_FILE=$SURR_ENV_FILE (size: $(wc -c <"$SURR_ENV_FILE" | tr -d ' ') bytes)"
 log "  SURREAL_MIND_CONFIG=$SURREAL_MIND_CONFIG"
+log "  SURR_EMBED_PROVIDER=${SURR_EMBED_PROVIDER:-<unset, openai from toml>} SURR_EMBED_STRICT=${SURR_EMBED_STRICT:-<unset>}"
 log "  sanitized (unset, not merely left alone): RUN_GEMINI_TESTS SURR_SMOKE_TEST REEMBED_TEST_CONFIRM_DISPOSABLE_NS GOOGLE_CLI_PROVIDER SURR_GOOGLE_CLI_PROVIDER"
 if [ -n "${ALLOW_NETWORK_EMBED:-}" ]; then
-  log "  ALLOW_NETWORK_EMBED=$ALLOW_NETWORK_EMBED (--allow-network passed -- the 3 network-reaching tests will run)"
+  log "  ALLOW_NETWORK_EMBED=$ALLOW_NETWORK_EMBED (--allow-network passed -- the 3 network-capable tests exercise the real, bound-to-degrade path)"
 else
-  log "  ALLOW_NETWORK_EMBED unset (default -- the 3 network-reaching tests will skip)"
+  log "  ALLOW_NETWORK_EMBED unset (default -- the 3 network-capable tests run offline against the FakeEmbedder)"
 fi
 
 # --no-fail-fast: this is a STANDING wrapper meant to report results across
@@ -514,13 +560,13 @@ fi
 # only in that scratch directory was not found). So that redirect bought
 # nothing and has been removed -- see the header comment's "ACKNOWLEDGED
 # RESIDUAL GAP" for what actually protects against this and what doesn't.
-log "running: cargo test --features db_integration,test-probe --no-fail-fast $(cargo_args_display)"
+log "running: cargo test --features db_integration,test-probe,test-embedder --no-fail-fast $(cargo_args_display)"
 cd "$REPO_ROOT"
 set +e
 if [ "${#CARGO_ARGS[@]}" -gt 0 ]; then
-  cargo test --features db_integration,test-probe --no-fail-fast "${CARGO_ARGS[@]}"
+  cargo test --features db_integration,test-probe,test-embedder --no-fail-fast "${CARGO_ARGS[@]}"
 else
-  cargo test --features db_integration,test-probe --no-fail-fast
+  cargo test --features db_integration,test-probe,test-embedder --no-fail-fast
 fi
 CARGO_RC=$?
 set -e

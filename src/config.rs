@@ -325,6 +325,16 @@ impl Config {
         if let Ok(db_name) = std::env::var("SURR_DB_DB") {
             config.system.database_db = db_name;
         }
+        // fed-77afac: env-first override for the embedding provider, same
+        // pattern as the SURR_DB_* overrides above. Needed so tests and
+        // scripts/test_db.sh can select the offline `fake` provider without
+        // mutating the checked-in surreal_mind.toml (which stays "openai").
+        // `SURR_EMBED_PROVIDER` was previously referenced only in archived
+        // docs/scripts and never actually read anywhere in this crate; this
+        // is the first real consumer of that name.
+        if let Ok(embed_provider) = std::env::var("SURR_EMBED_PROVIDER") {
+            config.system.embedding_provider = embed_provider;
+        }
 
         // Load runtime configuration from environment variables
         config.runtime = RuntimeConfig::load_from_env()?;
@@ -420,6 +430,18 @@ impl Config {
                 ),
             },
 
+            "fake" => {
+                // Offline/test-only embedder (fed-77afac): any positive
+                // dimension is legitimate here -- there is no fixed model
+                // to be coherent with, unlike the openai arms above. Log at
+                // debug rather than warn so a correctly-configured offline
+                // run doesn't produce a misleading "unknown provider"
+                // warning, and isn't mistaken for an actual problem either.
+                tracing::debug!(
+                    "Fake embedding provider active with {} dimensions (test-only, see clu fed-77afac)",
+                    config.system.embedding_dimensions
+                );
+            }
             _ => tracing::warn!(
                 "Unknown embedding provider '{}', validation skipped",
                 config.system.embedding_provider

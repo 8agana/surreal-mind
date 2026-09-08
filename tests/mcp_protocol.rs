@@ -400,26 +400,34 @@ async fn test_call_tool_continuity_fallback_protocol() {
         return;
     }
 
-    // Reaches api.openai.com for real: this drives a live "think" CallTool
-    // through the full protocol harness, which always attempts a live
-    // OpenAI embedding call for `content` (src/tools/thinking.rs:236 ->
-    // embedder.embed()), and `embed_strict` defaults to false
-    // (src/config.rs:149), so the handler tolerates the failure and this
-    // test would otherwise "pass" while silently making a real network
-    // call under a wrapper whose contract is zero external calls (Codex
-    // blocked fed-734b8f #172 item 2 for exactly this). Skip unless the
-    // operator explicitly opts in; the real fix is the offline embedder
-    // tracked at clu fed-77afac.
-    if std::env::var("ALLOW_NETWORK_EMBED").ok().as_deref() != Some("1") {
-        eprintln!("skipped: reaches api.openai.com; needs the offline embedder (clu fed-77afac)");
-        return;
+    // Offline embedder by default (clu fed-77afac): runs the full protocol
+    // harness against the deterministic, zero-network FakeEmbedder instead
+    // of a live OpenAI call. ALLOW_NETWORK_EMBED=1 (scripts/test_db.sh
+    // --allow-network) is still honored as the explicit, loud opt-in to a
+    // real (intentionally invalid-key, bound-to-degrade) network call -- it
+    // no longer means "skip this test entirely".
+    let network_mode = std::env::var("ALLOW_NETWORK_EMBED").ok().as_deref() == Some("1");
+    let mut config = Config::load().expect("Failed to load config");
+    if !network_mode {
+        config.system.embedding_provider = "fake".to_string();
     }
+    // NOTE (fed-77afac design note 6, verified against the code rather than
+    // assumed): `embed_strict` does NOT gate embedding failure inside
+    // `handle_legacymind_think` -- it tolerates embedder failure
+    // unconditionally and still returns a successful CallToolResult with
+    // embedding_status "pending"/"failed", and the only consumer of
+    // `embed_strict` in this codebase is main.rs's startup dimension
+    // preflight, which this test never reaches (serve_directly is driven
+    // directly against a server built here, bypassing main()). Set here
+    // anyway because it costs nothing and matches the documented intent,
+    // but the REAL non-vacuous guard against a broken/missing embedder is
+    // the `embedding_status` assertion below.
+    config.runtime.embed_strict = true;
 
     // Create server
-    let config = Config::load().expect("Failed to load config");
     let server = SurrealMindServer::new(&config)
         .await
-        .expect("Failed to create server");
+        .expect("Failed to create server (built with --features test-embedder?)");
 
     with_direct_service(server, |client_tx, mut client_rx| async move {
         // Send CallToolRequest with non-existent previous_thought_id
@@ -443,39 +451,106 @@ async fn test_call_tool_continuity_fallback_protocol() {
                 TxJsonRpcMessage::<RoleServer>::Response(json_response) => {
                     let id_str = match &json_response.id {
                         rmcp::model::NumberOrString::String(s) => s.as_ref(),
-                        rmcp::model::NumberOrString::Number(n) => panic!("Expected string ID, got number: {}", n),
-                    };
-                    assert_eq!(id_str, "test-continuity", "Response ID should match request");
-
-                    // Serialize the ClientResult to check the response
-                    if let Ok(tool_result) = serde_json::to_value(&json_response.result)
-                        && let Some(content) = tool_result.get("content").and_then(|c| c.as_array())
-                        && let Some(first) = content.first()
-                    {
-                        // Try to parse the actual thought response
-                        if let Some(text) = first.get("text").and_then(|t| t.as_str())
-                            && let Ok(thought_data) = serde_json::from_str::<serde_json::Value>(text)
-                            && let Some(links) = thought_data.get("links")
-                            && let Some(prev_id) = links.get("previous_thought_id").and_then(|p| p.as_str())
-                        {
-                            // ID should be preserved (may have "thoughts:" prefix)
-                            assert!(
-                                prev_id == non_existent_id || prev_id == format!("thoughts:{}", non_existent_id),
-                                "Previous thought ID should be preserved through protocol (got: {})",
-                                prev_id
-                            );
+                        rmcp::model::NumberOrString::Number(n) => {
+                            panic!("Expected string ID, got number: {}", n)
                         }
+                    };
+                    assert_eq!(
+                        id_str, "test-continuity",
+                        "Response ID should match request"
+                    );
+
+                    // Serialize the ClientResult to check the response.
+                    // Hard assertions (not the previous soft `if let` chain,
+                    // which silently no-oped on any parse failure) --
+                    // offline and deterministic, this response shape should
+                    // never fail to parse.
+                    let tool_result = serde_json::to_value(&json_response.result)
+                        .expect("CallToolResult should serialize to JSON");
+                    let content = tool_result
+                        .get("content")
+                        .and_then(|c| c.as_array())
+                        .expect("tool_result should have a content array");
+                    let first = content
+                        .first()
+                        .expect("content array should have at least one block");
+                    let text = first
+                        .get("text")
+                        .and_then(|t| t.as_str())
+                        .expect("content block should have text");
+                    let thought_data: serde_json::Value = serde_json::from_str(text)
+                        .expect("think response text should be valid JSON");
+
+                    // `embedding_status` is NESTED under `delegated_result`
+                    // -- `handle_legacymind_think` (src/tools/thinking.rs)
+                    // wraps run_convo/run_technical's return value under
+                    // that key, not at the top level. (Caught by the
+                    // fed-77afac step 6 negative control: an earlier
+                    // version of this assertion checked
+                    // `thought_data.get("embedding_status")` directly and
+                    // passed unconditionally regardless of actual status.)
+                    // Present ONLY when the status is NOT "complete"
+                    // (src/tools/thinking/runners.rs). Offline: its ABSENCE
+                    // is the positive assertion that the fake embedder
+                    // actually produced and stored an embedding -- this is
+                    // what makes the test fail for real if the offline
+                    // embedder is broken, instead of vacuously passing on
+                    // "no error response" alone. Network mode
+                    // (--allow-network): OPPOSITE assertion -- that flag
+                    // deliberately uses an invalid API key to exercise
+                    // graceful degradation, so `embedding_status` must be
+                    // PRESENT.
+                    let delegated = thought_data
+                        .get("delegated_result")
+                        .expect("think response should include a delegated_result object");
+                    if network_mode {
+                        assert!(
+                            delegated.get("embedding_status").is_some(),
+                            "--allow-network uses an intentionally invalid API key and \
+                             expects graceful degradation (embedding_status key present \
+                             under delegated_result), but it was absent (full response: {})",
+                            thought_data
+                        );
+                    } else {
+                        assert!(
+                            delegated.get("embedding_status").is_none(),
+                            "expected embedding to complete (embedding_status key absent \
+                             under delegated_result), but got embedding_status={:?} (full \
+                             response: {})",
+                            delegated.get("embedding_status"),
+                            thought_data
+                        );
                     }
+
+                    let links = thought_data
+                        .get("links")
+                        .expect("think response should include a links object");
+                    let prev_id = links
+                        .get("previous_thought_id")
+                        .and_then(|p| p.as_str())
+                        .expect("links should include previous_thought_id as a string");
+
+                    // ID should be preserved (may have "thoughts:" prefix)
+                    assert!(
+                        prev_id == non_existent_id
+                            || prev_id == format!("thoughts:{}", non_existent_id),
+                        "Previous thought ID should be preserved through protocol (got: {})",
+                        prev_id
+                    );
                 }
                 TxJsonRpcMessage::<RoleServer>::Error(json_error) => {
-                    panic!("Should not error on non-existent previous_thought_id: {:?}", json_error);
+                    panic!(
+                        "Should not error on non-existent previous_thought_id: {:?}",
+                        json_error
+                    );
                 }
                 _ => panic!("Expected Response, got {:?}", response),
             }
         } else {
             panic!("No response received");
         }
-    }).await;
+    })
+    .await;
 }
 
 // PROTO-01/02/03/05: rmcp's default `initialize` negotiates the response

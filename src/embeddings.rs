@@ -230,6 +230,97 @@ impl Embedder for OpenAIEmbedder {
     }
 }
 
+// Test-only offline/fake embedder (clu fed-77afac). Deterministic,
+// zero-network, zero-I/O -- a pure function of the input text, so tests can
+// exercise the full think/KG embedding pipeline without ever reaching
+// api.openai.com or requiring a real API key.
+//
+// Gated behind the non-default `test-embedder` Cargo feature (mirrors the
+// `test-probe` precedent above OpenAIEmbedder's sibling in Cargo.toml):
+// this struct, its Embedder impl, and the "fake" match arm in
+// `create_embedder` below all vanish from a plain `cargo build`/`cargo
+// build --release` -- there is no code path in a production binary that
+// can construct or select this embedder.
+//
+// SECURITY/CORRECTNESS NOTE: vectors produced here carry NO semantic
+// meaning whatsoever -- cosine similarity between two fake embeddings says
+// nothing about whether the underlying texts are related. This must never
+// be mistaken for a real embedding, which is why `create_embedder` logs a
+// loud warning every time it constructs one.
+#[cfg(feature = "test-embedder")]
+pub struct FakeEmbedder {
+    dims: usize,
+}
+
+#[cfg(feature = "test-embedder")]
+impl FakeEmbedder {
+    pub fn new(dims: usize) -> Self {
+        Self { dims }
+    }
+
+    /// FNV-1a, 64-bit. Deliberately NOT `std::collections::hash_map::DefaultHasher`
+    /// (backed by `RandomState`, which is seeded per-process and is NOT
+    /// deterministic across runs/machines -- exactly the property this
+    /// embedder must not have). FNV-1a is a small, well-known, allocation-free
+    /// algorithm; implemented inline so this feature adds no new dependency.
+    fn fnv1a(seed: u64, bytes: &[u8]) -> u64 {
+        const FNV_PRIME: u64 = 0x100000001b3;
+        let mut hash = seed;
+        for &b in bytes {
+            hash ^= b as u64;
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+        hash
+    }
+
+    /// Deterministic per-dimension pseudo-value in `[-1.0, 1.0]`, derived
+    /// purely from `text` and the dimension index `i` -- no shared mutable
+    /// state, no randomness, no clock, no environment.
+    fn dimension_value(text: &[u8], i: usize) -> f32 {
+        const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+        // Mix the dimension index in as its own hashed byte sequence rather
+        // than concatenating it into `text`, so adjacent dimensions don't
+        // collapse onto near-identical hash chains for short inputs.
+        let index_seed = Self::fnv1a(FNV_OFFSET_BASIS, &(i as u64).to_le_bytes());
+        let h = Self::fnv1a(index_seed, text);
+        ((h as f64 / u64::MAX as f64) * 2.0 - 1.0) as f32
+    }
+}
+
+#[async_trait]
+#[cfg(feature = "test-embedder")]
+impl Embedder for FakeEmbedder {
+    async fn embed(&self, text: &str) -> Result<Vec<f32>> {
+        let bytes = text.as_bytes();
+        let mut v: Vec<f32> = (0..self.dims)
+            .map(|i| Self::dimension_value(bytes, i))
+            .collect();
+
+        let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if norm > 0.0 && norm.is_finite() {
+            for x in v.iter_mut() {
+                *x /= norm;
+            }
+        } else {
+            // Pathological case (never observed, but guarded explicitly per
+            // fed-77afac design note: this embedder must never return an
+            // all-zero or non-finite vector -- that yields NaN cosine
+            // similarity everywhere it's compared). Fall back to a fixed
+            // deterministic unit vector along the first axis.
+            v = vec![0.0f32; self.dims];
+            if !v.is_empty() {
+                v[0] = 1.0;
+            }
+        }
+
+        Ok(v)
+    }
+
+    fn dimensions(&self) -> usize {
+        self.dims
+    }
+}
+
 // No per-call fallback wrapper. Selection happens at startup to avoid mixed dims.
 
 // Factory function to create embedder based on configuration
@@ -272,11 +363,27 @@ pub async fn create_embedder(config: &crate::config::Config) -> Result<Arc<dyn E
                 anyhow::bail!("OPENAI_API_KEY is not set or valid. Cannot Initialize Embeddings.");
             }
         }
+        #[cfg(feature = "test-embedder")]
+        "fake" => {
+            let dims = config.system.embedding_dimensions;
+            // Loud and unambiguous: this must never be mistaken for a real
+            // embedding provider in a log (fed-77afac).
+            tracing::warn!(
+                "\u{26A0}\u{FE0F} FAKE EMBEDDER ACTIVE (test-embedder feature) \u{2014} vectors are deterministic hash-based placeholders with NO semantic meaning, dims={}. This must never run against production data.",
+                dims
+            );
+            Ok(Arc::new(FakeEmbedder::new(dims)))
+        }
         _ => {
             // Unknown provider - fail explicitly
+            #[cfg(feature = "test-embedder")]
+            let supported = "'openai' or 'fake' (test-embedder feature)";
+            #[cfg(not(feature = "test-embedder"))]
+            let supported = "'openai'";
             anyhow::bail!(
-                "Unknown or unsupported embedding provider: '{}'. Only 'openai' is supported.",
-                provider
+                "Unknown or unsupported embedding provider: '{}'. Only {} is supported.",
+                provider,
+                supported
             );
         }
     }
@@ -312,5 +419,113 @@ mod tests {
         let now = 2000u64;
         // Simulate: if now >= last + interval, no sleep
         assert!(now >= last.saturating_add(interval));
+    }
+}
+
+#[cfg(all(test, feature = "test-embedder"))]
+mod fake_embedder_tests {
+    use super::{Embedder, FakeEmbedder};
+
+    fn l2_norm(v: &[f32]) -> f32 {
+        v.iter().map(|x| x * x).sum::<f32>().sqrt()
+    }
+
+    #[tokio::test]
+    async fn deterministic_across_calls_and_instances() {
+        let a = FakeEmbedder::new(64).embed("same input").await.unwrap();
+        let b = FakeEmbedder::new(64).embed("same input").await.unwrap();
+        // Byte-identical, not just "close" -- same text must produce the
+        // exact same vector every time, on any machine, in any process.
+        assert_eq!(
+            a, b,
+            "same text on fresh embedder instances must be byte-identical"
+        );
+
+        let embedder = FakeEmbedder::new(64);
+        let c = embedder.embed("same input").await.unwrap();
+        let d = embedder.embed("same input").await.unwrap();
+        assert_eq!(
+            c, d,
+            "repeated calls on the same instance must be byte-identical"
+        );
+        assert_eq!(a, c);
+    }
+
+    #[tokio::test]
+    async fn text_sensitive_distinct_strings_differ() {
+        let embedder = FakeEmbedder::new(32);
+        let a = embedder.embed("the quick brown fox").await.unwrap();
+        let b = embedder
+            .embed("a completely different sentence")
+            .await
+            .unwrap();
+        assert_ne!(a, b, "distinct strings must not produce the same vector");
+    }
+
+    #[tokio::test]
+    async fn text_sensitive_one_character_change_alters_output() {
+        let embedder = FakeEmbedder::new(32);
+        let a = embedder.embed("hello world").await.unwrap();
+        let b = embedder.embed("hallo world").await.unwrap();
+        assert_ne!(a, b, "a one-character change must alter the output vector");
+    }
+
+    #[tokio::test]
+    async fn correct_dimensionality() {
+        for dims in [1usize, 8, 1536, 3072] {
+            let embedder = FakeEmbedder::new(dims);
+            let v = embedder.embed("dimension check").await.unwrap();
+            assert_eq!(v.len(), dims);
+            assert_eq!(embedder.dimensions(), dims);
+        }
+    }
+
+    #[tokio::test]
+    async fn l2_normalized_and_non_degenerate() {
+        let embedder = FakeEmbedder::new(1536);
+        let v = embedder.embed("normalize me").await.unwrap();
+        let norm = l2_norm(&v);
+        assert!(
+            (norm - 1.0).abs() < 1e-4,
+            "expected unit norm, got {} (tolerance 1e-4)",
+            norm
+        );
+        assert!(
+            v.iter().any(|x| *x != 0.0),
+            "vector must not be all-zero (degenerate -- NaN cosine similarity)"
+        );
+        assert!(
+            v.iter().all(|x| x.is_finite()),
+            "all components must be finite"
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_string_produces_valid_non_degenerate_unit_vector() {
+        let embedder = FakeEmbedder::new(1536);
+        let v = embedder.embed("").await.unwrap();
+        assert_eq!(v.len(), 1536);
+        let norm = l2_norm(&v);
+        assert!(
+            (norm - 1.0).abs() < 1e-4,
+            "empty string must still produce a unit vector, got norm {}",
+            norm
+        );
+        assert!(
+            v.iter().any(|x| *x != 0.0),
+            "empty string must not produce an all-zero vector"
+        );
+        assert!(v.iter().all(|x| x.is_finite()));
+    }
+
+    #[tokio::test]
+    async fn zero_network_zero_io_pure_function() {
+        // No assertion beyond "this returns instantly and deterministically
+        // with no I/O setup" -- the whole point of this embedder. Two calls
+        // with no shared state (fresh instances, no config, no env, no
+        // filesystem) must agree.
+        let v1 = FakeEmbedder::new(16).embed("pure").await.unwrap();
+        let v2 = FakeEmbedder::new(16).embed("pure").await.unwrap();
+        assert_eq!(v1, v2);
     }
 }

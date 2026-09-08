@@ -1,4 +1,60 @@
 ## [Unreleased] - fed-6d00e5 decision-runner controls
+## [Unreleased] - fed-77afac offline/fake embedder
+
+- Added a `test-embedder` Cargo feature and a `FakeEmbedder` (`src/embeddings.rs`)
+  behind it: a deterministic, zero-network, zero-I/O embedding provider for
+  tests. Vectors are derived from an inline FNV-1a hash of the input text
+  (per output dimension), L2-normalized, and guarded against the degenerate
+  all-zero/non-finite case. Not reachable from a plain `cargo build`/`cargo
+  build --release` -- the struct, its `Embedder` impl, and the `"fake"` arm
+  of `create_embedder` are all `#[cfg(feature = "test-embedder")]`. 7 unit
+  tests cover determinism, text-sensitivity (including a one-character
+  change), correct dimensionality across several sizes, unit-norm/non-degenerate
+  output, and the empty-string case.
+- Wired a `"fake"` provider arm into `create_embedder()` (feature-gated) that
+  logs loudly on construction so a fake embedder can never be mistaken for a
+  real one in a log. Added a `SURR_EMBED_PROVIDER` env-first override in
+  `Config::load()` (mirrors the existing `SURR_DB_*` override pattern) so
+  tests/scripts can select it without touching the checked-in
+  `surreal_mind.toml`; this also gives the previously-inert
+  `SURR_EMBED_PROVIDER` name (referenced only in archived docs/scripts) a
+  real consumer for the first time. Added a `"fake"` arm to `Config::load`'s
+  provider/dimension coherence validation so a correctly-configured offline
+  run no longer logs a misleading "unknown provider" warning.
+- Un-gated the three acceptance tests that previously skipped by default and
+  required `ALLOW_NETWORK_EMBED=1` to reach `api.openai.com` for real
+  (`tests/mcp_integration.rs::test_think_handler`,
+  `::test_think_with_continuity`,
+  `tests/mcp_protocol.rs::test_call_tool_continuity_fallback_protocol`).
+  They now run offline by default against `FakeEmbedder` with real
+  assertions on the response's `embedding_status` (nested under
+  `delegated_result` -- `handle_legacymind_think` does not surface it at the
+  top level, which a first pass at this assertion got wrong and a deliberate
+  negative-control run caught: the tests passed vacuously against a
+  fake embedder rewritten to always error, until the assertion was corrected
+  to look in the right place, after which the same broken embedder correctly
+  failed all three). `ALLOW_NETWORK_EMBED=1` is preserved with its meaning
+  flipped from "run this test" to "switch this test to the real,
+  intentionally-invalid-key, bound-to-degrade network path" -- verified both
+  ways.
+- `config.runtime.embed_strict` does NOT gate embedding failure inside
+  `handle_legacymind_think`/`ThoughtBuilder::execute`; it only gates
+  `main.rs`'s startup dimension preflight, which these tests never reach.
+  Set in the offline test config anyway to match documented intent, but
+  noted in code comments so a future reader doesn't rely on it as the guard.
+- Updated `scripts/test_db.sh` to build/test with `test-embedder` by default
+  and export `SURR_EMBED_PROVIDER=fake` / `SURR_EMBED_STRICT=1` unless
+  `--allow-network` is passed (in which case the embedding provider is left
+  as `surreal_mind.toml`'s `"openai"`, exercising the pre-existing
+  intentionally-invalid-key degrade path instead). Updated the script's
+  header/dry-run/log comments to match; the sanitize-then-set pattern for
+  the two new env vars mirrors the existing `ALLOW_NETWORK_EMBED` handling.
+- Verified: `cargo clippy --all-targets --all-features -- -D warnings` and
+  `cargo clippy --all-targets -- -D warnings` (no feature) both clean;
+  `cargo fmt --all` clean; default `cargo test` (DB-free) and the full
+  `scripts/test_db.sh` DB-backed suite both pass, offline and with
+  `--allow-network`, before and after the negative-control revert.
+
 
 ## [Unreleased] - fed-11a1a0 gardener state advancement
 

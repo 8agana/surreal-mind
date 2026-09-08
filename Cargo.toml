@@ -74,6 +74,14 @@ db_integration = []
 # enabled by default -- required-features on that [[bin]] entry below means
 # a plain `cargo build`/`cargo build --release` never produces this binary.
 test-probe = []
+# Enables the test-only FakeEmbedder offline embedding provider (fed-77afac).
+# NOT enabled by default -- FakeEmbedder and the "fake" arm of
+# create_embedder() are both behind #[cfg(feature = "test-embedder")], so a
+# plain `cargo build`/`cargo build --release` never compiles the fake
+# embedder in at all (unlike test-probe, this gates code inside the lib
+# rather than a separate [[bin]], so there is no required-features binary
+# trick available -- the cfg gate on the impl itself is the safety guard).
+test-embedder = []
 
 [[bin]]
 name = "env_resolution_probe"
