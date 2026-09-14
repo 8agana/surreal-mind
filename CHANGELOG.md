@@ -172,6 +172,44 @@
   `tests/embedding_shape.rs` tests; `scripts/test_db.sh` exits 0 with the
   three previously network-gated tests running, not skipped.
 
+### Comment correction (2026-09-14, fed-77afac option A on fed-b13ce7)
+
+- **The round-2-hardening comment above (and its `src/embeddings.rs`
+  in-code twin at the top of `create_embedder`) overclaimed what the
+  process-env capture achieves.** It said reading `SURR_ALLOW_FAKE_EMBEDDER`
+  before `create_embedder`'s own `load_env_file()` call makes the guard
+  "structurally unable to see a dotenv-sourced value." False on every real
+  call path: `create_embedder` is only reached via `SurrealMindServer::new`
+  (`src/server/db.rs`), which `main()` (`src/main.rs`) only calls after
+  `Config::load()` (`src/config.rs`) has returned -- and `Config::load()`'s
+  own first statement is its own dotenv load. So `.env` is always already
+  merged into the process environment by the time `create_embedder` runs,
+  and a `.env`-sourced `SURR_ALLOW_FAKE_EMBEDDER=1` satisfies this guard
+  exactly like an exported one; `std::env::var` cannot tell them apart. The
+  round-2 negative control above is not wrong, but it tested an artificial
+  path: a standalone harness calling `create_embedder` directly, bypassing
+  `Config::load()` entirely, so its own dotenv-load-avoidance held there --
+  it just isn't the shape of any real caller.
+- **Reclassified, not removed: this is operational policy, not a structural
+  barrier.** The capture-before-this-function's-own-load ordering still does
+  something real -- it stops *this function's* dotenv load specifically from
+  arming the guard lazily after entry -- it just doesn't stop a `.env`
+  loaded earlier in the process, which is the only case that matters on a
+  real call path. The comment in `src/embeddings.rs` now says this
+  correctly and names the actual barrier against a production binary: the
+  compile-time `#[cfg(feature = "test-embedder")]` exclusion on the whole
+  `"fake"` arm. `smbuild` / plain `cargo build --release` (no features)
+  does not compile that arm in at all, so no environment variable --
+  `.env`-sourced or not -- can select it in the deployed binary, independent
+  of this guard.
+- **Not changed: the guard's runtime behavior**, and not touched in this
+  pass: the `anyhow::bail!` error message inside the `"fake"` match arm
+  (`src/embeddings.rs`, a few lines below this comment) that repeats the
+  same "will NOT be honoured from a .env file" claim to an operator. That
+  string is user-facing runtime text, not the comment this correction was
+  scoped to (`fed-77afac`/`fed-b13ce7` option A); flagged for a follow-up
+  decision rather than edited here.
+
 
 ## [Unreleased] - fed-11a1a0 gardener state advancement
 

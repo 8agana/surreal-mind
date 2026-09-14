@@ -364,21 +364,40 @@ impl Embedder for FakeEmbedder {
 
 // Factory function to create embedder based on configuration
 pub async fn create_embedder(config: &crate::config::Config) -> Result<Arc<dyn Embedder>> {
-    // Capture the fake-embedder runtime opt-in from the REAL process
-    // environment BEFORE `load_env_file` below runs (fed-77afac review round
-    // 2, hardening pass). `load_env_file` calls `dotenvy::dotenv()`, which
-    // searches UPWARD from the current working directory for a `.env` file
-    // and, for any variable not already set, injects it into the process
-    // environment -- indistinguishable from a real env var to any
-    // `std::env::var` call made afterward. That means a `.env` file
-    // anywhere up the directory tree containing `SURR_ALLOW_FAKE_EMBEDDER=1`
-    // would silently arm the guard below with zero operator action in the
-    // real shell -- the same class of hole this case was opened to close
-    // (`Config::load` auto-loading `.env` unconditionally so a copied `.env`
-    // silently arms a key). Reading the variable here, before the dotenv
-    // load has a chance to run, makes the guard structurally unable to see
-    // a dotenv-sourced value: only a variable already present in the
-    // process environment when `create_embedder` is entered can satisfy it.
+    // Capture the fake-embedder runtime opt-in from the process environment
+    // BEFORE the `load_env_file()` call two lines below runs (fed-77afac
+    // review round 2, hardening pass). `load_env_file` calls
+    // `dotenvy::dotenv()`, which searches UPWARD from the current working
+    // directory for a `.env` file and, for any variable not already set,
+    // injects it into the process environment -- indistinguishable from a
+    // real env var to any `std::env::var` call made afterward.
+    //
+    // CORRECTED 2026-09-14 (fed-77afac, option A on fed-b13ce7): the
+    // sentence that used to sit here claimed this ordering makes the guard
+    // "structurally unable to see a dotenv-sourced value." That is false on
+    // every real call path. Capturing before THIS function's own
+    // `load_env_file()` call only pre-empts *this* dotenv load -- it does
+    // nothing against a `.env` that was already loaded earlier in the
+    // process. And on every real caller, one already has been: this
+    // function is only reached via `SurrealMindServer::new`
+    // (src/server/db.rs), which `main()` (src/main.rs) only calls after
+    // `Config::load()` has returned -- and `Config::load()`'s very first
+    // statement (src/config.rs) is its own dotenv load. So by the time this
+    // line runs on a real call path, `.env` has already been merged into
+    // the process environment, and a `.env`-sourced
+    // `SURR_ALLOW_FAKE_EMBEDDER=1` CAN satisfy this guard: `std::env::var`
+    // cannot tell a dotenv-injected value from one an operator actually
+    // exported.
+    //
+    // This guard is therefore OPERATIONAL POLICY -- the opt-in must already
+    // be present in the environment by the time `create_embedder` starts,
+    // rather than being read lazily after this function's own dotenv load
+    // -- not a structural barrier against `.env`. The actual barrier
+    // keeping this from arming a production binary is the compile-time
+    // `#[cfg(feature = "test-embedder")]` exclusion on the whole "fake" arm
+    // below: `smbuild` / plain `cargo build --release` (no features) does
+    // not compile that arm in at all, so no environment variable --
+    // `.env`-sourced or not -- can select it in the deployed binary.
     // Gated on the feature because it is otherwise unused (the "fake"
     // provider arm that consumes it does not exist without the feature).
     #[cfg(feature = "test-embedder")]
