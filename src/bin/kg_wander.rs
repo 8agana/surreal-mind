@@ -864,7 +864,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let script = dir.path().join("sleeper.py");
         let witness = script.with_extension("pid");
-        std::fs::write(&script, "import pathlib, subprocess, sys, time\nchild = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\npathlib.Path(sys.argv[0]).with_suffix('.pid').write_text(str(child.pid))\ntime.sleep(60)\n").unwrap();
+        std::fs::write(&script, "import pathlib, subprocess, sys, time\ntime.sleep(3)\nchild = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\npathlib.Path(sys.argv[0]).with_suffix('.pid').write_text(str(child.pid))\ntime.sleep(60)\n").unwrap();
         let started = Instant::now();
         assert!(
             runner_decision(
@@ -892,22 +892,39 @@ mod tests {
         let script = dir.path().join("cancellable.py");
         let witness = script.with_extension("pid");
         std::fs::write(&script, "import pathlib, subprocess, sys, time\nchild = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\npathlib.Path(sys.argv[0]).with_suffix('.pid').write_text(str(child.pid))\ntime.sleep(60)\n").unwrap();
-        let task = tokio::spawn(runner_decision(
+        let mut task = tokio::spawn(runner_decision(
             script.to_str().unwrap().into(),
             "test".into(),
             60_000,
             "fixture-model".into(),
         ));
-        for _ in 0..100 {
-            if witness.exists() {
-                break;
+        let wait_for_pid = async {
+            loop {
+                if let Ok(pid) = std::fs::read_to_string(&witness)
+                    && let Ok(pid) = pid.parse::<i32>()
+                {
+                    break pid;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
             }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-        assert!(witness.exists(), "runner did not start");
+        };
+        let pid = tokio::select! {
+            runner = &mut task => {
+                panic!("runner exited before readiness witness: {runner:?}");
+            }
+            readiness = tokio::time::timeout(Duration::from_secs(15), wait_for_pid) => {
+                match readiness {
+                    Ok(pid) => pid,
+                    Err(_) => {
+                        task.abort();
+                        let _ = task.await;
+                        panic!("runner did not publish a parseable PID within 15 seconds");
+                    }
+                }
+            }
+        };
         task.abort();
         assert!(task.await.unwrap_err().is_cancelled());
-        let pid: i32 = std::fs::read_to_string(witness).unwrap().parse().unwrap();
         for _ in 0..100 {
             if unsafe { libc::kill(pid, 0) } != 0 {
                 return;

@@ -1,3 +1,18 @@
+## [Unreleased] - fed-7223a0 CI repair
+
+- Removed the `db-protocol` CI step that still invoked
+  `tests/test_agent_job_status.rs` after `28178ec` deliberately removed that
+  test together with the `call_status`, `call_jobs`, and `call_cancel` tools,
+  their handlers, and the `agent_jobs` schema.
+- Hardened the `kg_wander` cancellation regression against slow hosted-runner
+  startup. The test now waits up to 15 seconds for a fully written, parseable
+  descendant PID, reports an early runner exit instead of misclassifying it as
+  a readiness timeout, and aborts the runner before failing a readiness
+  timeout so the failure path does not detach a 60-second child process. The
+  fixture deliberately delays readiness for three seconds, proving the old
+  two-second loop would fail while the new bounded path still reaches the
+  existing cancellation and descendant-death assertions.
+
 ## [Unreleased] - fed-6d00e5 decision-runner controls
 ## [Unreleased] - fed-77afac offline/fake embedder
 
