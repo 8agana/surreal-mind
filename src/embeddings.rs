@@ -465,10 +465,14 @@ pub async fn create_embedder(config: &crate::config::Config) -> Result<Arc<dyn E
                 anyhow::bail!(
                     "Refusing to construct the fake embedding provider: embedding_provider is \
                      \"fake\", but the runtime opt-in {FAKE_OPT_IN}=1 is not set as a real \
-                     process environment variable (got {opt_in:?}). This opt-in is read from \
-                     the process environment BEFORE any .env file is loaded and will NOT be \
-                     honoured from a .env file, however it is discovered -- only a variable \
-                     already present in the real process environment satisfies it. The fake \
+                     process environment variable (got {opt_in:?}). This guard is operational \
+                     policy, NOT a structural barrier: Config::load() loads .env before \
+                     create_embedder is reachable, so a value sourced from a .env file \
+                     anywhere up the tree satisfies this check exactly as an exported one \
+                     does. The barrier that actually keeps this out of production is the \
+                     compile-time #[cfg(feature = \"test-embedder\")] exclusion -- smbuild is \
+                     a plain release build with no features, so this arm does not exist in \
+                     the deployed binary. The fake \
                      embedder emits deterministic hash-based vectors with NO semantic meaning, \
                      so anything it writes to a real database is silently worthless and every \
                      similarity search over it is noise. To run the offline test suite, use \
