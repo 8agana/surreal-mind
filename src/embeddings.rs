@@ -249,7 +249,7 @@ impl Embedder for OpenAIEmbedder {
 // loud warning every time it constructs one.
 #[cfg(feature = "test-embedder")]
 #[derive(Debug)]
-pub struct FakeEmbedder {
+pub(crate) struct FakeEmbedder {
     dims: usize,
 }
 
@@ -270,7 +270,16 @@ impl FakeEmbedder {
     /// `Config::load` documents "any positive dimension" for the "fake"
     /// provider but never enforces `> 0`, so the invariant is enforced here,
     /// at the single place the type can come into existence.
-    pub fn new(dims: usize) -> Result<Self> {
+    ///
+    /// `pub(crate)` (fed-77afac review round 2, hardening pass): the runtime
+    /// opt-in guard (`SURR_ALLOW_FAKE_EMBEDDER`) lives only in
+    /// `create_embedder` below, not here. A fully `pub` constructor would let
+    /// any caller in a `test-embedder`-enabled build (there is none today,
+    /// but nothing stops one being added) construct a fake embedder directly
+    /// and bypass that guard entirely. Restricting construction to this
+    /// crate keeps the factory function the single path that can produce a
+    /// `FakeEmbedder`, so the opt-in check cannot be routed around.
+    pub(crate) fn new(dims: usize) -> Result<Self> {
         if dims == 0 {
             anyhow::bail!(
                 "FakeEmbedder requires a positive dimension count, got 0. A zero-dimension \
@@ -355,6 +364,26 @@ impl Embedder for FakeEmbedder {
 
 // Factory function to create embedder based on configuration
 pub async fn create_embedder(config: &crate::config::Config) -> Result<Arc<dyn Embedder>> {
+    // Capture the fake-embedder runtime opt-in from the REAL process
+    // environment BEFORE `load_env_file` below runs (fed-77afac review round
+    // 2, hardening pass). `load_env_file` calls `dotenvy::dotenv()`, which
+    // searches UPWARD from the current working directory for a `.env` file
+    // and, for any variable not already set, injects it into the process
+    // environment -- indistinguishable from a real env var to any
+    // `std::env::var` call made afterward. That means a `.env` file
+    // anywhere up the directory tree containing `SURR_ALLOW_FAKE_EMBEDDER=1`
+    // would silently arm the guard below with zero operator action in the
+    // real shell -- the same class of hole this case was opened to close
+    // (`Config::load` auto-loading `.env` unconditionally so a copied `.env`
+    // silently arms a key). Reading the variable here, before the dotenv
+    // load has a chance to run, makes the guard structurally unable to see
+    // a dotenv-sourced value: only a variable already present in the
+    // process environment when `create_embedder` is entered can satisfy it.
+    // Gated on the feature because it is otherwise unused (the "fake"
+    // provider arm that consumes it does not exist without the feature).
+    #[cfg(feature = "test-embedder")]
+    let fake_embedder_opt_in_from_process_env = std::env::var("SURR_ALLOW_FAKE_EMBEDDER");
+
     // Load .env file if it exists
     crate::config::load_env_file();
 
@@ -405,17 +434,28 @@ pub async fn create_embedder(config: &crate::config::Config) -> Result<Arc<dyn E
             // selected with SURR_EMBED_PROVIDER=fake -- silently persisting
             // deterministic garbage vectors against real data.
             const FAKE_OPT_IN: &str = "SURR_ALLOW_FAKE_EMBEDDER";
-            let opt_in = std::env::var(FAKE_OPT_IN).unwrap_or_default();
+            // Use the value captured above, from the REAL process
+            // environment, before `load_env_file` ran -- NOT a fresh
+            // `std::env::var` read here, which would also see anything a
+            // `.env` file injected in the meantime (fed-77afac review round
+            // 2, hardening pass).
+            let opt_in = fake_embedder_opt_in_from_process_env
+                .clone()
+                .unwrap_or_default();
             if opt_in.trim() != "1" {
                 anyhow::bail!(
                     "Refusing to construct the fake embedding provider: embedding_provider is \
-                     \"fake\", but the runtime opt-in {FAKE_OPT_IN}=1 is not set (got \
-                     {opt_in:?}). The fake embedder emits deterministic hash-based vectors with \
-                     NO semantic meaning, so anything it writes to a real database is silently \
-                     worthless and every similarity search over it is noise. To run the offline \
-                     test suite, use scripts/test_db.sh (it sets {FAKE_OPT_IN}=1 and points at a \
-                     throwaway in-memory database). To run a real instance, set \
-                     embedding_provider (or SURR_EMBED_PROVIDER) to \"openai\"."
+                     \"fake\", but the runtime opt-in {FAKE_OPT_IN}=1 is not set as a real \
+                     process environment variable (got {opt_in:?}). This opt-in is read from \
+                     the process environment BEFORE any .env file is loaded and will NOT be \
+                     honoured from a .env file, however it is discovered -- only a variable \
+                     already present in the real process environment satisfies it. The fake \
+                     embedder emits deterministic hash-based vectors with NO semantic meaning, \
+                     so anything it writes to a real database is silently worthless and every \
+                     similarity search over it is noise. To run the offline test suite, use \
+                     scripts/test_db.sh (it exports {FAKE_OPT_IN}=1 into the real process \
+                     environment and points at a throwaway in-memory database). To run a real \
+                     instance, set embedding_provider (or SURR_EMBED_PROVIDER) to \"openai\"."
                 );
             }
             let dims = config.system.embedding_dimensions;

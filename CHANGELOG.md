@@ -129,6 +129,49 @@
   export removed from `scripts/test_db.sh` (server construction refuses with
   the actionable message). All injections reverted and re-verified green.
 
+### Review round 2 hardening pass (peer review of b2036a7)
+
+- **`FakeEmbedder` and `FakeEmbedder::new` are now `pub(crate)`, not `pub`**
+  (`src/embeddings.rs`). The `SURR_ALLOW_FAKE_EMBEDDER` runtime opt-in guard
+  lives only in `create_embedder`, not in the constructor, so a fully `pub`
+  type was constructible directly by any caller in a `test-embedder`-enabled
+  build, bypassing the guard entirely -- an API-level hole, not an observed
+  one; grep confirmed every real construction site is `create_embedder`
+  itself plus this file's own `#[cfg(test)]` unit tests, both in-crate.
+  `pub(crate)` makes the factory function the single path that can produce a
+  `FakeEmbedder`.
+- **The `SURR_ALLOW_FAKE_EMBEDDER` guard is no longer armable by a `.env`
+  file.** `create_embedder` called `config::load_env_file()` (a bare
+  `dotenvy::dotenv()`, which searches UPWARD from the current working
+  directory) before reading the opt-in, so a `.env` anywhere up the tree
+  containing `SURR_ALLOW_FAKE_EMBEDDER=1` silently armed the guard -- the
+  same class of hole this case was opened to close (`Config::load` auto-
+  loading `.env` unconditionally so a copied `.env` silently arms a key).
+  Not hypothetical: the real repo `.env` at `~/Projects/LegacyMind/.env`
+  sits directly above this worktree. Fixed by capturing
+  `SURR_ALLOW_FAKE_EMBEDDER` from `std::env::var` at the top of
+  `create_embedder`, before `load_env_file()` runs, and using only that
+  captured value in the guard -- structurally unable to see a dotenv-
+  sourced value. Error message updated to say the opt-in must be a real
+  process environment variable and will not be honoured from `.env`.
+  `scripts/test_db.sh` is unaffected (it `export`s the var into the real
+  process environment, verified still green below).
+- **Negative-controlled in a scratch harness outside the repo** (never a
+  `.env` in the worktree or anywhere under `~/Projects/LegacyMind`): a
+  standalone binary crate depending on this crate by path, calling
+  `create_embedder` directly with `embedding_provider = "fake"`. With
+  `SURR_ALLOW_FAKE_EMBEDDER=1` present ONLY in a discoverable `.env` and
+  absent from the process environment, the fixed code REFUSES; with the
+  same var exported into the real process environment, it SUCCEEDS; built
+  against the pre-fix commit (`b2036a7`) in a throwaway git worktree, the
+  identical dotenv-only scenario SUCCEEDS -- confirming the control
+  detects the exact defect it exists to catch.
+- Verified: `cargo clippy --all-targets -- -D warnings` (no features) and
+  `--features test-embedder` both Finished clean; `cargo fmt --all --check`
+  clean; plain `cargo test` passes including all 22
+  `tests/embedding_shape.rs` tests; `scripts/test_db.sh` exits 0 with the
+  three previously network-gated tests running, not skipped.
+
 
 ## [Unreleased] - fed-11a1a0 gardener state advancement
 
