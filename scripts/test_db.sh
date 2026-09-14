@@ -90,6 +90,18 @@
 #        ACCEPTED placeholder, not rejected). Only actually reaches the
 #        network with --allow-network (see SURR_EMBED_PROVIDER below);
 #        otherwise it's inert since the fake provider never looks at it.
+#   SURR_ALLOW_FAKE_EMBEDDER=1 (fed-77afac review round 2) -- exported ONLY on
+#        the default (offline) path, alongside SURR_EMBED_PROVIDER=fake.
+#        create_embedder()'s "fake" arm (src/embeddings.rs) REFUSES to build a
+#        FakeEmbedder unless this is exactly "1". `test-embedder` is an
+#        ordinary public Cargo feature, so `cargo build --release --features
+#        test-embedder` -- or the far likelier `--all-features` reflex, which
+#        .github/workflows/ci.yml:34 already uses for clippy -- yields a
+#        RELEASE binary in which the "fake" arm exists; this runtime gate means
+#        compile-time exclusion is not the only thing standing there. Sanitized
+#        (unset) at the top of the env block like every other opt-in, then
+#        re-set here, so an inherited value from the calling shell cannot
+#        silently arm it.
 #   SURR_EMBED_PROVIDER=fake / SURR_EMBED_STRICT=1 (fed-77afac) -- default
 #        (no --allow-network): selects the offline, deterministic,
 #        zero-network FakeEmbedder (src/embeddings.rs, requires this
@@ -300,13 +312,13 @@ if [ "$DRY_RUN" -eq 1 ]; then
   else
     log "  fixture: $FIXTURE_DIR/schema.surql only (pass --seed to also apply seed.surql)"
   fi
-  log "  env sanitized (explicitly unset unless the corresponding opt-in flag is passed): RUN_GEMINI_TESTS SURR_SMOKE_TEST REEMBED_TEST_CONFIRM_DISPOSABLE_NS ALLOW_NETWORK_EMBED GOOGLE_CLI_PROVIDER SURR_GOOGLE_CLI_PROVIDER"
+  log "  env sanitized (explicitly unset unless the corresponding opt-in flag is passed): RUN_GEMINI_TESTS SURR_SMOKE_TEST REEMBED_TEST_CONFIRM_DISPOSABLE_NS ALLOW_NETWORK_EMBED GOOGLE_CLI_PROVIDER SURR_GOOGLE_CLI_PROVIDER SURR_ALLOW_FAKE_EMBEDDER"
   log "  SURR_ENV_FILE pinned to an empty scratch file (protects Config::load's own dotenv step, src/config.rs:229); SURREAL_MIND_CONFIG pinned to $REPO_ROOT/surreal_mind.toml (belt-and-suspenders, config-file resolution unambiguous)"
   log "  ACKNOWLEDGED GAP (see header comment): src/embeddings.rs:238, src/lib.rs:24, and tests/gemini_client_integration.rs:9 each call the bare dotenvy::dotenv(), which does NOT honor SURR_ENV_FILE and is NOT blocked by this wrapper -- not currently exploitable on this machine (checked: the real ~/Projects/LegacyMind/.env's key names do not include any sanitized gate var), but not a closed gap either."
   if [ "$ALLOW_NETWORK" -eq 1 ]; then
     log "  --allow-network passed: ALLOW_NETWORK_EMBED=1 would be exported, SURR_EMBED_PROVIDER left unset (surreal_mind.toml's \"openai\" applies) -- the 3 network-capable tests would exercise the real, intentionally-invalid-key, bound-to-degrade path"
   else
-    log "  --allow-network NOT passed: ALLOW_NETWORK_EMBED stays unset, SURR_EMBED_PROVIDER=fake / SURR_EMBED_STRICT=1 would be exported -- the 3 network-capable tests run offline against the deterministic FakeEmbedder (fed-77afac)"
+    log "  --allow-network NOT passed: ALLOW_NETWORK_EMBED stays unset, SURR_EMBED_PROVIDER=fake / SURR_EMBED_STRICT=1 / SURR_ALLOW_FAKE_EMBEDDER=1 would be exported -- the 3 network-capable tests run offline against the deterministic FakeEmbedder (fed-77afac). Without SURR_ALLOW_FAKE_EMBEDDER=1, create_embedder REFUSES provider \"fake\" at runtime"
   fi
   log "  would run: cargo test --features db_integration,test-probe,test-embedder --no-fail-fast $(cargo_args_display)"
   exit 0
@@ -494,7 +506,7 @@ EMPTY_ENV_FILE="$WORK_DIR/empty.env"
 # this wrapper knows about, regardless of what the calling shell already
 # exported. "Not setting a flag does not unset an inherited one" -- these
 # must be removed, not merely left alone.
-unset RUN_GEMINI_TESTS SURR_SMOKE_TEST REEMBED_TEST_CONFIRM_DISPOSABLE_NS ALLOW_NETWORK_EMBED GOOGLE_CLI_PROVIDER SURR_GOOGLE_CLI_PROVIDER SURR_EMBED_PROVIDER SURR_EMBED_STRICT 2>/dev/null || true
+unset RUN_GEMINI_TESTS SURR_SMOKE_TEST REEMBED_TEST_CONFIRM_DISPOSABLE_NS ALLOW_NETWORK_EMBED GOOGLE_CLI_PROVIDER SURR_GOOGLE_CLI_PROVIDER SURR_EMBED_PROVIDER SURR_EMBED_STRICT SURR_ALLOW_FAKE_EMBEDDER 2>/dev/null || true
 
 # --- export exactly the env the tests read (see file:line contract in the header comment above) ---
 export SURR_DB_URL="$DB_URL"
@@ -525,6 +537,14 @@ else
   # (added to the cargo test invocation below).
   export SURR_EMBED_PROVIDER=fake
   export SURR_EMBED_STRICT=1
+  # fed-77afac review round 2: create_embedder()'s "fake" arm now REFUSES to
+  # construct the fake embedder unless this runtime opt-in is set, so that
+  # compile-time exclusion is not the only thing standing between a release
+  # binary built with --features test-embedder (or --all-features) and a
+  # process quietly persisting semantically-meaningless vectors. This is the
+  # sanctioned place to set it: the DB below is a throwaway in-memory instance
+  # on a random loopback port, vetted by refuse_if_prod_url.
+  export SURR_ALLOW_FAKE_EMBEDDER=1
 fi
 
 log "environment exported:"
@@ -536,7 +556,8 @@ log "  SM_AGENT_PROVIDER=$SM_AGENT_PROVIDER ANTIGRAVITY_CLI_BIN=$ANTIGRAVITY_CLI
 log "  SURR_ENV_FILE=$SURR_ENV_FILE (size: $(wc -c <"$SURR_ENV_FILE" | tr -d ' ') bytes)"
 log "  SURREAL_MIND_CONFIG=$SURREAL_MIND_CONFIG"
 log "  SURR_EMBED_PROVIDER=${SURR_EMBED_PROVIDER:-<unset, openai from toml>} SURR_EMBED_STRICT=${SURR_EMBED_STRICT:-<unset>}"
-log "  sanitized (unset, not merely left alone): RUN_GEMINI_TESTS SURR_SMOKE_TEST REEMBED_TEST_CONFIRM_DISPOSABLE_NS GOOGLE_CLI_PROVIDER SURR_GOOGLE_CLI_PROVIDER"
+log "  SURR_ALLOW_FAKE_EMBEDDER=${SURR_ALLOW_FAKE_EMBEDDER:-<unset -- create_embedder will refuse provider \"fake\">}"
+log "  sanitized (unset, not merely left alone): RUN_GEMINI_TESTS SURR_SMOKE_TEST REEMBED_TEST_CONFIRM_DISPOSABLE_NS GOOGLE_CLI_PROVIDER SURR_GOOGLE_CLI_PROVIDER (SURR_ALLOW_FAKE_EMBEDDER too, then re-set above on the offline path only)"
 if [ -n "${ALLOW_NETWORK_EMBED:-}" ]; then
   log "  ALLOW_NETWORK_EMBED=$ALLOW_NETWORK_EMBED (--allow-network passed -- the 3 network-capable tests exercise the real, bound-to-degrade path)"
 else

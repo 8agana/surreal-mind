@@ -7,6 +7,8 @@ use rmcp::{ServerHandler, model::CallToolRequestParams};
 use serde_json::json;
 use surreal_mind::{config::Config, server::SurrealMindServer};
 
+mod common;
+
 // Helper to create a test server instance
 async fn create_test_server() -> SurrealMindServer {
     let config = Config::load().expect("Failed to load config");
@@ -17,11 +19,18 @@ async fn create_test_server() -> SurrealMindServer {
 
 /// Offline-embedder test server (clu fed-77afac): wired to the
 /// deterministic, zero-network `FakeEmbedder` instead of a live OpenAI
-/// call. Requires the crate to be built with `--features test-embedder`
-/// (scripts/test_db.sh does this by default); without it, `create_embedder`
-/// has no "fake" arm to select and this will fail loudly with an "unknown
-/// or unsupported embedding provider" error rather than silently reaching
-/// the network.
+/// call.
+///
+/// TWO gates must both be open, and `scripts/test_db.sh` opens both:
+///  1. the crate must be built with `--features test-embedder`, or
+///     `create_embedder` has no "fake" arm to select at all;
+///  2. `SURR_ALLOW_FAKE_EMBEDDER=1` must be set, or the "fake" arm REFUSES to
+///     construct the embedder at runtime (fed-77afac review round 2 -- the
+///     Cargo feature is public, so compile-time exclusion cannot be the only
+///     guard).
+///
+/// Either gate closed fails loudly here rather than silently reaching the
+/// network.
 async fn create_offline_test_server() -> SurrealMindServer {
     let mut config = Config::load().expect("Failed to load config");
     config.system.embedding_provider = "fake".to_string();
@@ -34,85 +43,16 @@ async fn create_offline_test_server() -> SurrealMindServer {
     // dimension preflight, which these tests never reach (they construct
     // SurrealMindServer directly, bypassing main()). Set here anyway
     // because it costs nothing and matches the documented intent, but the
-    // REAL non-vacuous guard against a broken/missing embedder is the
-    // `embedding_status` assertion in the tests below -- `result.is_ok()`
-    // alone is true on both success AND embedder failure.
+    // REAL non-vacuous guard is `common::assert_think_result` below:
+    // `result.is_ok()` alone is true on both success AND embedder failure,
+    // and the response-shape half of that assertion is itself backed by the
+    // persisted-row positive witness because absence-of-a-failure-marker is
+    // not evidence of success.
     config.runtime.embed_strict = true;
-    SurrealMindServer::new(&config)
-        .await
-        .expect("Failed to create server (built with --features test-embedder?)")
-}
-
-/// `handle_legacymind_think`'s response JSON carries an `embedding_status`
-/// key, NESTED under `delegated_result` -- `handle_legacymind_think`
-/// (src/tools/thinking.rs) wraps run_convo/run_technical's return value
-/// under that key, not at the top level. (The first version of this helper
-/// checked `parsed.get("embedding_status")` directly and therefore passed
-/// unconditionally regardless of actual status; caught by the fed-77afac
-/// step 6 negative control, which is the entire point of running one.)
-/// ONLY present when status is NOT "complete" (src/tools/thinking/
-/// runners.rs: `if embedding_status != "complete" { ... }`). So the key's
-/// ABSENCE under `delegated_result` is the positive assertion that the
-/// embedder actually ran and produced a stored embedding -- this is what
-/// makes these tests fail for real if the offline embedder is broken,
-/// instead of vacuously passing on `result.is_ok()` alone.
-fn assert_embedding_complete(result: &rmcp::model::CallToolResult) {
-    let first = result
-        .content
-        .first()
-        .expect("think response should have at least one content block");
-    let rmcp::model::ContentBlock::Text(text_content) = first else {
-        panic!(
-            "expected a text content block in think response, got {:?}",
-            first
-        );
-    };
-    let parsed: serde_json::Value =
-        serde_json::from_str(&text_content.text).expect("think response text should be valid JSON");
-    let delegated = parsed
-        .get("delegated_result")
-        .expect("think response should include a delegated_result object");
-    assert!(
-        delegated.get("embedding_status").is_none(),
-        "expected embedding to complete (embedding_status key absent under \
-         delegated_result), but got embedding_status={:?} (full response: {})",
-        delegated.get("embedding_status"),
-        parsed
-    );
-}
-
-/// Companion to `assert_embedding_complete` for the `--allow-network` path
-/// (scripts/test_db.sh): that flag deliberately uses an invalid API key
-/// (`OPENAI_API_KEY=sk-fake-testdb`) to exercise "a real call that is bound
-/// to degrade" rather than a real successful embedding -- the point of
-/// `--allow-network` is proving the handler tolerates embedder failure
-/// gracefully, not proving OpenAI works. So under network mode the
-/// opposite assertion is the real one: `embedding_status` must be PRESENT
-/// (the call failed as expected and the thought was still saved).
-fn assert_embedding_degraded(result: &rmcp::model::CallToolResult) {
-    let first = result
-        .content
-        .first()
-        .expect("think response should have at least one content block");
-    let rmcp::model::ContentBlock::Text(text_content) = first else {
-        panic!(
-            "expected a text content block in think response, got {:?}",
-            first
-        );
-    };
-    let parsed: serde_json::Value =
-        serde_json::from_str(&text_content.text).expect("think response text should be valid JSON");
-    let delegated = parsed
-        .get("delegated_result")
-        .expect("think response should include a delegated_result object");
-    assert!(
-        delegated.get("embedding_status").is_some(),
-        "--allow-network uses an intentionally invalid API key and expects \
-         graceful degradation (embedding_status key present under \
-         delegated_result), but it was absent -- did this somehow reach a \
-         VALID OpenAI key? (full response: {})",
-        parsed
-    );
+    SurrealMindServer::new(&config).await.expect(
+        "Failed to create server -- built with `--features test-embedder`, and with \
+             SURR_ALLOW_FAKE_EMBEDDER=1 set? scripts/test_db.sh does both.",
+    )
 }
 
 #[tokio::test]
@@ -231,11 +171,10 @@ async fn test_think_handler() {
 
     let result = result.unwrap();
     assert!(!result.content.is_empty(), "Should return content");
-    if network_mode {
-        assert_embedding_degraded(&result);
-    } else {
-        assert_embedding_complete(&result);
-    }
+    // Response-shape assertion + the persisted-row POSITIVE witness. Both
+    // live in tests/common/mod.rs, shared with tests/mcp_protocol.rs and
+    // negative-controlled without a database in tests/embedding_shape.rs.
+    common::assert_think_result(&server, &result, network_mode).await;
 }
 
 #[tokio::test]
@@ -278,11 +217,10 @@ async fn test_think_with_continuity() {
 
     let result = result.unwrap();
     assert!(!result.content.is_empty(), "Should return content");
-    if network_mode {
-        assert_embedding_degraded(&result);
-    } else {
-        assert_embedding_complete(&result);
-    }
+    // Response-shape assertion + the persisted-row POSITIVE witness. Both
+    // live in tests/common/mod.rs, shared with tests/mcp_protocol.rs and
+    // negative-controlled without a database in tests/embedding_shape.rs.
+    common::assert_think_result(&server, &result, network_mode).await;
 
     // Check that the response contains the preserved ID. This is a hard
     // assertion (not the previous soft `if let` chain, which silently

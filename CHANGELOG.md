@@ -33,8 +33,10 @@
   negative-control run caught: the tests passed vacuously against a
   fake embedder rewritten to always error, until the assertion was corrected
   to look in the right place, after which the same broken embedder correctly
-  failed all three). `ALLOW_NETWORK_EMBED=1` is preserved with its meaning
-  flipped from "run this test" to "switch this test to the real,
+  failed all three). That corrected assertion was STILL vacuous against a
+  different failure class and was replaced again in review round 2 -- see
+  below. `ALLOW_NETWORK_EMBED=1` is preserved with its meaning flipped from
+  "run this test" to "switch this test to the real,
   intentionally-invalid-key, bound-to-degrade network path" -- verified both
   ways.
 - `config.runtime.embed_strict` does NOT gate embedding failure inside
@@ -49,11 +51,83 @@
   intentionally-invalid-key degrade path instead). Updated the script's
   header/dry-run/log comments to match; the sanitize-then-set pattern for
   the two new env vars mirrors the existing `ALLOW_NETWORK_EMBED` handling.
-- Verified: `cargo clippy --all-targets --all-features -- -D warnings` and
-  `cargo clippy --all-targets -- -D warnings` (no feature) both clean;
-  `cargo fmt --all` clean; default `cargo test` (DB-free) and the full
-  `scripts/test_db.sh` DB-backed suite both pass, offline and with
-  `--allow-network`, before and after the negative-control revert.
+### Review round 2 (peer review of c5b8ac9 rejected all three points below)
+
+- **The offline assertions were shape-vacuous.** `assert_embedding_complete` /
+  `assert_embedding_degraded` (`tests/mcp_integration.rs`) and the inline
+  duplicate in `tests/mcp_protocol.rs` `.expect()`ed `delegated_result` to
+  EXIST but never checked that it was an OBJECT, and asserted on the PRESENCE
+  of `embedding_status` rather than its VALUE. `serde_json::Value::get`
+  returns `None` for `{}`, `[]`, `null` and every scalar alike, so all four
+  degenerate shapes satisfied the offline `.is_none()` check and PASSED; and
+  `{"embedding_status": null}` satisfied the network `.is_some()` check and
+  PASSED. Both were replaced by a pure, total predicate over
+  `serde_json::Value` (`embedding_outcome`) in a new shared
+  `tests/common/mod.rs`, which requires `delegated_result` to be an object
+  carrying the three keys every runner payload sets (`thought_id`,
+  `embedding_model`, a positive `embedding_dim`) and requires
+  `embedding_status`, when present, to be a non-null string in
+  `{complete, pending, failed}`. One implementation now serves both DB-backed
+  test files instead of two drifting copies.
+- **Added a genuine POSITIVE witness.** Absence-of-a-failure-marker is not
+  evidence of success, and nothing in the response envelope proves a vector
+  was stored (`embedding_dim` is `self.embedder.dimensions()`, a static
+  property of the configured embedder). The offline tests now also read the
+  persisted row and assert `embedding_status = 'complete'` AND
+  `array::len(embedding)` equal to the embedder's dimensionality; the
+  `--allow-network` tests assert the thought was still SAVED with a degraded
+  status. Same check the write path performs internally
+  (`src/tools/thinking.rs`'s `write_verified`), applied independently from the
+  test side.
+- **New DB-free negative-control suite: `tests/embedding_shape.rs`** (22
+  tests, deliberately ungated -- no `db_integration`, no `test-embedder`, no
+  database, no network, so plain `cargo test` runs it). It feeds the
+  degenerate shapes in directly, which is the only way to exercise a SHAPE
+  regression: breaking the embedder does not, because the failure path really
+  does emit `embedding_status`. 17 of the 22 FAIL when the predicate is
+  reverted to c5b8ac9 semantics.
+- **`FakeEmbedder::new` now rejects `dims == 0`** and returns `Result<Self>`.
+  At `dims == 0` the all-zero/non-finite fallback in `embed` repaired nothing
+  -- its own `if !v.is_empty()` guard silently skipped -- so
+  `FakeEmbedder::new(0).embed(..)` returned `Ok(vec![])`, violating the
+  contract the fallback exists to uphold. `Config::load` documents "any
+  positive dimension" for this provider but never enforced it, so the
+  invariant is enforced at construction, the one place the type comes into
+  existence. The fallback now indexes `v[0]` directly, so a future regression
+  panics loudly instead of returning an empty vector. New unit test.
+- **Runtime guard on the fake provider: `SURR_ALLOW_FAKE_EMBEDDER=1`.**
+  `test-embedder` is an ordinary public Cargo feature, so compile-time
+  exclusion was the ONLY thing standing between a release binary and a fake
+  embedder: `cargo build --release --features test-embedder`, or the likelier
+  `--all-features` reflex (`.github/workflows/ci.yml:34` already runs
+  `clippy --all-features`), yields a RELEASE binary in which the `"fake"` arm
+  exists and is selectable via `SURR_EMBED_PROVIDER=fake`. That arm now
+  refuses to construct unless the opt-in is exactly `"1"`, with an error
+  naming the risk and both remedies. `scripts/test_db.sh` sets it on the
+  offline path only, and sanitizes it (unset) first like every other opt-in so
+  an inherited value cannot silently arm it.
+- **Preserved the error chain at the embedder call site**
+  (`src/server/db.rs`). `From<anyhow::Error> for SurrealMindError`
+  (`src/error.rs:52`) builds its message with `err.to_string()`, keeping only
+  the outermost context, so the guard's actionable refusal was being flattened
+  to the bare string `"Failed to create embedder"` before any operator saw it
+  -- measured, not assumed. Now formatted with `{e:#}`. The lossy `From` impl
+  itself is a wider defect and was deliberately left alone.
+- Verified: `cargo clippy --all-targets -- -D warnings` (no features),
+  `--features test-embedder`, and `--all-features` all reach Finished clean;
+  `cargo fmt --all` clean; plain `cargo test` (DB-free) passes; the full
+  `scripts/test_db.sh` DB-backed suite passes on the offline path with the
+  three previously network-gated tests running real assertions, and passes
+  again with `--allow-network`. Every assertion added or changed was
+  negative-controlled: the c5b8ac9 predicate reverted (17/22 shape tests
+  fail); each of `{}`, `[]`, `null` and a scalar injected as the real
+  `delegated_result` in `src/tools/thinking.rs` (all three DB tests fail on
+  each); the persisted row's status flipped to `'pending'` while the response
+  still reported completion (isolates the positive witness -- all three DB
+  tests fail, response-level assertion passes); the `dims == 0` guard removed
+  (`embed` observed returning `Ok([])`); and the `SURR_ALLOW_FAKE_EMBEDDER`
+  export removed from `scripts/test_db.sh` (server construction refuses with
+  the actionable message). All injections reverted and re-verified green.
 
 
 ## [Unreleased] - fed-11a1a0 gardener state advancement

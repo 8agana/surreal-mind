@@ -28,6 +28,8 @@ use rmcp::{
 };
 use serde_json::{Map, Value, json};
 use surreal_mind::{config::Config, server::SurrealMindServer};
+
+mod common;
 use tokio::sync::mpsc;
 use tokio_util::sync::PollSender;
 
@@ -425,9 +427,14 @@ async fn test_call_tool_continuity_fallback_protocol() {
     config.runtime.embed_strict = true;
 
     // Create server
-    let server = SurrealMindServer::new(&config)
-        .await
-        .expect("Failed to create server (built with --features test-embedder?)");
+    let server = SurrealMindServer::new(&config).await.expect(
+        "Failed to create server -- built with `--features test-embedder`, and (for the \
+             offline path) with SURR_ALLOW_FAKE_EMBEDDER=1 set? scripts/test_db.sh does both.",
+    );
+
+    // `with_direct_service` consumes the server; SurrealMindServer is Clone
+    // (all Arc fields), so keep a handle for the persisted-row witness below.
+    let witness_server = server.clone();
 
     with_direct_service(server, |client_tx, mut client_rx| async move {
         // Send CallToolRequest with non-existent previous_thought_id
@@ -481,46 +488,27 @@ async fn test_call_tool_continuity_fallback_protocol() {
                     let thought_data: serde_json::Value = serde_json::from_str(text)
                         .expect("think response text should be valid JSON");
 
-                    // `embedding_status` is NESTED under `delegated_result`
-                    // -- `handle_legacymind_think` (src/tools/thinking.rs)
-                    // wraps run_convo/run_technical's return value under
-                    // that key, not at the top level. (Caught by the
-                    // fed-77afac step 6 negative control: an earlier
-                    // version of this assertion checked
-                    // `thought_data.get("embedding_status")` directly and
-                    // passed unconditionally regardless of actual status.)
-                    // Present ONLY when the status is NOT "complete"
-                    // (src/tools/thinking/runners.rs). Offline: its ABSENCE
-                    // is the positive assertion that the fake embedder
-                    // actually produced and stored an embedding -- this is
-                    // what makes the test fail for real if the offline
-                    // embedder is broken, instead of vacuously passing on
-                    // "no error response" alone. Network mode
-                    // (--allow-network): OPPOSITE assertion -- that flag
-                    // deliberately uses an invalid API key to exercise
-                    // graceful degradation, so `embedding_status` must be
-                    // PRESENT.
-                    let delegated = thought_data
-                        .get("delegated_result")
-                        .expect("think response should include a delegated_result object");
-                    if network_mode {
-                        assert!(
-                            delegated.get("embedding_status").is_some(),
-                            "--allow-network uses an intentionally invalid API key and \
-                             expects graceful degradation (embedding_status key present \
-                             under delegated_result), but it was absent (full response: {})",
-                            thought_data
-                        );
-                    } else {
-                        assert!(
-                            delegated.get("embedding_status").is_none(),
-                            "expected embedding to complete (embedding_status key absent \
-                             under delegated_result), but got embedding_status={:?} (full \
-                             response: {})",
-                            delegated.get("embedding_status"),
-                            thought_data
-                        );
-                    }
+                    // Response-shape assertion + the persisted-row POSITIVE
+                    // witness. Both live in tests/common/mod.rs, shared with
+                    // tests/mcp_integration.rs so there is exactly one
+                    // implementation, and negative-controlled with no database
+                    // and no cargo features in tests/embedding_shape.rs.
+                    //
+                    // What the inline version this replaces got wrong
+                    // (fed-77afac review round 2): it `.expect()`ed
+                    // `delegated_result` to EXIST but never checked that it was
+                    // an OBJECT, then asserted on the PRESENCE of
+                    // `embedding_status` rather than on its VALUE.
+                    // `serde_json::Value::get` returns None for `{}`, `[]`,
+                    // `null` and every scalar alike, so all four degenerate
+                    // shapes passed the offline branch; `embedding_status: null`
+                    // passed the network branch.
+                    common::assert_embedding_outcome_persisted(
+                        &witness_server,
+                        &thought_data,
+                        network_mode,
+                    )
+                    .await;
 
                     let links = thought_data
                         .get("links")

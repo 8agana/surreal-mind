@@ -433,7 +433,11 @@ impl Config {
             "fake" => {
                 // Offline/test-only embedder (fed-77afac): any positive
                 // dimension is legitimate here -- there is no fixed model
-                // to be coherent with, unlike the openai arms above. Log at
+                // to be coherent with, unlike the openai arms above. The
+                // "positive" half is NOT enforced at this layer; it is
+                // enforced where the type is constructed, by
+                // `FakeEmbedder::new` (src/embeddings.rs), which rejects
+                // `dims == 0` outright. Log at
                 // debug rather than warn so a correctly-configured offline
                 // run doesn't produce a misleading "unknown provider"
                 // warning, and isn't mistaken for an actual problem either.

@@ -96,9 +96,21 @@ impl SurrealMindServer {
             .with_context(|| format!("Failed to select database '{}'", dbname))?;
 
         // Initialize embedder
+        // `{e:#}` (alternate Display), not plain `?`: `From<anyhow::Error> for
+        // SurrealMindError` (src/error.rs:52) builds its message with
+        // `err.to_string()`, which keeps ONLY the outermost context and
+        // discards the whole source chain. Every actionable cause from
+        // `create_embedder` -- a missing OPENAI_API_KEY, an unsupported
+        // provider, or the fed-77afac SURR_ALLOW_FAKE_EMBEDDER refusal -- was
+        // being flattened to the bare string "Failed to create embedder" by
+        // the time an operator saw it. Measured, not assumed: the fake-embedder
+        // guard's refusal message was invisible in exactly this way until this
+        // line changed. (The lossy `From` impl itself is a wider defect and is
+        // deliberately left alone here; this is the call site that matters for
+        // startup diagnosis.)
         let embedder = crate::embeddings::create_embedder(config)
             .await
-            .context("Failed to create embedder")?;
+            .map_err(|e| anyhow::anyhow!("Failed to create embedder: {e:#}"))?;
         info!(
             "Embedder initialized with {} dimensions",
             embedder.dimensions()

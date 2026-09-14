@@ -248,14 +248,40 @@ impl Embedder for OpenAIEmbedder {
 // be mistaken for a real embedding, which is why `create_embedder` logs a
 // loud warning every time it constructs one.
 #[cfg(feature = "test-embedder")]
+#[derive(Debug)]
 pub struct FakeEmbedder {
     dims: usize,
 }
 
 #[cfg(feature = "test-embedder")]
 impl FakeEmbedder {
-    pub fn new(dims: usize) -> Self {
-        Self { dims }
+    /// Construct a fake embedder producing `dims`-dimensional vectors.
+    ///
+    /// REJECTS `dims == 0` (fed-77afac review round 2). `embed` below
+    /// documents -- and the unit tests assert -- that this embedder never
+    /// returns an all-zero or non-finite vector, because such a vector yields
+    /// NaN cosine similarity everywhere it is compared. At `dims == 0` that
+    /// contract is unsatisfiable: the only vector of length zero IS the
+    /// degenerate one. The previous infallible constructor produced exactly
+    /// that -- `FakeEmbedder::new(0).embed(..)` returned `Ok(vec![])`, because
+    /// the degenerate-case fallback below had its own `if !v.is_empty()`
+    /// guard, which silently skipped the repair it existed to perform.
+    ///
+    /// `Config::load` documents "any positive dimension" for the "fake"
+    /// provider but never enforces `> 0`, so the invariant is enforced here,
+    /// at the single place the type can come into existence.
+    pub fn new(dims: usize) -> Result<Self> {
+        if dims == 0 {
+            anyhow::bail!(
+                "FakeEmbedder requires a positive dimension count, got 0. A zero-dimension \
+                 embedder can only ever return an empty vector, which violates this \
+                 embedder's documented contract of never producing an all-zero or \
+                 non-finite vector (empty/zero vectors yield NaN cosine similarity \
+                 wherever they are compared). Set embedding_dimensions (or \
+                 SURR_EMBED_DIMENSIONS) to a positive value."
+            );
+        }
+        Ok(Self { dims })
     }
 
     /// FNV-1a, 64-bit. Deliberately NOT `std::collections::hash_map::DefaultHasher`
@@ -307,10 +333,14 @@ impl Embedder for FakeEmbedder {
             // all-zero or non-finite vector -- that yields NaN cosine
             // similarity everywhere it's compared). Fall back to a fixed
             // deterministic unit vector along the first axis.
+            // `dims > 0` is an invariant enforced by `FakeEmbedder::new`, so
+            // this index always exists. Indexing directly -- rather than the
+            // old `if !v.is_empty()` guard -- means a future regression that
+            // lets a zero-dimension embedder be constructed panics loudly
+            // here instead of quietly returning the very empty vector this
+            // branch exists to prevent (fed-77afac review round 2).
             v = vec![0.0f32; self.dims];
-            if !v.is_empty() {
-                v[0] = 1.0;
-            }
+            v[0] = 1.0;
         }
 
         Ok(v)
@@ -365,6 +395,29 @@ pub async fn create_embedder(config: &crate::config::Config) -> Result<Arc<dyn E
         }
         #[cfg(feature = "test-embedder")]
         "fake" => {
+            // RUNTIME guard (fed-77afac review round 2). `test-embedder` is an
+            // ordinary public Cargo feature, so compile-time exclusion is NOT
+            // the only thing standing between a release binary and a fake
+            // embedder: `cargo build --release --features test-embedder`, or
+            // the far more likely `--all-features` reflex (this repo's own
+            // .github/workflows/ci.yml:34 runs `clippy --all-features`),
+            // produces a RELEASE binary in which this arm exists and can be
+            // selected with SURR_EMBED_PROVIDER=fake -- silently persisting
+            // deterministic garbage vectors against real data.
+            const FAKE_OPT_IN: &str = "SURR_ALLOW_FAKE_EMBEDDER";
+            let opt_in = std::env::var(FAKE_OPT_IN).unwrap_or_default();
+            if opt_in.trim() != "1" {
+                anyhow::bail!(
+                    "Refusing to construct the fake embedding provider: embedding_provider is \
+                     \"fake\", but the runtime opt-in {FAKE_OPT_IN}=1 is not set (got \
+                     {opt_in:?}). The fake embedder emits deterministic hash-based vectors with \
+                     NO semantic meaning, so anything it writes to a real database is silently \
+                     worthless and every similarity search over it is noise. To run the offline \
+                     test suite, use scripts/test_db.sh (it sets {FAKE_OPT_IN}=1 and points at a \
+                     throwaway in-memory database). To run a real instance, set \
+                     embedding_provider (or SURR_EMBED_PROVIDER) to \"openai\"."
+                );
+            }
             let dims = config.system.embedding_dimensions;
             // Loud and unambiguous: this must never be mistaken for a real
             // embedding provider in a log (fed-77afac).
@@ -372,7 +425,7 @@ pub async fn create_embedder(config: &crate::config::Config) -> Result<Arc<dyn E
                 "\u{26A0}\u{FE0F} FAKE EMBEDDER ACTIVE (test-embedder feature) \u{2014} vectors are deterministic hash-based placeholders with NO semantic meaning, dims={}. This must never run against production data.",
                 dims
             );
-            Ok(Arc::new(FakeEmbedder::new(dims)))
+            Ok(Arc::new(FakeEmbedder::new(dims)?))
         }
         _ => {
             // Unknown provider - fail explicitly
@@ -431,9 +484,49 @@ mod fake_embedder_tests {
     }
 
     #[tokio::test]
+    async fn zero_dimensions_rejected_at_construction() {
+        // fed-77afac review round 2. Before this guard, `FakeEmbedder::new(0)`
+        // succeeded and `embed` returned `Ok(vec![])`: the all-zero/non-finite
+        // fallback repaired nothing because its own `if !v.is_empty()` check
+        // skipped, so the embedder silently violated the very contract the
+        // fallback exists to uphold. `Config::load` documents "any positive
+        // dimension" for the "fake" provider but never enforces `> 0`, so the
+        // constructor is the enforcement point.
+        let err = FakeEmbedder::new(0)
+            .expect_err("a zero-dimension fake embedder must not be constructible");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("positive dimension count"),
+            "error should say why zero is rejected, got: {msg}"
+        );
+
+        // And the smallest legal size still satisfies the contract, so the
+        // guard rejects zero specifically rather than just "small".
+        let v = FakeEmbedder::new(1)
+            .expect("1 is a positive dimension count")
+            .embed("one dimension")
+            .await
+            .unwrap();
+        assert_eq!(v.len(), 1);
+        assert!(v.iter().all(|x| x.is_finite()));
+        assert!(
+            v.iter().any(|x| *x != 0.0),
+            "even a 1-d vector must not be all-zero"
+        );
+    }
+
+    #[tokio::test]
     async fn deterministic_across_calls_and_instances() {
-        let a = FakeEmbedder::new(64).embed("same input").await.unwrap();
-        let b = FakeEmbedder::new(64).embed("same input").await.unwrap();
+        let a = FakeEmbedder::new(64)
+            .expect("test dimension counts are positive")
+            .embed("same input")
+            .await
+            .unwrap();
+        let b = FakeEmbedder::new(64)
+            .expect("test dimension counts are positive")
+            .embed("same input")
+            .await
+            .unwrap();
         // Byte-identical, not just "close" -- same text must produce the
         // exact same vector every time, on any machine, in any process.
         assert_eq!(
@@ -441,7 +534,7 @@ mod fake_embedder_tests {
             "same text on fresh embedder instances must be byte-identical"
         );
 
-        let embedder = FakeEmbedder::new(64);
+        let embedder = FakeEmbedder::new(64).expect("test dimension counts are positive");
         let c = embedder.embed("same input").await.unwrap();
         let d = embedder.embed("same input").await.unwrap();
         assert_eq!(
@@ -453,7 +546,7 @@ mod fake_embedder_tests {
 
     #[tokio::test]
     async fn text_sensitive_distinct_strings_differ() {
-        let embedder = FakeEmbedder::new(32);
+        let embedder = FakeEmbedder::new(32).expect("test dimension counts are positive");
         let a = embedder.embed("the quick brown fox").await.unwrap();
         let b = embedder
             .embed("a completely different sentence")
@@ -464,7 +557,7 @@ mod fake_embedder_tests {
 
     #[tokio::test]
     async fn text_sensitive_one_character_change_alters_output() {
-        let embedder = FakeEmbedder::new(32);
+        let embedder = FakeEmbedder::new(32).expect("test dimension counts are positive");
         let a = embedder.embed("hello world").await.unwrap();
         let b = embedder.embed("hallo world").await.unwrap();
         assert_ne!(a, b, "a one-character change must alter the output vector");
@@ -473,7 +566,7 @@ mod fake_embedder_tests {
     #[tokio::test]
     async fn correct_dimensionality() {
         for dims in [1usize, 8, 1536, 3072] {
-            let embedder = FakeEmbedder::new(dims);
+            let embedder = FakeEmbedder::new(dims).expect("test dimension counts are positive");
             let v = embedder.embed("dimension check").await.unwrap();
             assert_eq!(v.len(), dims);
             assert_eq!(embedder.dimensions(), dims);
@@ -482,7 +575,7 @@ mod fake_embedder_tests {
 
     #[tokio::test]
     async fn l2_normalized_and_non_degenerate() {
-        let embedder = FakeEmbedder::new(1536);
+        let embedder = FakeEmbedder::new(1536).expect("test dimension counts are positive");
         let v = embedder.embed("normalize me").await.unwrap();
         let norm = l2_norm(&v);
         assert!(
@@ -502,7 +595,7 @@ mod fake_embedder_tests {
 
     #[tokio::test]
     async fn empty_string_produces_valid_non_degenerate_unit_vector() {
-        let embedder = FakeEmbedder::new(1536);
+        let embedder = FakeEmbedder::new(1536).expect("test dimension counts are positive");
         let v = embedder.embed("").await.unwrap();
         assert_eq!(v.len(), 1536);
         let norm = l2_norm(&v);
@@ -524,8 +617,16 @@ mod fake_embedder_tests {
         // with no I/O setup" -- the whole point of this embedder. Two calls
         // with no shared state (fresh instances, no config, no env, no
         // filesystem) must agree.
-        let v1 = FakeEmbedder::new(16).embed("pure").await.unwrap();
-        let v2 = FakeEmbedder::new(16).embed("pure").await.unwrap();
+        let v1 = FakeEmbedder::new(16)
+            .expect("test dimension counts are positive")
+            .embed("pure")
+            .await
+            .unwrap();
+        let v2 = FakeEmbedder::new(16)
+            .expect("test dimension counts are positive")
+            .embed("pure")
+            .await
+            .unwrap();
         assert_eq!(v1, v2);
     }
 }
