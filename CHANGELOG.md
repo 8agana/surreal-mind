@@ -155,8 +155,16 @@
   itself plus this file's own `#[cfg(test)]` unit tests, both in-crate.
   `pub(crate)` makes the factory function the single path that can produce a
   `FakeEmbedder`.
-- **The `SURR_ALLOW_FAKE_EMBEDDER` guard is no longer armable by a `.env`
-  file.** `create_embedder` called `config::load_env_file()` (a bare
+- ⛔ **SUPERSEDED AND FALSE AS WRITTEN — see the correction later in this file
+  (fed-77afac option A, commits `a8deb48` / `35694c3`). The claim below is kept
+  per the fence-do-not-delete doctrine, but do NOT act on it: `Config::load()`
+  loads `.env` before `create_embedder` is reachable, so the guard IS satisfiable
+  from a `.env` file. It is operational policy, not a structural barrier; the real
+  production barrier is the compile-time `#[cfg(feature = "test-embedder")]`
+  exclusion. Flagged by Scout on final review, 2026-09-14 — the THIRD copy of this
+  same false claim, after the source comment and the operator-facing error string.**
+  ~~**The `SURR_ALLOW_FAKE_EMBEDDER` guard is no longer armable by a `.env`
+  file.**~~ `create_embedder` called `config::load_env_file()` (a bare
   `dotenvy::dotenv()`, which searches UPWARD from the current working
   directory) before reading the opt-in, so a `.env` anywhere up the tree
   containing `SURR_ALLOW_FAKE_EMBEDDER=1` silently armed the guard -- the
