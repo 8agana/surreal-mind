@@ -1,3 +1,17 @@
+## [Unreleased] - fed-4b1bab truthful health-query status
+
+- Made `scripts/sm_health.sh` use `surreal sql --json --hide-welcome` and
+  require the exact normalized two-statement result `[null,[]]`. SurrealDB
+  CLI 3.2.x can exit zero while returning a query error as JSON, so a zero
+  process status alone no longer marks REMini health successful. CLI status,
+  stdout, and stderr are captured separately; any contract mismatch exits
+  nonzero with diagnostics bounded to 2 KiB per stream.
+- Replaced the health dry-run harness's shared-port reuse with an owned,
+  fresh in-memory SurrealDB process on a non-production high port. Added
+  independent stale-row and empty-set readbacks, malformed/query-error/
+  nonzero-CLI controls, REMini positive/negative report checks, PID/listener
+  cleanup, and before/after canonical-repository invariants.
+
 ## [Unreleased] - fed-7223a0 CI repair
 
 - Removed the `db-protocol` CI step that still invoked
