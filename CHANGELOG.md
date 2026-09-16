@@ -1,3 +1,11 @@
+## [Unreleased] - fed-2804b3 offline protocol CI witness
+
+- Added the previously skipped continuity-fallback protocol regression to the
+  `db-protocol` CI job using the feature-gated fake embedder. The step pins an
+  empty dotenv file and clears the network credential while preserving the
+  ordinary Rust job as an independent witness for the DB-free embedding-shape
+  suite.
+
 ## [Unreleased] - fed-7223a0 CI repair
 
 - Removed the `db-protocol` CI step that still invoked
