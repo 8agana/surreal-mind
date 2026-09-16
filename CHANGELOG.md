@@ -4,7 +4,9 @@
   `db-protocol` CI job using the feature-gated fake embedder. The step pins an
   empty dotenv file and clears the network credential while preserving the
   ordinary Rust job as an independent witness for the DB-free embedding-shape
-  suite.
+  suite. The protocol step uses a dedicated namespace/database so its
+  1536-dimensional test rows cannot contaminate later schema-dimension
+  controls in the same CI job.
 
 ## [Unreleased] - fed-7223a0 CI repair
 

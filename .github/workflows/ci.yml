@@ -103,6 +103,8 @@ jobs:
           SURR_ALLOW_FAKE_EMBEDDER: "1"
           OPENAI_API_KEY: ""
           SURR_ENV_FILE: ${{ runner.temp }}/surreal-mind-empty.env
+          SURR_DB_NS: surreal_mind_ci_protocol
+          SURR_DB_DB: protocol
         run: |
           : > "$SURR_ENV_FILE"
           cargo test --locked --features db_integration,test-embedder \
