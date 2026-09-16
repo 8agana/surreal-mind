@@ -1,3 +1,20 @@
+## [Unreleased] - fed-acca0a dotenv/environment policy
+
+- Documented the actual environment trust boundary: inherited variables and
+  dotenv-loaded values are trusted operator configuration, and downstream
+  readers cannot distinguish their provenance after dotenv merges them into
+  the process-global environment. Environment-keyed guards are operational
+  policy and accidental-action friction, not authorization barriers.
+- Corrected the dotenv inventory and test-wrapper documentation. The three
+  formerly named shared callers now honor `SURR_ENV_FILE`; 16 direct bare
+  `dotenvy::dotenv()` calls remain across 11 auxiliary binary files, none of
+  which is spawned by `scripts/test_db.sh`'s DB-backed suite.
+- Corrected the embedding configuration reference: `SURR_EMBED_PROVIDER`
+  overrides the TOML provider, while model and dimensions remain TOML-only.
+  Clarified that a default-feature release excludes the fake provider at
+  compile time, but a `test-embedder` or `--all-features` release includes it.
+  No runtime configuration or loading behavior changed.
+
 ## [Unreleased] - fed-7223a0 CI repair
 
 - Removed the `db-protocol` CI step that still invoked

@@ -92,16 +92,15 @@
 #        otherwise it's inert since the fake provider never looks at it.
 #   SURR_ALLOW_FAKE_EMBEDDER=1 (fed-77afac review round 2) -- exported ONLY on
 #        the default (offline) path, alongside SURR_EMBED_PROVIDER=fake.
-#        create_embedder()'s "fake" arm (src/embeddings.rs) REFUSES to build a
-#        FakeEmbedder unless this is exactly "1". `test-embedder` is an
-#        ordinary public Cargo feature, so `cargo build --release --features
-#        test-embedder` -- or the far likelier `--all-features` reflex, which
-#        .github/workflows/ci.yml:34 already uses for clippy -- yields a
-#        RELEASE binary in which the "fake" arm exists; this runtime gate means
-#        compile-time exclusion is not the only thing standing there. Sanitized
-#        (unset) at the top of the env block like every other opt-in, then
-#        re-set here, so an inherited value from the calling shell cannot
-#        silently arm it.
+#        create_embedder()'s "fake" arm (src/embeddings.rs) refuses to build a
+#        FakeEmbedder unless this is exactly "1". This wrapper sanitizes then
+#        re-sets the variable to make its own subprocess deterministic. That
+#        env-keyed check is operational policy, not an authorization barrier:
+#        dotenv and inherited env become indistinguishable once loaded.
+#        The deployed barrier is the non-default `test-embedder` feature:
+#        plain `cargo build --release` excludes the fake arm entirely, while
+#        `cargo build --release --features test-embedder` and `--all-features`
+#        include it.
 #   SURR_EMBED_PROVIDER=fake / SURR_EMBED_STRICT=1 (fed-77afac) -- default
 #        (no --allow-network): selects the offline, deterministic,
 #        zero-network FakeEmbedder (src/embeddings.rs, requires this
@@ -139,45 +138,18 @@
 # invoking this script, the exported/sanitized values win).
 #
 # SURR_ENV_FILE is pinned to an empty scratch file this wrapper creates, so
-# Config::load's OWN dotenv step (src/config.rs:229-231, the `if let Ok(env_path)
-# = env::var("SURR_ENV_FILE")` branch) cannot repopulate any of the above
-# from a real .env.
+# every helper-routed dotenv caller reached by this suite loads that exact
+# empty file rather than an ancestor `.env`.
 #
-# ACKNOWLEDGED RESIDUAL GAP, not fully closed by this wrapper: this crate
-# has THREE OTHER bare, unconditional `dotenvy::dotenv()` calls that do NOT
-# honor SURR_ENV_FILE -- src/embeddings.rs:238 (inside create_embedder,
-# reached by every test that builds a real SurrealMindServer),
-# src/lib.rs:24 (load_env(), not currently called by any test in this
-# suite but exported for external use), and
-# tests/gemini_client_integration.rs:9 (called unconditionally, BEFORE that
-# test's own RUN_GEMINI_TESTS check). `dotenvy::dotenv()` walks upward from
-# the test binary's own current directory looking for a file literally
-# named `.env`; an attempt to redirect that search by changing cargo test's
-# invocation directory was tried and EMPIRICALLY DISPROVEN in this pass --
-# `cargo test --manifest-path X` runs test binaries with their cwd anchored
-# at the crate root regardless of where `cargo` itself was invoked from
-# (verified directly: a decoy `.env` placed at the crate root was found by
-# gemini_client_integration.rs even when cargo was invoked from an unrelated
-# scratch directory; the same decoy placed only in that scratch directory
-# was NOT found). So there is no cwd lever available to this wrapper for
-# the three call sites above. This machine DOES have a real ancestor .env
-# one directory above every worktree (~/Projects/LegacyMind/.env) that
-# dotenvy's upward walk from the crate root would reach next if the crate
-# root itself had no `.env` (verified: it doesn't, today). Checked (key
-# names only, values never read): that real .env defines
-# SURR_DB_URL/NS/DB/USER/PASS and OPENAI_API_KEY/GEMINI_API_KEY (all of
-# which THIS wrapper explicitly exports itself before cargo test runs, so
-# dotenvy's "never override an already-set var" rule protects them
-# regardless of this gap) and does NOT define RUN_GEMINI_TESTS,
-# SURR_SMOKE_TEST, REEMBED_TEST_CONFIRM_DISPOSABLE_NS, or
-# ALLOW_NETWORK_EMBED -- so this gap is NOT currently exploitable on this
-# machine, but it is a structural gap, not a closed one: if that file (or
-# any other ancestor .env on a different machine) ever defines one of those
-# four names, it WILL silently reappear despite this wrapper's explicit
-# unset. The correct full fix is out of scope here (it means editing
-# src/embeddings.rs, src/lib.rs, and tests/gemini_client_integration.rs
-# themselves to honor SURR_ENV_FILE or skip dotenv under RUN_DB_TESTS) and
-# is left for a follow-up.
+# CORRECTED INVENTORY (fed-acca0a): the three callers formerly named here --
+# embeddings::create_embedder, lib::load_env, and
+# tests/gemini_client_integration -- now route through load_env_file() and
+# honor this wrapper's SURR_ENV_FILE pin. The crate still has 16 direct bare
+# `dotenvy::dotenv()` calls across 11 `src/bin/*.rs` files. None of those
+# binaries is spawned by this DB-backed test suite, so they do not bypass
+# this wrapper's subprocess contract. They remain relevant to the broader
+# architecture: their upward-searching dotenv behavior is trusted operator
+# configuration, not a security boundary.
 #
 # HARD REFUSAL: if the resolved DB URL, or any pre-existing SURR_DB_URL /
 # SURR_TEST_DB_URL in the CALLING environment, contains ":8000" (the
@@ -313,8 +285,8 @@ if [ "$DRY_RUN" -eq 1 ]; then
     log "  fixture: $FIXTURE_DIR/schema.surql only (pass --seed to also apply seed.surql)"
   fi
   log "  env sanitized (explicitly unset unless the corresponding opt-in flag is passed): RUN_GEMINI_TESTS SURR_SMOKE_TEST REEMBED_TEST_CONFIRM_DISPOSABLE_NS ALLOW_NETWORK_EMBED GOOGLE_CLI_PROVIDER SURR_GOOGLE_CLI_PROVIDER SURR_ALLOW_FAKE_EMBEDDER"
-  log "  SURR_ENV_FILE pinned to an empty scratch file (protects Config::load's own dotenv step, src/config.rs:229); SURREAL_MIND_CONFIG pinned to $REPO_ROOT/surreal_mind.toml (belt-and-suspenders, config-file resolution unambiguous)"
-  log "  ACKNOWLEDGED GAP (see header comment): src/embeddings.rs:238, src/lib.rs:24, and tests/gemini_client_integration.rs:9 each call the bare dotenvy::dotenv(), which does NOT honor SURR_ENV_FILE and is NOT blocked by this wrapper -- not currently exploitable on this machine (checked: the real ~/Projects/LegacyMind/.env's key names do not include any sanitized gate var), but not a closed gap either."
+  log "  SURR_ENV_FILE pinned to an empty scratch file; every helper-routed dotenv caller reached by this suite honors the pin. SURREAL_MIND_CONFIG pinned to $REPO_ROOT/surreal_mind.toml (belt-and-suspenders, config-file resolution unambiguous)"
+  log "  dotenv inventory: 16 direct bare calls remain across 11 src/bin files, but this suite spawns none of those binaries. Environment values remain trusted operator configuration, not an authorization boundary."
   if [ "$ALLOW_NETWORK" -eq 1 ]; then
     log "  --allow-network passed: ALLOW_NETWORK_EMBED=1 would be exported, SURR_EMBED_PROVIDER left unset (surreal_mind.toml's \"openai\" applies) -- the 3 network-capable tests would exercise the real, intentionally-invalid-key, bound-to-degrade path"
   else
@@ -537,13 +509,13 @@ else
   # (added to the cargo test invocation below).
   export SURR_EMBED_PROVIDER=fake
   export SURR_EMBED_STRICT=1
-  # fed-77afac review round 2: create_embedder()'s "fake" arm now REFUSES to
-  # construct the fake embedder unless this runtime opt-in is set, so that
-  # compile-time exclusion is not the only thing standing between a release
-  # binary built with --features test-embedder (or --all-features) and a
-  # process quietly persisting semantically-meaningless vectors. This is the
-  # sanctioned place to set it: the DB below is a throwaway in-memory instance
-  # on a random loopback port, vetted by refuse_if_prod_url.
+  # fed-77afac review round 2: create_embedder()'s "fake" arm refuses to
+  # construct the fake embedder unless this operational opt-in is set. This
+  # wrapper sanitizes then sets it deterministically because the DB below is
+  # a throwaway in-memory instance on a random loopback port, vetted by
+  # refuse_if_prod_url. The deployed barrier is compile-time exclusion: a
+  # default-feature release has no fake arm, while --features test-embedder
+  # and --all-features releases do include it.
   export SURR_ALLOW_FAKE_EMBEDDER=1
 fi
 
@@ -568,19 +540,13 @@ fi
 # every db_integration test binary in one pass, not stop at the first
 # failing one.
 #
-# NOTE: an earlier draft of this pass tried to redirect cargo test's own
-# working directory to the scratch work dir (via `cd "$WORK_DIR" && cargo
-# test --manifest-path ...`), on the theory that this would starve
-# src/embeddings.rs/src/lib.rs/tests/gemini_client_integration.rs's bare,
-# cwd-upward-searching `dotenvy::dotenv()` calls of a reachable ancestor
-# .env. That theory was tested directly and DISPROVEN: `cargo test
-# --manifest-path X` runs test binaries with their current directory
-# anchored at the crate root regardless of where `cargo` itself was
-# invoked from (a decoy .env placed at the crate root was found even when
-# cargo ran from an unrelated scratch directory; the same decoy placed
-# only in that scratch directory was not found). So that redirect bought
-# nothing and has been removed -- see the header comment's "ACKNOWLEDGED
-# RESIDUAL GAP" for what actually protects against this and what doesn't.
+# NOTE: an earlier draft tried to redirect cargo test's working directory to
+# starve bare `dotenvy::dotenv()` calls of a reachable ancestor `.env`.
+# `cargo test --manifest-path X` was measured to anchor test binaries at the
+# crate root, so that redirect bought nothing and was removed. The callers
+# reached by this suite now honor the explicit empty SURR_ENV_FILE pin; the
+# remaining direct bare calls belong to auxiliary binaries this suite does
+# not spawn.
 log "running: cargo test --features db_integration,test-probe,test-embedder --no-fail-fast $(cargo_args_display)"
 cd "$REPO_ROOT"
 set +e

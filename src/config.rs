@@ -1,11 +1,18 @@
 use serde::{Deserialize, Serialize};
 
-/// The ONE shared rule for the explicit-pin case, used by every reachable
-/// dotenv-loading call site in this crate: if `SURR_ENV_FILE` is set, load
+/// The shared rule for callers routed through this helper: if
+/// `SURR_ENV_FILE` is set, load
 /// ONLY that exact path (`dotenvy::from_path`) and never fall back to an
 /// ancestor `.env` -- an empty file at that path loads nothing. If
 /// `SURR_ENV_FILE` is unset, run the caller-supplied `unset_fallback`
 /// closure instead.
+///
+/// Dotenv and inherited process environment are trusted operator
+/// configuration. Once dotenv loads a value into the process-global
+/// environment, downstream `std::env::var` callers cannot distinguish its
+/// provenance. This helper therefore defines resolution behavior; it is not
+/// an authorization boundary, and read ordering cannot turn an env-keyed
+/// guard into one.
 ///
 /// fed-93bfee #216 unified this AND each caller's unset-path behavior into
 /// one bare `dotenvy::dotenv()` rule. Codex's #222 review caught that as a
@@ -43,14 +50,15 @@ pub fn load_env_file_or(unset_fallback: impl FnOnce()) {
 /// `lib::load_env`, `tests/gemini_client_integration.rs`, and
 /// `src/bin/reembed.rs` (spawned as a subprocess by `tests/
 /// reembed_bin_dry_run.rs`, the reason this needs to be reachable at all).
-/// Several other `src/bin/*.rs` binaries (admin, kg_populate, kg_wander,
-/// kg_embed, kg_consolidate, kg_dedupe_plan, kg_apply_from_plan,
-/// kg_debug_tool, gem_rethink, migration, reembed_kg) also call bare
-/// `dotenvy::dotenv()` at their own `main()` entry points; none of them are
+/// Eleven `src/bin/*.rs` binaries (admin, kg_populate, kg_wander, kg_embed,
+/// kg_consolidate, kg_dedupe_plan, kg_apply_from_plan, kg_debug_tool,
+/// gem_rethink, migration, and reembed_kg) make 16 direct bare
+/// `dotenvy::dotenv()` calls at their own entry points or subcommands; none are
 /// spawned by anything in the `db_integration` test suite (verified via
 /// grep), so they are intentionally left unconverted here rather than
 /// touched as an unrelated, unbounded blast-radius change to operational
-/// CLI tools -- flagged, not silently skipped.
+/// CLI tools. Those calls retain their established upward-searching behavior
+/// and do not honor `SURR_ENV_FILE`.
 pub fn load_env_file() {
     load_env_file_or(|| {
         let _ = dotenvy::dotenv();
