@@ -16,6 +16,16 @@
   compile time, but a `test-embedder` or `--all-features` release includes it.
   No runtime configuration or loading behavior changed.
 
+## [Unreleased] - fed-2804b3 offline protocol CI witness
+
+- Added the previously skipped continuity-fallback protocol regression to the
+  `db-protocol` CI job using the feature-gated fake embedder. The step pins an
+  empty dotenv file and clears the network credential while preserving the
+  ordinary Rust job as an independent witness for the DB-free embedding-shape
+  suite. The protocol step uses a dedicated namespace/database so its
+  1536-dimensional test rows cannot contaminate later schema-dimension
+  controls in the same CI job.
+
 ## [Unreleased] - fed-7223a0 CI repair
 
 - Removed the `db-protocol` CI step that still invoked

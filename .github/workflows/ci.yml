@@ -97,10 +97,18 @@ jobs:
 
       - name: Run protocol regressions
         timeout-minutes: 10
+        env:
+          ALLOW_NETWORK_EMBED: "0"
+          SURR_EMBED_PROVIDER: fake
+          SURR_ALLOW_FAKE_EMBEDDER: "1"
+          OPENAI_API_KEY: ""
+          SURR_ENV_FILE: ${{ runner.temp }}/surreal-mind-empty.env
+          SURR_DB_NS: surreal_mind_ci_protocol
+          SURR_DB_DB: protocol
         run: |
-          cargo test --locked --features db_integration \
+          : > "$SURR_ENV_FILE"
+          cargo test --locked --features db_integration,test-embedder \
             --test mcp_protocol -- \
-            --skip test_call_tool_continuity_fallback_protocol \
             --nocapture --test-threads=1
 
       - name: Run stdio smoke
