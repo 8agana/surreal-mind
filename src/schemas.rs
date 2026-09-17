@@ -73,7 +73,7 @@ pub fn maintain_schema() -> Arc<Map<String, Value>> {
             "subcommand": {"type": "string", "enum": ["list_removal_candidates", "export_removals", "finalize_removal", "health_check_embeddings", "health_check_indexes", "reembed", "reembed_kg", "embed_pending", "ensure_continuity_fields", "echo_config", "corrections", "rethink", "consolidate", "populate", "embed", "wander", "health", "report", "tasks"], "description": "Maintenance operation to perform"},
             "dry_run": {"type": "boolean", "default": false, "description": "Simulate operation without making changes"},
             "limit": {"type": ["integer", "number", "string"], "default": 100, "description": "Maximum number of thoughts to process"},
-            "format": {"type": "string", "enum": ["json", "parquet"], "default": "json", "description": "Export format"},
+            "format": {"type": "string", "enum": ["json"], "default": "json", "description": "Export format (JSON only)"},
             "output_dir": {"type": "string", "default": "./archive", "description": "Directory for export files"},
             "tasks": {"type": "string", "description": "Comma-separated tasks for subcommand 'tasks'"},
             "target_id": {"type": "string", "description": "Optional target filter (corrections subcommand)"},
