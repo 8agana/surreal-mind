@@ -65,6 +65,14 @@ tempfile = "3.10"
 
 [dev-dependencies]
 tempfile = "3.10"
+# Disposable, on-disk local SurrealDB engine for in-process DDL-response
+# tests (fed-c5394b). kv-mem was tried first but its surrealmx dependency
+# (via ferntree 0.7) uses the unstable std::hint::cold_path feature and
+# fails to build on this stable toolchain; kv-surrealkv has no such
+# dependency. Dev-dependency only -- cargo build/--release never links it;
+# it is unified in only for cargo test builds of this crate, and each test
+# points it at its own tempdir, deleted at end of test.
+surrealdb = { version = "3.1", features = ["kv-surrealkv"] }
 
 [features]
 default = []
