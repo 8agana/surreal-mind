@@ -1,3 +1,20 @@
+## [Unreleased] - fed-61d26d CodexClient consumer audit
+
+- Audited the `CodexClient` adapter (`src/clients/codex.rs`, re-exported at
+  `src/clients/mod.rs`) flagged as possibly orphaned in fed-0a2109 review
+  finding 7. Found no internal execution reference beyond its own
+  declaration/impl/re-export (verified against a known-consumed sibling
+  client as a grep control), no crates.io listing for this crate, and no
+  other repository on the searched hosts (Studio, MBP) depending on it via
+  path or git. Retained rather than removed: fed-734b8f explicitly decided
+  to keep this CognitiveAgent implementation "for potential future use"
+  when call_codex was removed, which is a documented purpose, not an
+  oversight. Documented the audit result and the residual unresolved
+  compatibility reason (public GitHub repo without crates.io publication,
+  so an out-of-scope git-dependency consumer cannot be fully ruled out)
+  directly in `src/clients/mod.rs`. No code behavior change; no call_*
+  tools reintroduced; no new provider wiring.
+
 ## [Unreleased] - fed-2804b3 offline protocol CI witness
 
 - Added the previously skipped continuity-fallback protocol regression to the
