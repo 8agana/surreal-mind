@@ -286,7 +286,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
   fi
   log "  env sanitized (explicitly unset unless the corresponding opt-in flag is passed): RUN_GEMINI_TESTS SURR_SMOKE_TEST REEMBED_TEST_CONFIRM_DISPOSABLE_NS ALLOW_NETWORK_EMBED GOOGLE_CLI_PROVIDER SURR_GOOGLE_CLI_PROVIDER SURR_ALLOW_FAKE_EMBEDDER"
   log "  SURR_ENV_FILE pinned to an empty scratch file; every helper-routed dotenv caller reached by this suite honors the pin. SURREAL_MIND_CONFIG pinned to $REPO_ROOT/surreal_mind.toml (belt-and-suspenders, config-file resolution unambiguous)"
-  log "  dotenv inventory: 16 direct bare calls remain across 11 src/bin files, but this suite spawns none of those binaries. Environment values remain trusted operator configuration, not an authorization boundary."
+  log "  dotenv inventory: 16 direct bare calls remain across 11 src/bin files, but this suite spawns none of those binaries. Environment values are configuration input supplied through the operator environment, not authenticated identity or a permit."
   if [ "$ALLOW_NETWORK" -eq 1 ]; then
     log "  --allow-network passed: ALLOW_NETWORK_EMBED=1 would be exported, SURR_EMBED_PROVIDER left unset (surreal_mind.toml's \"openai\" applies) -- the 3 network-capable tests would exercise the real, intentionally-invalid-key, bound-to-degrade path"
   else

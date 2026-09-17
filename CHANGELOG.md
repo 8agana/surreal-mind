@@ -1,7 +1,8 @@
 ## [Unreleased] - fed-acca0a dotenv/environment policy
 
 - Documented the actual environment trust boundary: inherited variables and
-  dotenv-loaded values are trusted operator configuration, and downstream
+  dotenv-loaded values are configuration input supplied through the operator
+  environment, not authenticated identity or a permit; downstream
   readers cannot distinguish their provenance after dotenv merges them into
   the process-global environment. Environment-keyed guards are operational
   policy and accidental-action friction, not authorization barriers.

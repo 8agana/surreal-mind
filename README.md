@@ -120,7 +120,7 @@ SurrealMind is the LegacyMind federation's cognitive kernel: a Rust MCP server t
 
 ### Environment trust boundary
 
-Inherited environment variables and dotenv files are trusted operator configuration. Dotenv values are merged into the process-global environment and become indistinguishable from exported values, so an environment-keyed opt-in is accidental-action friction, not authentication or authorization. `SURR_ENV_FILE` pins helper-routed callers to an exact dotenv file; when it is unset, `Config::load` preserves its distinct local-then-conditional-parent fallback while other shared callers use dotenv's ordinary upward search. Security-sensitive permits must use authenticated capabilities, OS/file permissions, or another explicit programmatic source dotenv cannot manufacture.
+Inherited environment variables and dotenv files are configuration input supplied through the operator environment, not authenticated identity or a permit. Dotenv values are merged into the process-global environment and become indistinguishable from exported values, so an environment-keyed opt-in is accidental-action friction, not authentication or authorization. `SURR_ENV_FILE` pins helper-routed callers to an exact dotenv file; when it is unset, `Config::load` preserves its distinct local-then-conditional-parent fallback while other shared callers use dotenv's ordinary upward search. Security-sensitive permits must use authenticated capabilities, OS/file permissions, or another explicit programmatic source dotenv cannot manufacture.
 
 ## Memory Model
 
