@@ -7,9 +7,10 @@ use serde::{Deserialize, Serialize};
 /// `SURR_ENV_FILE` is unset, run the caller-supplied `unset_fallback`
 /// closure instead.
 ///
-/// Dotenv and inherited process environment are trusted operator
-/// configuration. Once dotenv loads a value into the process-global
-/// environment, downstream `std::env::var` callers cannot distinguish its
+/// Dotenv and inherited process environment are configuration input supplied
+/// through the operator environment, not authenticated identity or a permit.
+/// Once dotenv loads a value into the process-global environment, downstream
+/// `std::env::var` callers cannot distinguish its
 /// provenance. This helper therefore defines resolution behavior; it is not
 /// an authorization boundary, and read ordering cannot turn an env-keyed
 /// guard into one.

@@ -148,8 +148,9 @@
 # `dotenvy::dotenv()` calls across 11 `src/bin/*.rs` files. None of those
 # binaries is spawned by this DB-backed test suite, so they do not bypass
 # this wrapper's subprocess contract. They remain relevant to the broader
-# architecture: their upward-searching dotenv behavior is trusted operator
-# configuration, not a security boundary.
+# architecture: their upward-searching dotenv behavior is configuration input
+# supplied through the operator environment, not authenticated identity or a
+# permit.
 #
 # HARD REFUSAL: if the resolved DB URL, or any pre-existing SURR_DB_URL /
 # SURR_TEST_DB_URL in the CALLING environment, contains ":8000" (the
