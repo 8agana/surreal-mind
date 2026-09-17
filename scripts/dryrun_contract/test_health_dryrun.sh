@@ -42,6 +42,8 @@ TEST_DB=contract
 SURREAL_PID=""
 FAIL=0
 
+SQL_INVOKE_LOG="${HEALTH_CONTRACT_SQL_INVOKE_LOG:-}"
+FORCE_LISTENER_MISMATCH="${HEALTH_CONTRACT_FORCE_LISTENER_MISMATCH:-0}"
 pass() { echo "  PASS: $1"; }
 fail() { echo "  FAIL: $1"; FAIL=1; }
 
@@ -162,10 +164,15 @@ if [ "$READY" -ne 1 ]; then
   exit 1
 fi
 
-if /usr/sbin/lsof -nP -a -p "$SURREAL_PID" -iTCP:"$TEST_PORT" -sTCP:LISTEN 2>/dev/null | grep -q LISTEN; then
+ATTRIBUTION_PID="$SURREAL_PID"
+if [ "$FORCE_LISTENER_MISMATCH" = 1 ]; then
+  ATTRIBUTION_PID=0
+fi
+if /usr/sbin/lsof -nP -a -p "$ATTRIBUTION_PID" -iTCP:"$TEST_PORT" -sTCP:LISTEN 2>/dev/null | grep -q LISTEN; then
   pass "fresh SurrealDB listener is owned by PID $SURREAL_PID"
 else
   fail "listener on $TEST_PORT is not attributable to owned PID $SURREAL_PID"
+  exit 1
 fi
 if port_is_safe "$TEST_PORT"; then
   fail "occupied-port guard accepted the live test listener"
@@ -174,6 +181,9 @@ else
 fi
 
 real_sql() {
+  if [ -n "$SQL_INVOKE_LOG" ]; then
+    printf 'invoked\n' >>"$SQL_INVOKE_LOG"
+  fi
   (cd "$WORK_DIR" && printf '%s' "$1" | "$REAL_SURREAL_BIN" sql \
     --endpoint "$SQL_ENDPOINT" \
     --username root --password root \
