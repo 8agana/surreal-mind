@@ -1,0 +1,22 @@
+[advisories]
+ignore = [
+    # RUSTSEC-2026-0185, RUSTSEC-2026-0037: quinn-proto 0.11.13 is a transitive
+    # dependency of reqwest's optional 'http3' feature (dep:quinn), which this
+    # crate does NOT enable (Cargo.toml: reqwest = { features = ["json",
+    # "rustls-tls"] }). Confirmed absent from the default-feature build graph
+    # via 'cargo tree' (no quinn/quinn-proto edge) -- fed-b9798d.
+    "RUSTSEC-2026-0185",
+    "RUSTSEC-2026-0037",
+    # RUSTSEC-2026-0235: rkyv 0.7.46 is an optional dependency of rust_decimal,
+    # gated behind a feature this crate's dependency chain does not activate
+    # (rust_decimal's resolved feature set: default,maths,serde,serde-str,
+    # serde-with-str,std -- no rkyv feature). Confirmed absent from
+    # 'cargo tree' default output -- fed-b9798d.
+    "RUSTSEC-2026-0235",
+    # RUSTSEC-2023-0071: rsa 0.9.10 timing side-channel (Marvin Attack). Only
+    # reachable via jsonwebtoken's 'rust_crypto' feature; surrealdb-core
+    # requests jsonwebtoken with features=["use_pem","aws_lc_rs"] for all
+    # non-wasm targets (this crate's target). No fixed upgrade exists upstream
+    # regardless. Risk owner: Sam -- fed-b9798d.
+    "RUSTSEC-2023-0071",
+]
