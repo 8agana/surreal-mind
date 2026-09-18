@@ -12,6 +12,7 @@ ORIGINAL_PRESENT=0
 SENTINEL_PID=""
 DESCENDANT_PID_FILE="$WORK_DIR/descendant.pid"
 CHILD_PID_FILE="$WORK_DIR/child.pid"
+DIRECT_EXIT_WITNESS_FILE="$WORK_DIR/direct-exit.witness"
 
 cleanup() {
   if [ -n "$DESCENDANT_PID_FILE" ] && test -s "$DESCENDANT_PID_FILE"; then
@@ -59,6 +60,13 @@ if mode == "descendant":
     print("pre-timeout stderr diagnostic", file=sys.stderr, flush=True)
     time.sleep(60)
     raise SystemExit(0)
+if mode == "direct_exit_descendant":
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    Path(os.environ["REMINI_DESCENDANT_PID_FILE"]).write_text(str(child.pid))
+    Path(os.environ["REMINI_DIRECT_EXIT_WITNESS_FILE"]).write_text("descendant_written_before_parent_exit")
+    print("direct-exit stdout diagnostic", flush=True)
+    print("direct-exit stderr diagnostic", file=sys.stderr, flush=True)
+    raise SystemExit(0)
 if mode == "success":
     print("normal stdout")
     print("normal stderr", file=sys.stderr)
@@ -83,6 +91,7 @@ run_remini() {
   REMINI_CONTROL_MODE="$mode" \
   REMINI_CHILD_PID_FILE="$CHILD_PID_FILE" \
   REMINI_DESCENDANT_PID_FILE="$DESCENDANT_PID_FILE" \
+  REMINI_DIRECT_EXIT_WITNESS_FILE="$DIRECT_EXIT_WITNESS_FILE" \
     "$REMINI" --tasks populate --timeout 1 --report-path "$report" \
     >"$stdout" 2>"$stderr" &
   local pid=$!
@@ -114,6 +123,17 @@ if kill -0 "$descendant_pid" 2>/dev/null; then
   exit 1
 fi
 echo "descendant_control=PASS"
+
+direct_exit_report=$(run_remini direct_exit_descendant)
+echo "direct_exit_descendant=$direct_exit_report"
+printf '%s' "$direct_exit_report" | jq -e '.success == true and (.stdout | contains("direct-exit stdout diagnostic")) and (.stderr | contains("direct-exit stderr diagnostic"))' >/dev/null
+test -s "$DIRECT_EXIT_WITNESS_FILE"
+direct_exit_pid=$(cat "$DESCENDANT_PID_FILE")
+if kill -0 "$direct_exit_pid" 2>/dev/null; then
+  echo "direct_exit_descendant=alive (FAIL)" >&2
+  exit 1
+fi
+echo "direct_exit_descendant_control=PASS"
 
 success_report=$(run_remini success)
 echo "success=$success_report"
