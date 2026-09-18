@@ -2,7 +2,9 @@ use std::fs;
 use std::io::Read;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
+#[cfg(test)]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -72,6 +74,9 @@ const REPORT_PATH: &str = "logs/remini_report.json";
 const BIN_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/target/release");
 const TASK_OUTPUT_LIMIT: usize = 64 * 1024;
 const TASK_POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+#[cfg(test)]
+static FORCE_TRY_WAIT_ERROR: AtomicBool = AtomicBool::new(false);
 
 /// Resolve the effective report path: --report-path flag, then
 /// REMINI_REPORT_PATH env var, then the hardcoded default -- so the
@@ -255,24 +260,32 @@ fn run_task(
     command.process_group(0);
     let output = run_owned_task(command, task, Duration::from_secs(timeout_secs))?;
     let dur = start.elapsed().as_millis();
+    let mut stderr = output.stderr;
+    if let Some(error) = output.supervisor_error.as_deref() {
+        append_diagnostic(&mut stderr, error);
+    }
     Ok((
-        output.status.success() && !output.timed_out,
+        output.status.as_ref().is_some_and(ExitStatus::success)
+            && !output.timed_out
+            && output.supervisor_error.is_none(),
         dur,
         output.stdout,
-        output.stderr,
+        stderr,
     ))
 }
 
+#[derive(Default)]
 struct CapturedStream {
     retained: Vec<u8>,
     discarded: u64,
 }
 
 struct OwnedTaskOutput {
-    status: std::process::ExitStatus,
+    status: Option<ExitStatus>,
     stdout: String,
     stderr: String,
     timed_out: bool,
+    supervisor_error: Option<String>,
 }
 
 fn drain_stream<R: Read>(mut reader: R) -> std::io::Result<CapturedStream> {
@@ -338,42 +351,84 @@ fn run_owned_task(mut command: Command, task: &str, timeout: Duration) -> Result
     let stderr_thread = thread::spawn(move || drain_stream(stderr_reader));
     let deadline = Instant::now() + timeout;
     let mut timed_out = false;
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
+    let mut supervisor_error = None;
+    let mut status = None;
+    loop {
+        match poll_child(&mut child) {
+            Ok(Some(exit_status)) => {
+                status = Some(exit_status);
+                break;
+            }
             Ok(None) if Instant::now() >= deadline => {
                 timed_out = true;
-                let pgid = child.id() as i32;
-                let kill_result = unsafe { libc::kill(-pgid, libc::SIGKILL) };
-                let status = child.wait().context("failed to reap timed-out task")?;
-                if kill_result != 0 {
-                    let error = std::io::Error::last_os_error();
-                    if error.raw_os_error() != Some(libc::ESRCH) {
-                        return Err(anyhow::anyhow!(
-                            "failed to signal task process group {}: {}",
-                            pgid,
-                            error
-                        ));
-                    }
-                }
-                break status;
+                break;
             }
             Ok(None) => thread::sleep(TASK_POLL_INTERVAL),
             Err(error) => {
-                let pgid = child.id() as i32;
-                let _ = unsafe { libc::kill(-pgid, libc::SIGKILL) };
-                let _ = child.wait();
-                return Err(anyhow::anyhow!("task wait failed: {}", error));
+                supervisor_error = Some(format!("SUPERVISOR: wait error: {}", error));
+                break;
             }
         }
-    };
+    }
 
-    let stdout = stdout_thread
-        .join()
-        .map_err(|_| anyhow::anyhow!("task stdout reader panicked"))??;
-    let stderr = stderr_thread
-        .join()
-        .map_err(|_| anyhow::anyhow!("task stderr reader panicked"))??;
+    let pgid = child.id() as i32;
+    let kill_result = unsafe { libc::kill(-pgid, libc::SIGKILL) };
+    if kill_result != 0 {
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() != Some(libc::ESRCH) {
+            append_supervisor_error(
+                &mut supervisor_error,
+                format!(
+                    "SUPERVISOR: failed to signal process group {}: {}",
+                    pgid, error
+                ),
+            );
+        }
+    }
+    if status.is_none() {
+        match child.wait() {
+            Ok(exit_status) => status = Some(exit_status),
+            Err(error) => append_supervisor_error(
+                &mut supervisor_error,
+                format!("SUPERVISOR: failed to reap task: {}", error),
+            ),
+        }
+    }
+
+    let stdout = match stdout_thread.join() {
+        Ok(Ok(captured)) => captured,
+        Ok(Err(error)) => {
+            append_supervisor_error(
+                &mut supervisor_error,
+                format!("SUPERVISOR: stdout drain failed: {}", error),
+            );
+            CapturedStream::default()
+        }
+        Err(_) => {
+            append_supervisor_error(
+                &mut supervisor_error,
+                "SUPERVISOR: stdout drain thread panicked".to_string(),
+            );
+            CapturedStream::default()
+        }
+    };
+    let stderr = match stderr_thread.join() {
+        Ok(Ok(captured)) => captured,
+        Ok(Err(error)) => {
+            append_supervisor_error(
+                &mut supervisor_error,
+                format!("SUPERVISOR: stderr drain failed: {}", error),
+            );
+            CapturedStream::default()
+        }
+        Err(_) => {
+            append_supervisor_error(
+                &mut supervisor_error,
+                "SUPERVISOR: stderr drain thread panicked".to_string(),
+            );
+            CapturedStream::default()
+        }
+    };
     let mut stdout = render_stream(stdout);
     let mut stderr = render_stream(stderr);
 
@@ -389,7 +444,26 @@ fn run_owned_task(mut command: Command, task: &str, timeout: Duration) -> Result
         stdout: std::mem::take(&mut stdout),
         stderr: std::mem::take(&mut stderr),
         timed_out,
+        supervisor_error,
     })
+}
+
+fn append_supervisor_error(target: &mut Option<String>, message: String) {
+    match target {
+        Some(existing) => {
+            existing.push_str("; ");
+            existing.push_str(&message);
+        }
+        None => *target = Some(message),
+    }
+}
+
+fn poll_child(child: &mut Child) -> std::io::Result<Option<ExitStatus>> {
+    #[cfg(test)]
+    if FORCE_TRY_WAIT_ERROR.swap(false, Ordering::SeqCst) {
+        return Err(std::io::Error::other("forced try_wait failure"));
+    }
+    child.try_wait()
 }
 
 fn persist_report(report: &SleepReport, path: &Path) -> Result<()> {
@@ -409,4 +483,91 @@ fn show_report(path: &Path) -> Result<()> {
     let data = fs::read_to_string(path)?;
     println!("{}", data);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn try_wait_error_preserves_task_result_and_report() {
+        let dir = tempfile::tempdir().unwrap();
+        let child_script = dir.path().join("child.sh");
+        let ready_path = dir.path().join("ready");
+        std::fs::write(
+            &child_script,
+            format!(
+                "#!/bin/sh\nprintf ready > {}\nprintf 'before-supervisor-error stdout\\n'\nprintf 'before-supervisor-error stderr\\n' >&2\nsleep 60\\n",
+                ready_path.display()
+            ),
+        )
+        .unwrap();
+        let mut permissions = std::fs::metadata(&child_script).unwrap().permissions();
+        permissions.set_mode(0o700);
+        std::fs::set_permissions(&child_script, permissions).unwrap();
+
+        let mut command = Command::new(&child_script);
+        command.process_group(0);
+        let trigger_path = ready_path.clone();
+        let trigger = std::thread::spawn(move || {
+            for _ in 0..100 {
+                if trigger_path.exists() {
+                    FORCE_TRY_WAIT_ERROR.store(true, Ordering::SeqCst);
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            panic!("child did not publish try_wait trigger");
+        });
+        let output = run_owned_task(command, "fixture", Duration::from_secs(5)).unwrap();
+        trigger.join().unwrap();
+        FORCE_TRY_WAIT_ERROR.store(false, Ordering::SeqCst);
+
+        assert!(!output.status.as_ref().is_some_and(ExitStatus::success));
+        assert!(!output.timed_out);
+        assert!(output.stdout.contains("before-supervisor-error stdout"));
+        assert!(output.stderr.contains("before-supervisor-error stderr"));
+        assert!(
+            output
+                .supervisor_error
+                .as_deref()
+                .is_some_and(|error| error.contains("forced try_wait failure"))
+        );
+
+        let report_path = dir.path().join("report.json");
+        let report = SleepReport {
+            run_timestamp: "synthetic".to_string(),
+            tasks_run: vec!["populate".to_string()],
+            summary: Summary {
+                tasks_succeeded: 0,
+                tasks_failed: 1,
+            },
+            task_details: vec![TaskResult {
+                name: "populate".to_string(),
+                success: false,
+                duration_ms: 1,
+                stdout: output.stdout,
+                stderr: format!("{}; {}", output.stderr, output.supervisor_error.unwrap()),
+            }],
+            duration_seconds: 0.001,
+        };
+        persist_report(&report, &report_path).unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(report_path).unwrap()).unwrap();
+        assert_eq!(saved["summary"]["tasks_failed"], 1);
+        assert_eq!(saved["task_details"][0]["success"], false);
+        assert!(
+            saved["task_details"][0]["stdout"]
+                .as_str()
+                .unwrap()
+                .contains("before-supervisor-error stdout")
+        );
+        assert!(
+            saved["task_details"][0]["stderr"]
+                .as_str()
+                .unwrap()
+                .contains("SUPERVISOR: wait error")
+        );
+    }
 }
