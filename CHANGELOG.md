@@ -689,3 +689,11 @@ Emergency migration after `brew upgrade` installed SurrealDB 3.0.1, which could 
 - **Thought Create Validation**: Thought creation now returns `meta::id` and checks the response to surface DB errors instead of failing silently.
 - **Scalpel Configuration**: Removed hardcoded default model from `src/clients/local.rs`. The `SURR_SCALPEL_MODEL` environment variable is now **mandatory**. This prevents silent failures/mismatches by forcing explicit configuration in `.env`.
 - **Documentation**: Added Scalpel configuration section to `.env.example`.
+## [Unreleased] - fed-70cb9c kg_populate response validation
+
+- `kg_populate` now validates the complete extraction response before any KG
+  write or thought retirement. Missing, empty, malformed, partial, duplicate,
+  or unknown results leave the whole fetched batch retryable; explicit
+  no-entity results remain valid and complete normally. Response validation is
+  batch-atomic, while persistence after validation remains per-thought rather
+  than one database transaction.

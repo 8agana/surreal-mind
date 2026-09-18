@@ -7,6 +7,7 @@
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::sync::Arc;
 use surreal_mind::clients::{
     AntigravityClient, AntigravityPermissionMode, CognitiveAgent, GeminiClient, GoogleCliProvider,
@@ -98,8 +99,7 @@ fn default_confidence() -> f64 {
 /// Full extraction response from the configured extraction provider
 #[derive(Debug, Deserialize)]
 struct ExtractionResponse {
-    #[serde(default)]
-    extractions: Vec<ThoughtExtraction>,
+    extractions: Option<Vec<ThoughtExtraction>>,
     #[serde(default)]
     summary: String,
 }
@@ -234,9 +234,22 @@ async fn main() -> Result<()> {
                 // Parse the response
                 match parse_extraction_response(&response) {
                     Ok(extraction) => {
+                        // Response validation is batch-atomic: no KG write or
+                        // retirement occurs until every fetched thought has
+                        // exactly one returned result. Persistence after this
+                        // point remains per-thought, not one DB transaction.
+                        let extractions = match validate_extraction_response(&extraction, &thoughts)
+                        {
+                            Ok(extractions) => extractions,
+                            Err(e) => {
+                                eprintln!("  ❌ Invalid extraction response: {}", e);
+                                stats.thoughts_failed += thoughts.len();
+                                continue;
+                            }
+                        };
                         println!(
                             "  📊 Extracted {} thought results, summary: {}",
-                            extraction.extractions.len(),
+                            extractions.len(),
                             if extraction.summary.chars().count() > 80 {
                                 let truncated: String =
                                     extraction.summary.chars().take(80).collect();
@@ -247,7 +260,7 @@ async fn main() -> Result<()> {
                         );
 
                         // Process each thought's extraction
-                        for thought_extraction in &extraction.extractions {
+                        for thought_extraction in extractions {
                             if !dry_run {
                                 match process_thought_extraction(
                                     &db,
@@ -287,29 +300,6 @@ async fn main() -> Result<()> {
                                 stats.edges_created += thought_extraction.relationships.len();
                                 stats.observations_created += thought_extraction.observations.len();
                                 stats.boundaries_created += thought_extraction.boundaries.len();
-                            }
-                        }
-
-                        // Mark any thoughts that weren't in the extraction response
-                        // (Gemini might have skipped some)
-                        for thought in &thoughts {
-                            let was_processed = extraction
-                                .extractions
-                                .iter()
-                                .any(|e| e.thought_id == thought.id);
-                            if !was_processed {
-                                if !dry_run {
-                                    // Still mark as extracted to avoid re-processing
-                                    if let Err(e) =
-                                        mark_thought_extracted(&db, &thought.id, &batch_id).await
-                                    {
-                                        eprintln!(
-                                            "  ⚠️  Failed to mark skipped thought {} as extracted: {}",
-                                            thought.id, e
-                                        );
-                                    }
-                                }
-                                stats.thoughts_processed += 1;
                             }
                         }
                     }
@@ -467,6 +457,41 @@ fn parse_extraction_response(response: &str) -> Result<ExtractionResponse> {
             ))
         }
     }
+}
+
+fn validate_extraction_response<'a>(
+    response: &'a ExtractionResponse,
+    thoughts: &[ThoughtRecord],
+) -> Result<&'a [ThoughtExtraction]> {
+    let extractions = response
+        .extractions
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("response is missing top-level extractions"))?;
+    let expected_ids: HashSet<&str> = thoughts.iter().map(|thought| thought.id.as_str()).collect();
+    let mut returned_ids = HashSet::with_capacity(extractions.len());
+
+    for extraction in extractions {
+        if !returned_ids.insert(extraction.thought_id.as_str()) {
+            return Err(anyhow::anyhow!(
+                "response contains duplicate thought_id {}",
+                extraction.thought_id
+            ));
+        }
+        if !expected_ids.contains(extraction.thought_id.as_str()) {
+            return Err(anyhow::anyhow!(
+                "response contains unknown thought_id {}",
+                extraction.thought_id
+            ));
+        }
+    }
+
+    if returned_ids != expected_ids {
+        return Err(anyhow::anyhow!(
+            "response thought_id set does not exactly match fetched batch"
+        ));
+    }
+
+    Ok(extractions)
 }
 
 /// Process a single thought's extraction results
