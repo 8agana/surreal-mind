@@ -689,3 +689,10 @@ Emergency migration after `brew upgrade` installed SurrealDB 3.0.1, which could 
 - **Thought Create Validation**: Thought creation now returns `meta::id` and checks the response to surface DB errors instead of failing silently.
 - **Scalpel Configuration**: Removed hardcoded default model from `src/clients/local.rs`. The `SURR_SCALPEL_MODEL` environment variable is now **mandatory**. This prevents silent failures/mismatches by forcing explicit configuration in `.env`.
 - **Documentation**: Added Scalpel configuration section to `.env.example`.
+## [Unreleased] - fed-fdece5 REMini supervisor controls
+
+- Hardened the outer `remini` task supervisor with owned process groups,
+  concurrent bounded stdout/stderr drains, wait/reap cleanup, and explicit
+  truncation/timeout diagnostics. Inner provider timeout policy and health/report
+  task paths remain unchanged. Added disposable subprocess controls for pipe
+  overflow, descendant cleanup, normal success, and nonzero exit behavior.

@@ -1,4 +1,6 @@
 use std::fs;
+use std::io::Read;
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
@@ -68,6 +70,8 @@ struct Summary {
 
 const REPORT_PATH: &str = "logs/remini_report.json";
 const BIN_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/target/release");
+const TASK_OUTPUT_LIMIT: usize = 64 * 1024;
+const TASK_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 /// Resolve the effective report path: --report-path flag, then
 /// REMINI_REPORT_PATH env var, then the hardcoded default -- so the
@@ -248,62 +252,144 @@ fn run_task(
         command.env(k, v);
     }
 
+    command.process_group(0);
+    let output = run_owned_task(command, task, Duration::from_secs(timeout_secs))?;
+    let dur = start.elapsed().as_millis();
+    Ok((
+        output.status.success() && !output.timed_out,
+        dur,
+        output.stdout,
+        output.stderr,
+    ))
+}
+
+struct CapturedStream {
+    retained: Vec<u8>,
+    discarded: u64,
+}
+
+struct OwnedTaskOutput {
+    status: std::process::ExitStatus,
+    stdout: String,
+    stderr: String,
+    timed_out: bool,
+}
+
+fn drain_stream<R: Read>(mut reader: R) -> std::io::Result<CapturedStream> {
+    let mut retained = Vec::with_capacity(TASK_OUTPUT_LIMIT.min(8192));
+    let mut discarded = 0u64;
+    let mut buffer = [0u8; 8192];
+
+    loop {
+        let read = reader.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+
+        let remaining = TASK_OUTPUT_LIMIT.saturating_sub(retained.len());
+        let keep = remaining.min(read);
+        retained.extend_from_slice(&buffer[..keep]);
+        discarded += (read - keep) as u64;
+    }
+
+    Ok(CapturedStream {
+        retained,
+        discarded,
+    })
+}
+
+fn render_stream(captured: CapturedStream) -> String {
+    let mut output = String::from_utf8_lossy(&captured.retained).into_owned();
+    if captured.discarded > 0 {
+        append_diagnostic(
+            &mut output,
+            &format!(
+                "[OUTPUT_TRUNCATED: {} bytes discarded after {} byte retention limit]",
+                captured.discarded, TASK_OUTPUT_LIMIT
+            ),
+        );
+    }
+    output
+}
+
+fn append_diagnostic(output: &mut String, diagnostic: &str) {
+    if !output.is_empty() && !output.ends_with('\n') {
+        output.push('\n');
+    }
+    output.push_str(diagnostic);
+}
+
+fn run_owned_task(mut command: Command, task: &str, timeout: Duration) -> Result<OwnedTaskOutput> {
     let mut child = command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .with_context(|| format!("failed to start task {}", task))?;
 
-    let timeout = Duration::from_secs(timeout_secs);
-    let poll_interval = Duration::from_millis(500);
-
-    loop {
+    let stdout_reader = child
+        .stdout
+        .take()
+        .context("task stdout pipe unavailable after spawn")?;
+    let stderr_reader = child
+        .stderr
+        .take()
+        .context("task stderr pipe unavailable after spawn")?;
+    let stdout_thread = thread::spawn(move || drain_stream(stdout_reader));
+    let stderr_thread = thread::spawn(move || drain_stream(stderr_reader));
+    let deadline = Instant::now() + timeout;
+    let mut timed_out = false;
+    let status = loop {
         match child.try_wait() {
-            Ok(Some(status)) => {
-                // Process finished
-                let dur = start.elapsed().as_millis();
-                let stdout = child
-                    .stdout
-                    .take()
-                    .map(|mut s| {
-                        let mut buf = String::new();
-                        use std::io::Read;
-                        let _ = s.read_to_string(&mut buf);
-                        buf
-                    })
-                    .unwrap_or_default();
-                let stderr = child
-                    .stderr
-                    .take()
-                    .map(|mut s| {
-                        let mut buf = String::new();
-                        use std::io::Read;
-                        let _ = s.read_to_string(&mut buf);
-                        buf
-                    })
-                    .unwrap_or_default();
-                return Ok((status.success(), dur, stdout, stderr));
-            }
-            Ok(None) => {
-                // Still running, check timeout
-                if start.elapsed() > timeout {
-                    let _ = child.kill();
-                    let dur = start.elapsed().as_millis();
-                    return Ok((
-                        false,
-                        dur,
-                        String::new(),
-                        format!("TIMEOUT: {} exceeded {}s limit", task, timeout_secs),
-                    ));
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() >= deadline => {
+                timed_out = true;
+                let pgid = child.id() as i32;
+                let kill_result = unsafe { libc::kill(-pgid, libc::SIGKILL) };
+                let status = child.wait().context("failed to reap timed-out task")?;
+                if kill_result != 0 {
+                    let error = std::io::Error::last_os_error();
+                    if error.raw_os_error() != Some(libc::ESRCH) {
+                        return Err(anyhow::anyhow!(
+                            "failed to signal task process group {}: {}",
+                            pgid,
+                            error
+                        ));
+                    }
                 }
-                thread::sleep(poll_interval);
+                break status;
             }
-            Err(e) => {
-                let dur = start.elapsed().as_millis();
-                return Ok((false, dur, String::new(), format!("wait error: {}", e)));
+            Ok(None) => thread::sleep(TASK_POLL_INTERVAL),
+            Err(error) => {
+                let pgid = child.id() as i32;
+                let _ = unsafe { libc::kill(-pgid, libc::SIGKILL) };
+                let _ = child.wait();
+                return Err(anyhow::anyhow!("task wait failed: {}", error));
             }
         }
+    };
+
+    let stdout = stdout_thread
+        .join()
+        .map_err(|_| anyhow::anyhow!("task stdout reader panicked"))??;
+    let stderr = stderr_thread
+        .join()
+        .map_err(|_| anyhow::anyhow!("task stderr reader panicked"))??;
+    let mut stdout = render_stream(stdout);
+    let mut stderr = render_stream(stderr);
+
+    if timed_out {
+        append_diagnostic(
+            &mut stderr,
+            &format!("TIMEOUT: {} exceeded {}s limit", task, timeout.as_secs()),
+        );
     }
+
+    Ok(OwnedTaskOutput {
+        status,
+        stdout: std::mem::take(&mut stdout),
+        stderr: std::mem::take(&mut stderr),
+        timed_out,
+    })
 }
 
 fn persist_report(report: &SleepReport, path: &Path) -> Result<()> {
