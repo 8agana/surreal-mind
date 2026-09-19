@@ -7,8 +7,28 @@ use crate::server::SurrealMindServer;
 use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde_json::json;
 use std::fs;
+use std::io::{self, Read};
+use std::os::fd::AsRawFd;
+use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Child, Command, ExitStatus, Output, Stdio};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, AtomicU8, Ordering},
+};
+use std::thread;
+use std::time::{Duration, Instant};
+
+const DEFAULT_MAINTENANCE_TIMEOUT_MS: u64 = 1_800_000;
+const MIN_MAINTENANCE_TIMEOUT_MS: u64 = 100;
+const MAX_MAINTENANCE_TIMEOUT_MS: u64 = 3_600_000;
+const MAINTENANCE_OUTPUT_LIMIT: usize = 64 * 1024;
+const READER_POLL_MS: i32 = 25;
+const CLEANUP_GRACE: Duration = Duration::from_secs(1);
+const CANCEL_PENDING: u8 = 0;
+const CANCEL_SPAWNING: u8 = 1;
+const CANCEL_RUNNING: u8 = 2;
+const CANCELLED: u8 = 3;
 
 /// Parameters for the maintenance_ops tool
 #[derive(Debug, serde::Deserialize)]
@@ -31,6 +51,8 @@ pub struct MaintenanceParams {
     pub target_id: Option<String>,
     #[serde(default)]
     pub rethink_types: Option<String>,
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
 }
 
 fn normalize_thought_record_key(raw_id: &str) -> String {
@@ -86,6 +108,468 @@ fn reembed_kg_stats_json(stats: &crate::ReembedKgStats, dry_run: bool) -> serde_
         },
         "dry_run": dry_run
     })
+}
+
+fn maintenance_timeout(timeout_ms: Option<u64>) -> Result<Duration> {
+    let timeout_ms = timeout_ms.unwrap_or(DEFAULT_MAINTENANCE_TIMEOUT_MS);
+    if !(MIN_MAINTENANCE_TIMEOUT_MS..=MAX_MAINTENANCE_TIMEOUT_MS).contains(&timeout_ms) {
+        return Err(SurrealMindError::InvalidParams {
+            message: format!(
+                "timeout_ms must be between {} and {} milliseconds",
+                MIN_MAINTENANCE_TIMEOUT_MS, MAX_MAINTENANCE_TIMEOUT_MS
+            ),
+        });
+    }
+    Ok(Duration::from_millis(timeout_ms))
+}
+
+struct CancelOnDrop {
+    state: Arc<AtomicU8>,
+    armed: bool,
+}
+
+impl CancelOnDrop {
+    fn new(state: Arc<AtomicU8>) -> Self {
+        Self { state, armed: true }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        if self.armed {
+            self.state.store(CANCELLED, Ordering::Release);
+        }
+    }
+}
+
+struct CapturedOutput {
+    bytes: Vec<u8>,
+    discarded: usize,
+    incomplete: bool,
+}
+
+struct ReaderControl {
+    stop: AtomicBool,
+    stop_at: Mutex<Option<Instant>>,
+}
+
+impl ReaderControl {
+    fn new() -> Self {
+        Self {
+            stop: AtomicBool::new(false),
+            stop_at: Mutex::new(None),
+        }
+    }
+
+    fn arm_cleanup_deadline(&self) {
+        *self.stop_at.lock().expect("reader control mutex poisoned") =
+            Some(Instant::now() + CLEANUP_GRACE);
+    }
+
+    fn should_stop(&self) -> bool {
+        if self.stop.load(Ordering::Acquire) {
+            return true;
+        }
+        self.stop_at
+            .lock()
+            .expect("reader control mutex poisoned")
+            .is_some_and(|deadline| Instant::now() >= deadline)
+    }
+
+    fn deadline_expired(&self) -> bool {
+        self.stop_at
+            .lock()
+            .expect("reader control mutex poisoned")
+            .is_some_and(|deadline| Instant::now() >= deadline)
+    }
+
+    fn remaining(&self) -> Option<Duration> {
+        self.stop_at
+            .lock()
+            .expect("reader control mutex poisoned")
+            .map(|deadline| deadline.saturating_duration_since(Instant::now()))
+    }
+}
+
+fn drain_output<R: Read + AsRawFd>(
+    mut reader: R,
+    control: Arc<ReaderControl>,
+) -> io::Result<CapturedOutput> {
+    let mut bytes = Vec::with_capacity(MAINTENANCE_OUTPUT_LIMIT);
+    let mut discarded = 0;
+    let mut incomplete = false;
+    let mut buffer = [0u8; 8192];
+    loop {
+        if control.should_stop() {
+            incomplete = control.deadline_expired();
+            break;
+        }
+        let mut pollfd = libc::pollfd {
+            fd: reader.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        let poll_ms = control
+            .remaining()
+            .map(|remaining| READER_POLL_MS.min(remaining.as_millis() as i32))
+            .unwrap_or(READER_POLL_MS)
+            .max(1);
+        let ready = unsafe { libc::poll(&mut pollfd, 1, poll_ms) };
+        if ready < 0 {
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() == Some(libc::EINTR) {
+                continue;
+            }
+            return Err(error);
+        }
+        if ready == 0 {
+            continue;
+        }
+        match reader.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => {
+                let retained = (MAINTENANCE_OUTPUT_LIMIT - bytes.len()).min(read);
+                bytes.extend_from_slice(&buffer[..retained]);
+                discarded += read - retained;
+            }
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(CapturedOutput {
+        bytes,
+        discarded,
+        incomplete,
+    })
+}
+
+fn render_output(mut captured: CapturedOutput, stream: &str) -> Vec<u8> {
+    if captured.discarded > 0 || captured.incomplete {
+        let marker = format!(
+            "\n[OUTPUT_TRUNCATED stream={} discarded={} retained_limit={} incomplete={}]\n",
+            stream, captured.discarded, MAINTENANCE_OUTPUT_LIMIT, captured.incomplete
+        );
+        captured.bytes.extend_from_slice(marker.as_bytes());
+    }
+    captured.bytes
+}
+
+fn append_diagnostic(bytes: &mut Vec<u8>, diagnostic: impl AsRef<str>) {
+    if !bytes.is_empty() && !bytes.ends_with(b"\n") {
+        bytes.push(b'\n');
+    }
+    bytes.extend_from_slice(diagnostic.as_ref().as_bytes());
+    bytes.push(b'\n');
+}
+
+fn process_group_has_live_member(pgid: i32, leader_pid: i32) -> io::Result<bool> {
+    let mut scan = Command::new("ps")
+        .args(["-axo", "pid=,pgid=,stat="])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()?;
+    let stdout = scan
+        .stdout
+        .take()
+        .ok_or_else(|| io::Error::other("process-group scan stdout pipe was not available"))?;
+    let reader_control = Arc::new(ReaderControl::new());
+    let reader_control_for_thread = Arc::clone(&reader_control);
+    let reader = thread::spawn(move || drain_output(stdout, reader_control_for_thread));
+    let deadline = Instant::now() + Duration::from_millis(100);
+    let mut status = None;
+    while Instant::now() < deadline {
+        if let Some(exit_status) = scan.try_wait()? {
+            status = Some(exit_status);
+            break;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    if status.is_none() {
+        reader_control.arm_cleanup_deadline();
+        scan.kill()?;
+        status = Some(scan.wait()?);
+    }
+    reader_control.arm_cleanup_deadline();
+    let captured = reader
+        .join()
+        .map_err(|_| io::Error::other("process-group scan reader panicked"))??;
+    let status = status.expect("process-group scan status set before reader join");
+    if !status.success() {
+        return Err(io::Error::other(format!(
+            "ps exited with status {}",
+            status
+        )));
+    }
+    if captured.incomplete || captured.discarded > 0 {
+        return Err(io::Error::other("process-group scan output was incomplete"));
+    }
+    let output = String::from_utf8_lossy(&captured.bytes);
+    let mut malformed = false;
+    for line in output.lines() {
+        let mut fields = line.split_whitespace();
+        let Some(pid) = fields.next().and_then(|value| value.parse::<i32>().ok()) else {
+            if !line.trim().is_empty() {
+                malformed = true;
+            }
+            continue;
+        };
+        let Some(group) = fields.next().and_then(|value| value.parse::<i32>().ok()) else {
+            malformed = true;
+            continue;
+        };
+        let Some(state) = fields.next() else {
+            malformed = true;
+            continue;
+        };
+        if group == pgid && pid != leader_pid && !state.starts_with('Z') {
+            return Ok(true);
+        }
+    }
+    if malformed {
+        return Err(io::Error::other("process-group scan output was malformed"));
+    }
+    Ok(false)
+}
+
+fn kill_process_group(pgid: i32, leader_pid: i32, leader_exited: bool) -> Option<String> {
+    let result = unsafe { libc::kill(-pgid, libc::SIGKILL) };
+    if result == 0 {
+        return None;
+    }
+    let error = io::Error::last_os_error();
+    if error.raw_os_error() == Some(libc::ESRCH) {
+        None
+    } else if leader_exited && error.raw_os_error() == Some(libc::EPERM) {
+        match process_group_has_live_member(pgid, leader_pid) {
+            Ok(false) => None,
+            Ok(true) => Some(format!("failed to kill process group {}: {}", pgid, error)),
+            Err(scan_error) => Some(format!(
+                "failed to kill process group {}: {}; process-group scan failed: {}",
+                pgid, error, scan_error
+            )),
+        }
+    } else {
+        Some(format!("failed to kill process group {}: {}", pgid, error))
+    }
+}
+
+fn leader_exited_without_reap(pid: i32) -> io::Result<bool> {
+    let mut info = unsafe { std::mem::zeroed::<libc::siginfo_t>() };
+    let result = unsafe {
+        libc::waitid(
+            libc::P_PID,
+            pid as libc::id_t,
+            &mut info,
+            libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+        )
+    };
+    if result != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(info.si_pid == pid)
+}
+
+fn reap_after_termination(child: &mut Child) -> (Option<ExitStatus>, Option<String>) {
+    let deadline = Instant::now() + CLEANUP_GRACE;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return (Some(status), None),
+            Ok(None) => {}
+            Err(error) => {
+                return (
+                    None,
+                    Some(format!("try_wait during cleanup failed: {}", error)),
+                );
+            }
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            break;
+        }
+        thread::sleep(Duration::from_millis(READER_POLL_MS as u64).min(deadline - now));
+    }
+
+    let kill_error = child
+        .kill()
+        .err()
+        .map(|error| format!("failed to kill child directly: {}", error));
+    let force_deadline = Instant::now() + CLEANUP_GRACE;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return (Some(status), kill_error),
+            Ok(None) => {}
+            Err(error) => {
+                return (
+                    None,
+                    Some(match kill_error {
+                        Some(existing) => {
+                            format!("{}; try_wait after direct kill failed: {}", existing, error)
+                        }
+                        None => format!("try_wait after direct kill failed: {}", error),
+                    }),
+                );
+            }
+        }
+        let now = Instant::now();
+        if now >= force_deadline {
+            return (
+                None,
+                Some(match kill_error {
+                    Some(existing) => {
+                        format!("{}; child was not reaped before cleanup deadline", existing)
+                    }
+                    None => "child was not reaped before cleanup deadline".to_string(),
+                }),
+            );
+        }
+        thread::sleep(Duration::from_millis(READER_POLL_MS as u64).min(force_deadline - now));
+    }
+}
+
+fn run_maintenance_command_blocking(
+    mut cmd: Command,
+    timeout: Duration,
+    state: Arc<AtomicU8>,
+) -> io::Result<Output> {
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.process_group(0);
+    if state
+        .compare_exchange(
+            CANCEL_PENDING,
+            CANCEL_SPAWNING,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        )
+        .is_err()
+    {
+        return Ok(Output {
+            status: ExitStatus::from_raw(1),
+            stdout: Vec::new(),
+            stderr: b"SUPERVISOR: maintenance command cancelled before spawn\n".to_vec(),
+        });
+    }
+    let mut child = cmd.spawn()?;
+    let _ = state.compare_exchange(
+        CANCEL_SPAWNING,
+        CANCEL_RUNNING,
+        Ordering::AcqRel,
+        Ordering::Acquire,
+    );
+    let pgid = child.id() as i32;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| io::Error::other("maintenance stdout pipe was not available"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| io::Error::other("maintenance stderr pipe was not available"))?;
+    let reader_control = Arc::new(ReaderControl::new());
+    let stdout_reader = {
+        let control = Arc::clone(&reader_control);
+        thread::spawn(move || drain_output(stdout, control))
+    };
+    let stderr_reader = {
+        let control = Arc::clone(&reader_control);
+        thread::spawn(move || drain_output(stderr, control))
+    };
+    let deadline = Instant::now() + timeout;
+    let mut status: Option<ExitStatus> = None;
+    let mut timed_out = false;
+    let mut supervisor_error = None;
+    let mut leader_exited = false;
+
+    loop {
+        if state.load(Ordering::Acquire) == CANCELLED {
+            supervisor_error = Some("maintenance command cancelled".to_string());
+            break;
+        }
+        if Instant::now() >= deadline {
+            timed_out = true;
+            break;
+        }
+        match leader_exited_without_reap(pgid) {
+            Ok(true) => {
+                leader_exited = true;
+                break;
+            }
+            Ok(false) => {}
+            Err(error) => {
+                supervisor_error = Some(format!("waitid failed: {}", error));
+                break;
+            }
+        }
+        let remaining = deadline - Instant::now();
+        thread::sleep(Duration::from_millis(READER_POLL_MS as u64).min(remaining));
+    }
+
+    let kill_error = {
+        let kill_error = kill_process_group(pgid, pgid, leader_exited);
+        reader_control.arm_cleanup_deadline();
+        let (reaped_status, reap_error) = reap_after_termination(&mut child);
+        if status.is_none() {
+            status = reaped_status;
+        }
+        if let Some(error) = reap_error {
+            supervisor_error = Some(match supervisor_error {
+                Some(existing) => format!("{}; {}", existing, error),
+                None => error,
+            });
+        }
+        kill_error
+    };
+
+    let stdout = stdout_reader
+        .join()
+        .map_err(|_| io::Error::other("stdout reader panicked"))??;
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| io::Error::other("stderr reader panicked"))??;
+    let mut stdout = render_output(stdout, "stdout");
+    let mut stderr = render_output(stderr, "stderr");
+    if timed_out {
+        append_diagnostic(
+            &mut stderr,
+            format!(
+                "TIMEOUT: maintenance command exceeded {} ms",
+                timeout.as_millis()
+            ),
+        );
+    }
+    let failed = timed_out || supervisor_error.is_some() || kill_error.is_some();
+    if let Some(ref error) = supervisor_error {
+        append_diagnostic(&mut stderr, format!("SUPERVISOR: {}", error));
+    }
+    if let Some(error) = kill_error {
+        append_diagnostic(&mut stderr, format!("SUPERVISOR: {}", error));
+    }
+    let status = if failed {
+        ExitStatus::from_raw(1)
+    } else {
+        status.unwrap_or_else(|| ExitStatus::from_raw(1))
+    };
+    Ok(Output {
+        status,
+        stdout: std::mem::take(&mut stdout),
+        stderr,
+    })
+}
+
+async fn run_maintenance_command(cmd: Command, timeout: Duration) -> io::Result<Output> {
+    let state = Arc::new(AtomicU8::new(CANCEL_PENDING));
+    let worker_state = Arc::clone(&state);
+    let mut cancel_on_drop = CancelOnDrop::new(state);
+    let result = tokio::task::spawn_blocking(move || {
+        run_maintenance_command_blocking(cmd, timeout, worker_state)
+    })
+    .await
+    .map_err(|error| io::Error::other(format!("maintenance supervisor failed: {}", error)))?;
+    cancel_on_drop.disarm();
+    result
 }
 
 /// True only when `embedding`'s length exactly matches the configured embedding
@@ -182,6 +666,7 @@ impl SurrealMindServer {
         let limit = params.limit.unwrap_or(100) as usize;
         let format = params.format.unwrap_or_else(|| "json".to_string());
         let output_dir = params.output_dir.unwrap_or_else(|| "./archive".to_string());
+        let timeout = maintenance_timeout(params.timeout_ms)?;
 
         tracing::info!(
             "maintenance_ops called: subcommand={}, dry_run={}, limit={}, format={}, output_dir={}",
@@ -215,40 +700,48 @@ impl SurrealMindServer {
                 if let Some(rt) = params.rethink_types.clone() {
                     envs.push(("RETHINK_TYPES".into(), rt));
                 }
-                self.handle_spawn_binary("gem_rethink", dry_run, &envs)
+                self.handle_spawn_binary("gem_rethink", dry_run, &envs, timeout)
                     .await
             }
             "consolidate" => {
                 let envs: Vec<(String, String)> =
                     vec![("CONSOLIDATE_LIMIT".into(), limit.to_string())];
-                self.handle_spawn_binary("kg_consolidate", dry_run, &envs)
+                self.handle_spawn_binary("kg_consolidate", dry_run, &envs, timeout)
                     .await
             }
             "populate" => {
-                self.handle_spawn_binary("kg_populate", dry_run, &Vec::new())
+                self.handle_spawn_binary("kg_populate", dry_run, &Vec::new(), timeout)
                     .await
             }
             "embed" => {
-                self.handle_spawn_binary("kg_embed", dry_run, &Vec::new())
+                self.handle_spawn_binary("kg_embed", dry_run, &Vec::new(), timeout)
                     .await
             }
             "wander" => {
-                self.handle_spawn_binary("kg_wander", dry_run, &Vec::new())
+                self.handle_spawn_binary("kg_wander", dry_run, &Vec::new(), timeout)
                     .await
             }
             "health" => {
-                self.handle_spawn_script("scripts/sm_health.sh", dry_run)
+                self.handle_spawn_script("scripts/sm_health.sh", dry_run, timeout)
                     .await
             }
             "report" => self.handle_report().await,
-            "tasks" => self.handle_tasks(params.tasks.clone(), dry_run).await,
+            "tasks" => {
+                self.handle_tasks(params.tasks.clone(), dry_run, timeout)
+                    .await
+            }
             _ => Err(SurrealMindError::Validation {
                 message: format!("Unknown subcommand: {}", params.subcommand),
             }),
         }
     }
 
-    async fn handle_tasks(&self, tasks: Option<String>, dry_run: bool) -> Result<CallToolResult> {
+    async fn handle_tasks(
+        &self,
+        tasks: Option<String>,
+        dry_run: bool,
+        timeout: Duration,
+    ) -> Result<CallToolResult> {
         let default_tasks: Vec<String> = vec![
             "populate".into(),
             "embed".into(),
@@ -277,30 +770,32 @@ impl SurrealMindServer {
                 "corrections" => self.handle_corrections_bridge(100, None).await,
                 "rethink" => {
                     let envs: Vec<(String, String)> = Vec::new();
-                    self.handle_spawn_binary("gem_rethink", dry_run, &envs)
+                    self.handle_spawn_binary("gem_rethink", dry_run, &envs, timeout)
                         .await
                 }
                 "consolidate" => {
                     let envs: Vec<(String, String)> =
                         vec![("CONSOLIDATE_LIMIT".into(), "100".into())];
-                    self.handle_spawn_binary("kg_consolidate", dry_run, &envs)
+                    self.handle_spawn_binary("kg_consolidate", dry_run, &envs, timeout)
                         .await
                 }
                 "populate" => {
                     let envs: Vec<(String, String)> = Vec::new();
-                    self.handle_spawn_binary("kg_populate", dry_run, &envs)
+                    self.handle_spawn_binary("kg_populate", dry_run, &envs, timeout)
                         .await
                 }
                 "embed" => {
                     let envs: Vec<(String, String)> = Vec::new();
-                    self.handle_spawn_binary("kg_embed", dry_run, &envs).await
+                    self.handle_spawn_binary("kg_embed", dry_run, &envs, timeout)
+                        .await
                 }
                 "wander" => {
                     let envs: Vec<(String, String)> = Vec::new();
-                    self.handle_spawn_binary("kg_wander", dry_run, &envs).await
+                    self.handle_spawn_binary("kg_wander", dry_run, &envs, timeout)
+                        .await
                 }
                 "health" => {
-                    self.handle_spawn_script("scripts/sm_health.sh", dry_run)
+                    self.handle_spawn_script("scripts/sm_health.sh", dry_run, timeout)
                         .await
                 }
                 "report" => self.handle_report().await,
@@ -341,6 +836,7 @@ impl SurrealMindServer {
         bin: &str,
         dry_run: bool,
         extra_env: &[(String, String)],
+        timeout: Duration,
     ) -> Result<CallToolResult> {
         let bin_path = format!("{}/target/release/{}", env!("CARGO_MANIFEST_DIR"), bin);
         let mut cmd = Command::new(bin_path);
@@ -350,8 +846,10 @@ impl SurrealMindServer {
         for (k, v) in extra_env {
             cmd.env(k, v);
         }
-        let output = cmd.output().map_err(|e| SurrealMindError::Internal {
-            message: format!("failed to run {}: {}", bin, e),
+        let output = run_maintenance_command(cmd, timeout).await.map_err(|e| {
+            SurrealMindError::Internal {
+                message: format!("failed to run {}: {}", bin, e),
+            }
         })?;
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -365,15 +863,22 @@ impl SurrealMindServer {
         Ok(CallToolResult::structured(report))
     }
 
-    async fn handle_spawn_script(&self, script: &str, dry_run: bool) -> Result<CallToolResult> {
+    async fn handle_spawn_script(
+        &self,
+        script: &str,
+        dry_run: bool,
+        timeout: Duration,
+    ) -> Result<CallToolResult> {
         let script_path = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), script);
         let mut cmd = Command::new("bash");
         cmd.arg(script_path);
         if dry_run {
             cmd.env("DRY_RUN", "1");
         }
-        let output = cmd.output().map_err(|e| SurrealMindError::Internal {
-            message: format!("failed to run script {}: {}", script, e),
+        let output = run_maintenance_command(cmd, timeout).await.map_err(|e| {
+            SurrealMindError::Internal {
+                message: format!("failed to run script {}: {}", script, e),
+            }
         })?;
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -1038,8 +1543,42 @@ impl SurrealMindServer {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_thought_record_key, reembed_kg_stats_json, reembed_stats_json};
+    use super::{
+        CapturedOutput, MAINTENANCE_OUTPUT_LIMIT, maintenance_timeout,
+        normalize_thought_record_key, reembed_kg_stats_json, reembed_stats_json, render_output,
+        run_maintenance_command,
+    };
     use crate::{ReembedKgStats, ReembedStats};
+    use std::process::Command;
+    use std::time::{Duration, Instant};
+
+    async fn wait_for_pid(path: &std::path::Path) -> i32 {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            if let Ok(pid) = std::fs::read_to_string(path)
+                && let Ok(pid) = pid.trim().parse()
+            {
+                return pid;
+            }
+            assert!(Instant::now() < deadline, "fixture did not publish its pid");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    async fn assert_process_gone(pid: i32) {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            if unsafe { libc::kill(pid, 0) } != 0 {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "process {} was not terminated",
+                pid
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
 
     #[test]
     fn normalize_thought_record_key_accepts_plain_meta_id() {
@@ -1102,5 +1641,152 @@ mod tests {
         assert_eq!(result["entities"]["failed"], 1);
         assert_eq!(result["observations"]["failed"], 2);
         assert_eq!(result["edges"]["failed"], 3);
+    }
+
+    #[test]
+    fn maintenance_output_marks_reader_deadline_as_incomplete() {
+        let rendered = render_output(
+            CapturedOutput {
+                bytes: b"partial".to_vec(),
+                discarded: 0,
+                incomplete: true,
+            },
+            "stderr",
+        );
+        let rendered = String::from_utf8_lossy(&rendered);
+        assert!(rendered.contains("OUTPUT_TRUNCATED stream=stderr"));
+        assert!(rendered.contains("incomplete=true"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn maintenance_command_does_not_block_independent_timer() {
+        let dir = tempfile::tempdir().unwrap();
+        let pid_path = dir.path().join("child.pid");
+        let script = format!(
+            "printf '%s' $$ > '{}'; sleep 1; printf done",
+            pid_path.display()
+        );
+        let mut command = Command::new("sh");
+        command.args(["-c", &script]);
+        let started = Instant::now();
+        let (result, timer_elapsed) = tokio::join!(
+            run_maintenance_command(command, Duration::from_secs(5)),
+            async {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                started.elapsed()
+            }
+        );
+        let output = result.unwrap();
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "done");
+        let pid: i32 = std::fs::read_to_string(pid_path).unwrap().parse().unwrap();
+        assert_ne!(
+            unsafe { libc::kill(pid, 0) },
+            0,
+            "fixture child was not reaped"
+        );
+        assert!(
+            timer_elapsed < Duration::from_millis(300),
+            "independent Tokio timer was stalled for {:?}; output={:?}",
+            timer_elapsed,
+            output.stdout
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn maintenance_command_timeout_kills_descendants() {
+        let dir = tempfile::tempdir().unwrap();
+        let pid_path = dir.path().join("descendant.pid");
+        let script = format!(
+            "sleep 30 & child=$!; printf '%s' $child > '{}'; wait $child",
+            pid_path.display()
+        );
+        let mut command = Command::new("sh");
+        command.args(["-c", &script]);
+        let output = run_maintenance_command(command, Duration::from_millis(100))
+            .await
+            .unwrap();
+        let pid = wait_for_pid(&pid_path).await;
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("TIMEOUT:"));
+        assert_process_gone(pid).await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn maintenance_command_leader_exit_still_kills_descendants() {
+        let dir = tempfile::tempdir().unwrap();
+        let pid_path = dir.path().join("early-exit-descendant.pid");
+        let script = format!(
+            "sleep 30 & child=$!; printf '%s' $child > '{}'; exit 0",
+            pid_path.display()
+        );
+        let mut command = Command::new("sh");
+        command.args(["-c", &script]);
+        let output = run_maintenance_command(command, Duration::from_secs(5))
+            .await
+            .unwrap();
+        let pid = wait_for_pid(&pid_path).await;
+        assert!(output.status.success());
+        assert_process_gone(pid).await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn maintenance_command_cancellation_kills_descendants() {
+        let dir = tempfile::tempdir().unwrap();
+        let pid_path = dir.path().join("cancelled-descendant.pid");
+        let script = format!(
+            "sleep 30 & child=$!; printf '%s' $child > '{}'; wait $child",
+            pid_path.display()
+        );
+        let mut command = Command::new("sh");
+        command.args(["-c", &script]);
+        let task = tokio::spawn(run_maintenance_command(command, Duration::from_secs(30)));
+        let pid = wait_for_pid(&pid_path).await;
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        assert_process_gone(pid).await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn maintenance_command_bounds_stdout_and_stderr() {
+        let mut command = Command::new("sh");
+        command.args([
+            "-c",
+            "head -c 100000 /dev/zero; head -c 100000 /dev/zero >&2",
+        ]);
+        let output = run_maintenance_command(command, Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert!(output.status.success());
+        assert!(output.stdout.len() <= MAINTENANCE_OUTPUT_LIMIT + 200);
+        assert!(output.stderr.len() <= MAINTENANCE_OUTPUT_LIMIT + 200);
+        assert!(String::from_utf8_lossy(&output.stdout).contains("OUTPUT_TRUNCATED stream=stdout"));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("OUTPUT_TRUNCATED stream=stderr"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn maintenance_command_preserves_nonzero_status_and_output() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "printf ok; printf bad >&2; exit 7"]);
+        let output = run_maintenance_command(command, Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert!(!output.status.success());
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "ok");
+        assert_eq!(String::from_utf8_lossy(&output.stderr), "bad");
+    }
+
+    #[test]
+    fn maintenance_timeout_has_safe_default_and_strict_bounds() {
+        assert_eq!(
+            maintenance_timeout(None).unwrap(),
+            Duration::from_secs(1_800)
+        );
+        assert_eq!(
+            maintenance_timeout(Some(100)).unwrap(),
+            Duration::from_millis(100)
+        );
+        assert!(maintenance_timeout(Some(99)).is_err());
+        assert!(maintenance_timeout(Some(3_600_001)).is_err());
     }
 }

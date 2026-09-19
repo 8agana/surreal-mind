@@ -1,3 +1,13 @@
+## [Unreleased] - fed-451d12 maintenance subprocess supervision
+
+- Replaced blocking maintenance subprocess capture with an async-safe owned
+  supervisor that isolates each child in a process group, drains stdout and
+  stderr concurrently, bounds each stream at 64 KiB with an explicit marker,
+  and kills/reaps the group on timeout or cancellation.
+- Added optional `maintenance_ops.timeout_ms`, defaulting to 30 minutes and
+  bounded to 100 ms through 3,600,000 ms. The existing HTTP/tool timeout
+  environment variables do not control this subprocess path.
+
 ## [Unreleased] - fed-2804b3 offline protocol CI witness
 
 - Added the previously skipped continuity-fallback protocol regression to the
