@@ -392,6 +392,16 @@ fn kill_process_group(pgid: i32, leader_pid: i32, leader_exited: bool) -> (bool,
     }
 }
 
+#[cfg(target_os = "linux")]
+fn siginfo_pid(info: &libc::siginfo_t) -> i32 {
+    unsafe { info.si_pid() as i32 }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn siginfo_pid(info: &libc::siginfo_t) -> i32 {
+    info.si_pid
+}
+
 fn leader_exited_without_reap(pid: i32) -> io::Result<bool> {
     let mut info = unsafe { std::mem::zeroed::<libc::siginfo_t>() };
     let result = unsafe {
@@ -405,7 +415,7 @@ fn leader_exited_without_reap(pid: i32) -> io::Result<bool> {
     if result != 0 {
         return Err(io::Error::last_os_error());
     }
-    Ok(info.si_pid == pid)
+    Ok(siginfo_pid(&info) == pid)
 }
 
 fn reap_after_termination(child: &mut Child) -> (Option<ExitStatus>, Option<String>) {

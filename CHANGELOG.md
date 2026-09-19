@@ -13,6 +13,8 @@
 - Supervised Python adapter failures now terminate and boundedly reap the
   direct provider before Rust reaps the adapter, preventing nested-provider
   hangs from extending the outer maintenance timeout.
+- Added the Linux `siginfo_t::si_pid()` accessor path while retaining the
+  macOS field path for cross-platform maintenance builds.
 
 ## [Unreleased] - fed-2804b3 offline protocol CI witness
 
