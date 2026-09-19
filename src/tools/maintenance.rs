@@ -10,7 +10,7 @@ use std::fs;
 use std::io::{self, Read};
 use std::os::fd::AsRawFd;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Output, Stdio};
 use std::sync::{
     Arc, Mutex,
@@ -29,6 +29,7 @@ const CANCEL_PENDING: u8 = 0;
 const CANCEL_SPAWNING: u8 = 1;
 const CANCEL_RUNNING: u8 = 2;
 const CANCELLED: u8 = 3;
+const KG_WANDER_PARENT_SUPERVISED: &str = "KG_WANDER_PARENT_SUPERVISED";
 
 /// Parameters for the maintenance_ops tool
 #[derive(Debug, serde::Deserialize)]
@@ -121,6 +122,31 @@ fn maintenance_timeout(timeout_ms: Option<u64>) -> Result<Duration> {
         });
     }
     Ok(Duration::from_millis(timeout_ms))
+}
+
+#[derive(Clone, Debug, Default)]
+struct MaintenancePaths {
+    bin_dir: Option<PathBuf>,
+    script_dir: Option<PathBuf>,
+}
+
+fn maintenance_binary_path(bin: &str, paths: &MaintenancePaths) -> PathBuf {
+    if let Some(dir) = &paths.bin_dir {
+        return dir.join(bin);
+    }
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target/release")
+        .join(bin)
+}
+
+fn maintenance_script_path(script: &str, paths: &MaintenancePaths) -> PathBuf {
+    if let Some(dir) = &paths.script_dir {
+        let name = Path::new(script)
+            .file_name()
+            .unwrap_or_else(|| Path::new(script).as_os_str());
+        return dir.join(name);
+    }
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(script)
 }
 
 struct CancelOnDrop {
@@ -335,25 +361,34 @@ fn process_group_has_live_member(pgid: i32, leader_pid: i32) -> io::Result<bool>
     Ok(false)
 }
 
-fn kill_process_group(pgid: i32, leader_pid: i32, leader_exited: bool) -> Option<String> {
+fn kill_process_group(pgid: i32, leader_pid: i32, leader_exited: bool) -> (bool, Option<String>) {
     let result = unsafe { libc::kill(-pgid, libc::SIGKILL) };
     if result == 0 {
-        return None;
+        return (true, None);
     }
     let error = io::Error::last_os_error();
     if error.raw_os_error() == Some(libc::ESRCH) {
-        None
+        (false, None)
     } else if leader_exited && error.raw_os_error() == Some(libc::EPERM) {
         match process_group_has_live_member(pgid, leader_pid) {
-            Ok(false) => None,
-            Ok(true) => Some(format!("failed to kill process group {}: {}", pgid, error)),
-            Err(scan_error) => Some(format!(
-                "failed to kill process group {}: {}; process-group scan failed: {}",
-                pgid, error, scan_error
-            )),
+            Ok(false) => (false, None),
+            Ok(true) => (
+                false,
+                Some(format!("failed to kill process group {}: {}", pgid, error)),
+            ),
+            Err(scan_error) => (
+                false,
+                Some(format!(
+                    "failed to kill process group {}: {}; process-group scan failed: {}",
+                    pgid, error, scan_error
+                )),
+            ),
         }
     } else {
-        Some(format!("failed to kill process group {}: {}", pgid, error))
+        (
+            false,
+            Some(format!("failed to kill process group {}: {}", pgid, error)),
+        )
     }
 }
 
@@ -507,8 +542,8 @@ fn run_maintenance_command_blocking(
         thread::sleep(Duration::from_millis(READER_POLL_MS as u64).min(remaining));
     }
 
-    let kill_error = {
-        let kill_error = kill_process_group(pgid, pgid, leader_exited);
+    let (group_killed, kill_error) = {
+        let (killed, kill_error) = kill_process_group(pgid, pgid, leader_exited);
         reader_control.arm_cleanup_deadline();
         let (reaped_status, reap_error) = reap_after_termination(&mut child);
         if status.is_none() {
@@ -520,7 +555,7 @@ fn run_maintenance_command_blocking(
                 None => error,
             });
         }
-        kill_error
+        (killed, kill_error)
     };
 
     let stdout = stdout_reader
@@ -529,6 +564,7 @@ fn run_maintenance_command_blocking(
     let stderr = stderr_reader
         .join()
         .map_err(|_| io::Error::other("stderr reader panicked"))??;
+    let incomplete_capture = stdout.incomplete || stderr.incomplete;
     let mut stdout = render_output(stdout, "stdout");
     let mut stderr = render_output(stderr, "stderr");
     if timed_out {
@@ -540,7 +576,11 @@ fn run_maintenance_command_blocking(
             ),
         );
     }
-    let failed = timed_out || supervisor_error.is_some() || kill_error.is_some();
+    let failed = timed_out
+        || supervisor_error.is_some()
+        || kill_error.is_some()
+        || incomplete_capture
+        || (leader_exited && group_killed);
     if let Some(ref error) = supervisor_error {
         append_diagnostic(&mut stderr, format!("SUPERVISOR: {}", error));
     }
@@ -700,31 +740,19 @@ impl SurrealMindServer {
                 if let Some(rt) = params.rethink_types.clone() {
                     envs.push(("RETHINK_TYPES".into(), rt));
                 }
-                self.handle_spawn_binary("gem_rethink", dry_run, &envs, timeout)
-                    .await
+                Self::handle_spawn_binary("gem_rethink", dry_run, &envs, timeout).await
             }
             "consolidate" => {
                 let envs: Vec<(String, String)> =
                     vec![("CONSOLIDATE_LIMIT".into(), limit.to_string())];
-                self.handle_spawn_binary("kg_consolidate", dry_run, &envs, timeout)
-                    .await
+                Self::handle_spawn_binary("kg_consolidate", dry_run, &envs, timeout).await
             }
             "populate" => {
-                self.handle_spawn_binary("kg_populate", dry_run, &Vec::new(), timeout)
-                    .await
+                Self::handle_spawn_binary("kg_populate", dry_run, &Vec::new(), timeout).await
             }
-            "embed" => {
-                self.handle_spawn_binary("kg_embed", dry_run, &Vec::new(), timeout)
-                    .await
-            }
-            "wander" => {
-                self.handle_spawn_binary("kg_wander", dry_run, &Vec::new(), timeout)
-                    .await
-            }
-            "health" => {
-                self.handle_spawn_script("scripts/sm_health.sh", dry_run, timeout)
-                    .await
-            }
+            "embed" => Self::handle_spawn_binary("kg_embed", dry_run, &Vec::new(), timeout).await,
+            "wander" => Self::handle_spawn_binary("kg_wander", dry_run, &Vec::new(), timeout).await,
+            "health" => Self::handle_spawn_script("scripts/sm_health.sh", dry_run, timeout).await,
             "report" => self.handle_report().await,
             "tasks" => {
                 self.handle_tasks(params.tasks.clone(), dry_run, timeout)
@@ -736,12 +764,103 @@ impl SurrealMindServer {
         }
     }
 
+    async fn handle_task_subprocess(
+        task: &str,
+        dry_run: bool,
+        timeout: Duration,
+    ) -> Result<CallToolResult> {
+        Self::handle_task_subprocess_at(task, dry_run, timeout, &MaintenancePaths::default()).await
+    }
+
+    async fn handle_task_subprocess_at(
+        task: &str,
+        dry_run: bool,
+        timeout: Duration,
+        paths: &MaintenancePaths,
+    ) -> Result<CallToolResult> {
+        match task {
+            "rethink" => {
+                Self::handle_spawn_binary_at("gem_rethink", dry_run, &[], timeout, paths).await
+            }
+            "consolidate" => {
+                let envs = [("CONSOLIDATE_LIMIT".to_string(), "100".to_string())];
+                Self::handle_spawn_binary_at("kg_consolidate", dry_run, &envs, timeout, paths).await
+            }
+            "populate" => {
+                Self::handle_spawn_binary_at("kg_populate", dry_run, &[], timeout, paths).await
+            }
+            "embed" => Self::handle_spawn_binary_at("kg_embed", dry_run, &[], timeout, paths).await,
+            "wander" => {
+                Self::handle_spawn_binary_at("kg_wander", dry_run, &[], timeout, paths).await
+            }
+            "health" => {
+                Self::handle_spawn_script_at("scripts/sm_health.sh", dry_run, timeout, paths).await
+            }
+            other => Err(SurrealMindError::Validation {
+                message: format!("Unknown task in list: {}", other),
+            }),
+        }
+    }
+
+    async fn try_run_subprocess_only_tasks_at(
+        tasks: Option<&str>,
+        dry_run: bool,
+        timeout: Duration,
+        paths: &MaintenancePaths,
+    ) -> Result<Option<CallToolResult>> {
+        let Some(task_list) = tasks else {
+            return Ok(None);
+        };
+        let task_names: Vec<&str> = task_list
+            .split(',')
+            .map(str::trim)
+            .filter(|task| !task.is_empty())
+            .collect();
+        if task_names.is_empty()
+            || task_names.iter().any(|task| {
+                *task == "all"
+                    || !matches!(
+                        *task,
+                        "rethink" | "consolidate" | "populate" | "embed" | "wander" | "health"
+                    )
+            })
+        {
+            return Ok(None);
+        }
+        let mut results = Vec::new();
+        for task in task_names {
+            let result = Self::handle_task_subprocess_at(task, dry_run, timeout, paths).await;
+            match result {
+                Ok(result) => results.push(
+                    result
+                        .structured_content
+                        .clone()
+                        .unwrap_or_else(|| json!(result.content)),
+                ),
+                Err(error) => results.push(json!({"error": error.to_string(), "task": task})),
+            }
+        }
+        Ok(Some(CallToolResult::structured(
+            json!({"results": results}),
+        )))
+    }
+
     async fn handle_tasks(
         &self,
         tasks: Option<String>,
         dry_run: bool,
         timeout: Duration,
     ) -> Result<CallToolResult> {
+        if let Some(result) = Self::try_run_subprocess_only_tasks_at(
+            tasks.as_deref(),
+            dry_run,
+            timeout,
+            &MaintenancePaths::default(),
+        )
+        .await?
+        {
+            return Ok(result);
+        }
         let default_tasks: Vec<String> = vec![
             "populate".into(),
             "embed".into(),
@@ -768,35 +887,8 @@ impl SurrealMindServer {
         for t in tasks_vec {
             let res = match t.as_str() {
                 "corrections" => self.handle_corrections_bridge(100, None).await,
-                "rethink" => {
-                    let envs: Vec<(String, String)> = Vec::new();
-                    self.handle_spawn_binary("gem_rethink", dry_run, &envs, timeout)
-                        .await
-                }
-                "consolidate" => {
-                    let envs: Vec<(String, String)> =
-                        vec![("CONSOLIDATE_LIMIT".into(), "100".into())];
-                    self.handle_spawn_binary("kg_consolidate", dry_run, &envs, timeout)
-                        .await
-                }
-                "populate" => {
-                    let envs: Vec<(String, String)> = Vec::new();
-                    self.handle_spawn_binary("kg_populate", dry_run, &envs, timeout)
-                        .await
-                }
-                "embed" => {
-                    let envs: Vec<(String, String)> = Vec::new();
-                    self.handle_spawn_binary("kg_embed", dry_run, &envs, timeout)
-                        .await
-                }
-                "wander" => {
-                    let envs: Vec<(String, String)> = Vec::new();
-                    self.handle_spawn_binary("kg_wander", dry_run, &envs, timeout)
-                        .await
-                }
-                "health" => {
-                    self.handle_spawn_script("scripts/sm_health.sh", dry_run, timeout)
-                        .await
+                "rethink" | "consolidate" | "populate" | "embed" | "wander" | "health" => {
+                    Self::handle_task_subprocess(t.as_str(), dry_run, timeout).await
                 }
                 "report" => self.handle_report().await,
                 other => Err(SurrealMindError::Validation {
@@ -832,19 +924,38 @@ impl SurrealMindServer {
     }
 
     async fn handle_spawn_binary(
-        &self,
         bin: &str,
         dry_run: bool,
         extra_env: &[(String, String)],
         timeout: Duration,
     ) -> Result<CallToolResult> {
-        let bin_path = format!("{}/target/release/{}", env!("CARGO_MANIFEST_DIR"), bin);
+        Self::handle_spawn_binary_at(
+            bin,
+            dry_run,
+            extra_env,
+            timeout,
+            &MaintenancePaths::default(),
+        )
+        .await
+    }
+
+    async fn handle_spawn_binary_at(
+        bin: &str,
+        dry_run: bool,
+        extra_env: &[(String, String)],
+        timeout: Duration,
+        paths: &MaintenancePaths,
+    ) -> Result<CallToolResult> {
+        let bin_path = maintenance_binary_path(bin, paths);
         let mut cmd = Command::new(bin_path);
         if dry_run {
             cmd.env("DRY_RUN", "1");
         }
         for (k, v) in extra_env {
             cmd.env(k, v);
+        }
+        if bin == "kg_wander" {
+            cmd.env(KG_WANDER_PARENT_SUPERVISED, "1");
         }
         let output = run_maintenance_command(cmd, timeout).await.map_err(|e| {
             SurrealMindError::Internal {
@@ -864,12 +975,20 @@ impl SurrealMindServer {
     }
 
     async fn handle_spawn_script(
-        &self,
         script: &str,
         dry_run: bool,
         timeout: Duration,
     ) -> Result<CallToolResult> {
-        let script_path = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), script);
+        Self::handle_spawn_script_at(script, dry_run, timeout, &MaintenancePaths::default()).await
+    }
+
+    async fn handle_spawn_script_at(
+        script: &str,
+        dry_run: bool,
+        timeout: Duration,
+        paths: &MaintenancePaths,
+    ) -> Result<CallToolResult> {
+        let script_path = maintenance_script_path(script, paths);
         let mut cmd = Command::new("bash");
         cmd.arg(script_path);
         if dry_run {
@@ -1544,13 +1663,29 @@ impl SurrealMindServer {
 #[cfg(test)]
 mod tests {
     use super::{
-        CapturedOutput, MAINTENANCE_OUTPUT_LIMIT, maintenance_timeout,
-        normalize_thought_record_key, reembed_kg_stats_json, reembed_stats_json, render_output,
-        run_maintenance_command,
+        CANCELLED, CapturedOutput, MAINTENANCE_OUTPUT_LIMIT, SurrealMindServer,
+        maintenance_timeout, normalize_thought_record_key, reembed_kg_stats_json,
+        reembed_stats_json, render_output, run_maintenance_command,
+        run_maintenance_command_blocking,
     };
     use crate::{ReembedKgStats, ReembedStats};
+    use std::os::unix::fs::PermissionsExt;
     use std::process::Command;
+    use std::sync::{Arc, atomic::AtomicU8};
     use std::time::{Duration, Instant};
+
+    fn write_executable(path: &std::path::Path, body: &str) {
+        std::fs::write(path, body).unwrap();
+        let mut permissions = std::fs::metadata(path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(path, permissions).unwrap();
+    }
+
+    fn result_payload(result: rmcp::model::CallToolResult) -> serde_json::Value {
+        result
+            .structured_content
+            .expect("structured maintenance result")
+    }
 
     async fn wait_for_pid(path: &std::path::Path) -> i32 {
         let deadline = Instant::now() + Duration::from_secs(2);
@@ -1726,7 +1861,7 @@ mod tests {
             .await
             .unwrap();
         let pid = wait_for_pid(&pid_path).await;
-        assert!(output.status.success());
+        assert!(!output.status.success());
         assert_process_gone(pid).await;
     }
 
@@ -1745,6 +1880,34 @@ mod tests {
         task.abort();
         assert!(task.await.unwrap_err().is_cancelled());
         assert_process_gone(pid).await;
+    }
+
+    #[test]
+    fn maintenance_command_cancelled_before_spawn_does_not_launch_fixture() {
+        let dir = tempfile::tempdir().unwrap();
+        let sentinel = dir.path().join("spawned");
+        let script = format!("printf spawned > '{}'", sentinel.display());
+        let mut command = Command::new("sh");
+        command.args(["-c", &script]);
+        let state = Arc::new(AtomicU8::new(CANCELLED));
+        let output =
+            run_maintenance_command_blocking(command, Duration::from_secs(5), state).unwrap();
+        assert!(!output.status.success());
+        assert!(!sentinel.exists(), "cancelled command launched its fixture");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn maintenance_command_timeout_does_not_kill_unrelated_process() {
+        let mut sentinel = Command::new("sleep").arg("2").spawn().unwrap();
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 30"]);
+        let output = run_maintenance_command(command, Duration::from_millis(100))
+            .await
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(sentinel.try_wait().unwrap().is_none());
+        sentinel.kill().unwrap();
+        sentinel.wait().unwrap();
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -1788,5 +1951,110 @@ mod tests {
         );
         assert!(maintenance_timeout(Some(99)).is_err());
         assert!(maintenance_timeout(Some(3_600_001)).is_err());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn maintenance_handlers_propagate_timeout_for_binary_script_and_tasks() {
+        let dir = tempfile::tempdir().unwrap();
+        let script_dir = dir.path().join("scripts");
+        std::fs::create_dir(&script_dir).unwrap();
+        write_executable(
+            &dir.path().join("kg_populate"),
+            "#!/bin/sh\nprintf binary-ready\nsleep 30\n",
+        );
+        write_executable(
+            &dir.path().join("kg_wander"),
+            "#!/bin/sh\nprintf '%s' \"$KG_WANDER_PARENT_SUPERVISED\"\n",
+        );
+        write_executable(
+            &script_dir.join("sm_health.sh"),
+            "#!/bin/sh\nprintf script-ready\nsleep 30\n",
+        );
+        let paths = super::MaintenancePaths {
+            bin_dir: Some(dir.path().to_path_buf()),
+            script_dir: Some(script_dir.clone()),
+        };
+
+        let binary = SurrealMindServer::handle_spawn_binary_at(
+            "kg_populate",
+            false,
+            &[],
+            Duration::from_millis(100),
+            &paths,
+        )
+        .await
+        .unwrap();
+        let binary_payload = result_payload(binary);
+        assert!(!binary_payload["success"].as_bool().unwrap());
+        assert!(
+            binary_payload["stderr"]
+                .as_str()
+                .unwrap()
+                .contains("TIMEOUT:")
+        );
+
+        let wander = SurrealMindServer::handle_spawn_binary_at(
+            "kg_wander",
+            false,
+            &[],
+            Duration::from_secs(1),
+            &paths,
+        )
+        .await
+        .unwrap();
+        let wander_payload = result_payload(wander);
+        assert!(wander_payload["success"].as_bool().unwrap());
+        assert_eq!(wander_payload["stdout"].as_str().unwrap(), "1");
+
+        let script = SurrealMindServer::handle_spawn_script_at(
+            "scripts/sm_health.sh",
+            false,
+            Duration::from_millis(100),
+            &paths,
+        )
+        .await
+        .unwrap();
+        let script_payload = result_payload(script);
+        assert!(!script_payload["success"].as_bool().unwrap());
+        assert!(
+            script_payload["stderr"]
+                .as_str()
+                .unwrap()
+                .contains("TIMEOUT:")
+        );
+
+        let tasks = SurrealMindServer::try_run_subprocess_only_tasks_at(
+            Some("populate"),
+            false,
+            Duration::from_millis(100),
+            &paths,
+        )
+        .await
+        .unwrap();
+        let tasks_payload = tasks.unwrap().structured_content.unwrap();
+        let tasks_payload = &tasks_payload["results"][0];
+        assert!(!tasks_payload["success"].as_bool().unwrap());
+        assert!(
+            tasks_payload["stderr"]
+                .as_str()
+                .unwrap()
+                .contains("TIMEOUT:")
+        );
+
+        for task_list in ["", "   ", ",,,", "all", "populate,report"] {
+            assert!(
+                SurrealMindServer::try_run_subprocess_only_tasks_at(
+                    Some(task_list),
+                    false,
+                    Duration::from_millis(100),
+                    &paths,
+                )
+                .await
+                .unwrap()
+                .is_none(),
+                "task list {:?} bypassed the public fallback path",
+                task_list
+            );
+        }
     }
 }

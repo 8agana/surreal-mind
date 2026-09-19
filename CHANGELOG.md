@@ -7,6 +7,12 @@
 - Added optional `maintenance_ops.timeout_ms`, defaulting to 30 minutes and
   bounded to 100 ms through 3,600,000 ms. The existing HTTP/tool timeout
   environment variables do not control this subprocess path.
+- The supervised `kg_wander` route now lets its Python decision adapter and
+  provider inherit the maintenance process group; standalone `kg_wander`
+  retains private-group cleanup and never kills a shared parent group.
+- Supervised Python adapter failures now terminate and boundedly reap the
+  direct provider before Rust reaps the adapter, preventing nested-provider
+  hangs from extending the outer maintenance timeout.
 
 ## [Unreleased] - fed-2804b3 offline protocol CI witness
 

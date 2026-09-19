@@ -32,12 +32,42 @@ fn bool_env(name: &str, default: bool) -> bool {
         .unwrap_or(default)
 }
 
+fn runner_owns_process_group_for(parent_supervised: bool) -> bool {
+    !parent_supervised
+}
+
+fn runner_owns_process_group() -> bool {
+    runner_owns_process_group_for(bool_env("KG_WANDER_PARENT_SUPERVISED", false))
+}
+
 const DEFAULT_MODEL: &str = "gemini-3-flash-preview";
 const DEFAULT_MAX_STEPS: usize = 50;
 const DEFAULT_TIMEOUT_MS: u64 = 60_000;
 const RUNNER_OUTPUT_LIMIT: u64 = 65_536;
 const RUNNER_GRACE: Duration = Duration::from_secs(6);
+const RUNNER_REAP_GRACE: Duration = Duration::from_secs(1);
 const ACTION_HISTORY_LIMIT: usize = 3;
+
+fn reap_direct_child_bounded(child: &mut std::process::Child, terminate: bool) -> Result<()> {
+    let mut exited = child.try_wait()?.is_some();
+    if !exited && terminate {
+        child.kill()?;
+    }
+    let deadline = Instant::now() + RUNNER_REAP_GRACE;
+    while !exited {
+        match child.try_wait()? {
+            Some(_) => exited = true,
+            None if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            None => {
+                let _ = child.kill();
+                anyhow::bail!("decision runner adapter was not reaped before cleanup deadline");
+            }
+        }
+    }
+    Ok(())
+}
 
 #[derive(Debug, Serialize)]
 struct AgentPrompt {
@@ -113,21 +143,41 @@ impl Drop for CancelOnDrop {
     }
 }
 
-// Opt-in candidate only. Rust owns one process group containing the Python
-// adapter and its provider child. This is distinct from a standalone Python
-// invocation, where the Python adapter creates and cleans up its own group.
+// Standalone invocations own a private process group. When kg_wander itself is
+// launched by maintenance supervision, the adapter inherits the outer group so
+// timeout/cancellation cleanup reaches the adapter and provider too; kg_wander
+// then must not kill that shared group on normal runner completion.
 async fn runner_decision(
     script: String,
     prompt: String,
     timeout_ms: u64,
     model: String,
 ) -> Result<AgentDecision> {
+    let agy = std::env::var("ANTIGRAVITY_CLI_BIN").unwrap_or_else(|_| "agy".to_string());
+    runner_decision_inner(
+        script,
+        prompt,
+        timeout_ms,
+        model,
+        runner_owns_process_group(),
+        agy,
+    )
+    .await
+}
+
+async fn runner_decision_inner(
+    script: String,
+    prompt: String,
+    timeout_ms: u64,
+    model: String,
+    owns_process_group: bool,
+    agy: String,
+) -> Result<AgentDecision> {
     anyhow::ensure!(
         std::path::Path::new(&script).is_absolute(),
         "decision runner path must be absolute"
     );
     let seconds = timeout_ms.div_ceil(1000).clamp(1, 300);
-    let agy = std::env::var("ANTIGRAVITY_CLI_BIN").unwrap_or_else(|_| "agy".to_string());
     let cancelled = Arc::new(AtomicBool::new(false));
     let _cancel_guard = CancelOnDrop(cancelled.clone());
     tokio::task::spawn_blocking(move || -> Result<AgentDecision> {
@@ -137,16 +187,19 @@ async fn runner_decision(
         input.rewind()?;
         let mut output = tempfile::tempfile()?;
         let mut errors = tempfile::tempfile()?;
-        let mut child = std::process::Command::new("/usr/bin/python3")
+        let mut command = std::process::Command::new("/usr/bin/python3");
+        command
             .arg(script)
             .args(["--agy", &agy, "--timeout", &seconds.to_string()])
             .args(["--model", &model])
             .arg("--supervised")
             .stdin(input)
             .stdout(output.try_clone()?)
-            .stderr(errors.try_clone()?)
-            .process_group(0)
-            .spawn()?;
+            .stderr(errors.try_clone()?);
+        if owns_process_group {
+            command.process_group(0);
+        }
+        let mut child = command.spawn()?;
         let pgid = child.id() as i32;
         let result = (|| -> Result<AgentDecision> {
             let deadline = Instant::now() + Duration::from_secs(seconds) + RUNNER_GRACE;
@@ -208,9 +261,15 @@ async fn runner_decision(
             );
             Ok(serde_json::from_value(value)?)
         })();
-        // This group is unique to the adapter invocation; clean every return path.
-        unsafe { libc::kill(-pgid, libc::SIGKILL) };
-        let _ = child.wait();
+        // This group is unique to standalone adapter invocations. In
+        // supervised mode, terminate/reap only the direct Python child before
+        // waiting; never signal the shared outer group.
+        if owns_process_group {
+            unsafe { libc::kill(-pgid, libc::SIGKILL) };
+            reap_direct_child_bounded(&mut child, false)?;
+        } else {
+            reap_direct_child_bounded(&mut child, result.is_err())?;
+        }
         result
     })
     .await?
@@ -790,6 +849,7 @@ fn parse_json(s: &str) -> Option<AgentDecision> {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::os::unix::fs::PermissionsExt;
 
     #[tokio::test]
     async fn runner_adapter_rejects_failure_and_malformed_output() {
@@ -835,6 +895,46 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(error.contains("kind=child_exit exit=7 stdout_bytes=0 stderr_bytes=0"));
+    }
+
+    #[tokio::test]
+    async fn supervised_real_python_adapter_reaps_hung_provider() {
+        let dir = tempfile::tempdir().unwrap();
+        let provider = dir.path().join("agy-fixture");
+        let witness = dir.path().join("provider.pid");
+        std::fs::write(
+            &provider,
+            format!(
+                "#!/usr/bin/python3\nimport os, pathlib, time\npathlib.Path({:?}).write_text(str(os.getpid()))\ntime.sleep(60)\n",
+                witness.to_string_lossy()
+            ),
+        )
+        .unwrap();
+        let mut permissions = std::fs::metadata(&provider).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&provider, permissions).unwrap();
+        let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("scripts/kg_decision/kg_decision.py");
+        let started = Instant::now();
+        assert!(
+            runner_decision_inner(
+                script.to_string_lossy().into_owned(),
+                "test".into(),
+                1000,
+                "fixture-model".into(),
+                false,
+                provider.to_string_lossy().into_owned(),
+            )
+            .await
+            .is_err()
+        );
+        assert!(started.elapsed() < Duration::from_secs(10));
+        let pid: i32 = std::fs::read_to_string(witness).unwrap().parse().unwrap();
+        assert_ne!(
+            unsafe { libc::kill(pid, 0) },
+            0,
+            "provider survived supervised timeout"
+        );
     }
 
     #[test]
@@ -946,6 +1046,12 @@ mod tests {
             decision_runner_script(GoogleCliProvider::Gemini, None).unwrap(),
             None
         );
+    }
+
+    #[test]
+    fn supervised_runner_inherits_parent_process_group() {
+        assert!(runner_owns_process_group_for(false));
+        assert!(!runner_owns_process_group_for(true));
     }
 
     #[test]
