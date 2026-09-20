@@ -1,0 +1,26 @@
+exact fixture manifest:
+surrealdb = { version = "=3.1.2", features = ["protocol-ws", "kv-surrealkv"] }
+locked dependency tree:
+surrealdb v3.1.2
+surrealdb-core v3.1.2
+surrealdb-collections v3.1.2
+surrealdb-strand v3.1.2
+surrealdb-types v3.1.2
+tempfile v3.27.0
+
+historical pre-option-A root production lock comparison (captured before the
+test-only kv-surrealkv lock update):
+surrealdb 3.1.2
+surrealdb-core 3.1.2
+surrealdb-types 3.1.2
+tempfile 3.24.0
+
+current candidate root lock after option A:
+surrealdb 3.1.2
+surrealdb-core 3.1.2
+surrealdb-types 3.1.2
+tempfile 3.27.0
+
+The current default dependency graph therefore includes the shared tempfile
+upgrade (plus related rustix/linux-raw-sys changes), while kv-surrealkv is
+feature-disabled in default release builds.

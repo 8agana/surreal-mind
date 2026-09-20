@@ -1,0 +1,9 @@
+CREATE1_RESPONSE=IndexedResults { results: {0: (DbResultStats { execution_time: Some(2.931208ms), query_type: Some(Other) }, Ok(Array(Array([Object(Object({"created_at": Datetime(Datetime(2026-08-20T05:10:10.798067Z)), "id": RecordId(RecordId { table: Table("thoughts"), key: String("eligible") }), "status": String("removal")}))]))))}, live_queries: {} }
+CREATE2_RESPONSE=IndexedResults { results: {0: (DbResultStats { execution_time: Some(1.377334ms), query_type: Some(Other) }, Ok(Array(Array([Object(Object({"created_at": Datetime(Datetime(2026-08-20T05:10:10.800270Z)), "id": RecordId(RecordId { table: Table("thoughts"), key: String("keep") }), "status": String("active")}))]))))}, live_queries: {} }
+BEFORE=[{"id":"eligible","status":"removal"},{"id":"keep","status":"active"}]
+CANDIDATE_IDS=["eligible"]
+STRING_DELETE_RESULT=[]
+AFTER_STRING=[{"id":"eligible","status":"removal"},{"id":"keep","status":"active"}]
+TYPED_DELETE_RESULT=[]
+AFTER_TYPED=[{"id":"keep","status":"active"}]
+EXIT_CODE=0

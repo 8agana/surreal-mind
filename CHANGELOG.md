@@ -1,3 +1,9 @@
+## [Unreleased] - fed-ee4538 typed finalize-removal deletion
+
+- `finalize_removal` now binds typed `thoughts` record IDs, checks statement
+  errors, returns deleted rows for truthful accounting, and reports separate
+  candidate/deleted counts for dry-run and stale/no-op cases.
+
 ## [Unreleased] - fed-2804b3 offline protocol CI witness
 
 - Added the previously skipped continuity-fallback protocol regression to the

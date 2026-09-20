@@ -82,6 +82,9 @@ test-probe = []
 # rather than a separate [[bin]], so there is no required-features binary
 # trick available -- the cfg gate on the impl itself is the safety guard).
 test-embedder = []
+# Enables disposable in-process SurrealKv tests for maintenance removal paths.
+# This is test-only and intentionally not part of the default production feature set.
+test-disposable-kv = ["surrealdb/kv-surrealkv"]
 
 [[bin]]
 name = "env_resolution_probe"
