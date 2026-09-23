@@ -6,8 +6,6 @@ use crate::server::SurrealMindServer;
 // corrections tool handler is in scope via SurrealMindServer impl; no direct import needed
 use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde_json::json;
-use surrealdb::types::RecordId;
-use surrealdb::{Connection, Surreal};
 use std::fs;
 use std::io::{self, Read};
 use std::os::fd::AsRawFd;
@@ -20,6 +18,8 @@ use std::sync::{
 };
 use std::thread;
 use std::time::{Duration, Instant};
+use surrealdb::types::RecordId;
+use surrealdb::{Connection, Surreal};
 
 const DEFAULT_MAINTENANCE_TIMEOUT_MS: u64 = 1_800_000;
 const MIN_MAINTENANCE_TIMEOUT_MS: u64 = 100;
@@ -1831,11 +1831,11 @@ mod tests {
         run_maintenance_command_blocking, typed_thought_ids,
     };
     use crate::{ReembedKgStats, ReembedStats};
-    use surrealdb::types::{RecordId, RecordIdKey};
     use std::os::unix::fs::PermissionsExt;
     use std::process::Command;
     use std::sync::{Arc, atomic::AtomicU8};
     use std::time::{Duration, Instant};
+    use surrealdb::types::{RecordId, RecordIdKey};
 
     fn write_executable(path: &std::path::Path, body: &str) {
         std::fs::write(path, body).unwrap();
