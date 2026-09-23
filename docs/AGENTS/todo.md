@@ -1,3 +1,3 @@
 # TODO / Known Gaps
 
-- scripts/validate_contacts.py: finish family email / family grouping checks once belongs_to queries are wired.
+- No known kernel-scope gaps tracked here currently. Open work is tracked in clu (federation-work).

@@ -898,3 +898,163 @@ async fn test_notification_protocol_bridge() {
     })
     .await;
 }
+
+// fed-4d3d9d: schema/handler truthfulness for maintain's export `format`.
+// schemas.rs advertised `["json", "parquet"]` while maintenance.rs's
+// export_removals handler only ever implemented JSON, explicitly rejecting
+// anything else at maintenance.rs:722-725. The advertisement was corrected
+// to `["json"]`; these tests are the observed evidence for both halves of
+// that contract on the SERVED schema (tools/list), not just the source
+// constant, plus the handler's actual accept/reject behavior end-to-end.
+#[tokio::test]
+async fn test_maintain_tool_schema_advertises_json_only_export_format() {
+    if std::env::var("RUN_DB_TESTS").is_err() {
+        eprintln!("Skipping protocol test - set RUN_DB_TESTS=1 to run");
+        return;
+    }
+
+    let config = Config::load().expect("Failed to load config");
+    let server = SurrealMindServer::new(&config)
+        .await
+        .expect("Failed to create server");
+
+    with_direct_service(server, |client_tx, mut client_rx| async move {
+        let request = make_list_tools_request();
+        let request_msg = build_jsonrpc_request(request, "test-maintain-schema");
+        client_tx.send(request_msg).await.unwrap();
+
+        match client_rx.recv().await {
+            Some(TxJsonRpcMessage::<RoleServer>::Response(json_response)) => {
+                let result_json = serde_json::to_value(&json_response.result)
+                    .expect("tools/list result must serialize");
+                let tools = result_json
+                    .get("tools")
+                    .and_then(|t| t.as_array())
+                    .expect("tools/list response must carry a tools array");
+                let maintain = tools
+                    .iter()
+                    .find(|t| t.get("name").and_then(|n| n.as_str()) == Some("maintain"))
+                    .expect("maintain tool must be present in the served schema");
+                let format_enum = maintain
+                    .get("inputSchema")
+                    .and_then(|s| s.get("properties"))
+                    .and_then(|p| p.get("format"))
+                    .and_then(|f| f.get("enum"))
+                    .and_then(|e| e.as_array())
+                    .expect("maintain.format must declare an enum in the served schema");
+                assert_eq!(
+                    format_enum,
+                    &vec![serde_json::json!("json")],
+                    "the SERVED maintain schema must advertise only 'json' for export \
+                     format -- it must not advertise 'parquet', which the handler \
+                     (maintenance.rs export_removals) does not implement"
+                );
+            }
+            other => panic!("Expected tools/list Response, got {:?}", other),
+        }
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn test_maintain_export_removals_rejects_parquet_explicitly() {
+    if std::env::var("RUN_DB_TESTS").is_err() {
+        eprintln!("Skipping protocol test - set RUN_DB_TESTS=1 to run");
+        return;
+    }
+
+    let config = Config::load().expect("Failed to load config");
+    let server = SurrealMindServer::new(&config)
+        .await
+        .expect("Failed to create server");
+
+    with_direct_service(server, |client_tx, mut client_rx| async move {
+        let args = json!({
+            "subcommand": "export_removals",
+            "format": "parquet",
+            "dry_run": true,
+            "limit": 1
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        let request = make_call_tool_request("maintain", args);
+        let request_msg = build_jsonrpc_request(request, "test-maintain-parquet-reject");
+        client_tx.send(request_msg).await.unwrap();
+
+        match client_rx.recv().await {
+            Some(TxJsonRpcMessage::<RoleServer>::Error(json_error)) => {
+                assert_eq!(
+                    json_error.error.code,
+                    ErrorCode(-32602),
+                    "an unsupported export format must be rejected as INVALID_PARAMS, \
+                     not silently substituted with JSON"
+                );
+                assert!(
+                    json_error.error.message.contains("Unsupported format")
+                        && json_error.error.message.contains("parquet"),
+                    "rejection message must name the unsupported format, got: {}",
+                    json_error.error.message
+                );
+            }
+            other => panic!(
+                "expected an explicit Error rejecting the parquet request, got {:?} \
+                 (silently returning JSON instead of rejecting would land here as a \
+                 success Response and must fail this test)",
+                other
+            ),
+        }
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn test_maintain_export_removals_json_succeeds() {
+    if std::env::var("RUN_DB_TESTS").is_err() {
+        eprintln!("Skipping protocol test - set RUN_DB_TESTS=1 to run");
+        return;
+    }
+
+    let config = Config::load().expect("Failed to load config");
+    let server = SurrealMindServer::new(&config)
+        .await
+        .expect("Failed to create server");
+
+    let tmp_dir = tempfile::tempdir().expect("failed to create disposable output dir");
+    let output_dir = tmp_dir.path().to_string_lossy().to_string();
+
+    with_direct_service(server, |client_tx, mut client_rx| async move {
+        let args = json!({
+            "subcommand": "export_removals",
+            "format": "json",
+            "dry_run": true,
+            "limit": 1,
+            "output_dir": output_dir
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        let request = make_call_tool_request("maintain", args);
+        let request_msg = build_jsonrpc_request(request, "test-maintain-json-ok");
+        client_tx.send(request_msg).await.unwrap();
+
+        match client_rx.recv().await {
+            Some(TxJsonRpcMessage::<RoleServer>::Response(json_response)) => {
+                let result_json = serde_json::to_value(&json_response.result)
+                    .expect("call_tool result must serialize");
+                assert_ne!(
+                    result_json.get("isError"),
+                    Some(&serde_json::Value::Bool(true)),
+                    "a JSON-format export_removals call must succeed, got: {:?}",
+                    result_json
+                );
+            }
+            other => panic!(
+                "expected a successful Response for a JSON-format export, got {:?}",
+                other
+            ),
+        }
+    })
+    .await;
+    drop(tmp_dir);
+}
