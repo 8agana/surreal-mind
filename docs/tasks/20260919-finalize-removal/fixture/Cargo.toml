@@ -1,0 +1,10 @@
+[package]
+name = "fed-ee4538-delete-repro"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+surrealdb = { version = "=3.1.2", features = ["protocol-ws", "kv-surrealkv"] }
+tokio = { version = "1.0", features = ["full"] }
+serde_json = "1"
+tempfile = "3.10"

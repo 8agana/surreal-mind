@@ -1,0 +1,6 @@
+BEFORE=[{"id":42,"status":"removal"},{"id":"eligible","status":"removal"},{"id":"keep","status":"active"}]
+CANDIDATE_COUNT=2
+DELETED_ROWS=[{"created_at":"2026-08-20T05:11:31.010037Z","id":"thoughts:42","status":"removal"},{"created_at":"2026-08-20T05:11:31.007692Z","id":"thoughts:eligible","status":"removal"}]
+DELETED_COUNT=2
+AFTER=[{"id":"keep","status":"active"}]
+EXIT_CODE=0

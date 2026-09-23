@@ -6,6 +6,8 @@ use crate::server::SurrealMindServer;
 // corrections tool handler is in scope via SurrealMindServer impl; no direct import needed
 use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde_json::json;
+use surrealdb::types::RecordId;
+use surrealdb::{Connection, Surreal};
 use std::fs;
 use std::io::{self, Read};
 use std::os::fd::AsRawFd;
@@ -681,6 +683,111 @@ async fn run_maintenance_command(cmd: Command, timeout: Duration) -> io::Result<
     .map_err(|error| io::Error::other(format!("maintenance supervisor failed: {}", error)))?;
     cancel_on_drop.disarm();
     result
+}
+
+fn typed_thought_ids(candidates: &[RecordId]) -> Vec<RecordId> {
+    candidates.to_vec()
+}
+
+fn finalize_removal_summary(
+    candidate_count: usize,
+    deleted_count: usize,
+    dry_run: bool,
+    retention_days: i64,
+) -> serde_json::Value {
+    json!({
+        "deleted_count": deleted_count,
+        "candidate_count": candidate_count,
+        "dry_run": dry_run,
+        "retention_days": retention_days
+    })
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct RemovalDeleteResult {
+    candidate_count: usize,
+    deleted_count: usize,
+}
+
+async fn select_removal_candidates<C: Connection>(
+    db: &Surreal<C>,
+    limit: usize,
+    retention_days: i64,
+) -> Result<Vec<RecordId>> {
+    let query = format!(
+        "SELECT id FROM thoughts WHERE status = 'removal' AND created_at < time::now() - {}d LIMIT {}",
+        retention_days, limit
+    );
+    Ok(db.query(&query).await?.take(0)?)
+}
+
+async fn delete_removal_candidates_with_query<C: Connection>(
+    db: &Surreal<C>,
+    typed_ids: Vec<RecordId>,
+    dry_run: bool,
+    delete_query: &str,
+) -> Result<RemovalDeleteResult> {
+    let candidate_count = typed_ids.len();
+    if dry_run || typed_ids.is_empty() {
+        return Ok(RemovalDeleteResult {
+            candidate_count,
+            deleted_count: 0,
+        });
+    }
+    let mut response = db.query(delete_query).bind(("ids", typed_ids)).await?;
+    let statement_errors = response.take_errors();
+    if let Some((statement, error)) = statement_errors.into_iter().next() {
+        return Err(SurrealMindError::Database {
+            message: format!(
+                "finalize_removal DELETE statement {} failed: {}",
+                statement, error
+            ),
+        });
+    }
+    let deleted: Vec<serde_json::Value> = response.take(0)?;
+    Ok(RemovalDeleteResult {
+        candidate_count,
+        deleted_count: deleted.len(),
+    })
+}
+
+async fn delete_removal_candidates<C: Connection>(
+    db: &Surreal<C>,
+    typed_ids: Vec<RecordId>,
+    dry_run: bool,
+    retention_days: i64,
+) -> Result<RemovalDeleteResult> {
+    let delete_query = format!(
+        "DELETE FROM thoughts WHERE id IN $ids AND status = 'removal' AND created_at < time::now() - {}d RETURN BEFORE",
+        retention_days
+    );
+    delete_removal_candidates_with_query(db, typed_ids, dry_run, &delete_query).await
+}
+
+async fn finalize_removal_on_db<C: Connection>(
+    db: &Surreal<C>,
+    limit: usize,
+    dry_run: bool,
+    retention_days: i64,
+) -> Result<serde_json::Value> {
+    let typed_ids = select_removal_candidates(db, limit, retention_days).await?;
+    let typed_ids = typed_thought_ids(&typed_ids);
+    if typed_ids.is_empty() {
+        return Ok(json!({
+            "deleted_count": 0,
+            "candidate_count": 0,
+            "dry_run": dry_run,
+            "retention_days": retention_days,
+            "message": "No thoughts to delete"
+        }));
+    }
+    let result = delete_removal_candidates(db, typed_ids, dry_run, retention_days).await?;
+    Ok(finalize_removal_summary(
+        result.candidate_count,
+        result.deleted_count,
+        dry_run,
+        retention_days,
+    ))
 }
 
 /// True only when `embedding`'s length exactly matches the configured embedding
@@ -1502,39 +1609,7 @@ impl SurrealMindServer {
             .and_then(|s| s.parse::<i64>().ok())
             .unwrap_or(30);
 
-        let query = format!(
-            "SELECT meta::id(id) as id FROM thoughts WHERE status = 'removal' AND created_at < time::now() - {}d LIMIT {}",
-            retention_days, limit
-        );
-
-        let candidates: Vec<serde_json::Value> = self.db.query(&query).await?.take(0)?;
-
-        if candidates.is_empty() {
-            let summary = json!({
-                "deleted_count": 0,
-                "dry_run": dry_run,
-                "message": "No thoughts to delete"
-            });
-            return Ok(CallToolResult::structured(summary));
-        }
-
-        let ids: Vec<String> = candidates
-            .into_iter()
-            .filter_map(|c| c.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()))
-            .collect();
-
-        let deleted_count = ids.len();
-
-        if !dry_run {
-            let delete_query = "DELETE FROM thoughts WHERE id IN $ids";
-            self.db.query(delete_query).bind(("ids", ids)).await?;
-        }
-
-        let summary = json!({
-            "deleted_count": deleted_count,
-            "dry_run": dry_run,
-            "retention_days": retention_days
-        });
+        let summary = finalize_removal_on_db(&self.db, limit, dry_run, retention_days).await?;
 
         Ok(CallToolResult::structured(summary))
     }
@@ -1751,11 +1826,12 @@ impl SurrealMindServer {
 mod tests {
     use super::{
         CANCELLED, CapturedOutput, MAINTENANCE_OUTPUT_LIMIT, SurrealMindServer,
-        maintenance_timeout, normalize_thought_record_key, reembed_kg_stats_json,
-        reembed_stats_json, render_output, run_maintenance_command,
-        run_maintenance_command_blocking,
+        finalize_removal_summary, maintenance_timeout, normalize_thought_record_key,
+        reembed_kg_stats_json, reembed_stats_json, render_output, run_maintenance_command,
+        run_maintenance_command_blocking, typed_thought_ids,
     };
     use crate::{ReembedKgStats, ReembedStats};
+    use surrealdb::types::{RecordId, RecordIdKey};
     use std::os::unix::fs::PermissionsExt;
     use std::process::Command;
     use std::sync::{Arc, atomic::AtomicU8};
@@ -1813,6 +1889,32 @@ mod tests {
             normalize_thought_record_key("thoughts:`0f7ce74b`"),
             "0f7ce74b"
         );
+    }
+
+    #[test]
+    fn finalize_removal_uses_typed_candidate_ids_and_truthful_counts() {
+        let candidates = vec![
+            RecordId::new("thoughts", "eligible"),
+            RecordId::new("thoughts", 42_i64),
+        ];
+        let typed_ids = typed_thought_ids(&candidates);
+        assert_eq!(typed_ids.len(), 2);
+        assert!(typed_ids.iter().all(|id| id.table.as_str() == "thoughts"));
+        assert!(matches!(typed_ids[1].key, RecordIdKey::Number(42)));
+
+        let dry_run = finalize_removal_summary(2, 0, true, 30);
+        assert_eq!(dry_run["candidate_count"], 2);
+        assert_eq!(dry_run["deleted_count"], 0);
+        assert_eq!(dry_run["dry_run"], true);
+
+        let stale = finalize_removal_summary(2, 0, false, 30);
+        assert_eq!(stale["candidate_count"], 2);
+        assert_eq!(stale["deleted_count"], 0);
+        assert_eq!(stale["dry_run"], false);
+
+        let partial = finalize_removal_summary(2, 1, false, 30);
+        assert_eq!(partial["candidate_count"], 2);
+        assert_eq!(partial["deleted_count"], 1);
     }
 
     #[test]
@@ -2300,5 +2402,158 @@ mod ddl_classification_tests {
     #[test]
     fn classify_ddl_response_is_directly_reachable() {
         let _ = classify_ddl_response;
+    }
+}
+
+#[cfg(all(test, feature = "test-disposable-kv"))]
+mod finalize_removal_db_tests {
+    use super::{
+        delete_removal_candidates, delete_removal_candidates_with_query, finalize_removal_on_db,
+        select_removal_candidates,
+    };
+    use serde_json::Value;
+    use surrealdb::Surreal;
+    use surrealdb::engine::local::{Db, SurrealKv};
+    use surrealdb::types::RecordId;
+    use tempfile::TempDir;
+
+    async fn disposable_db() -> Result<(Surreal<Db>, TempDir), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
+        let db = Surreal::new::<SurrealKv>(dir.path().to_str().unwrap()).await?;
+        db.use_ns("fed_ee4538").use_db("finalize_removal").await?;
+        db.query("DEFINE TABLE thoughts SCHEMAFULL; DEFINE FIELD status ON thoughts TYPE string; DEFINE FIELD created_at ON thoughts TYPE datetime;")
+            .await?;
+        Ok((db, dir))
+    }
+
+    async fn seed(
+        db: &Surreal<Db>,
+        include_candidates: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if include_candidates {
+            db.query("CREATE thoughts:eligible SET status = 'removal', created_at = time::now() - 31d; CREATE thoughts:42 SET status = 'removal', created_at = time::now() - 31d;")
+                .await?;
+        }
+        db.query("CREATE thoughts:keep SET status = 'active', created_at = time::now() - 31d;")
+            .await?;
+        Ok(())
+    }
+
+    async fn manifest(db: &Surreal<Db>) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
+        let mut response = db
+            .query("SELECT id, status FROM thoughts ORDER BY id")
+            .await?;
+        Ok(response.take(0)?)
+    }
+
+    #[tokio::test]
+    async fn finalize_removal_matrix_uses_shared_selection_and_delete_seams()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let (db, _dir) = disposable_db().await?;
+        let empty = finalize_removal_on_db(&db, 10, false, 30).await?;
+        assert_eq!(empty["candidate_count"], 0);
+        assert_eq!(empty["deleted_count"], 0);
+
+        seed(&db, true).await?;
+        let before = manifest(&db).await?;
+        let positive = finalize_removal_on_db(&db, 10, false, 30).await?;
+        let after = manifest(&db).await?;
+        assert_eq!(positive["candidate_count"], 2);
+        assert_eq!(positive["deleted_count"], 2);
+        assert_eq!(after.len(), 1);
+        assert_eq!(after[0]["status"], "active");
+        assert_eq!(before.len(), 3);
+
+        let (db, _dir) = disposable_db().await?;
+        seed(&db, true).await?;
+        let selected = select_removal_candidates(&db, 10, 30).await?;
+        db.query("DELETE FROM thoughts:eligible").await?;
+        let before = manifest(&db).await?;
+        let stale = delete_removal_candidates(&db, selected, false, 30).await?;
+        let after = manifest(&db).await?;
+        assert_eq!(stale.candidate_count, 2);
+        assert_eq!(stale.deleted_count, 1);
+        assert_eq!(before.len(), 2);
+        assert_eq!(after.len(), 1);
+        assert_eq!(after[0]["status"], "active");
+
+        let (db, _dir) = disposable_db().await?;
+        seed(&db, true).await?;
+        let selected = select_removal_candidates(&db, 10, 30).await?;
+        db.query("DELETE FROM thoughts:eligible; DELETE FROM thoughts:42")
+            .await?;
+        let before = manifest(&db).await?;
+        let all_missing = delete_removal_candidates(&db, selected, false, 30).await?;
+        let after = manifest(&db).await?;
+        assert_eq!(all_missing.candidate_count, 2);
+        assert_eq!(all_missing.deleted_count, 0);
+        assert_eq!(before, after);
+        assert_eq!(after.len(), 1);
+        assert!(after[0]["id"] == "keep" || after[0]["id"] == "thoughts:keep");
+
+        let (db, _dir) = disposable_db().await?;
+        seed(&db, true).await?;
+        let selected = select_removal_candidates(&db, 10, 30).await?;
+        let before = manifest(&db).await?;
+        let dry = delete_removal_candidates(&db, selected, true, 30).await?;
+        let after = manifest(&db).await?;
+        assert_eq!(dry.candidate_count, 2);
+        assert_eq!(dry.deleted_count, 0);
+        assert_eq!(before, after);
+
+        let (db, _dir) = disposable_db().await?;
+        seed(&db, true).await?;
+        let selected = select_removal_candidates(&db, 10, 30).await?;
+        db.query("UPDATE thoughts:eligible SET status = 'active'")
+            .await?;
+        let status_flip = delete_removal_candidates(&db, selected, false, 30).await?;
+        let after = manifest(&db).await?;
+        assert_eq!(status_flip.candidate_count, 2);
+        assert_eq!(status_flip.deleted_count, 1);
+        assert!(
+            after
+                .iter()
+                .any(|row| { row["id"] == "eligible" || row["id"] == "thoughts:eligible" })
+        );
+        assert!(
+            after
+                .iter()
+                .any(|row| row["id"] == "keep" || row["id"] == "thoughts:keep")
+        );
+
+        let (db, _dir) = disposable_db().await?;
+        seed(&db, true).await?;
+        db.query("DEFINE EVENT fail_delete ON TABLE thoughts WHEN $event = 'DELETE' THEN (THROW 'forced delete error');")
+            .await?;
+        let selected = select_removal_candidates(&db, 10, 30).await?;
+        let before = manifest(&db).await?;
+        let mut raw_statement = db
+            .query("DELETE FROM thoughts WHERE id IN $ids RETURN BEFORE")
+            .bind(("ids", selected.clone()))
+            .await?;
+        assert!(!raw_statement.take_errors().is_empty());
+        let statement_error = delete_removal_candidates_with_query(
+            &db,
+            selected,
+            false,
+            "DELETE FROM thoughts WHERE id IN $ids RETURN BEFORE",
+        )
+        .await;
+        let after = manifest(&db).await?;
+        assert!(statement_error.is_err());
+        assert_eq!(before, after);
+        Ok(())
+    }
+
+    #[test]
+    fn typed_record_control_supports_numeric_and_string_keys() {
+        let ids = [
+            RecordId::new("thoughts", "eligible"),
+            RecordId::new("thoughts", 42_i64),
+        ];
+        assert!(matches!(
+            ids[1].key,
+            surrealdb::types::RecordIdKey::Number(42)
+        ));
     }
 }
