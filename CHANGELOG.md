@@ -714,3 +714,12 @@ Emergency migration after `brew upgrade` installed SurrealDB 3.0.1, which could 
   truncation/timeout diagnostics. Inner provider timeout policy and health/report
   task paths remain unchanged. Added disposable subprocess controls for pipe
   overflow, descendant cleanup, normal success, and nonzero exit behavior.
+
+## [Unreleased] - fed-70cb9c kg_populate response validation
+
+- `kg_populate` now validates the complete extraction response before any KG
+  write or thought retirement. Missing, empty, malformed, partial, duplicate,
+  or unknown results leave the whole fetched batch retryable; explicit
+  no-entity results remain valid and complete normally. Response validation is
+  batch-atomic, while persistence after validation remains per-thought rather
+  than one database transaction.
