@@ -42,10 +42,8 @@ jobs:
           cargo install cargo-audit --force
 
       - name: Security audit (cargo-audit)
-        # The deployed lockfile already carries a separately tracked advisory
-        # backlog. Keep every branch scan visible without making that baseline
-        # debt masquerade as an rmcp/CI regression.
-        continue-on-error: true
+        # The combined lockfile passes with the scoped advisories in
+        # .cargo/audit.toml; non-allowlisted vulnerabilities fail CI.
         run: cargo audit
 
   db-protocol:

@@ -1,3 +1,14 @@
+## [Unreleased] - fed-20f101 ordered integration
+
+- Integrated the nine accepted federation branches in the agreed order while
+  retaining the existing REMini supervisor and CI repair on `master`.
+  Reconciled the SurrealKv test dependency with the audit updates and kept
+  both maintenance subprocess supervision and truthful DDL/finalize-removal
+  result handling and tests.
+- Made the CI security audit blocking after the combined lockfile passed with
+  four scoped advisory ignores; an older vulnerable lockfile still fails the
+  same audit policy.
+
 ## [Unreleased] - fed-acca0a dotenv/environment policy
 
 - Documented the actual environment trust boundary: inherited variables and
