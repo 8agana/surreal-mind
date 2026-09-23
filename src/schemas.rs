@@ -77,7 +77,8 @@ pub fn maintain_schema() -> Arc<Map<String, Value>> {
             "output_dir": {"type": "string", "default": "./archive", "description": "Directory for export files"},
             "tasks": {"type": "string", "description": "Comma-separated tasks for subcommand 'tasks'"},
             "target_id": {"type": "string", "description": "Optional target filter (corrections subcommand)"},
-            "rethink_types": {"type": "string", "description": "Comma-separated mark types (rethink subcommand)"}
+            "rethink_types": {"type": "string", "description": "Comma-separated mark types (rethink subcommand)"},
+            "timeout_ms": {"type": "integer", "minimum": 100, "maximum": 3600000, "default": 1800000, "description": "Subprocess timeout in milliseconds for binary/script maintenance tasks"}
         },
         "required": ["subcommand"]
     });

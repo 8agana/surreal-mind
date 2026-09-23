@@ -219,7 +219,8 @@ pub fn tool_help(tool: &str) -> Result<Value> {
                 "output_dir": "string (default: './archive') — export directory",
                 "tasks": "string — comma separated list for subcommand 'tasks' (default populate,embed,rethink,consolidate,wander,health,report,corrections)",
                 "target_id": "string — optional filter for 'corrections' subcommand",
-                "rethink_types": "string — comma-separated mark types for 'rethink' subcommand (e.g., correction,research)"
+                "rethink_types": "string — comma-separated mark types for 'rethink' subcommand (e.g., correction,research)",
+                "timeout_ms": "integer — optional subprocess timeout in milliseconds for binary/script tasks (default 1800000; allowed 100..3600000)"
             },
             "returns": {
                 "health_check_embeddings": "object — detailed breakdown per table (total, ok, missing, mismatched) with sample IDs",

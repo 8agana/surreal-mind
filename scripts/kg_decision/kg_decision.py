@@ -124,6 +124,19 @@ def classify_child_failure(err):
     return "child_exit"
 
 
+def reap_provider(child, terminate):
+    if terminate and child.poll() is None:
+        child.kill()
+    try:
+        child.wait(timeout=1)
+    except subprocess.TimeoutExpired:
+        child.kill()
+        try:
+            child.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            pass
+
+
 def run(prompt, agy, timeout, model=None, supervised=False):
     model = normalize_model(model)
     binary = shutil.which(agy)
@@ -170,7 +183,12 @@ def run(prompt, agy, timeout, model=None, supervised=False):
                         os.killpg(child.pid, signal.SIGKILL)
                     except ProcessLookupError:
                         pass
-                child.wait()
+                    child.wait()
+                else:
+                    # In supervised mode the outer Rust process group is shared
+                    # with the adapter, so terminate/reap only this direct
+                    # provider before returning to Rust. Never signal the group.
+                    reap_provider(child, child.poll() is None)
 
 
 def main():
