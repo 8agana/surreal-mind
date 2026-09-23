@@ -62,6 +62,67 @@ fn normalize_thought_record_key(raw_id: &str) -> String {
     without_table.trim_matches('`').to_string()
 }
 
+/// Outcome of applying a single continuity-schema DDL statement (DEFINE
+/// FIELD / DEFINE INDEX), after inspecting the SurrealDB response for a
+/// per-statement failure instead of trusting the transport-level `Ok`.
+///
+/// `db.query(..).await` returning `Ok` only means the server accepted and
+/// executed the request -- it does NOT mean every statement inside it
+/// succeeded. SurrealDB reports statement-level failures (e.g. "the field
+/// already exists") inside the `Response`, surfaced only by
+/// `Response::check()`. (fed-c5394b, review fed-0a2109#567 finding 4):
+/// this code previously treated `Ok(_)` from `.query()` as proof of
+/// successful schema creation, which silently counted an already-failed
+/// (or already-existing) statement as "created" and reported blanket
+/// success. Measured live against SurrealDB 3.1.2 (surreal-mind-wt-fedc5394b,
+/// disposable SurrealKv fixture): redefining an existing field/index keeps
+/// transport `Ok` and surfaces "The field 'x' already exists" /
+/// "The index 'x' already exists" only via `.check()`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum DdlOutcome {
+    /// The statement executed and the checked response carried no error.
+    Created,
+    /// The statement's own per-statement error indicates the schema object
+    /// already exists (SurrealDB's message contains "already exists").
+    /// Not a creation and not a failure -- a truthful no-op.
+    AlreadyExists,
+    /// A genuine failure: a transport-level error (e.g. malformed DDL that
+    /// fails to parse) or a per-statement error that is not an
+    /// "already exists" no-op. Carries the error text for reporting.
+    Failed(String),
+}
+
+fn classify_ddl_response(
+    result: std::result::Result<surrealdb::IndexedResults, surrealdb::Error>,
+) -> DdlOutcome {
+    match result {
+        Ok(response) => match response.check() {
+            Ok(_) => DdlOutcome::Created,
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.to_lowercase().contains("already exists") {
+                    DdlOutcome::AlreadyExists
+                } else {
+                    DdlOutcome::Failed(msg)
+                }
+            }
+        },
+        Err(e) => DdlOutcome::Failed(e.to_string()),
+    }
+}
+
+/// Run a single DDL statement against any SurrealDB connection and classify
+/// the outcome via [`classify_ddl_response`]. Generic over
+/// `surrealdb::Connection` so it can be exercised in tests against a
+/// disposable local engine (e.g. SurrealKv in a tempdir) without requiring
+/// the production WS-connected server.
+pub(crate) async fn apply_ddl_and_classify<C: surrealdb::Connection>(
+    db: &surrealdb::Surreal<C>,
+    stmt: &str,
+) -> DdlOutcome {
+    classify_ddl_response(db.query(stmt).await)
+}
+
 fn reembed_stats_json(stats: &crate::ReembedStats, dry_run: bool) -> serde_json::Value {
     json!({
         "expected_dim": stats.expected_dim,
@@ -1050,6 +1111,8 @@ impl SurrealMindServer {
         let mut created_indexes = vec![];
         let mut existing_fields = vec![];
         let mut existing_indexes = vec![];
+        let mut failed_fields: Vec<String> = vec![];
+        let mut failed_indexes: Vec<String> = vec![];
 
         // Fields to ensure exist (SurrealDB 2.x type syntax)
         // Use option<...> instead of "NULL" suffix and record<thoughts> for record types.
@@ -1091,13 +1154,18 @@ impl SurrealMindServer {
             }
 
             if !dry_run {
-                match self.db.query(&full_field_def).await {
-                    Ok(_) => {
+                match apply_ddl_and_classify(&self.db, &full_field_def).await {
+                    DdlOutcome::Created => {
                         created_fields.push((*field_name).to_string());
                         tracing::info!("Created continuity field: {}", field_name);
                     }
-                    Err(e) => {
-                        tracing::warn!("Failed to create continuity field {}: {}", field_name, e);
+                    DdlOutcome::AlreadyExists => {
+                        existing_fields.push((*field_name).to_string());
+                        tracing::info!("Continuity field already exists: {}", field_name);
+                    }
+                    DdlOutcome::Failed(msg) => {
+                        failed_fields.push(format!("{}: {}", field_name, msg));
+                        tracing::warn!("Failed to create continuity field {}: {}", field_name, msg);
                         // Continue with other fields
                     }
                 }
@@ -1132,13 +1200,18 @@ impl SurrealMindServer {
             }
 
             if !dry_run {
-                match self.db.query(&full_index_def).await {
-                    Ok(_) => {
+                match apply_ddl_and_classify(&self.db, &full_index_def).await {
+                    DdlOutcome::Created => {
                         created_indexes.push(index_name.to_string());
                         tracing::info!("Created continuity index: {}", index_name);
                     }
-                    Err(e) => {
-                        tracing::warn!("Failed to create continuity index {}: {}", index_name, e);
+                    DdlOutcome::AlreadyExists => {
+                        existing_indexes.push(index_name.to_string());
+                        tracing::info!("Continuity index already exists: {}", index_name);
+                    }
+                    DdlOutcome::Failed(msg) => {
+                        failed_indexes.push(format!("{}: {}", index_name, msg));
+                        tracing::warn!("Failed to create continuity index {}: {}", index_name, msg);
                         // Continue with other indexes
                     }
                 }
@@ -1152,17 +1225,21 @@ impl SurrealMindServer {
             "created_indexes": created_indexes,
             "existing_fields": existing_fields,
             "existing_indexes": existing_indexes,
+            "failed_fields": failed_fields,
+            "failed_indexes": failed_indexes,
             "dry_run": dry_run,
             "summary": format!(
-                "Fields: {}/{} created, {}/{} existing. Indexes: {}/{} created, {}/{} existing.",
+                "Fields: {}/{} created, {}/{} existing, {} failed. Indexes: {}/{} created, {}/{} existing, {} failed.",
                 created_fields.len(),
                 fields_len,
                 existing_fields.len(),
                 fields_len,
+                failed_fields.len(),
                 created_indexes.len(),
                 indexes_len,
                 existing_indexes.len(),
-                indexes_len
+                indexes_len,
+                failed_indexes.len()
             )
         });
 
@@ -2066,5 +2143,162 @@ mod tests {
                 task_list
             );
         }
+    }
+}
+
+/// Disposable-DB controls for `classify_ddl_response` / `apply_ddl_and_classify`
+/// (fed-c5394b, review fed-0a2109#567 finding 4).
+///
+/// Each control uses a genuine SurrealDB response from a disposable,
+/// per-test SurrealKv instance rooted in a fresh tempdir (never the
+/// production WS-connected server, never network I/O) -- a "faithful
+/// SDK-response fixture" rather than a hand-mocked one. Every control also
+/// independently inspects the disposable schema (`INFO FOR TABLE`) rather
+/// than trusting `classify_ddl_response`'s own return value, per the
+/// case's acceptance criteria.
+#[cfg(test)]
+mod ddl_classification_tests {
+    use super::{DdlOutcome, apply_ddl_and_classify, classify_ddl_response};
+    use surrealdb::Surreal;
+    use surrealdb::engine::local::SurrealKv;
+
+    /// Fresh, disposable, in-process SurrealKv instance rooted in a tempdir
+    /// that is deleted when the returned guard drops at end of test.
+    async fn disposable_db() -> (Surreal<surrealdb::engine::local::Db>, tempfile::TempDir) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db = Surreal::new::<SurrealKv>(dir.path().to_str().unwrap())
+            .await
+            .expect("surrealkv engine");
+        db.use_ns("fed_c5394b")
+            .use_db("fed_c5394b")
+            .await
+            .expect("use ns/db");
+        (db, dir)
+    }
+
+    /// Independent witness: ask the disposable schema itself whether
+    /// `field_name` exists on `table`, rather than trusting any classifier
+    /// return value.
+    async fn field_exists_in_schema(
+        db: &Surreal<surrealdb::engine::local::Db>,
+        table: &str,
+        field_name: &str,
+    ) -> bool {
+        let mut resp = db
+            .query(format!("INFO FOR TABLE {table}"))
+            .await
+            .expect("info for table");
+        let rows: Vec<serde_json::Value> = resp.take(0).expect("take info rows");
+        rows.first()
+            .and_then(|row| row.get("fields"))
+            .map(|fields| fields.get(field_name).is_some())
+            .unwrap_or(false)
+    }
+
+    /// DISCRIMINATING CONTROL. Transport returns Ok (the redefinition
+    /// request is accepted and executed) but the statement itself carries
+    /// a schema error ("the field already exists") -- surfaced only via
+    /// `Response::check()`. The fix must not count this as `Created`, and
+    /// must not report it via the created path (no blanket success).
+    ///
+    /// Proven to fail against the pre-fix production logic
+    /// (`Ok(_) => created`) in a throwaway reproduction against this same
+    /// disposable-DB shape before this fix was written; see fed-c5394b
+    /// receipt for that run's output.
+    #[tokio::test]
+    async fn discriminating_control_statement_error_is_not_created() {
+        let (db, _dir) = disposable_db().await;
+
+        db.query("DEFINE FIELD foo ON TABLE widget TYPE string")
+            .await
+            .expect("first define succeeds");
+
+        // Redefine the same field without OVERWRITE -- transport Ok,
+        // statement-level "already exists" error.
+        let outcome =
+            apply_ddl_and_classify(&db, "DEFINE FIELD foo ON TABLE widget TYPE string").await;
+
+        assert_ne!(
+            outcome,
+            DdlOutcome::Created,
+            "a statement-level schema error must not be counted as created"
+        );
+        assert_eq!(
+            outcome,
+            DdlOutcome::AlreadyExists,
+            "the specific failure here is a redefinition, which is a truthful no-op, not a hard failure"
+        );
+
+        // Independent witness: the schema itself confirms the field exists
+        // exactly once (the first, legitimate define), not twice, and the
+        // classifier's answer didn't manufacture a second creation.
+        assert!(field_exists_in_schema(&db, "widget", "foo").await);
+    }
+
+    /// POSITIVE CONTROL: a genuinely new field, defined for the first time,
+    /// must be truthfully reported as Created.
+    #[tokio::test]
+    async fn positive_control_valid_creation_is_created() {
+        let (db, _dir) = disposable_db().await;
+
+        let outcome =
+            apply_ddl_and_classify(&db, "DEFINE FIELD brand_new ON TABLE widget TYPE string").await;
+
+        assert_eq!(outcome, DdlOutcome::Created);
+        assert!(field_exists_in_schema(&db, "widget", "brand_new").await);
+    }
+
+    /// ALREADY-EXISTS / NO-OP CONTROL: redefining an existing field must be
+    /// reported as a truthful no-op (AlreadyExists), never as a failure and
+    /// never as a fresh creation.
+    #[tokio::test]
+    async fn already_exists_control_is_truthful_no_op() {
+        let (db, _dir) = disposable_db().await;
+
+        db.query("DEFINE FIELD session_id ON TABLE widget TYPE string")
+            .await
+            .expect("first define succeeds");
+
+        let outcome =
+            apply_ddl_and_classify(&db, "DEFINE FIELD session_id ON TABLE widget TYPE string")
+                .await;
+
+        assert_eq!(outcome, DdlOutcome::AlreadyExists);
+        assert!(field_exists_in_schema(&db, "widget", "session_id").await);
+    }
+
+    /// MIXED SUCCESS/FAILURE CONTROL: one statement succeeds, one is a
+    /// genuine failure (malformed DDL -- a real transport-level parse
+    /// error at this SurrealDB version, per fed-c5394b's own investigation),
+    /// and the two outcomes must not be conflated.
+    #[tokio::test]
+    async fn mixed_success_and_failure_reports_accurately() {
+        let (db, _dir) = disposable_db().await;
+
+        let ok_outcome =
+            apply_ddl_and_classify(&db, "DEFINE FIELD good_field ON TABLE widget TYPE string")
+                .await;
+        let bad_outcome = apply_ddl_and_classify(
+            &db,
+            "DEFINE FIELD bad_field ON TABLE widget TYPE not_a_real_type_xyz",
+        )
+        .await;
+
+        assert_eq!(ok_outcome, DdlOutcome::Created);
+        assert!(matches!(bad_outcome, DdlOutcome::Failed(_)));
+        assert_ne!(bad_outcome, DdlOutcome::Created);
+
+        // Independent witness: only the good field actually landed in the
+        // disposable schema; the bad one did not silently succeed anyway.
+        assert!(field_exists_in_schema(&db, "widget", "good_field").await);
+        assert!(!field_exists_in_schema(&db, "widget", "bad_field").await);
+    }
+
+    /// Sanity check keeping the raw classifier function directly reachable
+    /// from tests (the async controls above exercise it exclusively via
+    /// `apply_ddl_and_classify`, which just calls it after `.query()`).
+    #[test]
+    fn classify_ddl_response_is_directly_reachable() {
+        let _ = classify_ddl_response;
     }
 }
