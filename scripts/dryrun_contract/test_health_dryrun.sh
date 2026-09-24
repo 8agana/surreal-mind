@@ -20,6 +20,7 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "$REPO_ROOT/scripts/surreal_sql_json.sh"
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/health_contract.XXXXXX")"
 REAL_SURREAL_BIN="${SURREAL_BIN:-surreal}"
 if ! command -v "$REAL_SURREAL_BIN" >/dev/null 2>&1; then
@@ -46,6 +47,37 @@ SQL_INVOKE_LOG="${HEALTH_CONTRACT_SQL_INVOKE_LOG:-}"
 FORCE_LISTENER_MISMATCH="${HEALTH_CONTRACT_FORCE_LISTENER_MISMATCH:-0}"
 pass() { echo "  PASS: $1"; }
 fail() { echo "  FAIL: $1"; FAIL=1; }
+
+echo "-- exact SQL prompt framing controls --"
+SQL_PROMPT="$TEST_NS/$TEST_DB> "
+WRAPPED_SUCCESS="$SQL_PROMPT[null,[]]"$'\n\n'"$SQL_PROMPT"
+if NORMALIZED=$(normalize_surreal_sql_json "$WRAPPED_SUCCESS" "$TEST_NS" "$TEST_DB") && [ "$NORMALIZED" = '[null,[]]' ]; then
+  pass "actual SurrealDB 3.2 prompt envelope unwraps to exact JSON"
+else
+  fail "actual prompt envelope was not normalized"
+fi
+if NORMALIZED=$(normalize_surreal_sql_json '[null,[]]' "$TEST_NS" "$TEST_DB") && [ "$NORMALIZED" = '[null,[]]' ]; then
+  pass "older bare JSON output remains unchanged"
+else
+  fail "bare JSON output was changed"
+fi
+EMBEDDED_PROMPT_JSON="[\"literal ${SQL_PROMPT} inside JSON\"]"
+WRAPPED_EMBEDDED="$SQL_PROMPT$EMBEDDED_PROMPT_JSON"$'\n\n'"$SQL_PROMPT"
+if NORMALIZED=$(normalize_surreal_sql_json "$WRAPPED_EMBEDDED" "$TEST_NS" "$TEST_DB") && [ "$NORMALIZED" = "$EMBEDDED_PROMPT_JSON" ]; then
+  pass "literal prompt text inside JSON remains untouched"
+else
+  fail "literal prompt text inside JSON was altered"
+fi
+if normalize_surreal_sql_json "${WRAPPED_SUCCESS}trailing" "$TEST_NS" "$TEST_DB" >/dev/null; then
+  fail "trailing nonprompt data was accepted"
+else
+  pass "trailing nonprompt data fails closed"
+fi
+if normalize_surreal_sql_json "$SQL_PROMPT[null,[]]" "$TEST_NS" "$TEST_DB" >/dev/null; then
+  fail "missing final prompt was accepted"
+else
+  pass "missing final prompt fails closed"
+fi
 
 port_is_listening() {
   /usr/sbin/lsof -nP -iTCP:"$1" -sTCP:LISTEN 2>/dev/null | grep -q LISTEN
@@ -204,10 +236,17 @@ expect_real_sql() {
     rc=$?
   fi
   output=$(printf '%s' "$output" | tr -d '\r')
-  if [ "$rc" -eq 0 ] && [ ! -s "$WORK_DIR/real_sql.stderr" ] && [ "$output" = "$expected" ]; then
+  local frame_rc normalized
+  if normalized=$(normalize_surreal_sql_json "$output" "$TEST_NS" "$TEST_DB"); then
+    frame_rc=0
+  else
+    frame_rc=1
+    normalized="$output"
+  fi
+  if [ "$rc" -eq 0 ] && [ "$frame_rc" -eq 0 ] && [ ! -s "$WORK_DIR/real_sql.stderr" ] && [ "$normalized" = "$expected" ]; then
     pass "$label"
   else
-    fail "$label (exit=$rc expected=$expected got=$output stderr=$(head -c 512 "$WORK_DIR/real_sql.stderr"))"
+    fail "$label (exit=$rc frame=$frame_rc expected=$expected got=$normalized stderr=$(head -c 512 "$WORK_DIR/real_sql.stderr"))"
   fi
 }
 
@@ -235,8 +274,23 @@ case "${HEALTH_SURREAL_SHIM_MODE:-proxy}" in
     printf 'not-json\n'
     exit 0
     ;;
+  prompted_success)
+    prompt="${SURR_DB_NS:?}/${SURR_DB_DB:?}> "
+    printf '%s%s\n\n%s' "$prompt" '[null,[]]' "$prompt"
+    exit 0
+    ;;
   execution_error)
     printf '%s\n' '["forced execution error",[]]'
+    exit 0
+    ;;
+  execution_error_prompted)
+    prompt="${SURR_DB_NS:?}/${SURR_DB_DB:?}> "
+    printf '%s%s\n\n%s' "$prompt" '["forced execution error",[]]' "$prompt"
+    exit 0
+    ;;
+  trailing_data)
+    prompt="${SURR_DB_NS:?}/${SURR_DB_DB:?}> "
+    printf '%s%s\n\n%sextra' "$prompt" '[null,[]]' "$prompt"
     exit 0
     ;;
   cli_failure)
@@ -313,6 +367,10 @@ expect_real_sql "independent readback confirms no eligible rows" \
 
 echo
 echo "-- failure-shape controls --"
+PROMPTED_RC=$(run_health prompted_success prompted_success 0)
+[ "$PROMPTED_RC" -eq 0 ] && pass "prompt-wrapped exact JSON succeeds" || fail "prompt-wrapped exact JSON exited $PROMPTED_RC"
+[ "$(cat "$WORK_DIR/prompted_success.stdout")" = '[null,[]]' ] && pass "prompt-wrapped success emits bare exact JSON" || fail "prompt-wrapped success output changed"
+
 MALFORMED_RC=$(run_health malformed malformed 0)
 [ "$MALFORMED_RC" -ne 0 ] && pass "malformed stdout is rejected" || fail "malformed stdout was accepted"
 grep -q 'expected=\[null,\[\]\]' "$WORK_DIR/malformed.stderr" && pass "malformed rejection names the exact contract" || fail "malformed diagnostic did not name the contract"
@@ -320,6 +378,14 @@ grep -q 'expected=\[null,\[\]\]' "$WORK_DIR/malformed.stderr" && pass "malformed
 ERROR_RC=$(run_health execution_error execution_error 0)
 [ "$ERROR_RC" -ne 0 ] && pass "query-error JSON with CLI exit 0 is rejected" || fail "query-error JSON was accepted"
 grep -q 'forced execution error' "$WORK_DIR/execution_error.stderr" && pass "query-error diagnostic preserves bounded CLI evidence" || fail "query-error evidence missing"
+
+PROMPTED_ERROR_RC=$(run_health execution_error_prompted execution_error_prompted 0)
+[ "$PROMPTED_ERROR_RC" -ne 0 ] && pass "prompt-wrapped query error with CLI exit 0 is rejected" || fail "prompt-wrapped query error was accepted"
+grep -q 'forced execution error' "$WORK_DIR/execution_error_prompted.stderr" && pass "prompt-wrapped error preserves raw CLI evidence" || fail "prompt-wrapped query-error evidence missing"
+
+TRAILING_RC=$(run_health trailing_data trailing_data 0)
+[ "$TRAILING_RC" -ne 0 ] && pass "trailing nonprompt data is rejected" || fail "trailing nonprompt data was accepted"
+grep -q 'extra' "$WORK_DIR/trailing_data.stderr" && pass "trailing data remains visible in raw diagnostics" || fail "trailing-data evidence missing"
 
 CLI_RC=$(run_health cli_failure cli_failure 0)
 [ "$CLI_RC" -ne 0 ] && pass "nonzero surreal CLI exit is rejected" || fail "nonzero surreal CLI exit was accepted"

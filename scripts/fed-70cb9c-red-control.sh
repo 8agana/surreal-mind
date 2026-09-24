@@ -4,6 +4,8 @@
 # witness: it exits with the blanket-retirement reason instead of passing.
 
 set -uo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/surreal_sql_json.sh"
 
 REPO_ROOT="${REPO_ROOT:-/Users/samuelatagana/Projects/LegacyMind/surreal-mind-wt-fed70cb9c}"
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/fed70cb9c-red.XXXXXX")"
@@ -63,9 +65,15 @@ sql() {
   if [ -n "$SQL_INVOKE_LOG" ]; then
     printf 'sql\n' >>"$SQL_INVOKE_LOG"
   fi
-  printf '%s' "$1" | "$SURREAL_BIN" sql \
+  local output
+  output=$(printf '%s' "$1" | "$SURREAL_BIN" sql \
     --endpoint "http://127.0.0.1:$PORT" --username root --password root \
-    --namespace "$TEST_NS" --database "$TEST_DB" --json --hide-welcome
+    --namespace "$TEST_NS" --database "$TEST_DB" --json --hide-welcome)
+  if ! output=$(normalize_surreal_sql_json "$output" "$TEST_NS" "$TEST_DB"); then
+    echo "malformed surreal sql JSON prompt framing" >&2
+    return 1
+  fi
+  printf '%s\n' "$output"
 }
 
 "$SURREAL_BIN" start memory --bind "127.0.0.1:$PORT" --user root --pass root \

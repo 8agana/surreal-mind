@@ -1,3 +1,12 @@
+## [Unreleased] - fed-20f101 SurrealDB CLI JSON framing compatibility
+
+- Accepted bare JSON and the exact `namespace/database> ` prompt envelope
+  emitted by SurrealDB CLI 3.2 for piped `--json --hide-welcome` output in
+  `sm_health.sh` and the disposable `kg_populate` contract. Unexpected framing,
+  extra output, statement errors, nonzero CLI exits, and stderr still fail.
+  Added fixture controls for literal prompt text inside JSON and malformed
+  prompt/trailing-output cases without changing the expected SQL result.
+
 ## [Unreleased] - fed-20f101 ordered integration
 
 - Integrated the nine accepted federation branches in the agreed order while

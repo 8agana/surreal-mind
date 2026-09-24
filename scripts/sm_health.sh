@@ -3,6 +3,8 @@
 # Marks stale high-volatility entities for research (gemini).
 
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/surreal_sql_json.sh"
 
 # Under DRY_RUN, exit before any SQL is issued. Truthiness matches the
 # convention used across the other maintenance binaries (bool_env in
@@ -64,10 +66,16 @@ else
   SURREAL_RC=$?
 fi
 
-# `surreal sql --json --hide-welcome` emits one JSON value followed by a line
-# terminator. Command substitution strips trailing LF; deleting CR makes CRLF
-# and LF equivalent without accepting any other byte difference.
-NORMALIZED_OUTPUT=$(tr -d '\r' <"$STDOUT_FILE")
+# Keep the raw stdout/stderr files for bounded diagnostics. Command
+# substitution strips the CLI's trailing LF; deleting CR makes CRLF and LF
+# equivalent without changing JSON content.
+RAW_OUTPUT=$(tr -d '\r' <"$STDOUT_FILE")
+if NORMALIZED_OUTPUT=$(normalize_surreal_sql_json "$RAW_OUTPUT" "$NS" "$DB"); then
+  FRAME_RC=0
+else
+  FRAME_RC=1
+  NORMALIZED_OUTPUT="$RAW_OUTPUT"
+fi
 EXPECTED_OUTPUT='[null,[]]'
 
 emit_bounded_file() {
@@ -87,8 +95,8 @@ emit_bounded_file() {
   fi
 }
 
-if [ "$SURREAL_RC" -ne 0 ] || [ "$NORMALIZED_OUTPUT" != "$EXPECTED_OUTPUT" ] || [ -s "$STDERR_FILE" ]; then
-  echo "sm_health: SurrealDB health query failed contract (exit=${SURREAL_RC}, expected=${EXPECTED_OUTPUT})" >&2
+if [ "$SURREAL_RC" -ne 0 ] || [ "$FRAME_RC" -ne 0 ] || [ "$NORMALIZED_OUTPUT" != "$EXPECTED_OUTPUT" ] || [ -s "$STDERR_FILE" ]; then
+  echo "sm_health: SurrealDB health query failed contract (exit=${SURREAL_RC}, frame=${FRAME_RC}, expected=${EXPECTED_OUTPUT})" >&2
   emit_bounded_file stdout "$STDOUT_FILE"
   emit_bounded_file stderr "$STDERR_FILE"
   exit 1
