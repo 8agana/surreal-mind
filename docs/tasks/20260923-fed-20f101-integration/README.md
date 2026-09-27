@@ -1,5 +1,10 @@
 # fed-20f101 isolated integration candidate
 
+The reviewed candidate was later deployed to Studio's HTTP service on
+2026-09-27. See [deployment-20260927.md](deployment-20260927.md) for the
+running binary identity, health checks, and rollback path. The assembly
+account below records the earlier pre-promotion state.
+
 This candidate was assembled on Studio in the new
 `codex/fed-20f101-integration` worktree from
 `master` at `d28b28acc38f641670c199854c3d11cc2d9ff9b9`. The canonical
